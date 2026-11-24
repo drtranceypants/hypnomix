@@ -10,6 +10,8 @@ How to get from a recording to a released song, the craft behind each step, and 
 6. [Release checks](#6-release-checks)
 7. [Working inside Live](#7-working-inside-live)
 8. [Numbers cheat sheet](#8-numbers-cheat-sheet)
+9. [Feel, tempo and variety](#9-feel-tempo-and-variety)
+10. [Your own standards](#10-your-own-standards)
 
 ---
 
@@ -308,3 +310,54 @@ hypnomix profile build song1.wav song2.wav song3.wav song4.wav song5.wav
 | Vocal stack timing | under 10 ms tight, 20–40 ms natural double | above that, flams |
 | Low end below 120 Hz | L/R correlation > 0.9 | mono-safe, club-safe, vinyl-safe |
 | Silence at the head | under 0.5 s | playlists add their own gaps |
+
+---
+
+## 9. Feel, tempo and variety
+
+A grid is a tool, not a target. Players push choruses, lay back in verses and never hit two 16ths the same
+way, and that is most of why a recording feels alive. The tools here tidy what distracts and leave the rest.
+
+**Fix only what sticks out.** `hypnomix timing` works out the song's own grid first (straight 16ths, triplets
+or a mix), measures how loose the band is as a whole, and flags only hits that disagree with the other
+players. Downbeats are held tightest. Fixes go in passes: the drums first, then the bass toward the corrected
+drums, then everything else toward the band as it now is. Each fix is a few warp markers you can drag or
+delete (or a moved note, for MIDI). A hit inside a looped clip can be fixed on that one pass only
+(`--unroll-loops`).
+
+**Tighter, on request.** `hypnomix tighten` is a partial quantise for one take: hits within a few milliseconds
+stay put, the rest move a share of the way (half by default). It refuses a full snap. Listen to the preview
+with and without the click before you write a set.
+
+**No click? Map it.** `hypnomix tempomap TAKE.wav --click CHECK.wav` follows the beat and plays it back to you
+as a click. When the click sits right, choose: `--conform` puts the take on Live's steady grid (markers on bar
+lines keep the feel inside each bar), `--follow` leaves the take alone and makes Live's tempo follow it, so
+everything you overdub breathes with the drummer. `hypnomix loops` then offers the steadiest, best-joining
+loops in the take, grouped by groove.
+
+**Recorded to a click, and it shows?** `hypnomix breathe` adds what a band does without thinking: a percent
+or two faster into the big sections, a little slower in the quiet ones, a glide between. Hear it first on your
+bounce with `--preview`. Mind two things: unwarped clips will not follow a tempo change, and the song's length
+changes.
+
+**When eight bars repeat for two minutes.** Three sources of variety, all offered as options you switch on:
+`variations` (spare takes of the same part that fit the loop), `borrow` (clips the song's first project had and
+the rework dropped) and `motion` (filter sweeps, reverb swells, delay throws and drop-outs on the effects the
+set already has, in the lengths and depths of your own automation). Full details: [docs/TEMPO.md](docs/TEMPO.md)
+and [docs/WORKFLOW.md](docs/WORKFLOW.md).
+
+## 10. Your own standards
+
+Good defaults are someone else's taste. hypnomix can measure yours:
+
+```bash
+hypnomix prefs                                        # asked once: targets, protected tracks, what is deliberate
+hypnomix profile build "song1.wav" "song2.wav"        # your sound as measured ranges
+hypnomix taste "Finished 1.als" "Finished 2.als"      # levels, pans, sends, chains, what you automate
+hypnomix voices --learn "Finished 1.als" …            # how far your harmonies sit under the lead, and apart
+hypnomix motion --learn "Finished 1.als" …            # the effect moves you draw, their length and depth
+```
+
+What you do the same way every time becomes a standard the tools keep to. What varies from song to song
+becomes a question they ask. `hypnomix prefs learn` adds what you approve and skip in each review. All of it
+is plain files in `~/.hypnomix/`.

@@ -181,7 +181,7 @@ which spots to compare between the old and new set. When the review is finished,
 
 | job | commands | changes |
 |---|---|---|
-| Preferences and sound profile | `prefs`, `profile` | `~/.hypnomix/` only |
+| Preferences, sound profile, the person's own standards | `prefs`, `profile`, `taste` (levels, pans, sends, chains from their finished songs), `voices --learn`, `motion --learn` | `~/.hypnomix/` only |
 | Find problems in a set | `scan`, `smooth`, `timing`, `distortion`, `sidechain`, `audit`, `refs`, `mine`, `automation list` | nothing |
 | Find problems in recordings | `scan FOLDER`, `stems`, `masking`, `clicks`, `takes`, `align`, `measure`, `spectrogram` | nothing (reports) |
 | Judge a mix | `sections` (give `--bpm`), `match MIX REF`, `translate`, `qc`, `reference`, `punch`, `pitchcheck` | nothing (reports) |
@@ -192,6 +192,8 @@ which spots to compare between the old and new set. When the review is finished,
 | Tempo and variety (see `docs/TEMPO.md`) | `tempomap` (free-played take: `--click` check, then `--conform` or `--follow`), `loops`, `tighten`, `breathe`, `variations` | a new `.als`, or preview files |
 | Check what was written | `check NEW.als --against OLD.als`, `diff OLD.als NEW.als` | nothing |
 | Vocals | `tune`, `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |
+| Device settings and tidy-up in a set | `devices` (stock compressors, gates, limiters, EQ low cut judged on the signal they get), `tidy` (retire switched-off tracks after an archive copy; consolidate), `unroll` (a looped clip into one copy per pass) | a new `.als` |
+| Vocals inside a set (options from the vocals scan) | `duck` (vocal reverb / delay ducking: tune or add), `cliplevel` (lower-harmony clips far under their track) | a new `.als` |
 | Raw takes / stems | `prep`, `cleanup`, `clipmatch`, `render` (set → WAVs, no Live), `separate` (mix → stems) | new audio files |
 | Mix and master files | `automix`, `master` (after their `--plan` was reviewed) | new audio files |
 | Inside Live | `live`, `loop`, `diagnose`, `chain`, `name --apply`, `clipmatch --als --apply`, `midi`, `soundcheck` (audio input) | the open set |
@@ -205,14 +207,25 @@ if you call the tools directly, re-run the report on the current set and take th
 **Not yet verified in Live** (say so if you use them): `chain` (building device chains) and
 `clipmatch --als --apply`. Use `--dry-run` and show the plan first.
 
-**New, not yet opened in Live** (say so): the sets written by `tempomap`, `loops`, `tighten`, `breathe` and
-`variations`. They pass `check` and their offline previews measure as intended. They are taste tools: show
+**New, not yet opened in Live** (say so): the sets written by `tempomap`, `loops`, `tighten`, `breathe`,
+`variations`, `order`, `tidy`, `motion` and `borrow`. They pass `check` and their offline previews measure as intended. They are taste tools: show
 the report and the preview, and apply only when asked. A tempo map with under half its beats on real hits is
 guesswork: the tools say so and refuse to write from it.
 
 **New and only tested on synthetic audio so far** (say so): `deess`, `breaths`, `sections`, `match`. `sections`
 needs the tempo (`--bpm`; a set scan passes it): without it the bar lines, and so the sections, can be wrong.
 Present their output as "measured, please check by ear", and prefer `--report` before writing a file.
+
+**Which tool for which job** (several overlap on purpose):
+
+- Timing: `timing` fixes the few hits that disagree with the band (use it first, it is the first-pass check).
+  `tighten` treats a whole take, part of the way to the click (only when the person asks for a tighter take).
+  `vocalign` is for sung words against other sung words. None of them snaps anything fully to a grid.
+- Variety: `variations` uses spare takes of the same part from this project's recordings. `borrow` uses clips
+  the song's original project had. `motion` adds effect moves to what is already there. All three arrive as
+  options on switched-off tracks or as review items.
+- Tempo: `tempomap` is for takes played without a click. `breathe` is for songs recorded to one. Run
+  `timing`, `tighten`, `variations` and `borrow` before `breathe`: they need a constant tempo.
 
 ## Other DAWs (Logic Pro, Pro Tools, anything else)
 

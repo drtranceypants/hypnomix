@@ -55,6 +55,13 @@ set they write, and can be previewed without opening Live. Nothing here snaps a 
 - Not yet verified in Live (say so): every set these five write. They pass the structural check and the
   offline previews measure as intended; opening them in Live is the remaining test.
 
+## Related tools
+
+- `timing` (first-pass check) fixes only the hits that disagree with the band, on the song's detected grid.
+  `tighten` is the whole-take version for when you want a part tighter overall.
+- `borrow` offers clips from the song's original project; `motion` offers effect moves for the same
+  repetitive stretches. Like `variations`, both arrive switched off or as review items.
+
 ## Limits
 
 One time signature per take (`--bpb`). Long silences and free-time passages are bridged at the last tempo.

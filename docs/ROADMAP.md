@@ -18,6 +18,11 @@ songs before they are trusted.
 Open: opening their sets in Live; a first-bar-line check that does not rely on the low end; matching spare
 takes to a part by sound, not only by recording name; `variations` findings in the review page.
 
+**Also built since:** `key` (by section), `order`, `duck`, `cliplevel`, `motion`, `borrow`, `taste`,
+`voices` balance with `--learn` (as heard, written as volume automation), word-by-word `vocalign`, `devices`,
+`tidy`, `unroll`, and in `timing`: grid detection (straight, triplets, mixed), MIDI, and passes (drums, then
+bass toward the drums, then the rest). Open for all of them: more real songs, and opening every written set in Live.
+
 **Next idea: `colour`.** Propose new timbres for a song that sounds the same throughout: an effect chain from
 stock devices or installed free plug-ins on a copy of a part, or a new instrument doubling a line (from
 `midi`), each on a new switched-off track like `variations`, each with a before / after clip. Needs the
