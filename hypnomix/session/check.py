@@ -47,9 +47,10 @@ def all_tracks(root):
     return list(ts) if ts is not None else []
 
 
-def check(path, against=None, renamed=None, reordered=False, added=()):
+def check(path, against=None, renamed=None, reordered=False, added=(), removed=(), allow_removed=False):
     """Returns (errors, warnings, facts). Empty errors = structurally sound."""
     err, warn, facts = [], [], {}
+    info = facts.setdefault("changes", [])          # expected changes (reorder, renames, approved removals)
     root, problem = load_root(path)
     if root is None:
         return [problem], [], {}
@@ -178,19 +179,51 @@ def check(path, against=None, renamed=None, reordered=False, added=()):
         else:
             if r0.get("MinorVersion") != root.get("MinorVersion") or r0.get("Creator") != root.get("Creator"):
                 err.append(f"version changed: {r0.get('Creator')} → {root.get('Creator')}")
-            ren = renamed or {}                      # renames the person approved are expected changes
-            a = [(t.tag, ren.get(track_name(t), track_name(t))) for t in all_tracks(r0)]
-            b = [(t.tag, track_name(t)) for t in all_tracks(root)]
-            b = [x for x in b if x[1] not in set(added)]               # tracks a tool was approved to add
-            if (sorted(a) != sorted(b)) if reordered else (a != b):   # an approved reorder: same tracks, new order
-                err.append(f"the track list changed ({len(a)} → {len(b)} tracks, or their order or names)")
+            # tracks are matched by id: a new order or a new name on the same track is an expected change from
+            # `order` / `name` (reported as info); a track that vanished or appeared is an error unless allowed
+            ren = renamed or {}
+            t0 = [(t.get("Id"), t.tag, track_name(t)) for t in all_tracks(r0)]
+            t1 = [(t.get("Id"), t.tag, track_name(t)) for t in all_tracks(root)]
+            if all(i for i, _, _ in t0 + t1) and len({i for i, _, _ in t1}) == len(t1):
+                d0, d1 = {i: (g, n) for i, g, n in t0}, {i: (g, n) for i, g, n in t1}
+                gone = [d0[i][1] for i, _, _ in t0 if i not in d1]
+                new_ = [d1[i][1] for i, _, _ in t1 if i not in d0]
+                bad_gone = [n for n in gone if not (allow_removed or n in set(removed))]
+                bad_new = [n for n in new_ if n not in set(added)]
+                if bad_gone:
+                    err.append(f"track(s) missing from the new set: {', '.join(bad_gone[:8])} "
+                               "(if they were retired or merged on purpose: --allow-removed)")
+                elif gone:
+                    info.append(f"{len(gone)} track(s) removed as asked: {', '.join(gone[:8])}{'…' if len(gone) > 8 else ''}")
+                if bad_new:
+                    err.append(f"track(s) that are not in the original: {', '.join(bad_new[:8])}")
+                elif new_:
+                    info.append(f"{len(new_)} track(s) added: {', '.join(new_[:8])}")
+                kind = [d0[i][1] for i in d0 if i in d1 and d0[i][0] != d1[i][0]]
+                if kind:
+                    err.append(f"track type changed on: {', '.join(kind[:8])}")
+                rn = [(d0[i][1], d1[i][1]) for i in d0 if i in d1 and d0[i][1] != d1[i][1]]
+                if rn:
+                    info.append(f"{len(rn)} track(s) renamed: " + ", ".join(f"{a} → {b}" for a, b in rn[:8])
+                                + ("…" if len(rn) > 8 else ""))
+                    odd = [f"{a} → {b}" for a, b in rn if a in ren and ren[a] != b]
+                    if odd:
+                        warn.append(f"renamed differently from what was approved: {', '.join(odd[:6])}")
+                kept0 = [i for i, _, _ in t0 if i in d1]
+                if kept0 != [i for i, _, _ in t1 if i in d0]:
+                    info.append("track order changed (same tracks, new order; sends and routing follow the ids)")
+            else:                                     # no usable ids: compare by type and name, as before
+                a = [(g, ren.get(n, n)) for _, g, n in t0]
+                b = [x for x in ((g, n) for _, g, n in t1) if x[1] not in set(added)]
+                if (sorted(a) != sorted(b)) if reordered else (a != b):
+                    err.append(f"the track list changed ({len(a)} → {len(b)} tracks, or their order or names)")
             n0 = r0.find(".//NextPointeeId")
             if n0 is not None and next_id is not None and next_id < int(n0.get("Value")):
                 err.append("NextPointeeId went down")
-            old = {}
-            for t in all_tracks(r0):
-                old[track_name(t)] = len(t.findall(".//ArrangerAutomation/Events/AudioClip"))
-            moved = [f"{k} ({old[k]} → {v})" for k, v in per_track.items() if k in old and old[k] != v]
+            cnt = lambda t: len(t.findall(".//ArrangerAutomation/Events/AudioClip"))
+            old = {t.get("Id") or track_name(t): cnt(t) for t in all_tracks(r0)}
+            moved = [f"{track_name(t)} ({old[k]} → {cnt(t)})" for t in all_tracks(root)
+                     for k in [t.get("Id") or track_name(t)] if k in old and old[k] != cnt(t)]
             if moved:
                 warn.append("clip count changed on: " + ", ".join(moved[:6]))
     return err, warn, facts
@@ -202,8 +235,10 @@ def main():
     ap.add_argument("als")
     ap.add_argument("--against", metavar="ORIGINAL.als", help="the set this one was written from")
     ap.add_argument("--json", metavar="OUT.json")
+    ap.add_argument("--allow-removed", action="store_true",
+                    help="tracks were retired or merged on purpose (order --retire-off, consolidate): missing tracks are info")
     a = ap.parse_args()
-    err, warn, facts = check(a.als, a.against)
+    err, warn, facts = check(a.als, a.against, allow_removed=a.allow_removed)
     if a.json:
         Path(a.json).write_text(json.dumps(dict(set=str(a.als), ok=not err, errors=err, warnings=warn, facts=facts), indent=1))
     name = Path(a.als).name
@@ -213,6 +248,8 @@ def main():
         print(f"  ERROR   {e}")
     for w in warn:
         print(f"  warning {w}")
+    for c in facts.get("changes", []):
+        print(f"  info    {c}")
     if err:
         print(f"\n{len(err)} error(s): do NOT open this set in Live. Keep the original and report the errors.")
         sys.exit(1)

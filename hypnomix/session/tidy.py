@@ -1,0 +1,373 @@
+#!/usr/bin/env python3
+"""Tidy a set's tracks: retire switched-off tracks, and put clips of one instrument on one track.
+
+Part of the first clean-up, with `name` and `order`. ON BY DEFAULT in scan/fix (skip the items to opt out, or
+`hypnomix prefs set cleanup.retire=off` / `cleanup.consolidate=off` for every song). It never changes the sound.
+
+1. Retire (retire-1). Switched-off tracks (the track activator off: old takes, replaced originals, copies) are
+   removed from the new set, or with --mode bottom kept but moved to the bottom of their group and renamed
+   "old: …". Before anything is removed a full copy of the set is written next to it as
+   "<song> (archive, all takes).als", so every take stays reachable. A switched-off track is kept when:
+     - its activator is automated (it plays somewhere), or it is a group or return
+     - another track listens to it (a sidechain or an input routed from it)
+   Review note "keep: Name, Name" keeps those tracks.
+   (A new "Old takes" GROUP is not built here: a group needs Live to create it. In Live: select the "old:" tracks,
+   Cmd/Ctrl-G.)
+
+2. Consolidate (merge-N). Two tracks of the same instrument, side by side in one group, become one track when:
+     - the same devices with the same settings, the same sends, pan and output (so they sound the same)
+     - neither track is automated, the one emptied has no take lanes and no Session clips
+     - a clip goes over only where nothing already plays on the other track (no overlap)
+   A different fader is made up with clip gain, so every clip plays at the same level as before. When every clip
+   fits, the emptied track is removed; clips that don't fit stay where they are (the review says which).
+   Check it afterwards with `hypnomix render` (both tracks before, the one track after: they should match).
+
+Usage:
+  hypnomix tidy SET.als [--names names.json] [--json OUT.json]
+  hypnomix tidy SET.als --apply NEW.als [--ids retire-1,merge-2] [--mode remove|bottom] [--tweak "retire-1:keep: A, B"]
+"""
+import argparse, copy, gzip, json, math, re, shutil, sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+v = lambda n, p: (n.find(p).get("Value") if n is not None and n.find(p) is not None else None)
+LANE = "./DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events"
+MLANE = "./DeviceChain/MainSequencer/ClipTimeable/ArrangerAutomation/Events"
+UI_TAGS = {"LomId", "LomIdView", "IsExpanded", "IsFolded", "ViewData", "ViewStateSesstionTrackWidth",
+           "ShouldShowPresetName", "UserName", "Annotation", "LastSelectedTimeableIndex",
+           "LastSelectedClipEnvelopeIndex", "LastPresetRef", "BranchSelectorRange", "SourceContext",
+           "OverwriteProtectionNumber", "IsContentSelectedInDocument", "PreferModulationVisible", "Pointee"}
+MAX_CLIP_GAIN = 63.0957     # +36 dB: what Live stores at most
+
+
+def name(t):
+    return v(t, "./Name/EffectiveName") or t.tag
+
+
+def lane(t):
+    return t.find(LANE) if t.tag == "AudioTrack" else t.find(MLANE)
+
+
+def clips(t):
+    ln = lane(t)
+    return [] if ln is None else [c for c in ln if c.tag in ("AudioClip", "MidiClip")]
+
+
+def span(c):
+    return float(v(c, "./CurrentStart")), float(v(c, "./CurrentEnd"))
+
+
+def is_on(t):
+    return v(t, "./DeviceChain/Mixer/Speaker/Manual") != "false"
+
+
+def automated(t, param=None):
+    """True when the track has automation (on `param`'s target only, if given)."""
+    envs = t.findall("./AutomationEnvelopes/Envelopes/AutomationEnvelope")
+    if param is None:
+        return any(e.findall(".//Events/*") for e in envs)
+    at = t.find(f"./DeviceChain/Mixer/{param}/AutomationTarget")
+    tid = at.get("Id") if at is not None else None
+    return any(v(e, "./EnvelopeTarget/PointeeId") == tid for e in envs)
+
+
+def listeners(root, tid):
+    """Names of other tracks that take audio or MIDI from track `tid` (sidechain, input routing)."""
+    pat = re.compile(rf"Track\.{tid}(/|$)")
+    out = set()
+    every = list(root.find(".//Tracks")) + [x for x in (root.find(".//MainTrack"), root.find(".//MasterTrack")) if x is not None]
+    for t in every:
+        if t.get("Id") == tid:
+            continue
+        if any(pat.search(e.get("Value") or "") for e in t.iter()):
+            out.add(name(t))
+    return sorted(out)
+
+
+def _canon(el):
+    """The settings that make a sound, without ids and view state: two equal canons sound the same."""
+    if el is None:
+        return ""
+    x = copy.deepcopy(el)
+
+    def strip(n):
+        for k in ("Id",):
+            n.attrib.pop(k, None)
+        for ch in list(n):
+            if ch.tag in UI_TAGS:
+                n.remove(ch)
+            else:
+                strip(ch)
+    strip(x)
+    return ET.tostring(x, encoding="unicode")
+
+
+def sound_key(t):
+    """What has to match for two tracks to sound the same with the same clips (fader aside)."""
+    m = t.find("./DeviceChain/Mixer")
+    sends = [v(s, "./Send/Manual") for s in m.findall("./Sends/TrackSendHolder")] if m is not None else []
+    return (t.tag, v(t, "./TrackGroupId"), _canon(t.find("./DeviceChain/DeviceChain/Devices")), tuple(sends),
+            v(m, "./Pan/Manual"), v(m, "./SplitStereoPanL/Manual"), v(m, "./SplitStereoPanR/Manual"),
+            v(m, "./PanMode"), v(t, "./DeviceChain/AudioOutputRouting/Target"),
+            v(t, "./DeviceChain/MidiOutputRouting/Target"))
+
+
+def session_clips(t):
+    return any(s.find(".//AudioClip") is not None or s.find(".//MidiClip") is not None
+               for s in t.findall("./DeviceChain/MainSequencer/ClipSlotList/ClipSlot"))
+
+
+def take_lanes(t):
+    return t.find(".//TakeLanes//AudioClip") is not None or t.find(".//TakeLanes//MidiClip") is not None
+
+
+def fader_db(t):
+    return 20 * math.log10(max(1e-6, float(v(t, "./DeviceChain/Mixer/Volume/Manual") or 1)))
+
+
+# ---------------------------------------------------------------- 1. retire
+def retire_plan(root, keep=()):
+    """([(track el, why kept or None)]) for every switched-off track."""
+    out = []
+    for t in root.find(".//Tracks"):
+        if t.tag not in ("AudioTrack", "MidiTrack") or is_on(t):
+            continue
+        why = None
+        if name(t) in set(keep):
+            why = "you said keep it"
+        elif automated(t, "Speaker"):
+            why = "its on/off switch is automated, so it plays somewhere"
+        else:
+            ls = listeners(root, t.get("Id"))
+            if ls:
+                why = "listened to by " + ", ".join(ls[:4])
+        out.append((t, why))
+    return out
+
+
+def archive_path(src):
+    src = Path(src)
+    stem = re.sub(r" \([^()]*\)$", "", src.stem)
+    p = src.with_name(f"{stem} (archive, all takes).als")
+    n = 2
+    while p.exists():
+        p = src.with_name(f"{stem} (archive {n}, all takes).als")
+        n += 1
+    return p
+
+
+def retire(root, plan, mode="remove"):
+    T = root.find(".//Tracks")
+    done = []
+    for t, why in plan:
+        if why:
+            continue
+        if mode == "remove":
+            T.remove(t)
+        else:                                            # bottom of its own group (or of the track list)
+            g = v(t, "./TrackGroupId")
+            T.remove(t)
+            items = list(T)
+            idx = len([x for x in items if x.tag != "ReturnTrack"])
+            if g not in (None, "-1"):
+                ids = {g}
+                last = None
+                for k, x in enumerate(items):          # the group's own block: the group, then its tracks
+                    if x.get("Id") in ids or v(x, "./TrackGroupId") in ids:
+                        last = k
+                        if x.tag == "GroupTrack":
+                            ids.add(x.get("Id"))
+                idx = (last + 1) if last is not None else idx
+            T.insert(idx, t)
+            nm = t.find("./Name")
+            if not name(t).startswith("old: "):
+                for k in ("UserName", "EffectiveName"):
+                    if nm.find(k) is not None:
+                        nm.find(k).set("Value", "old: " + name(t))
+        done.append(name(t))
+    return done
+
+
+# ---------------------------------------------------------------- 2. consolidate
+def label_stem(s):
+    return re.sub(r"[\s\-_]*\d+$", "", re.sub(r"\s*\(.*?\)$", "", (s or "").strip())).strip().lower()
+
+
+def same_instrument(a, b, labels):
+    la, lb = labels.get(name(a)), labels.get(name(b))
+    if la and lb:
+        return label_stem(la) == label_stem(lb) and bool(label_stem(la))
+    sa, sb = label_stem(name(a)), label_stem(name(b))
+    return bool(sa) and sa == sb and not re.fullmatch(r"(\d+-)*(audio|midi)", sa)
+
+
+def fits(c, dst_spans):
+    a, b = span(c)
+    return all(b <= s + 1e-6 or a >= e - 1e-6 for s, e in dst_spans)
+
+
+def merge_plan(root, labels=None):
+    """[dict(dst, src, move=[clips], stay=[clips], why)] for neighbouring tracks of one instrument."""
+    labels = labels or {}
+    tracks = [t for t in root.find(".//Tracks") if t.tag in ("AudioTrack", "MidiTrack") and is_on(t)]
+    used, out = set(), []
+    for i, a in enumerate(tracks):
+        for b in tracks[i + 1:]:
+            if a.get("Id") in used or b.get("Id") in used:
+                continue
+            if not same_instrument(a, b, labels) or sound_key(a) != sound_key(b):
+                continue
+            # empty the one with fewer clips into the other
+            dst, src = (a, b) if len(clips(a)) >= len(clips(b)) else (b, a)
+            why = None
+            if automated(a) or automated(b):
+                why = "a track is automated"
+            elif take_lanes(src):
+                why = f"{name(src)} has comp take lanes"
+            elif session_clips(src):
+                why = f"{name(src)} has Session clips"
+            elif listeners(root, src.get("Id")):
+                why = f"another track listens to {name(src)}"
+            elif any(c.find("./Envelopes/Envelopes/ClipEnvelope") is not None for c in clips(src)):
+                why = f"{name(src)} has clip envelopes"
+            spans = [span(c) for c in clips(dst)]
+            move, stay = [], []
+            for c in sorted(clips(src), key=lambda c: span(c)[0]):
+                if fits(c, spans):
+                    move.append(c); spans.append(span(c))
+                else:
+                    stay.append(c)
+            if not move:
+                continue
+            used |= {a.get("Id"), b.get("Id")}
+            out.append(dict(dst=dst, src=src, move=move, stay=stay, why=why,
+                            gain_db=fader_db(src) - fader_db(dst)))
+    return out
+
+
+def merge(root, m):
+    """Move the plan's clips onto the destination track; remove the source when it is empty. Returns clips moved."""
+    dl, sl = lane(m["dst"]), lane(m["src"])
+    used = {int(c.get("Id")) for c in clips(m["dst"]) if (c.get("Id") or "").isdigit()}
+    k = 0
+    for c in m["move"]:
+        sl.remove(c)
+        if c.get("Id") is None or int(c.get("Id")) in used:
+            c.set("Id", str(max(used | {-1}) + 1))
+        used.add(int(c.get("Id")))
+        if abs(m["gain_db"]) > 1e-6 and c.tag == "AudioClip":
+            sv = c.find("./SampleVolume")
+            if sv is not None:
+                sv.set("Value", repr(min(MAX_CLIP_GAIN, float(sv.get("Value")) * 10 ** (m["gain_db"] / 20))))
+        at = span(c)[0]
+        idx = sum(1 for x in clips(m["dst"]) if span(x)[0] < at)
+        dl.insert(idx, c)
+        k += 1
+    if not clips(m["src"]):
+        root.find(".//Tracks").remove(m["src"])
+    return k
+
+
+# ---------------------------------------------------------------- findings
+def bar(beat):
+    return f"{int(beat // 4) + 1}"
+
+
+def findings(rplan, mplan, mode="remove"):
+    out = []
+    go = [name(t) for t, why in rplan if not why]
+    kept = [f"{name(t)} ({why})" for t, why in rplan if why]
+    if go:
+        out.append(dict(id="retire-1", tool="tidy", kind="retire-off", severity="low", track=", ".join(go[:12]),
+                        where=f"{len(go)} switched-off track(s)", default="approve", retire=go,
+                        problem=f"{len(go)} track(s) are switched off (old takes, replaced originals, copies) and "
+                                "clutter the set" + (f". Kept: {'; '.join(kept[:6])}" if kept else ""),
+                        fix=("write a full copy as \"(archive, all takes)\", then " +
+                             ("remove them from the new set" if mode == "remove" else
+                              "move them to the bottom of their group, renamed \"old: …\"") +
+                             f": {', '.join(go[:20])}{'…' if len(go) > 20 else ''}. ON BY DEFAULT: skip to keep them, "
+                             "or note \"keep: Name, Name\" to keep some"),
+                        applies="set"))
+    for n, m in enumerate(mplan, 1):
+        s, d = name(m["src"]), name(m["dst"])
+        ok = not m["why"]
+        stay = f"; {len(m['stay'])} clip(s) overlap and stay on {s} (bars {', '.join(bar(span(c)[0]) for c in m['stay'][:6])})" if m["stay"] else ""
+        out.append(dict(id=f"merge-{n}", tool="tidy", kind="consolidate", severity="low", track=f"{s} → {d}",
+                        where=f"{len(m['move'])} clip(s)", default="approve" if ok else None,
+                        src=m["src"].get("Id"), dst=m["dst"].get("Id"), removes=not m["stay"],
+                        problem=f"{s} and {d} are the same instrument with the same sound (devices, sends, pan) on "
+                                "two tracks, so one fader doesn't set the part",
+                        fix=(f"move {len(m['move'])} clip(s) from {s} onto {d}" +
+                             (f", clip gain {m['gain_db']:+.1f} dB to make up the fader difference" if abs(m['gain_db']) > 0.05 else "") +
+                             (f", then remove the empty {s}" if not m["stay"] else "") + stay +
+                             (". ON BY DEFAULT: skip to keep both tracks" if ok else f". By hand: {m['why']}")),
+                        applies="set" if ok else "manual"))
+    return out
+
+
+def tweaks(items):
+    keep = []
+    for t in items or []:
+        k, _, note = t.partition(":")
+        if k.strip() == "retire-1" and note.strip().lower().startswith("keep"):
+            keep += [x.strip() for x in note.split(":", 1)[-1].split(",") if x.strip()]
+    return keep
+
+
+def labels_from(names_json):
+    if not names_json or not Path(names_json).exists():
+        return {}
+    rows = json.loads(Path(names_json).read_text()).get("tracks", [])
+    return {r["old"]: (r.get("final") or r.get("label")) for r in rows
+            if float(r.get("confidence") or 0) >= 0.5 and (r.get("final") or r.get("label"))}
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="hypnomix tidy", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("als"); ap.add_argument("--names", help="names.json from `hypnomix name` (what each track is)")
+    ap.add_argument("--json"); ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
+    ap.add_argument("--mode", choices=["remove", "bottom"], default="remove", help="retired tracks: removed, or moved to the bottom")
+    ap.add_argument("--tweak", action="append", help='review notes, e.g. "retire-1:keep: Guitar 2, Vox old"')
+    ap.add_argument("--archive-from", metavar="ORIGINAL.als", help="the set to archive (default: SET.als)")
+    ap.add_argument("--no-retire", action="store_true"); ap.add_argument("--no-merge", action="store_true")
+    a = ap.parse_args()
+    src = Path(a.als)
+    if a.apply and Path(a.apply).resolve() == src.resolve():
+        sys.exit("refusing to overwrite the set; give a new file name")
+    if a.apply and Path(a.apply).resolve().parent != src.resolve().parent:
+        sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent})")
+    root = ET.fromstring(gzip.open(src).read())
+    rplan = [] if a.no_retire else retire_plan(root, tweaks(a.tweak))
+    mplan = [] if a.no_merge else merge_plan(root, labels_from(a.names))
+    fs = findings(rplan, mplan, a.mode)
+    for f in fs:
+        print(f"{f['id']}: {f['problem']}\n   → {f['fix']}\n")
+    if not fs:
+        print("nothing to tidy: no switched-off tracks, no instrument split over matching tracks")
+    if a.json:
+        Path(a.json).write_text(json.dumps({"tool": "tidy", "set": str(src), "findings": fs}, indent=1))
+    if a.apply:
+        want = {x.strip() for x in (a.ids or "").split(",") if x.strip()} or {f["id"] for f in fs if f.get("default") == "approve"}
+        moved = 0
+        merged = []
+        for f, m in zip([f for f in fs if f["kind"] == "consolidate"], mplan):
+            if f["id"] in want and f["applies"] == "set":
+                moved += merge(root, m)
+                merged.append(name(m["src"]))
+        gone = []
+        if "retire-1" in want and rplan:
+            orig = Path(a.archive_from) if a.archive_from else src
+            arch = archive_path(orig)
+            shutil.copy2(orig, arch)                  # every take stays reachable
+            print(f"archived the full set as {arch.name}")
+            gone = retire(root, rplan, a.mode)
+        data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
+        with gzip.open(a.apply, "wb") as fh:
+            fh.write(data)
+        print(f"wrote {a.apply}: {len(gone)} track(s) {'removed' if a.mode == 'remove' else 'moved down'}, "
+              f"{moved} clip(s) consolidated from {', '.join(merged) or 'no tracks'}. "
+              f"Check: hypnomix check NEW --against OLD --allow-removed")
+
+
+if __name__ == "__main__":
+    main()

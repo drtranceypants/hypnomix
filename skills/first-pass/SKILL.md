@@ -34,6 +34,11 @@ until they approve it, originals are never overwritten, and every applied fix is
    (low harmony on the lowest track), so one fader sets one voice; comped clips and anything unsafe are listed
    by hand. Tell the person it will happen and that they can opt out (skip the item, or
    `hypnomix prefs set cleanup.order=off` for every song). `fix --approved` includes these unless skipped.
+   The tidy-up is also **on by default**: `retire-1` removes switched-off tracks after writing a full
+   "(archive, all takes)" copy (note "keep: Name, Name" keeps some), and `merge-N` puts one instrument's clips on
+   one track where two tracks sound the same and nothing overlaps (fader difference made up with clip gain).
+   Opt out per item, or `hypnomix prefs set cleanup.retire=off` / `cleanup.consolidate=off`. Grouping similar
+   instruments into a NEW group needs Live (select, Cmd/Ctrl-G): say which ones.
 
 ## 1. Scan in parallel
 

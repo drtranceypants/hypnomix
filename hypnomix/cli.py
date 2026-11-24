@@ -62,6 +62,7 @@ GROUPS = [
         ("borrow", "hypnomix.session.borrow", "offer unused loops from the song's original project as switched-off layers (MIDI nudged to the song's downbeat; writes a new set)"),
         ("motion", "hypnomix.session.motion", "keep repetitive sections alive: filter sweeps, reverb/delay throws, stutters, gate chops, drop-outs, as options learned from your own automation (writes a new set)"),
         ("unroll", "hypnomix.session.unroll", "turn looped Arrangement clips into one copy per pass, so each pass can be edited on its own (writes a new set)"),
+        ("tidy", "hypnomix.session.tidy", "retire switched-off tracks (after an archive copy) and put one instrument's clips on one track (writes a new set)"),
         ("order", "hypnomix.session.order", "put tracks in working order (drums, bass, keys/guitar/synth, vocals, other; low to high) and vocal-stack clips on the track for their pitch (writes a new set)"),
         ("timing", "hypnomix.session.timing", "find hits out of time with the band; nudge only those with warp markers (writes a new set)"),
         ("tempomap", "hypnomix.session.tempomap", "map the tempo of a take played without a click; warp it to the grid, or make the grid follow it"),

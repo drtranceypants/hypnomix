@@ -37,7 +37,7 @@ in Live are not in the file this reads. Every run appends to SCAN_DIR/fix-log.md
 import argparse, json, re, shutil, subprocess, sys, time
 from pathlib import Path
 
-ORDER = ["distortion", "devices", "sidechain", "duck", "smooth", "cliplevel", "timing", "motion", "borrow", "order"]   # track names come last, after all of these
+ORDER = ["distortion", "devices", "sidechain", "duck", "smooth", "cliplevel", "timing", "motion", "borrow", "tidy", "order"]   # track names come last, after all of these
 DECISIONS = ("approve", "skip", "change")
 
 
@@ -102,7 +102,7 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
             args += ["--drums", t]
     if tool == "distortion" and scan.get("mix"):
         args += ["--mix", scan["mix"]]
-    if tool in ("order", "cliplevel", "duck", "devices"):
+    if tool in ("order", "tidy", "cliplevel", "duck", "devices"):
         args += ["--names", sd / "raw" / "names" / "names.json"]
     if tool == "motion":
         args += motion_args(sd, scan)
@@ -349,8 +349,14 @@ def main():
                             args += ["--unroll-loops"]
                     if tool == "distortion" and scan.get("mix"):
                         args += ["--mix", scan["mix"]]
-                    if tool in ("order", "cliplevel", "duck", "devices"):
+                    if tool in ("order", "tidy", "cliplevel", "duck", "devices"):
                         args += ["--names", sd / "raw" / "names" / "names.json"]
+                    if tool == "tidy":              # archive the set as it was before this run, then tidy
+                        args += ["--archive-from", src]
+                        for f in items:
+                            note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
+                            if note and f["id"] in ids:
+                                args += ["--tweak", f"{f['id']}:{note}"]
                     if tool in ("motion", "borrow"):   # the person's fine controls from the review notes
                         args += motion_args(sd, scan) if tool == "motion" else borrow_args(scan)
                         for f in items:
@@ -381,7 +387,8 @@ def main():
         if out:  # structure first: a broken set must never be opened
             from hypnomix.session import check as C, diff as D
             added = [f"{f['borrow']['track']} (from original)" for f in set_items if f["tool"] == "borrow"]
-            errs, warns, _ = C.check(out, src, reordered="order" in applied_tools, added=added)
+            errs, warns, _ = C.check(out, src, reordered="order" in applied_tools, added=added,
+                                   allow_removed="tidy" in applied_tools)
             if errs:
                 bad = out.with_name(out.stem + " (BROKEN, do not open).als")
                 out.rename(bad)
@@ -465,6 +472,12 @@ def main():
     if name_items:
         from hypnomix.session.names import rename_set
         mapping = {}
+        if "tidy" in (locals().get("applied_tools") or []):   # tracks the clean-up retired or merged away
+            kept_n = {x.strip() for f in set_items if f.get("id") == "retire-1"
+                      for x in re.split(r"[:,]", ((dec.get(f["id"]) or {}).get("note") or ""))[1:]}
+            gone_n = {n for f in set_items if f.get("id") == "retire-1" for n in f.get("retire", []) if n not in kept_n}
+            gone_n |= {f["track"].split(" → ")[0] for f in set_items if f.get("kind") == "consolidate" and f.get("removes")}
+            name_items = [f for f in name_items if f["old"] not in gone_n]
         for f in name_items:
             note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
             mapping[f["old"]] = note or f["new"]
@@ -484,6 +497,7 @@ def main():
                    [f"- skipped {o_}: {w}" for o_, w in skipped_n] + [""]
             from hypnomix.session import check as C
             errs, _, _ = C.check(target, src, renamed=dict(done_n), reordered=any(f["tool"] == "order" for f in set_items),
+                                 allow_removed=any(f["tool"] == "tidy" for f in set_items),
                                  added=[f"{f['borrow']['track']} (from original)" for f in set_items if f["tool"] == "borrow"])
             if errs:
                 bad = Path(target).with_name(Path(target).stem + " (BROKEN, do not open).als")

@@ -149,6 +149,21 @@ def g_names(als, od, a):
                          "`hypnomix prefs set cleanup.order=off` for every song)")
         else:
             notes.append(f"order: did NOT run ({txt.strip()[-200:]})")
+    off = lambda k: str(P.get(P.load(), k, "on")).lower() in ("off", "no", "false", "0")
+    if off("cleanup.retire") and off("cleanup.consolidate"):
+        notes.append("tidy: skipped (your preferences cleanup.retire=off, cleanup.consolidate=off)")
+    else:
+        j = od / "raw" / "tidy.json"
+        extra = (["--no-retire"] if off("cleanup.retire") else []) + (["--no-merge"] if off("cleanup.consolidate") else [])
+        code, txt = hx("tidy", als, "--names", path, "--json", j, *extra)
+        save(od / "raw" / "tidy.txt", strip_warnings(txt))
+        if j.exists():
+            out += json.loads(j.read_text())["findings"]
+            notes.append("tidy: retiring switched-off tracks (after an archive copy) and merging one instrument's "
+                         "matching tracks are ON by default (skip retire-1 / merge-N to opt out, or `hypnomix prefs set "
+                         "cleanup.retire=off` / `cleanup.consolidate=off`)")
+        else:
+            notes.append(f"tidy: did NOT run ({txt.strip()[-200:]})")
     return out, notes + [f"names: {sum(1 for f in out if f['kind'] == 'track-name')} renames proposed, "
                  f"{sum(1 for f in out if f['kind'] == 'track-name-question')} tracks to ask about (findings keep the old names; "
                  "REVIEW.md shows the new ones; `fix` renames last)"]
