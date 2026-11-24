@@ -79,7 +79,7 @@ function setDecision(id, d, note) {
   persist(id); render();
 }
 function render() {
-  const actionable = DATA.findings.filter(f => f.applies !== 'info');
+  const actionable = DATA.findings.filter(f => f.applies !== 'info' && f.applies !== 'answer');
   const n = {approve:0, skip:0, change:0};
   actionable.forEach(f => { const d = dec[f.id] && dec[f.id].decision; if (d) n[d]++; });
   const left = actionable.length - n.approve - n.skip - n.change;
@@ -95,7 +95,7 @@ function render() {
     const players = ab.a ? `<div class="ab"><div><label>A · now</label><audio controls preload="none" src="ab/${encodeURIComponent(ab.a)}"></audio></div>
       <div><label>B · with the fix${ab.matched_db ? ' (level-matched ' + (ab.matched_db > 0 ? '+' : '') + ab.matched_db + ' dB)' : ''}</label><audio controls preload="none" src="ab/${encodeURIComponent(ab.b)}"></audio></div></div>` : '';
     const note = ab.note ? `<p class="note">${esc(ab.note)}</p>` : ((f.applies === 'set' || f.applies === 'audio') && !ab.a ? '<p class="note">No preview yet: run <code>hypnomix ab</code>.</p>' : '');
-    const act = f.applies === 'info' ? '' : `<div class="act">
+    const act = f.applies === 'answer' ? `<p class="note">A question, not a fix: tell your assistant the answer (recorded with <code>hypnomix fix DIR --answer NOTE</code>).</p>` : f.applies === 'info' ? '' : `<div class="act">
       ${['approve','skip','change'].map(x => `<button class="${x}${d === x ? ' on' : ''}" data-id="${esc(f.id)}" data-d="${x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join('')}
       <input placeholder="note (what to change, or why)" data-note="${esc(f.id)}" value="${esc(dec[f.id] && dec[f.id].note)}"></div>`;
     return `<div class="item${d ? ' done' : ''}"><div class="head"><span class="sev ${esc(f.severity)}">${esc(f.severity)}</span>
@@ -122,7 +122,7 @@ document.addEventListener('play', e => {  // one player at a time, so A and B ar
   document.querySelectorAll('audio').forEach(a => { if (a !== e.target) a.pause(); });
 }, true);
 document.getElementById('alllow').onclick = () => {
-  const ids = DATA.findings.filter(f => f.severity === 'low' && !f.protected && f.applies !== 'info' && !dec[f.id]).map(f => f.id);
+  const ids = DATA.findings.filter(f => f.severity === 'low' && !f.protected && f.applies !== 'info' && f.applies !== 'answer' && !dec[f.id]).map(f => f.id);
   if (ids.length && confirm(`Approve ${ids.length} low-severity item(s) without listening to each?`)) ids.forEach(id => setDecision(id, 'approve', 'batch: all low'));
 };
 document.getElementById('dl').onclick = () => {

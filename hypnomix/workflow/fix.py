@@ -137,7 +137,10 @@ def main():
     ap.add_argument("--out", help='new set to write, e.g. "Song (fixed).als" (same folder as the original)')
     ap.add_argument("--from", dest="from_set", help="start from this set instead of the scanned one (to apply "
                     "fixes one at a time, each on top of the last); must be in the same folder")
-    ap.add_argument("--key", help='confirmed song key for vocal tuning, e.g. "F# major"')
+    ap.add_argument("--key", help='confirmed song key for vocal tuning, e.g. "F# major", or "sections" to tune '
+                    "with the scan's section-by-section key map (every key question answered)")
+    ap.add_argument("--answer", action="append", default=[], metavar="NOTE|BARS=NOTE|both",
+                    help="the person's answer to a key question (key-N), e.g. F#, \"17-24=F\", both; saved in the scan")
     ap.add_argument("--allow-protected", action="store_true", help="the person re-confirmed changes on protected tracks")
     ap.add_argument("--stale-ok", action="store_true", help="apply although the set changed since the scan")
     ap.add_argument("--no-verify", action="store_true", help="skip the check of the new set after writing")
@@ -158,6 +161,20 @@ def main():
                   f"{f['tool']}: {f.get('track') or '-'} {f.get('where', '')}  {str(f.get('problem'))[:80]}")
         return
 
+    key_json = sd / "raw" / "key.json"
+    if a.answer:
+        if not key_json.exists():
+            sys.exit("this scan has no key map (raw/key.json): re-scan the vocals group")
+        from hypnomix.studio.tune import load_scales
+        answers = scan.get("answers", []) + a.answer
+        _, open_q = load_scales(key_json, answers)          # checks every answer against its question
+        scan["answers"] = answers
+        (sd / "scan.json").write_text(json.dumps(scan, indent=1))
+        print(f"answers saved: {', '.join(answers)}")
+        print("still open: " + "; ".join(open_q) if open_q else "every key question is answered: tune with --key sections")
+        if not (a.approve or a.approved):
+            return
+
     if a.decide:
         for item in a.decide.split(","):
             if "=" not in item:
@@ -170,7 +187,7 @@ def main():
             dec[by_key[k]["id"]] = {"decision": v, "note": a.note, "at": time.strftime("%Y-%m-%d %H:%M")}
         save_decisions(sd, dec)
         n = {d: sum(1 for k in dec if decision_of(dec, k) == d) for d in DECISIONS}
-        left = sum(1 for f in findings if f.get("applies") != "info" and f["id"] not in dec)
+        left = sum(1 for f in findings if f.get("applies") not in ("info", "answer") and f["id"] not in dec)
         print(f"recorded. approve {n['approve']}, skip {n['skip']}, change {n['change']}; {left} still undecided")
         return
 
@@ -393,8 +410,24 @@ def main():
             failed.append(f"{f['id']}: no Live set in this scan")
             continue
         key = a.key or scan.get("key")  # tune
-        if not key:
-            failed.append(f"{f['id']}: not tuned: confirm the key with the person, then pass --key \"<key>\" "
+        tune_key = ["--key", key] if key else []
+        if key == "sections":
+            from hypnomix.studio.tune import load_scales
+            if not key_json.exists():
+                failed.append(f"{f['id']}: not tuned: this scan has no key map; re-scan or pass --key \"<key>\"")
+                print(f"tune       REFUSED  {f['track']}: no key map in the scan")
+                continue
+            answers = scan.get("answers", []) + a.answer
+            _, open_q = load_scales(key_json, answers)
+            if open_q:
+                failed.append(f"{f['id']}: not tuned: ask the person first ({'; '.join(open_q)}), then "
+                              "--answer NOTE (or \"BARS=NOTE\", or both)")
+                print(f"tune       REFUSED  {f['track']}: key questions not answered ({len(open_q)} section(s))")
+                continue
+            tune_key = ["--scales", key_json] + [x for ans in answers for x in ("--answer", ans)]
+        elif not key:
+            hint = " or --key sections after answering its questions" if key_json.exists() else ""
+            failed.append(f"{f['id']}: not tuned: confirm the key with the person, then pass --key \"<key>\"{hint} "
                           f"(the scan estimated {f.get('key')})")
             print(f"tune       REFUSED  {f['track']}: the key is not confirmed (--key)")
             continue
@@ -412,7 +445,7 @@ def main():
         while dest.exists():
             k += 1
             dest = tdir / f"{safe_name(f['track'])} (tuned {k}).wav"
-        args = ["tune", rendered, dest, "--key", key]
+        args = ["tune", rendered, dest, *tune_key]
         if scan.get("ref"):
             args += ["--ref", scan["ref"]]
         code, txt = hx(*args)

@@ -120,7 +120,8 @@ hypnomix fix "<SCAN_DIR>" --approved --out "Song (fixed).als"
 
 `fix` enforces the safety rules itself and stops rather than guesses. It refuses when: the set changed since the
 scan (re-scan), the output name already exists, an id was recorded as skip or change, a finding is on a protected
-track (ask again, then `--allow-protected`), or the key for vocal tuning was never confirmed (`--key`). It looks
+track (ask again, then `--allow-protected`), or the key for vocal tuning was never confirmed (`--key "<key>"`, or `--key sections` once every `key-N`
+question from the section-by-section key map is answered with `--answer`). It looks
 every approved finding up again in the set it is about to write, by track, kind and position, because ids are
 only positions in a list. A finding that is no longer there is **skipped and reported**, never swapped for its
 neighbour. Don't work around a refusal: read it, tell the person, and do what it says.

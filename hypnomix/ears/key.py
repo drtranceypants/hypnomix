@@ -122,8 +122,8 @@ def main():
     if not sure:
         print(f"UNSURE: {kname(best)} vs {kname(second)}: ask the person to confirm the key before tuning.")
     if a.sections:
-        secs, _ = section_map(a.set, a.audio, bars=a.bars, hop_bars=max(1, a.bars // 2), bpm=a.bpm)
-        res["sections"] = secs; print_sections(secs)
+        secs, tempo = section_map(a.set, a.audio, bars=a.bars, hop_bars=max(1, a.bars // 2), bpm=a.bpm)
+        res["sections"] = secs; res["tempo"] = tempo; res["questions"] = questions(secs); print_sections(secs)
     if a.json: json.dump(res, open(a.json, "w"), indent=1)
 
 
@@ -235,7 +235,33 @@ def section_map(als=None, audio=None, bars=8, hop_bars=4, bpm=None, sure_cov=0.8
             secs[-1]["coverage"] = round(min(secs[-1]["coverage"], r["coverage"]), 3)
         else:
             secs.append(dict(r))
+    for i, s_ in enumerate(secs):
+        b0 = int(s_["bars"].split("-")[0])
+        s_["t0"] = round((b0 - 1) * bar_s, 3)
+        s_["t1"] = round((int(secs[i + 1]["bars"].split("-")[0]) - 1) * bar_s, 3) if i + 1 < len(secs) else round(dur, 3)
+        d = disputed(s_)
+        s_["disputed"] = list(d) if (d and s_["unsure"]) else None
     return secs, tempo
+
+
+def disputed(s):
+    """(note only in this section's scale, note only in the runner-up's) when they differ by one or two notes."""
+    a = frozenset((s["root"] + st) % 12 for st in MAJOR_STEPS)
+    rn = s["runner_up"].split()[0]; rr = NAMES.index(rn) if rn in NAMES else None
+    if rr is None: return None
+    b = frozenset((rr + st) % 12 for st in MAJOR_STEPS)
+    x, y = sorted(a - b), sorted(b - a)
+    return (", ".join(NAMES[i] for i in x), ", ".join(NAMES[i] for i in y)) if len(x) <= 2 else None
+
+
+def questions(secs):
+    """One question per disputed note pair: [{notes: [a, b], bars: [..]}]."""
+    qs = {}
+    for s_ in secs:
+        if s_["unsure"] and s_.get("disputed"):
+            qs.setdefault(tuple(sorted(s_["disputed"])), []).append(s_["bars"])
+    return [dict(notes=list(k), bars=v, question=f"in bars {', '.join(v)}, is the note {k[0]} or {k[1]}? "
+                 f"('both' if the song uses both there)") for k, v in qs.items()]
 
 
 def print_sections(secs):
@@ -245,13 +271,6 @@ def print_sections(secs):
         flag = "  ** UNSURE: ask **" if s["unsure"] else ""
         mod = "" if s["scale"] == main else "  <- differs from the main scale (key change or borrowed chords?)"
         print(f"  bars {s['bars']:<8} {s['time']:>6}  {s['scale']:<22} notes in scale {s['coverage']:.0%}, margin {s.get('margin', 0):.2f} over {s['runner_up']}; bass rests on {s['bass_tonic']}{mod}{flag}")
-    def disputed(s):
-        a = frozenset((s["root"] + st) % 12 for st in MAJOR_STEPS)
-        rn = s["runner_up"].split()[0]; rr = NAMES.index(rn) if rn in NAMES else None
-        if rr is None: return None
-        b = frozenset((rr + st) % 12 for st in MAJOR_STEPS)
-        x, y = sorted(a - b), sorted(b - a)
-        return (", ".join(NAMES[i] for i in x), ", ".join(NAMES[i] for i in y)) if len(x) <= 2 else None
     uns = [s for s in secs if s["unsure"]]
     # group unsure sections by the note in dispute: that is the one question tuning needs answered
     qs = {}

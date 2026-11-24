@@ -166,6 +166,9 @@ def g_vocals(als, od, a, role):
     if not lead and files:  # `name` didn't single one out: the vocal that sings the most is the lead
         lead = max(files, key=lambda t: sung_seconds(files[t]))
     findings, notes = [], []
+    kf, kq = key_map(als, od, a)
+    findings += kq["findings"]
+    notes += kq["notes"]
 
     def one(item):
         t, p = item
@@ -175,6 +178,8 @@ def g_vocals(als, od, a, role):
             args += ["--ref", a.ref]
         if a.key:
             args += ["--key", a.key]
+        elif kf:
+            args += ["--scales", kf]
         if lead and t != lead and lead in files:
             args += ["--guide", files[lead]]
         code, out = hx(*args)
@@ -202,14 +207,47 @@ def g_vocals(als, od, a, role):
         except Exception as e:
             d_f = []
             notes.append(f"doubles: failed ({e})")
-        tuned = bool(findings)
         findings += d_f
-    else:
-        tuned = bool(findings)
+    tuned = any(f.get("tool") == "tune" for f in findings)
     if tuned:
-        notes.append(f"vocals: key {findings[0]['key']} (confirm it before tuning: --key); lead taken as "
+        first = next(f for f in findings if f.get("tool") == "tune")
+        notes.append(f"vocals: key {first['key']} (confirm it before tuning: --key, or the section map's answers); lead taken as "
                      f"'{lead}' (harmonies are checked against it; --lead-track to change)")
     return findings, notes
+
+
+def key_map(als, od, a):
+    """Key section by section (`hypnomix key --sections`): songs change key and borrow chords.
+
+    Returns (path of the map or None, {findings, notes}). Each question the map can't settle (two scales that
+    differ by one note in some bars) becomes a finding to ask the person before any tuning."""
+    j = od / "raw" / "key.json"
+    args = ["key", "--set", als, "--sections", "--json", j]
+    if a.ref:
+        args += ["--audio", a.ref]
+    code, out = hx(*args)
+    save(od / "raw" / "key.txt", strip_warnings(out))
+    if not j.exists():
+        return None, {"findings": [], "notes": [f"key map: did NOT run ({out.strip()[-200:]}); tuning uses one key"]}
+    d = json.loads(j.read_text())
+    secs, qs = d.get("sections", []), d.get("questions", [])
+    main = d["key"]
+    moves = sorted({s["scale"] for s in secs})
+    notes = [f"key map: {main} ({'sure' if d.get('sure') else 'UNSURE'}), {len(secs)} sections, scales used: "
+             f"{'; '.join(moves)}" + ("" if a.ref else " (from the set's MIDI only: give --mix/--ref for the audio)")]
+    findings = []
+    for n, q in enumerate(qs, 1):
+        findings.append(dict(
+            id=f"key-{n}", tool="key", kind="key-question", severity="medium", track="(whole song)",
+            where="bars " + ", ".join(q["bars"]),
+            problem=f"two scales fit these bars equally well; they differ only in {q['notes'][0]} vs {q['notes'][1]}. "
+                    "Tuning needs to know which one the song uses there.",
+            fix=f"ask: {q['question']} Then tune with the answer: `fix --key sections --answer "
+                f"{q['notes'][1]}` (or `--answer \"BARS=NOTE\"`, or `--answer both`)",
+            applies="answer", notes=q["notes"], bars=q["bars"]))
+    if not qs and not d.get("sure"):
+        notes.append(f"key map: whole-song key unsure ({main} vs {d.get('runner_up')}): confirm it with the person")
+    return j, {"findings": findings, "notes": notes}
 
 
 def doubles(files, lead):
@@ -221,12 +259,13 @@ def doubles(files, lead):
     for n, (t, p) in enumerate(((t, p) for t, p in files.items() if t != lead), 1):
         yo, _ = dsp.load(p, 22050)
         m = min(len(yl), len(yo))
-        med, p95 = V.residual_ms(yl[:m].mean(1), yo[:m].mean(1), sr, 150)
+        two_d = lambda y: y if y.ndim > 1 else y[:, None]        # vocalign wants (samples, channels)
+        med, p95 = V.residual_ms(two_d(yl[:m]), two_d(yo[:m]), sr, 150)
         if med < 20 and p95 < 60:
             continue
         sev = "medium" if med >= 35 or p95 >= 90 else "low"
         out.append(dict(id=f"doubles-{n}", tool="vocalign", kind="vocal-timing", severity=sev, track=t, where="",
-                        problem=f"sits {med:.0f} ms from the lead on average where both sing (worst moments {p95:.0f} ms): "
+                        problem=f"sits {med:.0f} ms from the lead on average where both sing (worst moments {p95:.0f} ms{' or more: the most this check measures' if p95 >= 148 else ''}): "
                                 "words start and end apart, which smears consonants",
                         fix="time-align it to the lead, pitch untouched, into a new file (vocalign). Skip this if it is a "
                             "counter-melody or sings different words: it is only for parts that follow the lead.",
@@ -761,7 +800,10 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
         if f.get("flagged_notes"):
             L.append(f"- notes to check by ear: " + ", ".join(f"{x['time']} {x['sung']} ({x['cents']:+d}c)"
                                                            for x in f["flagged_notes"][:12]))
-        L.append("- decision: [ ] approve  [ ] skip  [ ] change: ")
+        if f.get("applies") == "answer":
+            L.append(f"- answer: [ ] {f['notes'][0]}  [ ] {f['notes'][1]}  [ ] both   (record: `hypnomix fix DIR --answer NOTE`)")
+        else:
+            L.append("- decision: [ ] approve  [ ] skip  [ ] change: ")
         L.append("")
     L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision',
           f'hypnomix fix "{od}" --approved --out "<Song> (fixed).als"   # apply only what was approved', "```",

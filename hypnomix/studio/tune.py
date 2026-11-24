@@ -19,6 +19,9 @@ then the output is aligned back to the input sample-for-sample so it drops strai
 Usage:
   hypnomix tune IN.wav OUT.wav --ref MIX.wav [--key "A minor"] [--amount 0.8] [--guide LEAD.wav]
   hypnomix tune IN.wav --report-only --ref MIX.wav     (just measure; the report goes to ./reports/tune)
+  hypnomix tune IN.wav OUT.wav --ref MIX.wav --scales KEY.json [--answer F#] [--answer "17-24=both"]
+           per-section scales from `hypnomix key --sections --json KEY.json` (songs that change key or borrow
+           chords); --answer settles the sections the key map was unsure about (unanswered: both notes allowed)
 Writes OUT.wav plus OUT.notes.txt (every note: time, sung, target, cents before/after) and OUT.png.
 Needs Rubber Band 3+ (`brew install rubberband`).
 """
@@ -200,6 +203,81 @@ def parse_key(s):
     return NOTE_NAMES.index(name), mode
 
 
+PC = {"C": 0, "C#": 1, "DB": 1, "D": 2, "D#": 3, "EB": 3, "E": 4, "F": 5, "F#": 6, "GB": 6, "G": 7, "G#": 8,
+      "AB": 8, "A": 9, "A#": 10, "BB": 10, "B": 11}
+
+
+def _pc(name):
+    k = name.strip().replace("♯", "#").replace("♭", "b").upper()
+    if k not in PC:
+        sys.exit(f"unknown note {name!r} in --answer (use e.g. F, F#, Bb or 'both')")
+    return PC[k]
+
+
+def load_scales(path, answers=()):
+    """Per-section scales from `hypnomix key --sections --json`: [(t0, t1, pitch-class set, label)], open questions.
+
+    A section the key tool was sure about uses its scale. An unsure one (two scales that differ by one note) uses
+    the person's answer: `--answer F#` (every section disputing F#), `--answer "17-24=F"` (one section) or
+    `=both` (accept either note there). Unanswered unsure sections accept both notes and are listed as open.
+    """
+    import json
+    d = json.loads(Path(path).read_text())
+    secs = d.get("sections")
+    if not secs or "t0" not in secs[0]:
+        sys.exit(f"{path}: no section times; make it with `hypnomix key --set SET --audio MIX --sections --json`")
+    by_bars, every = {}, []
+    for ans in answers:
+        bars, _, note = ans.rpartition("=")
+        (by_bars.__setitem__(bars.strip(), note.strip()) if bars else every.append(note.strip()))
+    out, open_q = [], []
+    uns = [sec for sec in secs if sec.get("unsure") and sec.get("disputed")]
+    for bars, note in by_bars.items():
+        sec = next((x for x in uns if x["bars"] == bars), None)
+        if sec is None:
+            sys.exit(f"--answer {bars}={note}: no key question for bars {bars} "
+                     f"(questions: {', '.join(x['bars'] for x in uns) or 'none'})")
+    for note in every:
+        if note.lower() != "both" and not any(_pc(note) in {_pc(x) for d in sec_["disputed"] for x in d.split(",")}
+                                              for sec_ in uns):
+            q = sorted({f"{x['disputed'][0]} or {x['disputed'][1]}" for x in uns})
+            sys.exit(f"--answer {note}: no key question is about that note (questions: {'; '.join(q) or 'none'})")
+    for sec in secs:
+        r = sec["root"]
+        base = {(r + st) % 12 for st in MAJOR}
+        label = sec["scale"]
+        dis = sec.get("disputed")
+        if sec.get("unsure") and dis:
+            mine, other = ({_pc(x) for x in dis[0].split(",")}, {_pc(x) for x in dis[1].split(",")})
+            union = base | other
+            hit = lambda x: x.lower() != "both" and (_pc(x) in mine or _pc(x) in other)
+            ans = by_bars.get(sec["bars"])
+            if ans is None:
+                ans = next((x for x in every if x.lower() == "both" or hit(x)), None)
+            if ans is None:
+                pcs, label = union, f"{dis[0]} or {dis[1]} (UNANSWERED: both accepted)"
+                open_q.append(f"bars {sec['bars']}: {dis[0]} or {dis[1]}?")
+            elif ans.lower() == "both":
+                pcs, label = union, f"{label} + {dis[1]} (both, as answered)"
+            elif _pc(ans) in other:
+                pcs, label = (union - mine), f"{sec['runner_up']} ({dis[1]}, as answered)"
+            elif _pc(ans) in mine:
+                pcs, label = base, f"{label} ({dis[0]}, as answered)"
+            else:
+                sys.exit(f"--answer {ans!r} for bars {sec['bars']}: the question there is {dis[0]} or {dis[1]}")
+        else:
+            pcs = base
+        out.append((float(sec["t0"]), float(sec["t1"]), frozenset(pcs), f"bars {sec['bars']}: {label}"))
+    return out, open_q
+
+
+def scale_at(scales, t, default):
+    for t0, t1, pcs, _ in scales or ():
+        if t0 <= t < t1:
+            return pcs
+    return default
+
+
 def note_name(m):
     m = int(round(m))
     return f"{NOTE_NAMES[m % 12]}{m // 12 - 1}"
@@ -208,9 +286,10 @@ def note_name(m):
 # ---------------------------------------------------------------- targets
 def choose_targets(notes, tuning_c, key, guide_midi, a):
     root, mode = key
-    scale = {(root + s) % 12 for s in (MAJOR if mode == "major" else MINOR)}
+    whole = {(root + s) % 12 for s in (MAJOR if mode == "major" else MINOR)}
     off = tuning_c / 100
     for n in notes:
+        scale = scale_at(getattr(a, "_scales", None), n["t0"], whole)   # the section's scale, if mapped
         c = n["centre"] - off                     # in a 440-based grid
         lo, hi = math.floor(c), math.ceil(c)
         frac = c - lo
@@ -373,7 +452,10 @@ def summarise(notes, key="cents"):
 
 def write_report(path, notes, tuning_c, key, keysrc, a, lag=None):
     lines = [f"tuning: A4 = {440 * 2 ** (tuning_c / 1200):.1f} Hz ({tuning_c:+.0f} cents)",
-             f"key: {NOTE_NAMES[key[0]]} {key[1]} ({keysrc})",
+             f"key: {NOTE_NAMES[key[0]]} {key[1]} ({keysrc})"
+             + ("".join(f"\n  {lab}" for *_, lab in a._scales) if getattr(a, "_scales", None) else "")
+             + (f"\n  OPEN QUESTIONS (both notes accepted there until answered): {'; '.join(a._open)}"
+                if getattr(a, "_open", None) else ""),
              f"amount {a.amount:g}, tolerance {a.tolerance:g} cents, max {a.max:g} cents, drift {a.drift:g}",
              f"before: {summarise(notes)}"]
     if any("after" in n for n in notes):
@@ -411,6 +493,7 @@ def write_json(path, a, notes, tuning_c, key, keysrc):
     Path(path).write_text(json.dumps({
         "tool": "tune", "input": str(a.input), "tuning_cents": round(tuning_c, 1),
         "key": f"{NOTE_NAMES[key[0]]} {key[1]}", "key_source": keysrc, "findings": [summary],
+        "scales": [lab for *_, lab in (getattr(a, "_scales", None) or [])], "open_questions": getattr(a, "_open", []),
         "flagged": [dict(time=_mmss(n["t0"]), sung=note_name(n["centre"]), cents=round(n["cents"])) for n in flags],
     }, indent=1))
 
@@ -465,6 +548,10 @@ def main():
     ap.add_argument("output", nargs="?")
     ap.add_argument("--report-only", action="store_true", help="measure and report; write no audio")
     ap.add_argument("--key", help='song key, e.g. "A minor" (default: estimated from the notes)')
+    ap.add_argument("--scales", metavar="KEY.json", help="per-section scales from `hypnomix key --sections --json` "
+                    "(songs that change key or borrow chords); --key is then only the fallback")
+    ap.add_argument("--answer", action="append", default=[], metavar="NOTE|BARS=NOTE|both",
+                    help="the person's answer to a key QUESTION, e.g. F#, \"17-24=F\" or both (repeatable)")
     ap.add_argument("--guide", help="lead vocal file: settles ambiguous harmony notes toward a consonant interval")
     ap.add_argument("--amount", type=float, default=0.8, help="how far to pull each note, 0-1 (default 0.8)")
     ap.add_argument("--tolerance", type=float, default=10.0, help="leave notes within this many cents (10)")
@@ -499,8 +586,15 @@ def main():
     else:
         tuning_c = estimate_tuning(notes)
         print("note: tuning measured from the singer; --ref MIX.wav is more reliable")
+    a._scales, a._open = None, []
+    if a.scales:
+        a._scales, a._open = load_scales(a.scales, a.answer)
+        import json as _j
+        kj = _j.loads(Path(a.scales).read_text())
     if a.key:
         key, keysrc = parse_key(a.key), "given"
+    elif a.scales and kj.get("key"):
+        key, keysrc = parse_key(kj["key"]), "whole-song key from the section map (used outside mapped sections)"
     elif ref_key is not None:
         key, keysrc = ref_key, f"from the reference, fit {ref_fit:.2f}; confirm with --key"
     else:

@@ -67,6 +67,9 @@ hypnomix scan "raw takes/"          # recordings or exported stems from any DAW:
 - `--ref`: the mix or an instrumental. The vocal check measures the song's real tuning from it (songs are often
   not at A=440; one test song sat at A=435.4 Hz) and its key. `hypnomix separate mix.wav` makes an instrumental.
 - `--key`: the key, confirmed by the person. Vocal tuning is not applied without it.
+  The vocals group also maps the key section by section (`raw/key.json`); bars where two scales fit equally
+  become `key-N` questions ("in bars 17-52, is the note F or F#?"). Answer them with `fix DIR --answer F#`, then
+  tune with `fix DIR --key sections`: each section is tuned in its own scale.
 - Track roles come from `hypnomix name` (run automatically); override with `--vocal-track` / `--timing-track`
   / `--lead-track` when it's unsure.
 - Groups run in parallel (`--jobs 4`). To spread them over several agents, run one group each with
@@ -159,7 +162,8 @@ What `fix` checks itself, and stops on:
 | the output name already exists, or is the original | stops; nothing is ever overwritten |
 | an id was recorded as skip or change | stops; record the new decision first |
 | a finding is on a protected track | stops; ask again, then `--allow-protected` |
-| vocal tuning without a confirmed key | that item is refused; pass `--key "F# major"` |
+| vocal tuning without a confirmed key | that item is refused; pass `--key "F# major"`, or `--key sections` to follow the scan's key map section by section |
+| `--key sections` with a key question (`key-N`) unanswered | refused; ask it, record it with `--answer F#` (or `"17-24=F"`, or `both`) |
 | a finding is no longer in the set (already fixed, or ids moved) | skipped and listed, never swapped for its neighbour |
 | a step fails | listed under FAILED, exit code 1; the other steps still apply |
 | after writing: structure | `hypnomix check` runs on the new set; if it fails the file is renamed "(BROKEN, do not open)" |

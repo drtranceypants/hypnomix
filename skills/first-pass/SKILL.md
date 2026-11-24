@@ -99,12 +99,14 @@ Then stop and ask what they heard. Don't start another round on your own.
 - Say plainly what failed or was not checked. "Done" means applied and measured again.
 
 ## Key and scale (before any tuning)
-After the first scan, run `hypnomix key --set "<SET>" --audio "<MIX>" --sections` (MIDI notes in the set + the
-mix + where the bass rests; whole-song key and a scale map per section). Songs can change key or borrow chords,
-so tuning should follow the section map, not one key for the whole song.
-- `sure` and no UNSURE sections: tell the person the key (and any section that changes scale) in one line and
-  pass it on (`--key`).
-- UNSURE: do **not** guess. Ask the person the QUESTION it prints, which names the one disputed note and the
-  bars, e.g. "in bars 15-52, is the note F or F#?" ("both" is a valid answer: a borrowed chord). Their answer
-  decides the scale for those bars. Record it (`hypnomix prefs set protect.notes=...` or the review notes) so it
-  is not asked again.
+The vocals group maps the key section by section (`hypnomix key --sections`: MIDI notes in the set, the mix,
+and where the bass rests) into `raw/key.json`. Songs change key and borrow chords, so tuning follows the map,
+not one key for the whole song.
+- No `key-N` findings and the key is `sure`: tell the person the key (and any section that changes scale) in one
+  line. On their yes, tune with `--key sections` (or `--key "<key>"` for one key throughout).
+- Each `key-N` finding is a **question, not a fix** (applies: answer). Do **not** guess. Ask it as printed, e.g.
+  "in bars 17-52, is the note F or F#?" ("both" is a valid answer: a borrowed chord). Record the answer straight
+  away: `hypnomix fix "<SCAN_DIR>" --answer F#` (every section with that question), `--answer "17-24=F"` (one
+  section) or `--answer both`. It is saved in the scan, and it says which questions are still open.
+- Then apply tuning with `hypnomix fix "<SCAN_DIR>" --approved --key sections --out …`. `fix` refuses while any
+  question is open. (`hypnomix tune IN OUT --scales raw/key.json --answer F#` does the same for one file.)
