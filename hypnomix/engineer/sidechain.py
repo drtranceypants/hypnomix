@@ -23,6 +23,8 @@ Then it searches for settings that hit a style:
 Usage:
   hypnomix sidechain SET.als [--stems DIR] [--style clarity|pump|vocal-duck] [--out DIR]
   hypnomix sidechain SET.als --apply "SET (sidechain).als"       # write the suggestions to a new set
+  hypnomix sidechain SET.als --glue-to-compressor --apply "SET (compressor).als"
+                     # swap sidechained Glue Compressors for Live's Compressor (same routing, lookahead on)
   hypnomix sidechain --trigger kick.wav --target bass.wav --bpm 92 [--style ...]   # any two files
 
 Trigger audio: audio tracks are rendered straight from the set. MIDI tracks (drum racks, synths) need
@@ -442,9 +444,8 @@ def suggest(trig, hits, cur, style, decay, f0, gap_ms, beat_ms, is_vocal, active
         c["ratio"] = min(cur["ratio"], 6.0 if style == "clarity" else 10.0) \
             if cur["ratio"] >= 2 and style != "vocal-duck" and not cur.get("fresh") else s["ratio"]
     notes = []
-    floor = 30.0
-    if f0:
-        floor = max(floor, 2000.0 / f0)              # release >= two cycles of the lowest note
+    # release >= two cycles of the target's lowest note; unknown target: assume a 40 Hz bass (50 ms)
+    floor = max(30.0, 2000.0 / f0) if f0 else 50.0
     a, b = excerpt(trig, hits)
     seg_hits = hits[(hits >= a) & (hits < b)] - a
     lvl = detector(trig[a:b], c)
@@ -480,10 +481,11 @@ def suggest(trig, hits, cur, style, decay, f0, gap_ms, beat_ms, is_vocal, active
             notes.append("the hits come faster than the Glue's shortest release (0.1 s) can recover from; it "
                          "uses 0.1 s, so a little ducking carries over (the regular Compressor can go shorter)")
         else:
-            why = f"two cycles of the target's {f0:.0f} Hz low end" if f0 else "about 30 ms (clicks)"
-            notes.append(f"a release short enough to recover fully before the next hit would be under {why}; "
-                         f"this uses the shortest safe release ({c['release']:.0f} ms), so a little ducking "
-                         "carries over")
+            why = f"two cycles of the target's {f0:.0f} Hz low end" if f0 else \
+                "50 ms (two cycles of a 40 Hz bass; the target's audio wasn't available to check)"
+            notes.append(f"for the level to be back well before the next hit (within 60% of the gap) the "
+                         f"release would have to be under {why}; this uses the shortest safe release "
+                         f"({c['release']:.0f} ms), so the recovery runs a little later in the gap")
         return c, notes
     return best[0], notes
 
@@ -645,6 +647,61 @@ def write_settings(d, c):
     set_manual(d, "SideChainEq_Freq", repr(float(c["eq_freq"])))
 
 
+# ---------------------------------------------------------------- Glue -> Compressor
+COMP_TEMPLATE = ("Core Library/Devices/Audio Effects/Compressor/Basic Peak Compressor.adv")
+
+
+def find_template():
+    import glob
+    hits = glob.glob(f"/Applications/Ableton Live*/Contents/App-Resources/{COMP_TEMPLATE}") + \
+        glob.glob(f"C:/ProgramData/Ableton/Live*/Resources/{COMP_TEMPLATE}")
+    if not hits:
+        sys.exit("couldn't find Live's 'Basic Peak Compressor' preset to build a Compressor from")
+    return ET.fromstring(gzip.open(sorted(hits)[-1]).read()).find(".//Compressor2")
+
+
+def as_compressor(g):
+    """A Glue's settings expressed for Live's Compressor, with lookahead (the reason to switch)."""
+    c = dict(g)
+    c.update(kind="compressor", model=0, knee=6.0, lookahead=1, range_db=None, auto_release=False,
+             attack=max(g["attack"], 1.0))
+    return c
+
+
+def glue_to_compressor(root, chain_parent, glue_el, c, makeup_db):
+    """Replace a Glue Compressor element with a Compressor that has the same sidechain routing."""
+    tpl = ET.fromstring(ET.tostring(find_template()))
+    nxt = root.find(".//NextPointeeId")
+    nid = int(nxt.get("Value"))
+    for e in tpl.iter():
+        if e.tag in ("AutomationTarget", "ModulationTarget", "Pointee") and e.get("Id") is not None:
+            e.set("Id", str(nid)); nid += 1
+    nxt.set("Value", str(nid))
+    tpl.set("Id", glue_el.get("Id", "0"))
+    tpl.find("./SideChain").clear()
+    for ch in glue_el.find("./SideChain"):                       # same layout in both devices
+        tpl.find("./SideChain").append(ET.fromstring(ET.tostring(ch)))
+    set_manual(tpl, "On", glue_el.find("./On/Manual").get("Value"))
+    set_manual(tpl, "Gain", repr(float(makeup_db)))
+    set_manual(tpl, "DryWet", repr(float(c.get("dry_wet", 1.0))))
+    set_manual(tpl, "SideChainEq_Q", repr(float(c.get("eq_q", 0.707))))
+    set_manual(tpl, "SideChainEq_Gain", repr(float(c.get("eq_gain", 0.0))))
+    write_settings(tpl, c)
+    kids = list(chain_parent)
+    i = kids.index(glue_el)
+    chain_parent.remove(glue_el)
+    chain_parent.insert(i, tpl)
+    return tpl
+
+
+def parent_of(root, el):
+    for p in root.iter():
+        for ch in p:
+            if ch is el:
+                return p
+    return None
+
+
 # ---------------------------------------------------------------- main
 def analyse(c, trig, target, beat_ms, style, exact=True):
     """exact: the audio is the sidechain tap itself, so absolute levels (threshold, depth) can be trusted.
@@ -725,6 +782,9 @@ def main():
     ap.add_argument("--trigger"); ap.add_argument("--target"); ap.add_argument("--bpm", type=float)
     ap.add_argument("--out")
     ap.add_argument("--apply", metavar="OUT.als", help="write the suggestions to this new set")
+    ap.add_argument("--glue-to-compressor", action="store_true",
+                    help="with --apply: replace each sidechained Glue Compressor with Live's Compressor (same "
+                         "routing, lookahead on), tuned like any other Compressor")
     a = ap.parse_args()
 
     if a.trigger:
@@ -770,9 +830,18 @@ def main():
         if not Path(f_).exists():
             sys.exit(f"--use: no file {f_}")
         use[k_.strip().lower()] = Path(f_)
+    if a.glue_to_compressor and not a.apply:
+        sys.exit("--glue-to-compressor needs --apply OUT.als (it writes a new set)")
     for k, c in enumerate(comps, 1):
-        print(f"[{k}] {c['host']}  <- {c['source_name']} ({c['source_tap']})")
-        print(f"    now: {describe(c)}" + (f", dry/wet {c['dry_wet'] * 100:.0f}%" if c["dry_wet"] < 0.999 else ""))
+        if a.glue_to_compressor and c.get("kind") == "glue":
+            glue_c = c
+            c = dict(as_compressor(c), glue_el=c["el"], glue_makeup=manual(c["el"], "Makeup", default=0.0))
+            print(f"[{k}] {c['host']}  <- {c['source_name']} ({c['source_tap']})  Glue -> Compressor")
+            print(f"    was: {describe(glue_c)}")
+        else:
+            print(f"[{k}] {c['host']}  <- {c['source_name']} ({c['source_tap']})")
+        if c.get("glue_el") is None:
+            print(f"    now: {describe(c)}" + (f", dry/wet {c['dry_wet'] * 100:.0f}%" if c["dry_wet"] < 0.999 else ""))
         if c["source_el"] is None:
             print("    trigger track not found in the set\n")
             continue
@@ -782,7 +851,14 @@ def main():
             continue
         trig, how = track_audio(c["source_el"], src, root, a.stems, cache, use)
         if trig is None:
-            print(f"    trigger audio: {how}\n")
+            print(f"    trigger audio: {how}")
+            if c.get("glue_el") is not None:
+                parent = parent_of(root, c["glue_el"])
+                glue_to_compressor(root, parent, c["glue_el"], c, c["glue_makeup"])
+                changed += 1
+                print(f"    switched to Compressor with the Glue's own settings plus lookahead: {describe(c)}")
+                print("    (tune its release once the trigger is exported: run this again on the new set)")
+            print()
             continue
         target, thow = track_audio(c["host_el"], src, root, a.stems, cache, use) \
             if c["host_tag"] != "MainTrack" else (None, "main")
@@ -826,7 +902,11 @@ def main():
             if not exact:
                 sug["threshold_db"] = c["threshold_db"]
                 print("    (--apply keeps your threshold here: set it by ear so the meter shows the suggested depth)")
-            write_settings(c["el"], sug)
+            if c.get("glue_el") is not None:
+                glue_to_compressor(root, parent_of(root, c["glue_el"]), c["glue_el"], sug, c["glue_makeup"])
+                print("    switched to Compressor (same sidechain routing, makeup and dry/wet carried over)")
+            else:
+                write_settings(c["el"], sug)
             changed += 1
     for c in off:
         name = "Glue Compressor" if c.get("kind") == "glue" else "Compressor"

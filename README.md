@@ -22,6 +22,18 @@ prep pass (clicks, clipping, plosives, breaths, noise, silence, fades) …
 → My Song (automix).wav · My Song (master).wav · MIX NOTES.md · recipe.json
 ```
 
+## First pass on a new song
+
+```
+hypnomix scan "Song.als" --mix "Song.wav"        # every check at once; changes nothing
+#   → REVIEW.md: clicks, cuts, spikes, timing, vocal pitch, distortion, sidechains, loudness…
+hypnomix fix  <scan folder> --approve smooth-3,timing-7 --out "Song (fixed).als"
+```
+
+The scan runs every check below in parallel and writes one review list, most severe first. You (or Claude, item
+by item with you) approve what to fix; `fix` writes only those changes into **one new set** next to the original.
+See [docs/WORKFLOW.md](docs/WORKFLOW.md).
+
 ## What's in the box
 
 **Engineer: stems in, song out**
@@ -31,7 +43,7 @@ prep pass (clicks, clipping, plosives, breaths, noise, silence, fades) …
 | `automix` | Stems → balanced mix → master. Per stem: role detection, clean-up EQ (resonances, mud, harshness), tone EQ, compression set by gain reduction, de-essing, loudness-based balance, panning, shared plate reverb, drum bus glue. Then it finds frequency fights between stems and carves the less important part. |
 | `master` | Subsonic clean-up, optional reference tone match, glue compression, mono low end, true-peak limiter to a LUFS target. It test-encodes AAC/MP3 and lowers the ceiling if they would clip, then tops and tails. |
 | `chain` | **No paid plug-ins needed.** Builds the mastering chain on Live's Main track from stock devices (EQ Eight → Glue Compressor → Utility → Saturator → Limiter), dials in every value from an analysis of your bounce, then records the result from Live and trims the Limiter until it measures on target. `chain strips` builds a channel strip on every track from an automix recipe. |
-| `sidechain` | Makes sidechain compression sound good. Finds every Compressor and Glue Compressor in a set with its sidechain on (Glue suggestions snap to its menu values), simulates it on the trigger (audio tracks render straight from the set; drum racks and synths come from an individual-track export via `--stems`) and measures each hit: how deep it ducks, how much has come back by the next hit, how even it is, and whether the release is so short it distorts the bass's low end. Then it suggests settings for a style: `clarity` (2-4 dB, back before the next hit), `pump` (6-10 dB, back right on the next hit) or `vocal-duck` (delay and reverb returns duck under the singer and bloom in the gaps). Writes a gain-reduction plot on the beat grid and before/after previews; `--apply` writes the settings to a new set. |
+| `sidechain` | Makes sidechain compression sound good. Finds every Compressor and Glue Compressor in a set with its sidechain on (Glue suggestions snap to its menu values), simulates it on the trigger (audio tracks render straight from the set; drum racks and synths come from an individual-track export via `--stems`) and measures each hit: how deep it ducks, how much has come back by the next hit, how even it is, and whether the release is so short it distorts the bass's low end. Then it suggests settings for a style: `clarity` (2-4 dB, back before the next hit), `pump` (6-10 dB, back right on the next hit) or `vocal-duck` (delay and reverb returns duck under the singer and bloom in the gaps). Writes a gain-reduction plot on the beat grid and before/after previews; `--apply` writes the settings to a new set; `--glue-to-compressor` swaps sidechained Glue Compressors for Live's Compressor with lookahead (same routing, makeup and dry/wet). |
 | `masking` | Which stems fight over which frequencies, how often, and the exact cut that fixes it. |
 | `align` | Phase, polarity and time offset between mics on one source (kick in/out, DI + amp, snare top/bottom). |
 | `translate` | Mono fold-down, phone, earbuds and car simulations, how much each streaming service turns it down, clipping after encoding. `--render` to listen. |
@@ -100,11 +112,13 @@ Open the repo in Claude Code and ask for what you want:
 >
 > "Master this for Spotify and check it'll survive on a phone."
 
-Four skills ship in `skills/`: **mix-engineer**, **mastering-engineer**, **tracking-session** and **live-mixing**. They teach Claude the workflows, the safety rules (snapshot before touching your set, respect automation, ask before taste calls), and how to explain each move.
+Five skills ship in `skills/`: **first-pass** (scan a whole song with parallel subagents, then review and apply fixes one at a time), **mix-engineer**, **mastering-engineer**, **tracking-session** and **live-mixing**. `agents/` holds the **hypnomix-scanner** subagent the first pass uses. They teach Claude the workflows, the safety rules (snapshot before touching your set, respect automation, ask before taste calls), and how to explain each move.
 
 To use the skills from any project, add the repo as a plugin marketplace: `/plugin marketplace add drtranceypants/hypnomix`.
 
 `.mcp.json` also connects the [Ableton MCP](https://github.com/ahujasid/ableton-mcp) (telemetry off), which lets Claude create tracks and load devices. Together with `hypnomix live` it can rebuild an automix inside your set from `recipe.json`.
+
+**Other AI agents** (Codex, Cursor, Aider…): start with [AGENTS.md](AGENTS.md): setup, the command map, the safety rules and how to extend the code.
 
 ## Only free, open-source or stock tools
 
