@@ -182,6 +182,115 @@ def rename_set(src, out, mapping, inplace=False):
     return done, skipped
 
 
+CONFIDENT = 0.5      # below this a label is a guess: it names nothing else (no group, no copy) and is asked about
+PLURAL = {"Vocal": "Vocals", "Lead Vocal": "Vocals", "Harmony": "Vocals", "Kick": "Drums", "Snare": "Drums", "Hats": "Drums",
+          "Guitar": "Guitars", "Strings": "Strings", "Synth": "Synths", "Keys": "Keys", "Pad": "Pads", "Bass": "Bass",
+          "Drums": "Drums"}
+VOCALS = ("Vocal", "Lead Vocal", "Harmony")
+
+
+def copy_pairs(rows):
+    """[(original id, copy id, word)] for tracks named like another track plus one word ("X CLEAN", "X copy")."""
+    by = {r["old"].strip().lower(): tid for tid, r in rows.items()}
+    out = []
+    for tid, r in rows.items():
+        m = re.match(r"^(.*\S)\s+([A-Za-z][\w.-]*)$", r["old"].strip())
+        if m and m.group(1).lower() in by and by[m.group(1).lower()] != tid:
+            out.append((by[m.group(1).lower()], tid, m.group(2)))
+    return out
+
+
+def is_vocal_label(lab):
+    return bool(lab) and (lab in VOCALS or lab.startswith("Harmony"))
+
+
+def propose(rows, parent, fix=None, rename_all=False):
+    """Turn per-track guesses (rows[id]: old, kind, group, on, label, confidence, reason, features) into final
+    proposals: rows[id]["final"] and rows[id]["new"]. Pure: no audio, no Live; tested on its own."""
+    from hypnomix.engineer.roles import choose_lead
+    pairs = copy_pairs(rows)
+    # 1. a copy and its original are the same part: an unclear one takes the other's role
+    for o, c, _ in pairs:
+        a_, b_ = rows[o], rows[c]
+        for x, y in ((a_, b_), (b_, a_)):
+            if x["confidence"] < CONFIDENT and y["confidence"] >= CONFIDENT and y["label"]:
+                lab = "Vocal" if is_vocal_label(y["label"]) else y["label"]
+                x.update(label=lab, confidence=y["confidence"],
+                         reason=f"a copy of '{y['old']}' ({y['label']}); its own sound: {x['reason']}")
+    # 2. vocals: one Lead Vocal among the ones that PLAY, by the shared rule (roles.choose_lead, as scan, tune and
+    #    automix use); the other playing vocals Harmony 1..n from low to high. A copy that doesn't play is counted
+    #    once, through its partner.
+    voc = [t for t, r in rows.items() if is_vocal_label(r["label"]) and r.get("features") and r["kind"] == "Audio"
+           and r.get("on", True)]
+    if len(voc) > 1 or (voc and rows[voc[0]]["label"] == "Vocal"):
+        named = [t for t in voc if rows[t].get("text_clue") == "Lead Vocal"]
+        lead = named[0] if named else choose_lead([(t, rows[t]["features"]["vowel_move"], rows[t]["features"]["active_s"])
+                                                   for t in voc])
+        rows[lead]["label"] = "Lead Vocal"
+        rows[lead]["reason"] += "; lead: among the playing vocals, sings longest of those whose vowels move most"
+        rest = sorted([t for t in voc if t != lead], key=lambda t: rows[t]["features"]["f0"] or 0)
+        for k, t in enumerate(rest):
+            rows[t]["label"] = f"Harmony {k + 1}"
+    # 3. mirror: the partner of a playing vocal gets the same part ("Lead Vocal" / "Lead Vocal CLEAN")
+    for o, c, _ in pairs:
+        for src_, dst in ((o, c), (c, o)):
+            s_, d_ = rows[src_], rows[dst]
+            if src_ in voc and dst not in voc and is_vocal_label(d_["label"]):
+                d_.update(label=s_["label"], confidence=s_["confidence"],
+                          reason=f"same part as '{s_['old']}' (it plays; this copy doesn't)")
+    # 4. groups: named after their CONFIDENT children only; guesses don't vote
+    kids = defaultdict(list)
+    for tid in rows:
+        if parent.get(tid) not in (None, "-1") and parent.get(tid) in rows:
+            kids[parent[tid]].append(tid)
+    for gid, ch in kids.items():
+        sure = [t for t in ch if rows[t]["label"] and rows[t]["label"] != "Instrument" and rows[t]["confidence"] >= CONFIDENT]
+        base = lambda lab: "Vocal" if is_vocal_label(lab) else lab
+        labs = Counter(base(rows[t]["label"]) for t in sure)
+        if not labs:
+            rows[gid].update(label="Group", confidence=0.2,
+                             reason=f"children unclear ({len(ch) - len(sure)} of {len(ch)} are guesses)")
+            continue
+        top, cnt = labs.most_common(1)[0]
+        mixed = cnt < len(ch) / 2
+        rows[gid].update(label=PLURAL.get(top, top + "s"), confidence=round(min(0.9, cnt / len(ch)), 2) if not mixed else 0.3,
+                         reason=f"{cnt} of {len(ch)} children are clearly {top}" + ("; the rest are mixed or unclear" if mixed else ""))
+    # 5. the person's own names win
+    fix = fix or {}
+    for rec in rows.values():
+        if rec["old"] in fix:
+            rec.update(label=fix[rec["old"]], confidence=1.0, reason="you said so", given=True)
+    # 6. final names: only default-named tracks (unless rename_all); their own word after a default name is kept
+    for rec in rows.values():
+        rec["final"] = rec["label"] if (rec["label"] and rec["confidence"] >= 0.35) else ("Instrument" if rec["kind"] != "Group" else "Group")
+        if rec["kind"] == "Group" and rec["final"] in ("Bass", "Keys", "Strings") and not rec.get("given"):
+            rec["final"] += " Group"
+    def full(rec):
+        lab = rec["final"]
+        m = re.match(r"^\d+-(?:audio|midi|group)\b\s*(.+)$", rec["old"].strip(), re.I)
+        word = m.group(1).strip() if m and not re.fullmatch(r"[\d\s]+", m.group(1)) else ""
+        if word and not rec.get("given") and not lab.lower().endswith(word.lower()):
+            lab = f"{lab} {word}"                      # "CLEAN" kept, never doubled, never added to a name you gave
+        return lab
+    renamed = {tid: (rename_all or DEFAULT_NAME.match(r["old"].strip()) is not None) and r["kind"] != "Return"
+               for tid, r in rows.items()}
+    seen = Counter((r["group"], full(r)) for t, r in rows.items() if r["kind"] != "Group" and renamed[t])
+    idx, glob = Counter(), Counter()
+    for tid, rec in rows.items():
+        if not renamed[tid]:
+            rec["new"] = rec["old"]
+            continue
+        lab = full(rec)
+        if rec["kind"] != "Group" and not rec.get("given") and seen[(rec["group"], lab)] > 1 and not re.search(r"\d$", rec["final"]):
+            idx[(rec["group"], lab)] += 1
+            name_ = f"{lab} {idx[(rec['group'], lab)]}"
+        else:
+            name_ = lab
+        glob[name_] += 1
+        rec["new"] = name_ if glob[name_] == 1 else f"{name_} ({glob[name_]})"
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix name", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("set"); ap.add_argument("--out")
@@ -226,67 +335,7 @@ def main():
                 lab, conf, why = rec["text_clue"], max(conf, 0.7), f"text clue ({why})"
         rec.update(label=lab, confidence=round(conf, 2), reason=why)
         rows[tid] = rec
-    # groups: majority of children; vocal groups get Lead + Harmony 1..n (low -> high)
-    kids = defaultdict(list)
-    for tid, rec in rows.items():
-        if parent[tid] not in (None, "-1"): kids[parent[tid]].append(tid)
-    for gid, ch in kids.items():
-        labs = Counter(rows[c]["label"] for c in ch if rows[c]["label"] and rows[c]["label"] != "Instrument")
-        if not labs: rows[gid].update(label="Instrument Group", confidence=0.2, reason="children unclear"); continue
-        top, cnt = labs.most_common(1)[0]
-        plural = {"Vocal": "Vocals", "Lead Vocal": "Vocals", "Harmony": "Vocals", "Kick": "Drums", "Snare": "Drums", "Hats": "Drums",
-                  "Guitar": "Guitars", "Strings": "Strings", "Synth": "Synths", "Keys": "Keys", "Pad": "Pads", "Bass": "Bass", "Drums": "Drums"}.get(top, top + "s")
-        rows[gid].update(label=plural, confidence=round(cnt / len(ch), 2), reason=f"{cnt}/{len(ch)} children are {top}")
-    # vocals (grouped or not): one Lead Vocal by the shared rule (roles.lead_rank, as scan/tune/automix use),
-    # the others Harmony 1..n from low to high. A track already named as the lead keeps it.
-    # a copy of a track ("12-Audio CLEAN", "12-Audio copy") is what the original is, when its own sound is unclear
-    base_of = lambda n_: re.match(r"^(\d+-(?:audio|midi))\b", n_ or "", re.I)
-    by_old = {r["old"]: r for r in rows.values()}
-    for rec in rows.values():
-        m = base_of(rec["old"])
-        if m and m.group(1) != rec["old"] and rec["confidence"] < 0.5:
-            orig = next((r for o_, r in by_old.items() if o_.lower() == m.group(1).lower()), None)
-            if orig and orig["confidence"] >= 0.5 and orig["label"]:
-                lab = "Vocal" if orig["label"] in ("Lead Vocal", "Harmony") or orig["label"].startswith("Harmony") else orig["label"]
-                rec.update(label=lab, confidence=orig["confidence"],
-                           reason=f"a copy of '{orig['old']}' ({orig['label']}); its own sound: {rec['reason']}")
-    # vocals (grouped or not): one Lead Vocal among the ones that PLAY (switched on), by the shared rule
-    # (roles.choose_lead, as scan/tune/automix use); the other playing vocals Harmony 1..n from low to high.
-    from hypnomix.engineer.roles import choose_lead
-    voc = [c for c, r in rows.items() if r["label"] in ("Vocal", "Lead Vocal", "Harmony") and r.get("features")
-           and r["kind"] == "Audio" and r.get("on", True)]
-    if len(voc) > 1 or (voc and rows[voc[0]]["label"] == "Vocal"):
-        named = [c for c in voc if rows[c].get("text_clue") == "Lead Vocal"]
-        lead = named[0] if named else choose_lead([(c, rows[c]["features"]["vowel_move"], rows[c]["features"]["active_s"])
-                                                   for c in voc])
-        rows[lead]["label"] = "Lead Vocal"
-        rows[lead]["reason"] += "; lead: among the playing vocals, sings longest of those whose vowels move most"
-        rest = sorted([c for c in voc if c != lead], key=lambda c: rows[c]["features"]["f0"] or 0)
-        for i, c in enumerate(rest): rows[c]["label"] = f"Harmony {i + 1}"
-    if a.names:
-        fix = json.loads(a.names)
-        for rec in rows.values():
-            if rec["old"] in fix: rec.update(label=fix[rec["old"]], confidence=1.0, reason="you said so")
-    # final names: only default-named tracks (unless --all); unique
-    for rec in rows.values():
-        rec["final"] = rec["label"] if (rec["label"] and rec["confidence"] >= 0.35) else ("Instrument" if rec["kind"] != "Group" else "Group")
-        if rec["kind"] == "Group" and rec["final"] in ("Bass", "Keys", "Strings"): rec["final"] += " Group"
-    # children sharing a label inside one group -> numbered 1..n; same label elsewhere -> numbered globally
-    seen = Counter((r["group"], r["final"]) for r in rows.values() if r["kind"] != "Group")
-    idx, glob = Counter(), Counter()
-    for tid, rec in rows.items():
-        rename = a.all or DEFAULT_NAME.match(rec["old"].strip()) is not None
-        if not rename or rec["kind"] == "Return": rec["new"] = rec["old"]; continue
-        lab = rec["final"]
-        m = re.match(r"^\d+-(?:audio|midi|group)\b\s*(.+)$", rec["old"].strip(), re.I)
-        if m and not re.fullmatch(r"[\d\s]+", m.group(1)):
-            lab = f"{lab} {m.group(1).strip()}"          # their own word after the default name ("CLEAN")
-        if rec["kind"] != "Group" and seen[(rec["group"], lab)] > 1 and not re.search(r"\d$", lab):
-            idx[(rec["group"], lab)] += 1; name_ = f"{lab} {idx[(rec['group'], lab)]}"
-        else:
-            name_ = lab
-        glob[name_] += 1
-        rec["new"] = name_ if glob[name_] == 1 else f"{name_} ({glob[name_]})"
+    propose(rows, parent, json.loads(a.names) if a.names else {}, a.all)
     os.makedirs(os.path.dirname(out), exist_ok=True)
     print(f"{'track':<34}{'->':<4}{'new name':<20}{'conf':>5}  reason")
     for rec in rows.values():

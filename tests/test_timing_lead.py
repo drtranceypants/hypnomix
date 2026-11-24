@@ -52,7 +52,7 @@ class Lead(unittest.TestCase):
         self.assertEqual(choose_lead([("a", 18, 30), ("b", 14, 90)]), "a")
 
     def test_close_vowels_fall_back_to_singing_time(self):
-        # Ashes to Dust remix: cleaned copies 14.8 / 15.8 / 15.2; the lead (12) sings longest
+        # a real remix: cleaned copies 14.8 / 15.8 / 15.2; the lead (12) sings longest
         self.assertEqual(choose_lead([("12", 14.8, 45.3), ("13", 15.8, 34.9), ("14", 15.2, 31.6)]), "12")
 
 
