@@ -15,6 +15,12 @@ how loud, how many bars it sings with others) as a QUESTION and changes nothing.
   --max-cut DB                         never turn any part down by more than this in any bar (default 6)
   --window S | --bpm BPM [--bar-beats 4]   judge it bar by bar (default 2 s windows)
 
+  --tame                               the gentle default: harmonies sit at least 1.5 dB under the lead
+                                       (--lead-margin), and a part louder than the part below it by more than
+                                       --tolerance (1.5 dB) comes down to exactly that edge; no further. It also
+                                       reports where the harmonies sit at the same level (no space between them)
+  --tolerance DB                       only act where a part is louder than its limit by more than this
+
 Wherever two or more parts sing together, parts are only ever turned DOWN, and only where they are louder
 than their target; a part already quiet enough, and every bar where the anchor isn't singing, is left alone.
 Writes "<stem> (balanced).wav" per stem (gain moves with 250 ms ramps; pitch, timing and tone untouched) and
@@ -63,9 +69,8 @@ def phrases_of(path, min_gap, min_len):
         if (j - i) * 0.01 >= min_len: segs.append((i * 0.01, j * 0.01))
         i = j + 1
     # pitch per phrase
-    z = librosa.resample(m, orig_sr=sr, target_sr=AN)
-    f0, _, _ = librosa.pyin(z, fmin=65, fmax=1000, sr=AN, hop_length=256)
-    t = np.arange(len(f0)) * 256 / AN
+    from hypnomix.core import pitch
+    t, f0, _ = pitch.track(path, fmin=65, fmax=1000, sr=AN, hop=256)     # fast, cached, active parts only
     out = []
     for a, b in segs:
         f = f0[(t >= a) & (t < b)]; f = f[~np.isnan(f)]
@@ -88,8 +93,8 @@ def kweight(x, sr):
 def measure(path, win_s):
     """Per window: level as heard (K-weighted, over the sung part only) and median pitch, or NaN if not singing."""
     y, sr = sf.read(path, always_2d=True); m = y.mean(1)
-    z = librosa.resample(m, orig_sr=sr, target_sr=AN) if sr != AN else m
-    f0, _, _ = librosa.pyin(z, fmin=70, fmax=1000, sr=AN, hop_length=512, frame_length=2048)
+    from hypnomix.core import pitch
+    pt, f0, _ = pitch.track(path, fmin=70, fmax=1000, sr=AN, hop=512)      # fast, cached, active parts only
     hop_s = 512 / AN
     kx = kweight(m, sr); win = int(win_s * sr); nwin = int(np.ceil(len(m) / win))
     lvl, pit = np.full(nwin, np.nan), np.full(nwin, np.nan)
@@ -109,7 +114,8 @@ def measure(path, win_s):
     return os.path.basename(path)[:-4], lvl, pit, sr, len(m)
 
 
-def plan(levels, pitches, anchor, reduce="above", above_db=1.5, below_db=1.5, spread="ladder", max_cut=6.0):
+def plan(levels, pitches, anchor, reduce="above", above_db=1.5, below_db=1.5, spread="ladder", max_cut=6.0, tolerance=0.0,
+         lead=None, lead_margin=0.0, same_db=1.0):
     """Gains in dB per part per window (pure). levels/pitches: {part: array per window (NaN = not singing)}.
     anchor: a part name, 'lowest' or 'highest'. Only turns parts down, never more than max_cut."""
     names = list(levels)
@@ -132,21 +138,37 @@ def plan(levels, pitches, anchor, reduce="above", above_db=1.5, below_db=1.5, sp
         tgt = {parts[ai]: levels[parts[ai]][w]}
         for side, idxs, step in (("above", range(ai + 1, len(parts)), above_db),
                                  ("below", range(ai - 1, -1, -1), below_db)):
-            if reduce not in (side, "both") or step <= 0:
+            if reduce not in (side, "both") or step < 0:
                 continue
+            if step == 0 and tolerance <= 0:
+                continue                                              # nothing asked for on this side
             prev = tgt[parts[ai]]
             for i in idxs:
                 n = parts[i]
-                tgt[n] = max(min(levels[n][w], prev - step), levels[n][w] - abs(max_cut))   # where it really lands
+                cap = prev - step
+                if step == 0:      # taming only: bring an overshadowing part down to the edge of the tolerance, no further
+                    want = cap + tolerance if levels[n][w] > cap + tolerance else levels[n][w]
+                else:              # a step the person asked for: down to the cap, if it is over it by more than the tolerance
+                    want = cap if levels[n][w] > cap + tolerance else levels[n][w]
+                tgt[n] = max(want, levels[n][w] - abs(max_cut))                  # where it really lands
                 if spread == "ladder":
                     prev = tgt[n]          # the next part steps down from this one
+        if lead in parts and lead_margin > 0:          # every harmony sits at least lead_margin under the lead
+            top = levels[lead][w] - lead_margin
+            for n in parts:
+                if n != lead and min(tgt.get(n, levels[n][w]), levels[n][w]) > top:
+                    tgt[n] = max(top, levels[n][w] - abs(max_cut))
+        harm = [tgt.get(n, levels[n][w]) for n in parts if n != lead]
+        same = len(harm) >= 2 and (max(harm) - min(harm)) < same_db   # no space between the harmonies here
+        if lead in parts:
+            tgt[lead] = levels[lead][w]                # the lead is never turned down
         row = []
         for n in parts:
             cur = levels[n][w]; t = tgt.get(n, cur)
             gains[n][w] = max(min(0.0, t - cur), -abs(max_cut))
             row.append(dict(part=n, note=librosa.hz_to_note(pitches[n][w]), level=round(float(cur), 1),
                             target=round(float(t), 1), cut=round(float(gains[n][w]), 1), anchor=bool(n == parts[ai])))
-        rows.append(dict(window=w + 1, parts=row))
+        rows.append(dict(window=w + 1, parts=row, harmonies_same_level=bool(same)))
     return gains, rows
 
 
@@ -159,8 +181,10 @@ def question(names, levels, pitches, win_s):
         note = librosa.hz_to_note(np.nanmedian(pitches[n])) if np.isfinite(pitches[n]).any() else "?"
         lv = np.nanmedian(levels[n]) if np.isfinite(levels[n]).any() else float("nan")
         print(f"  {n:30s} usually {note:5s}  level {lv:6.1f} dB  sings with others in {together} windows of {win_s:g} s")
-    print("  (or lead / lowest / highest). Then: --reduce above|below|both, --above-db/--below-db per step "
-          f"({' / '.join(f'{x:g}' for x in STEP_CHOICES)} dB, or any value), --spread ladder|flat, --max-cut.")
+    print("  Recommended: --tame (harmonies kept a little under the lead, at least 1.5 dB; a higher part more "
+          "than 1.5 dB louder than the part below it comes down to that edge; no further; reports harmonies at one level).")
+    print("  Or choose: --anchor PART|lead|lowest|highest, --reduce above|below|both, --above-db/--below-db per step "
+          f"({' / '.join(f'{x:g}' for x in STEP_CHOICES)} dB, or any value), --spread ladder|flat, --max-cut, --tolerance.")
     print("Nothing was changed.")
 
 
@@ -172,6 +196,10 @@ def balance(a):
     nwin = max(len(r[1]) for r in res)
     pad = lambda x: np.pad(x, (0, nwin - len(x)), constant_values=np.nan)
     levels = {r[0]: pad(r[1]) for r in res}; pitches = {r[0]: pad(r[2]) for r in res}
+    for item in a.fader or []:                   # raw clips: add each track's fader so levels compare as heard
+        nm, _, db = item.rpartition("=")
+        if nm in levels:
+            levels[nm] = levels[nm] + float(db)
     if not a.anchor:
         question(names, levels, pitches, win_s)
         return
@@ -183,7 +211,16 @@ def balance(a):
         print(f"lead (shared rule): {anchor}")
     elif anchor not in ("lowest", "highest") and anchor not in names:
         raise SystemExit(f"--anchor {anchor!r}: not one of the parts ({', '.join(names)}), lead, lowest or highest")
-    gains, rows = plan(levels, pitches, anchor, a.reduce, a.above_db, a.below_db, a.spread, a.max_cut)
+    lead = None
+    if a.lead_margin > 0:
+        lead = a.lead if a.lead in names else None
+        if lead is None:
+            from hypnomix.core import dsp
+            from hypnomix.engineer.roles import pick_lead
+            lead = pick_lead([(n, dsp.load(p, 22050)[0]) for n, p in zip(names, a.stems)], 22050)
+        print(f"lead: {lead} (every other part kept at least {a.lead_margin:g} dB under it where both sing)")
+    gains, rows = plan(levels, pitches, anchor, a.reduce, a.above_db, a.below_db, a.spread, a.max_cut, a.tolerance,
+                       lead, a.lead_margin)
     od = out_at(a.out, "voices", "balance")
     summary = {}
     for (n, _, _, sr, L), path in zip(res, a.stems):
@@ -199,9 +236,13 @@ def balance(a):
         y, _ = sf.read(path, always_2d=True)
         sf.write(str(od / f"{n} (balanced).wav"), (y * env[:len(y), None]).astype(np.float32), sr, subtype="FLOAT")
     settings = dict(anchor=anchor, reduce=a.reduce, above_db=a.above_db, below_db=a.below_db, spread=a.spread,
-                    max_cut=a.max_cut, window_s=win_s)
+                    max_cut=a.max_cut, tolerance=a.tolerance, lead=lead, lead_margin=a.lead_margin, window_s=win_s)
     json.dump(dict(settings=settings, summary=summary, windows=rows), open(str(od / "balance.json"), "w"), indent=1)
     fixed = sum(1 for r in rows if any(p["cut"] < -0.05 for p in r["parts"]))
+    same = sum(1 for r in rows if r.get("harmonies_same_level"))
+    if same:
+        print(f"no space between the harmonies (within 1 dB of each other) in {same} of {len(rows)} windows: a gentle "
+              "spread is your choice (e.g. --anchor lowest --above-db 1 --spread ladder, or name the part to step down)")
     print(json.dumps(settings))
     for n, sm_ in summary.items():
         print(f"  {n:30s} lowered in {sm_['windows_lowered']} windows, at most {sm_['max_cut_db']:+.1f} dB")
@@ -218,6 +259,17 @@ def main():
     ap.add_argument("--below-db", type=float, default=0.0, help="dB quieter per step below the anchor (you choose)")
     ap.add_argument("--spread", choices=["ladder", "flat"], default="ladder")
     ap.add_argument("--max-cut", type=float, default=6.0)
+    ap.add_argument("--tolerance", type=float, default=1.5,
+                    help="only turn a part down where it is louder than its limit by more than this many dB (default 1.5); "
+                         "with --tame it comes down to exactly this far above the part below, no further")
+    ap.add_argument("--lead", help="the lead part (default: the shared lead rule)")
+    ap.add_argument("--fader", action="append", metavar="NAME=DB",
+                    help="raw (pre-fader) renders: the track's fader in dB, so parts compare as heard (repeatable)")
+    ap.add_argument("--lead-margin", type=float, default=None,
+                    help="keep every other part at least this many dB under the lead where both sing (--tame: 1.5)")
+    ap.add_argument("--tame", action="store_true",
+                    help="the gentle default: only tame overshadowing parts (anchor lowest, above, 0 dB step): a higher "
+                         "part is turned down only where it is louder than the part below it by more than --tolerance, and only to that edge")
     ap.add_argument("--window", type=float, help="seconds per judged window (default: one bar with --bpm, else 2 s)")
     ap.add_argument("--bpm", type=float); ap.add_argument("--bar-beats", type=int, default=4)
     ap.add_argument("--dry-run", action="store_true")
@@ -226,10 +278,17 @@ def main():
     ap.add_argument("--overlap", type=float, default=0.3, help="fraction of a phrase two parts must share to count as singing together")
     a = ap.parse_args()
     if not a.split:
+        if a.tame:
+            a.anchor, a.reduce, a.above_db = a.anchor or "lowest", "above", 0.0
+            if a.lead_margin is None:
+                a.lead_margin = 1.5
+        if a.lead_margin is None:
+            a.lead_margin = 0.0
         steps = {"above": [a.above_db], "below": [a.below_db], "both": [a.above_db, a.below_db]}[a.reduce]
         if a.anchor and max(steps) <= 0:
-            flag = {"above": "--above-db", "below": "--below-db", "both": "--above-db and/or --below-db"}[a.reduce]
-            raise SystemExit(f"say how much quieter: {flag} (e.g. 1, 1.5, 3, 4.5 or 6 dB). There is no default.")
+            print(f"only taming overshadowing parts: a part is turned down only where it is louder than the part "
+                  f"{'below' if a.reduce != 'below' else 'above'} it by more than {a.tolerance:g} dB, and only down to "
+                  f"that edge (no step asked for)")
         balance(a)
         return
     with ProcessPoolExecutor(min(8, len(a.stems))) as ex:

@@ -147,8 +147,9 @@ which spots to compare between the old and new set. When the review is finished,
 4. **Options and fine control, never one fixed answer.** Every tool offers choices with fine controls (which
    part, which side, how many dB, how far toward the grid) and asks for them when they are a matter of taste.
    No built-in "rule of thumb" is applied as a default: e.g. vocal harmonies are never automatically turned
-   down above the lead; `hypnomix voices` asks which part to prioritise, which side to make quieter and by how
-   much (0 / 1 / 1.5 / 3 / 4.5 / 6 dB or custom, ladder or flat).
+   down; `hypnomix voices --tame` only brings a higher part down where it overshadows the part below it (by more
+   than 1.5 dB) and only to that edge. Anything more (which part to prioritise, which side, how many dB, ladder or
+   flat) is the person's choice.
 5. **Know what a track is before touching it.** `hypnomix name` labels tracks by sound; when it says
    "Instrument" or is unsure, ask. Wrong role, wrong fix.
 6. **Find the source before fixing the symptom.** Hiss, distortion or mud heard in the mix: solo or render the

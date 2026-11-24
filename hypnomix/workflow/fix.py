@@ -483,11 +483,9 @@ def main():
         if f.get("tool") == "voices":  # harmony balance: only with the settings the person chose
             note = ((dec.get(f["id"]) or {}).get("note") or "")
             kv = dict(x.split("=", 1) for x in note.replace(",", " ").split() if "=" in x)
-            if "anchor" not in kv or not any(float(kv.get(k, 0) or 0) > 0 for k in ("above", "below")):
-                failed.append(f"{f['id']}: harmony balance needs the person's choices in the note, e.g. --decide "
-                              f"{f['id']}=approve --note \"anchor=lead reduce=above above=1.5 spread=flat\"")
-                print(f"voices     REFUSED  no anchor / dB chosen (there is no default)")
-                continue
+            if "anchor" not in kv:      # approved as suggested: harmonies under the lead, no overshadowing
+                kv = dict(kv, anchor="lowest", reduce="above", above=kv.get("above", "0"),
+                          **{"lead-margin": kv.get("lead-margin", "1.5")})
             dest = sd / "fixed" / "voices"
             k = 1
             while dest.exists():
@@ -496,7 +494,12 @@ def main():
             args = ["voices", *f["stems"], "--anchor", kv["anchor"] if kv["anchor"] != "lead" or not f.get("lead") else f["lead"],
                     "--reduce", kv.get("reduce", "above"), "--above-db", kv.get("above", "0"),
                     "--below-db", kv.get("below", "0"), "--spread", kv.get("spread", "ladder"),
-                    "--max-cut", kv.get("max-cut", "6"), "--out", dest]
+                    "--max-cut", kv.get("max-cut", "6"), "--tolerance", kv.get("tolerance", "1.5"),
+                    "--lead-margin", kv.get("lead-margin", "0"), "--out", dest]
+            if f.get("lead"):
+                args += ["--lead", f["lead"]]
+            for nm, db in (f.get("faders") or {}).items():   # renders are raw clips: compare levels as heard
+                args += ["--fader", f"{nm}={db}"]
             if scan.get("tempo"):
                 args += ["--bpm", scan["tempo"]]
             code, txt = hx(*args)

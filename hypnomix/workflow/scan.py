@@ -273,7 +273,7 @@ def g_vocals(als, od, a, role):
         findings += d_f
     if len(files) > 1:
         try:
-            findings += harmony_question(files, lead)
+            findings += harmony_question(files, lead, als)
         except Exception as e:
             notes.append(f"harmony balance check: failed ({e})")
     tuned = any(f.get("tool") == "tune" for f in findings)
@@ -318,7 +318,19 @@ def key_map(als, od, a):
     return j, {"findings": findings, "notes": notes}
 
 
-def harmony_question(files, lead, block_s=0.5, floor_db=-45.0):
+def faders_db(als, names):
+    """Each track's fader (dB) from the set: renders are raw clips, so levels compare as heard only with these."""
+    import gzip, math, xml.etree.ElementTree as ET
+    out = {}
+    for t in ET.fromstring(gzip.open(als).read()).find(".//Tracks"):
+        nm = t.find("./Name/EffectiveName").get("Value")
+        vol = t.find("./DeviceChain/Mixer/Volume/Manual")
+        if nm in names and vol is not None and float(vol.get("Value")) > 0:
+            out[nm] = round(20 * math.log10(float(vol.get("Value"))), 2)
+    return out
+
+
+def harmony_question(files, lead, als=None, block_s=0.5, floor_db=-45.0):
     """When two or more vocal parts sing together, ask how to balance them. Never a default fix: which part to
     prioritise, which side to make quieter and by how much are the person's choices (`hypnomix voices`)."""
     import numpy as np
@@ -337,14 +349,18 @@ def harmony_question(files, lead, block_s=0.5, floor_db=-45.0):
     return [dict(
         id="harmony-1", tool="voices", kind="harmony-balance", severity="low", track="(vocal parts)",
         where=f"{secs:.0f} s where 2+ parts sing together",
-        problem=f"{len(files)} vocal parts ({parts}) sing together for about {secs:.0f} s. How they balance is a "
-                "taste call, so nothing is proposed by default.",
-        fix=("ask, one at a time: 1) which part to prioritise (the lead, '" + str(lead) + "', or the lowest, the "
+        problem=f"{len(files)} vocal parts ({parts}) sing together for about {secs:.0f} s. Where a higher part "
+                "overshadows the one below it, the stack loses its shape.",
+        fix=("suggested (approve with no note): harmonies a little under the lead (at least 1.5 dB) and no part "
+             "overshadowing the one below it (more than 1.5 dB louder: brought to that edge), no further; it also "
+             "reports where the harmonies sit at one level (no space between them). "
+             "For more, ask, one at a time: 1) which part to prioritise (the lead, '" + str(lead) + "', or the lowest, the "
              "highest, or another track); 2) which side to make quieter: above it, below it or both; 3) how much "
              "quieter per step: 0 / 1 / 1.5 / 3 / 4.5 / 6 dB or a custom value; 4) ladder (each further part quieter "
              "again) or flat (all one step under). Record it: `fix DIR --decide harmony-1=approve --note "
-             "\"anchor=lead reduce=above above=1.5 spread=flat\"` (optional below=…, max-cut=…). Or skip it."),
-        applies="audio", stems=[str(p) for p in files.values()], lead=lead)]
+             "\"anchor=lead reduce=above above=1.5 spread=flat\"` (optional below=…, max-cut=…, tolerance=…). Or skip it."),
+        applies="audio", stems=[str(p) for p in files.values()], lead=lead,
+        faders=faders_db(als, set(files)) if als else {})]
 
 
 def doubles(files, lead):

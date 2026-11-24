@@ -130,22 +130,13 @@ def track_rows(root, names):
 
 # ---------------------------------------------------------------- 2. vocal stacks
 def clip_pitch(ci, tempo):
-    """Median sung pitch (Hz) of one arrangement clip, from its audio file."""
-    import librosa, soundfile as sf
+    """Median sung pitch (Hz) of one arrangement clip, from its audio file (fast, cached per file)."""
+    from hypnomix.core import pitch
     from hypnomix.session import smooth as sm
     s0, s1 = sm.file_seconds(ci, np.array([ci["start"], ci["end"]]), tempo)
     if s1 <= s0 or not Path(ci["path"]).exists():
         return None
-    info = sf.info(str(ci["path"]))
-    a, b = max(0, int(s0 * info.samplerate)), min(info.frames, int(s1 * info.samplerate))
-    if b - a < info.samplerate // 4:
-        return None
-    y, sr = sf.read(str(ci["path"]), start=a, stop=b, always_2d=True)
-    m = librosa.resample(y.mean(1), orig_sr=sr, target_sr=11025)
-    f0, _, _ = librosa.pyin(m, fmin=70, fmax=1000, sr=11025, hop_length=256, frame_length=1024)
-    f0 = f0[~np.isnan(f0)]
-    return float(np.median(f0)) if len(f0) >= 10 else None
-
+    return pitch.median_between(ci["path"], float(s0), float(s1), fmin=70, fmax=1000)
 
 def assign_stack(clips, track_order, min_overlap=0.3):
     """Pure. clips: [dict(key, track, start, end, hz)]; track_order: the stack's tracks low to high.

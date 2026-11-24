@@ -103,9 +103,13 @@ Then stop and ask what they heard. Don't start another round on your own.
 - Never apply anything that wasn't approved. Never write over the original set, a source audio file or an
   earlier output.
 - Options and fine control: offer the choices and their settings, never one fixed answer. Harmony balance
-  (`harmony-1`) is a question: which part to prioritise, which side (above / below / both) to make quieter and
-  by how much per step (0 / 1 / 1.5 / 3 / 4.5 / 6 dB or custom), ladder or flat. Record the answer in the note
-  (`--decide harmony-1=approve --note "anchor=lead reduce=above above=1.5 spread=flat"`); there is no default.
+  (`harmony-1`): the suggestion is that harmonies sit a little under the lead (at least 1.5 dB) and no part
+  overshadows the one below it (more than 1.5 dB louder comes down to that edge), no further; the lead is never
+  turned down; approving with no note does exactly that. It also reports where the harmonies sit at one level
+  (no space between them): tell the person and offer a gentle spread, never apply one unasked. Never
+  turn harmonies down further unless the person asks: then offer which part to prioritise, which side (above /
+  below / both) and how much per step (0 / 1 / 1.5 / 3 / 4.5 / 6 dB or custom), ladder or flat, recorded in the
+  note (`--decide harmony-1=approve --note "anchor=lead reduce=above above=1.5 spread=flat"`).
 - You measured; you did not listen. Tell them what to listen for, and let their ears overrule the number.
 - Existing automation, effects and levels are the person's choices. Flag what looks odd; never "fix" it unasked.
 - Tools that can't decide (a note halfway between two pitches, crowded hits that would stretch audibly, loop

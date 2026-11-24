@@ -47,3 +47,36 @@ class Balance(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Tame(unittest.TestCase):
+    def test_only_an_overshadowing_higher_part_comes_down(self):
+        lv = {"low": np.array([-20.0, -20.0]), "mid": np.array([-17.0, -20.5]), "high": np.array([-21.0, -25.0])}
+        pt = {"low": np.array([220.0, 220.0]), "mid": np.array([277.0, 277.0]), "high": np.array([330.0, 330.0])}
+        g, _ = plan(lv, pt, "lowest", "above", 0.0, 0.0, "ladder", 6.0, tolerance=1.5)
+        self.assertAlmostEqual(g["mid"][0], -1.5)     # 3 dB over the part below: down to 1.5 dB over it, no further
+        self.assertEqual(g["mid"][1], 0.0)            # quieter already: untouched
+        self.assertEqual(g["high"][0], 0.0)           # below the (now tamed) mid: untouched
+        self.assertEqual(g["low"][0], 0.0)
+
+    def test_within_tolerance_is_left_alone(self):
+        lv = {"low": np.array([-20.0]), "high": np.array([-18.6])}       # 1.4 dB over: within 1.5
+        pt = {"low": np.array([220.0]), "high": np.array([330.0])}
+        g, _ = plan(lv, pt, "lowest", "above", 0.0, 0.0, "ladder", 6.0, tolerance=1.5)
+        self.assertEqual(g["high"][0], 0.0)
+
+
+class UnderTheLead(unittest.TestCase):
+    def test_harmonies_sit_a_little_under_the_lead(self):
+        lv = {"lead": np.array([-20.0]), "h1": np.array([-19.0]), "h2": np.array([-23.0])}
+        pt = {"lead": np.array([262.0]), "h1": np.array([196.0]), "h2": np.array([330.0])}
+        g, rows = plan(lv, pt, "lowest", "above", 0.0, 0.0, "ladder", 6.0, tolerance=1.5, lead="lead", lead_margin=1.5)
+        self.assertAlmostEqual(g["h1"][0], -2.5)   # 1 dB OVER the lead: down to 1.5 dB under it, no further
+        self.assertEqual(g["h2"][0], 0.0)          # already 3 dB under: untouched
+        self.assertEqual(g["lead"][0], 0.0)
+
+    def test_reports_harmonies_at_one_level(self):
+        lv = {"lead": np.array([-18.0]), "h1": np.array([-21.0]), "h2": np.array([-21.3])}
+        pt = {"lead": np.array([262.0]), "h1": np.array([196.0]), "h2": np.array([330.0])}
+        _, rows = plan(lv, pt, "lowest", "above", 0.0, 0.0, "ladder", 6.0, tolerance=1.5, lead="lead", lead_margin=1.5)
+        self.assertTrue(rows[0]["harmonies_same_level"])
