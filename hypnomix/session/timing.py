@@ -39,6 +39,7 @@ from pathlib import Path
 
 import numpy as np
 import librosa
+import xml.etree.ElementTree as ET
 
 from hypnomix.session import automation as aa
 from hypnomix.session import smooth as sm   # clip -> audio mapping, track selection
@@ -252,7 +253,34 @@ def add_marker(ci, sec, beat):
     return ok
 
 
-def apply(issues, tracks, tempo, strength):
+def warp_on(ci, tempo):
+    """Switch warp on for an unwarped, unlooped clip so it plays exactly as before: two markers at the song's
+    tempo (file start and the end of the used audio) and the loop/start positions converted from seconds to
+    beats. Its warp mode is left as it was. Returns True if switched."""
+    c = ci["el"]
+    if ci["warped"] or ci["loop_on"]:
+        return False
+    k = tempo / 60.0
+    lp = c.find("./Loop")
+    for tag in ("LoopStart", "LoopEnd", "StartRelative", "OutMarker", "HiddenLoopStart", "HiddenLoopEnd"):
+        e = lp.find(f"./{tag}")
+        if e is not None:
+            e.set("Value", repr(float(e.get("Value")) * k))
+    wm = c.find("./WarpMarkers")
+    if wm is None:
+        wm = ET.SubElement(c, "WarpMarkers")
+    for w in list(wm):
+        wm.remove(w)
+    end_s = max(float(ci["le"] or 0), 1.0)
+    for n_, (sec, beat) in enumerate(((0.0, 0.0), (end_s, end_s * k))):
+        wm.append(wm.makeelement("WarpMarker", {"Id": str(n_), "SecTime": repr(sec), "BeatTime": repr(beat)}))
+    c.find("./IsWarped").set("Value", "true")
+    ci.update(warped=True, ls=float(ci["ls"]) * k, le=float(ci["le"]) * k, rel=float(ci["rel"] or 0) * k,
+              markers=[(0.0, 0.0), (end_s * k, end_s)])
+    return True
+
+
+def apply(issues, tracks, tempo, strength, warp_unwarped=False):
     spb = 60.0 / tempo
     done, skipped = [], []
     hits_by_clip = {}
@@ -261,17 +289,32 @@ def apply(issues, tracks, tempo, strength):
             hits_by_clip.setdefault(id(h["clip"]), []).append(h)
     for i in issues:
         h, ci = i["hit"], i["hit"]["clip"]
+        if not fixable(ci) and warp_unwarped and not ci["warped"] and not ci["loop_on"]:
+            if warp_on(ci, tempo):
+                i["warp_switched_on"] = True
         if not fixable(ci):
-            skipped.append((i, "clip is looped or not warped"))
+            skipped.append((i, "clip is looped" if ci["loop_on"] else
+                            "clip is not warped (--warp-unwarped switches warp on for it, playing as before)"))
             continue
         neigh = sorted(hits_by_clip[id(ci)], key=lambda x: x["sec"])
         k = neigh.index(h)
         move_b = i["move"] * strength / spb
         prev_s = neigh[k - 1]["sec"] if k > 0 else h["sec"] - 0.25 * spb
         next_s = neigh[k + 1]["sec"] if k + 1 < len(neigh) else h["sec"] + 0.25 * spb
+        # clips that already carry warp markers (transient-warped loops): markers between the hit and its
+        # neighbours are the anchors (no new marker may cross them); one right at the hit is the one that moves
+        msecs = sorted(m_s for _, m_s in ci["markers"])
+        near = [m_s for m_s in msecs if abs(m_s - h["sec"]) <= 0.06]
+        target_s = min(near, key=lambda m_s: abs(m_s - h["sec"])) if near else h["sec"]
+        left = [m_s for m_s in msecs if prev_s <= m_s < target_s - 1e-4]
+        right = [m_s for m_s in msecs if target_s + 1e-4 < m_s <= next_s]
+        if left:
+            prev_s = max(left)
+        if right:
+            next_s = min(right)
         # anchors must be far enough that the stretch stays gentle (max ~40% speed change)
-        if min(h["sec"] - prev_s, next_s - h["sec"]) < 2.5 * abs(move_b) * spb:
-            skipped.append((i, "needs a hand: the hits either side are too close to stretch cleanly"))
+        if min(target_s - prev_s, next_s - target_s) < 2.5 * abs(move_b) * spb:
+            skipped.append((i, "needs a hand: the hits (or warp markers) either side are too close to stretch cleanly"))
             continue
         snapshot = [(w.get("SecTime"), w.get("BeatTime")) for w in ci["el"].find("./WarpMarkers")]
         before = list(ci["markers"])
@@ -287,14 +330,14 @@ def apply(issues, tracks, tempo, strength):
         if not secs_now or prev_s <= min(secs_now) + 1e-6:
             if prev_s - g >= 0:
                 guard.append(prev_s - g)
-        pts = [prev_s, h["sec"], next_s] + guard
+        pts = [prev_s, target_s, next_s] + guard
         cur = arr_to_clipbeat(ci, file_to_arr(ci, pts, tempo))
         ok = True
         for gs, gb in zip(guard, cur[3:]):
             ok = ok and add_marker(ci, gs, float(gb))
-        ok = ok and add_marker(ci, prev_s, float(cur[0]))
+        ok = ok and add_marker(ci, prev_s, float(cur[0]))       # an existing marker there: kept as it is
         ok = ok and add_marker(ci, next_s, float(cur[2]))
-        ok = ok and add_marker(ci, h["sec"], float(cur[1]) + move_b)
+        ok = ok and add_marker(ci, target_s, float(cur[1]) + move_b)   # moves the existing marker, or adds one
         ok = ok and whole_clip_ok(ci, before, prev_s, next_s, tempo)
         if not ok:
             restore(ci, snapshot)
@@ -362,6 +405,10 @@ def main():
     ap.add_argument("--track", action="append", default=[], help="instrument tracks to compare (repeatable)")
     ap.add_argument("--to-grid", action="store_true", help="compare every hit with the grid, not the band")
     ap.add_argument("--include-off", action="store_true", help="also use switched-off tracks")
+    ap.add_argument("--warp-unwarped", action="store_true",
+                    help="switch warp on for unwarped clips that need a nudge (they play as before; warp mode unchanged)")
+    ap.add_argument("--all-listed", action="store_true",
+                    help="treat melodic tracks like the others (normal tolerance, full move): when you ask for them")
     ap.add_argument("--melodic", action="append", default=[], help="a melodic track (guitar, keys, strings; repeatable): "
                     "only clear outliers, offered as optional, moved at most 30%% of the way and 15 ms")
     ap.add_argument("--apply", metavar="OUT.als", help="write warp-marker fixes to this new set")
@@ -375,7 +422,8 @@ def main():
         sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent})")
     tree = aa.load(src)
     root = tree.getroot()
-    tempo, tracks, issues, notes = analyse(root, src.parent, a.track, a.to_grid, a.include_off, set(a.melodic))
+    tempo, tracks, issues, notes = analyse(root, src.parent, a.track, a.to_grid, a.include_off,
+                                           set() if a.all_listed else set(a.melodic))
     spb = 60 / tempo
     for n, i in enumerate(issues, 1):
         i["id"] = f"timing-{n}"
@@ -419,7 +467,11 @@ def main():
             issues = [i for i in issues if i["id"] in want]
             if not issues:
                 sys.exit("none of those ids were found (same options as the scan?)")
-        done, skipped = apply(issues, tracks, tempo, a.strength)
+        done, skipped = apply(issues, tracks, tempo, a.strength, a.warp_unwarped)
+        switched = sorted({i["track"] for i in done if i.get("warp_switched_on")})
+        if switched:
+            print(f"warp switched on (playing as before, same warp mode) for clips on: {', '.join(switched)}; "
+                  "listen to them: Live's warping can colour audio slightly")
         aa.save(tree, src, a.apply)
         print(f"applied {len(done)} nudges as warp markers; {len(skipped)} left alone:")
         reasons = {}

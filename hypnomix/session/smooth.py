@@ -80,7 +80,8 @@ def clip_info(c, als_dir, tempo):
     p = fr.find("./Path").get("Value") if fr is not None and fr.find("./Path") is not None else ""
     rel = fr.find("./RelativePath").get("Value") if fr is not None and fr.find("./RelativePath") is not None else ""
     path = Path(p) if p and Path(p).exists() else (als_dir / rel)
-    markers = sorted((float(w.get("BeatTime")), float(w.get("SecTime"))) for w in c.iter("WarpMarker"))
+    markers = sorted((float(w.get("BeatTime")), float(w.get("SecTime")))     # the clip's own markers only (not
+                     for w in c.findall("./WarpMarkers/WarpMarker"))          # SavedWarpMarkersForStretched)
     loop_on = val(c, "./Loop/LoopOn", lambda v: v == "true", False)
     ls, le = val(c, "./Loop/LoopStart"), val(c, "./Loop/LoopEnd")
     fades = c.find("./Fades")

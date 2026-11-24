@@ -58,3 +58,35 @@ class Lead(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExistingMarkers(unittest.TestCase):
+    def test_a_marker_at_the_hit_is_moved_and_markers_around_it_anchor(self):
+        tempo = 120.0
+        # a transient-warped loop: a marker on every half beat (0.25 s), playing straight
+        ms = [(b * 0.5, b * 0.25) for b in range(0, 41)]
+        ci = clip(ms)
+        hits = [dict(sec=s, clip=ci) for s in (2.0, 2.5, 3.0)]
+        issue = dict(hit=hits[1], move=0.02)
+        before = list(ci["markers"])
+        done, skipped = T.apply([issue], [("t", None, hits)], tempo, 1.0)
+        self.assertEqual(len(done), 1, skipped)
+        self.assertEqual(len(ci["markers"]), len(before))          # no marker added: the one at the hit moved
+        moved = [(b0, b1) for (b0, s0), (b1, s1) in zip(before, ci["markers"]) if abs(b0 - b1) > 1e-9]
+        self.assertEqual(len(moved), 1)
+
+
+class WarpOn(unittest.TestCase):
+    def test_switching_warp_on_keeps_the_playback(self):
+        import xml.etree.ElementTree as ET
+        tempo = 100.0
+        el = ET.fromstring('<AudioClip><IsWarped Value="false"/><Loop><LoopStart Value="2.0"/><LoopEnd Value="30.0"/>'
+                           '<StartRelative Value="0"/><OutMarker Value="30.0"/><HiddenLoopStart Value="2.0"/>'
+                           '<HiddenLoopEnd Value="30.0"/></Loop><WarpMarkers/></AudioClip>')
+        ci = dict(el=el, warped=False, loop_on=False, ls=2.0, le=30.0, rel=0.0, start=16.0, end=40.0, markers=[])
+        secs = np.array([3.0, 7.5, 12.25])
+        before = T.file_to_arr(dict(ci), secs, tempo)
+        self.assertTrue(T.warp_on(ci, tempo))
+        after = T.file_to_arr(ci, secs, tempo)
+        self.assertTrue(np.allclose(before, after))
+        self.assertEqual(el.find("./IsWarped").get("Value"), "true")

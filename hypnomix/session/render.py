@@ -121,10 +121,11 @@ def render_track(t, als, spb, N, SR, sources, tighten, warn):
         if not src.exists():
             warn.append(f"{name}: missing file {src.name}")
             continue
+        multi = None
         if v(c, "./IsWarped") == "true":
-            m = [(float(w.get("SecTime")), float(w.get("BeatTime"))) for w in c.find("./WarpMarkers")]
+            m = sorted((float(w.get("SecTime")), float(w.get("BeatTime"))) for w in c.find("./WarpMarkers"))
             if len(m) > 2:
-                warn.append(f"{name}: a clip has {len(m)} warp markers; rendered as a straight stretch")
+                multi = m                        # follow every marker (below), not one straight stretch
             (s0, b0), (s1, b1) = m[0], m[-1]
             slope = (s1 - s0) / (b1 - b0) if b1 != b0 else spb
             to_sec = lambda b, s0=s0, b0=b0, slope=slope: s0 + (b - b0) * slope   # clip beats -> source seconds
@@ -134,18 +135,43 @@ def render_track(t, als, spb, N, SR, sources, tighten, warn):
             to_sec = lambda x: x
             per_beat = 1 / spb                                 # unwarped: loop/start values are in seconds
         k = spb / slope                          # how much longer the clip plays than it was recorded
-        try:
-            a = stretched(src, k, SR)            # pitch-preserving stretch of the whole source
-        except Exception as e_:                  # a file nothing can decode: leave this clip out, say so
-            if warn is not None:
-                warn.append(f"could not read {Path(src).name} ({type(e_).__name__}): clip left out of the render")
-            continue
         clip_len = int((e - s) * spb * SR)
+        if multi is not None:
+            # many warp markers (transient-warped drums, edited takes): every stretch between two markers keeps
+            # its own timing. Read straight from the source along the marker map (varispeed per segment: timing
+            # exact, pitch may waver a little where a segment is stretched a lot)
+            try:
+                from hypnomix.core import dsp
+                srcy, _ = dsp.load(src, SR)
+            except Exception as e_:
+                if warn is not None:
+                    warn.append(f"could not read {Path(src).name} ({type(e_).__name__}): clip left out of the render")
+                continue
+            srcm = srcy.mean(1)
+            ms, mb = np.array([x for x, _ in multi]), np.array([b for _, b in multi])
+            eb = np.arange(clip_len) / (spb * SR)                     # beats since the clip started playing
+            if loop_on and le > ls:
+                cb = ls + ((start_rel + eb) % (le - ls))
+            else:
+                cb = ls + start_rel + eb
+            lo_slope = (ms[1] - ms[0]) / max(1e-9, mb[1] - mb[0])
+            hi_slope = (ms[-1] - ms[-2]) / max(1e-9, mb[-1] - mb[-2])
+            sec = np.interp(cb, mb, ms)
+            sec = np.where(cb < mb[0], ms[0] + (cb - mb[0]) * lo_slope, sec)       # Live extends the end segments
+            sec = np.where(cb > mb[-1], ms[-1] + (cb - mb[-1]) * hi_slope, sec)
+            seg = np.interp(sec * SR, np.arange(len(srcm)), srcm, left=0.0, right=0.0)
+        else:
+            try:
+                a = stretched(src, k, SR)        # pitch-preserving stretch of the whole source
+            except Exception as e_:              # a file nothing can decode: leave this clip out, say so
+                if warn is not None:
+                    warn.append(f"could not read {Path(src).name} ({type(e_).__name__}): clip left out of the render")
+                continue
         # play it like Live: start at the start marker; a looped clip wraps from loop end back to loop start
-        need = (e - s) * per_beat
+        need = (e - s) * per_beat if multi is None else 0.0
         pos = ls + start_rel
         parts = []
-        while need > 1e-9 and len(parts) < 10000:
+        while multi is None and need > 1e-9 and len(parts) < 10000:
             stop = le if (loop_on and le > pos) else pos + need
             take = min(need, stop - pos)
             i0, i1 = int(round(to_sec(pos) * k * SR)), int(round(to_sec(pos + take) * k * SR))
@@ -155,7 +181,8 @@ def render_track(t, als, spb, N, SR, sources, tighten, warn):
             parts.append(piece)
             need -= take
             pos = ls if loop_on else pos + take
-        seg = np.concatenate(parts) if parts else np.zeros(0)
+        if multi is None:
+            seg = np.concatenate(parts) if parts else np.zeros(0)
         seg = np.pad(seg, (0, max(0, clip_len - len(seg))))[:clip_len]
         seg = seg * float(v(c, "./SampleVolume") or 1)
         fi = float(v(c, "./Fades/FadeInLength") or 0) * spb * SR       # Live stores clip fades in beats
