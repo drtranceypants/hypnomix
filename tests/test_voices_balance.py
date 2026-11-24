@@ -124,3 +124,16 @@ class RootSteps(unittest.TestCase):
         g = self.run_plan({"lead": np.array([-10.0]), "root": np.array([-16.0]), "mid": np.array([-19.5]), "top": np.array([-21.0])})
         self.assertEqual(g["mid"], 0.0)      # 3.5 under: within 1 dB of the 4 dB step
         self.assertEqual(g["top"], 0.0)      # 5 under: within 1 dB of 5.5
+
+
+class RootRaise(unittest.TestCase):
+    def test_root_comes_up_when_the_cut_limit_is_reached_but_never_near_the_lead(self):
+        pt = {"lead": np.array([392.0, 392.0]), "root": np.array([196.0, 196.0]), "mid": np.array([247.0, 247.0])}
+        lv = {"lead": np.array([-10.0, -14.0]), "root": np.array([-20.0, -16.0]), "mid": np.array([-14.0, -12.0])}
+        g, _ = plan(lv, pt, "lowest", "above", 0.0, 0.0, "ladder", 4.0, tolerance=1.0, lead="lead", lead_margin=1.5,
+                    root_step=4.0, upper_step=5.5, root_raise=3.0)
+        # window 0: mid is 6 over the root, needs 10 of cut; 4 max: root comes up 3 (room to the lead: 8.5)
+        self.assertAlmostEqual(g["root"][0], 3.0); self.assertAlmostEqual(g["mid"][0], -4.0)
+        # window 1: the root is already near the lead (room 0.5): it rises 0.5 at most, mid takes the cut
+        self.assertLessEqual(g["root"][1], 0.5 + 1e-9); self.assertAlmostEqual(g["mid"][1], -4.0)
+        self.assertEqual(g["lead"][0], 0.0)

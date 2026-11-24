@@ -112,7 +112,14 @@ def measure(path, win_s):
         fdb = 20 * np.log10(fr); sung = fdb > -50
         if not len(fdb) or sung.mean() < 0.15:
             continue                                                  # not really singing in this window
-        lvl[w] = 10 * np.log10(np.mean(10 ** (fdb[sung] / 10)))
+        raw = m[w * win:(w + 1) * win]
+        mask = np.repeat(sung, blk)[:len(raw)]
+        sung_audio = raw[:len(mask)][mask]
+        if len(sung_audio) >= int(0.4 * sr):                          # loudness as heard (BS.1770, gated), sung part only
+            from hypnomix.core import dsp
+            lvl[w] = dsp.lufs(sung_audio, sr)
+        else:
+            lvl[w] = 10 * np.log10(np.mean(10 ** (fdb[sung] / 10)))
         fw = f0[int(w * win_s / hop_s): int((w + 1) * win_s / hop_s)]; fw = fw[~np.isnan(fw)]
         if len(fw) > 5:
             pit[w] = float(np.median(fw))
@@ -120,7 +127,7 @@ def measure(path, win_s):
 
 
 def plan(levels, pitches, anchor, reduce="above", above_db=1.5, below_db=1.5, spread="ladder", max_cut=6.0, tolerance=0.0,
-         lead=None, lead_margin=0.0, same_db=1.0, root_step=None, upper_step=None):
+         lead=None, lead_margin=0.0, same_db=1.0, root_step=None, upper_step=None, root_raise=0.0):
     """Gains in dB per part per window (pure). levels/pitches: {part: array per window (NaN = not singing)}.
     anchor: a part name, 'lowest' or 'highest'. Only turns parts down, never more than max_cut."""
     names = list(levels)
@@ -162,9 +169,17 @@ def plan(levels, pitches, anchor, reduce="above", above_db=1.5, below_db=1.5, sp
             harm_ = [n for n in parts if n != lead]    # (parts are sorted low to high)
             if len(harm_) >= 2:
                 root = harm_[0]
-                tgt[root] = levels[root][w]            # the root is never turned down
+                step_of = lambda i: root_step if i == 0 else (upper_step if upper_step is not None else root_step)
+                # where the parts above would need more than max_cut, raise the root instead (the lower harmony comes
+                # up), at most root_raise dB and never closer to the lead than lead_margin
+                need = max([levels[n][w] - (levels[root][w] - step_of(i)) for i, n in enumerate(harm_[1:])] + [0.0])
+                r = max(0.0, need - abs(max_cut))
+                if lead in parts and lead_margin > 0:
+                    r = min(r, max(0.0, (levels[lead][w] - lead_margin) - levels[root][w]))
+                r = min(r, max(0.0, root_raise))
+                tgt[root] = levels[root][w] + r            # the root is never turned down
                 for i, n in enumerate(harm_[1:]):
-                    want = levels[root][w] - (root_step if i == 0 else (upper_step if upper_step is not None else root_step))
+                    want = tgt[root] - step_of(i)
                     if levels[n][w] > want + tolerance:  # only where it is clearly over: drowning out the ones below
                         tgt[n] = min(tgt.get(n, levels[n][w]), max(want, levels[n][w] - abs(max_cut)))
         if lead in parts and lead_margin > 0:          # every harmony sits at least lead_margin under the lead
@@ -179,7 +194,8 @@ def plan(levels, pitches, anchor, reduce="above", above_db=1.5, below_db=1.5, sp
         row = []
         for n in parts:
             cur = levels[n][w]; t = tgt.get(n, cur)
-            gains[n][w] = max(min(0.0, t - cur), -abs(max_cut))
+            up_ok = root_step is not None and root_raise > 0 and n != lead
+            gains[n][w] = max(min(max(0.0, root_raise) if up_ok else 0.0, t - cur), -abs(max_cut))
             row.append(dict(part=n, note=librosa.hz_to_note(pitches[n][w]), level=round(float(cur), 1),
                             target=round(float(t), 1), cut=round(float(gains[n][w]), 1), anchor=bool(n == parts[ai])))
         rows.append(dict(window=w + 1, parts=row, harmonies_same_level=bool(same)))
@@ -336,6 +352,95 @@ def style_defaults():
     return None
 
 
+def chain_model(set_path, names):
+    """{track: f(level dB) -> level after its chain (track compressors' static curve + output gain) + fader}.
+    Only Live's Compressor is modelled (threshold, ratio, knee, output gain, auto makeup); other devices pass."""
+    import gzip, math, xml.etree.ElementTree as ET
+    root = ET.fromstring(gzip.open(set_path).read())
+    g = lambda d, k, dflt: float(d.find(f"./{k}/Manual").get("Value")) if d.find(f"./{k}/Manual") is not None else dflt
+    out = {}
+    for t in root.find(".//Tracks"):
+        nm = t.find("./Name/EffectiveName").get("Value")
+        if nm not in names:
+            continue
+        fader = 20 * math.log10(max(1e-6, float(t.find("./DeviceChain/Mixer/Volume/Manual").get("Value"))))
+        comps = []
+        devs = t.find("./DeviceChain/DeviceChain/Devices")
+        for d in (list(devs) if devs is not None else []):
+            if d.tag == "Compressor2" and d.find("./On/Manual") is not None and d.find("./On/Manual").get("Value") == "true":
+                thr = 20 * math.log10(max(1e-9, g(d, "Threshold", 1.0)))
+                ratio, knee, gain = max(1.0, g(d, "Ratio", 1.0)), max(0.0, g(d, "Knee", 6.0)), g(d, "Gain", 0.0)
+                auto = d.find("./GainCompensation/Manual") is not None and d.find("./GainCompensation/Manual").get("Value") == "true"
+                comps.append((thr, ratio, knee, gain + ((-thr) * (1 - 1 / ratio) / 2 if auto else 0.0)))
+
+        def f(x, comps=comps, fader=fader):
+            y = np.asarray(x, float)
+            for thr, ratio, knee, gain in comps:
+                d = y - thr
+                k = max(knee, 1e-6)
+                y = np.where(d <= -k / 2, y, np.where(d >= k / 2, thr + d / ratio,
+                             y + (1 / ratio - 1) * (d + k / 2) ** 2 / (2 * k))) + gain
+            return y + fader
+        out[nm] = (f, len(comps))
+    return out
+
+
+def achieved(levels, pitches, gains, lead):
+    """Median spacing after the gains: lowest harmony to the next one up, to the ones above, and harmonies to the lead."""
+    nxt, up, ld = [], [], []
+    names = list(levels)
+    nwin = len(next(iter(levels.values())))
+    for w in range(nwin):
+        parts = [n for n in names if np.isfinite(levels[n][w]) and np.isfinite(pitches[n][w])]
+        after = {n: levels[n][w] + gains[n][w] for n in parts}
+        harm = sorted([n for n in parts if n != lead], key=lambda n: pitches[n][w])
+        if len(harm) >= 2:
+            nxt.append(after[harm[0]] - after[harm[1]])
+            up += [after[harm[0]] - after[n] for n in harm[2:]]
+        if lead in parts:
+            ld += [after[lead] - after[n] for n in harm]
+    med = lambda x: round(float(np.median(x)), 1) if x else None
+    return dict(root_to_next=med(nxt), root_to_upper=med(up), lead_to_harmonies=med(ld))
+
+
+def write_volume(set_path, out_path, gains, win_s, tempo, ramp_s=0.25):
+    """Write the per-window gains as track volume automation (after the chain: it lands exactly), multiplying any
+    volume automation already there. A new set; the original is untouched."""
+    import hypnomix.session.automation as aa
+    tree = aa.load(set_path); root = tree.getroot()
+    spb = 60.0 / tempo
+    tracks = {aa.tname(t): t for t in aa.tracks(root) if t is not None}
+    changed = []
+    for nm, g in gains.items():
+        if nm not in tracks or not (np.abs(g) > 0.05).any():
+            continue
+        t = tracks[nm]
+        env, info = aa.get_or_create_env(root, t, "Volume")
+        ev, pts = aa.events(env)
+        # the gain curve in beats: steps per window with ramp_s transitions
+        times, vals = [], []
+        for w, gw in enumerate(g):
+            t0 = w * win_s / spb
+            times += [t0 + ramp_s / spb / 2, (w + 1) * win_s / spb - ramp_s / spb / 2]
+            vals += [gw, gw]
+        times, vals = np.array(times), np.array(vals)
+        gain_at = lambda b: float(np.interp(b, times, vals, left=0.0, right=0.0))
+        olds = [(tt, vv) for tt, vv, _ in pts]
+        keep_first = [p_ for p_ in olds if p_[0] < -1e6]
+        real = [p_ for p_ in olds if p_[0] >= -1e6]
+        grid_t = sorted({round(x, 6) for x in list(times) + [tt for tt, _ in real]})
+        base = lambda b: aa.value_at([(tt, vv, None) for tt, vv in (keep_first + real)], b)
+        new_pts = [(b, base(b) * 10 ** (gain_at(b) / 20)) for b in grid_t]
+        for e in list(ev):
+            if float(e.get("Time")) >= -1e6:
+                ev.remove(e)
+        for b, val in new_pts:
+            aa.insert_point(root, env, b, val)
+        changed.append(nm)
+    aa.save(tree, set_path, out_path)
+    return changed
+
+
 def balance(a):
     win_s = a.window or ((60.0 / a.bpm) * a.bar_beats if a.bpm else 2.0)
     with ProcessPoolExecutor(min(8, len(a.stems))) as ex:
@@ -344,9 +449,16 @@ def balance(a):
     nwin = max(len(r[1]) for r in res)
     pad = lambda x: np.pad(x, (0, nwin - len(x)), constant_values=np.nan)
     levels = {r[0]: pad(r[1]) for r in res}; pitches = {r[0]: pad(r[2]) for r in res}
+    model = None
+    if a.set:                                    # levels after each track's compressor and fader, as heard
+        model = chain_model(a.set, set(names))
+        for nm, (f, ncomp) in model.items():
+            levels[nm] = f(levels[nm])
+        print("levels after each track's chain: " + ", ".join(f"{nm} ({k} compressor{'s' if k != 1 else ''} + fader)"
+                                                             for nm, (f, k) in model.items()))
     for item in a.fader or []:                   # raw clips: add each track's fader so levels compare as heard
         nm, _, db = item.rpartition("=")
-        if nm in levels:
+        if nm in levels and not (model and nm in model):
             levels[nm] = levels[nm] + float(db)
     if not a.anchor:
         question(names, levels, pitches, win_s)
@@ -374,13 +486,15 @@ def balance(a):
               f"{a.root_step:g} dB under it, higher ones about {a.upper_step if a.upper_step is not None else a.root_step:g} dB "
               f"under it; only where a part is over by more than {a.tolerance:g} dB, at most {a.max_cut:g} dB in any window")
     gains, rows = plan(levels, pitches, anchor, a.reduce, a.above_db, a.below_db, a.spread, a.max_cut, a.tolerance,
-                       lead, a.lead_margin, root_step=a.root_step, upper_step=a.upper_step)
+                       lead, a.lead_margin, root_step=a.root_step, upper_step=a.upper_step,
+                       root_raise=a.root_raise if a.root_step is not None else 0.0)
     od = out_at(a.out, "voices", "balance")
     summary = {}
     for (n, _, _, sr, L), path in zip(res, a.stems):
         g = gains[n]
-        summary[n] = dict(windows_lowered=int((g < -0.05).sum()), max_cut_db=round(float(g.min()), 1) if len(g) else 0.0)
-        if a.dry_run:
+        summary[n] = dict(windows_lowered=int((g < -0.05).sum()), max_cut_db=round(float(g.min()), 1) if len(g) else 0.0,
+                          windows_raised=int((g > 0.05).sum()), max_raise_db=round(float(g.max()), 1) if len(g) else 0.0)
+        if a.dry_run or a.apply_set:
             continue
         win = int(win_s * sr)
         env = np.repeat(10 ** (g / 20), win)[:L]
@@ -398,9 +512,26 @@ def balance(a):
     if same:
         print(f"no space between the harmonies (within 1 dB of each other) in {same} of {len(rows)} windows: a gentle "
               "spread is your choice (e.g. --anchor lowest --above-db 1 --spread ladder, or name the part to step down)")
+    zero = {n: np.zeros_like(g) for n, g in gains.items()}
+    b4, af = achieved(levels, pitches, zero, lead), achieved(levels, pitches, gains, lead)
+    fmt = lambda d: (f"root→next {d['root_to_next']} dB, root→upper {d['root_to_upper']} dB, "
+                     f"lead→harmonies {d['lead_to_harmonies']} dB")
+    print(f"spacing {'as heard (after each chain)' if a.set else 'as measured'}: before {fmt(b4)}; after {fmt(af)}"
+          + (f" (targets: {a.root_step:g} / {a.upper_step if a.upper_step is not None else a.root_step:g})" if a.root_step else ""))
+    settings["achieved"] = dict(before=b4, after=af)
+    json.dump(dict(settings=settings, summary=summary, windows=rows), open(str(od / "balance.json"), "w"), indent=1)
+    if a.apply_set:
+        import gzip, xml.etree.ElementTree as ET
+        tempo = float(ET.fromstring(gzip.open(a.set).read()).find(".//Tempo/Manual").get("Value"))
+        if Path(a.apply_set).resolve() == Path(a.set).resolve():
+            raise SystemExit("refusing to overwrite the set; give a new file name")
+        changed = write_volume(a.set, a.apply_set, gains, win_s, tempo)
+        print(f"wrote {a.apply_set}: volume automation on {', '.join(changed) or 'nothing'} (after each chain, so it "
+              "lands exactly; existing volume automation scaled, not replaced)")
     print(json.dumps(settings))
     for n, sm_ in summary.items():
-        print(f"  {n:30s} lowered in {sm_['windows_lowered']} windows, at most {sm_['max_cut_db']:+.1f} dB")
+        print(f"  {n:30s} lowered in {sm_['windows_lowered']} windows, at most {sm_['max_cut_db']:+.1f} dB"
+              + (f"; raised in {sm_['windows_raised']}, at most {sm_['max_raise_db']:+.1f} dB" if sm_["windows_raised"] else ""))
     print(f"{len(rows)} windows with the anchor singing with others; {fixed} turned something down"
           + (" (dry run: no audio written)" if a.dry_run else f" → {od}"))
 
@@ -419,11 +550,18 @@ def main():
     ap.add_argument("--tolerance", type=float, default=None,
                     help="only turn a part down where it is louder than its limit by more than this many dB (default 1.5); "
                          "with --tame it comes down to exactly this far above the part below, no further")
+    ap.add_argument("--set", help="the Live set the stems were rendered from (raw clips): levels are compared after each "
+                    "track's compressor and fader, as heard")
+    ap.add_argument("--apply-set", metavar="NEW.als", help="with --set: write the spacing as track volume automation "
+                    "(after the chain: lands exactly) into this new set, instead of audio copies")
     ap.add_argument("--lead", help="the lead part (default: the shared lead rule)")
     ap.add_argument("--fader", action="append", metavar="NAME=DB",
                     help="raw (pre-fader) renders: the track's fader in dB, so parts compare as heard (repeatable)")
     ap.add_argument("--lead-margin", type=float, default=None,
                     help="keep every other part at least this many dB under the lead where both sing (--tame: 1.5)")
+    ap.add_argument("--root-raise", type=float, default=3.0,
+                    help="with root steps: where the parts above would need more than --max-cut, raise the lowest harmony "
+                         "up to this many dB instead (never closer to the lead than --lead-margin); 0 = never raise")
     ap.add_argument("--root-step", type=float, help="the lowest harmony is the basis; the next one up sits this many dB under it")
     ap.add_argument("--upper-step", type=float, help="harmonies above that sit this many dB under the lowest one (on average)")
     ap.add_argument("--use-learned", action="store_true", help="with --tame: use the numbers learned from your songs this time")

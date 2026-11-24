@@ -265,7 +265,8 @@ def main():
         if was and not a.from_set and abs(orig.stat().st_mtime - was) > 1 and not a.stale_ok:
             sys.exit("the set was saved again after the scan, so the findings may not match it any more.\n"
                      "Re-scan it (recommended), or pass --stale-ok if the change cannot affect these findings.")
-    if set_items or name_items:
+    voices_in_set = bool(orig) and any(f.get("tool") == "voices" for f in audio_items)
+    if set_items or name_items or voices_in_set:
         if not orig:
             sys.exit("this scan has no Live set: set changes cannot be applied")
         if not a.out:
@@ -417,6 +418,49 @@ def main():
                 log.append(line)
             log.append("")
 
+    # ---- harmony balance from a set: written as track volume automation (after each chain), before the renames
+    voices_set = [f for f in audio_items if f.get("tool") == "voices" and orig is not None]
+    if voices_set:
+        if not a.out:
+            failed += [f"{f['id']}: harmony balance into the set needs --out NEW.als" for f in voices_set]
+        else:
+            target = name_out                              # validated above: new, next to the original
+            base = target if target.exists() else src     # it exists only if this run's set steps wrote it
+            for f in voices_set:
+                note = ((dec.get(f["id"]) or {}).get("note") or "")
+                kv = dict(x.split("=", 1) for x in note.replace(",", " ").split() if "=" in x)
+                tmp = target.with_name(target.stem + " (voices step).als")
+                args = ["voices", *f["stems"], "--tame", "--set", base, "--apply-set", tmp, "--out", sd / "fixed" / "voices"]
+                for key_ in ("tolerance", "lead-margin", "max-cut", "root-raise", "root-step", "upper-step"):
+                    if key_ in kv:
+                        args += [f"--{key_}", kv[key_]]
+                if f.get("lead"):
+                    args += ["--lead", f["lead"]]
+                if scan.get("tempo"):
+                    args += ["--bpm", scan["tempo"]]
+                code, txt = hx(*args)
+                ok = code == 0 and tmp.exists()
+                if ok:
+                    shutil.move(str(tmp), str(target))
+                    base = target
+                    from hypnomix.session import check as C
+                    errs, _, _ = C.check(target, src)
+                    if errs:
+                        bad = target.with_name(target.stem + " (BROKEN, do not open).als")
+                        target.rename(bad)
+                        failed += [f"structure check after harmony balance: {e}" for e in errs]
+                        print(f"check      FAILED after harmony balance: renamed to {bad.name}; keep using the original.")
+                        ok = False
+                    else:
+                        print(f"check      structure OK after harmony balance")
+                log += [f"### {f['id']} harmony balance (volume automation): {'written' if ok else 'FAILED'}", "",
+                        "```", txt.strip()[-1500:], "```", ""]
+                spacing = next((l for l in txt.splitlines() if l.startswith("spacing")), "")
+                print(f"voices     {'ok' if ok else 'FAILED'}  volume automation in {target.name}" + (f"\n           {spacing}" if spacing else ""))
+                if not ok:
+                    failed.append(f"{f['id']}: voices failed")
+        audio_items = [f for f in audio_items if f not in voices_set]
+
     # ---- track names, last (into the new set, or a new set of their own)
     if name_items:
         from hypnomix.session.names import rename_set
@@ -427,7 +471,7 @@ def main():
             if f.get("kind") == "track-name-question" and not note:
                 print(f"name       {f['old']}: approved without a name from the person; using the guess {f['new']!r}")
         target = name_out
-        base = out if (set_items and out and Path(out).exists()) else src
+        base = target if Path(target).exists() else src            # build on what this run already wrote
         if base != src or not Path(target).exists():
             done_n, skipped_n = rename_set(base, target, mapping, inplace=(base != src))
             for old, new in done_n:
