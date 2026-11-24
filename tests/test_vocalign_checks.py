@@ -51,3 +51,23 @@ class SongEnd(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SameWords(unittest.TestCase):
+    def test_only_parts_singing_together_are_marked(self):
+        rng = np.random.default_rng(1)
+        n = 1000
+        words = np.zeros(n); words[rng.choice(n, 80, replace=False)] = 1.0
+        own = np.zeros(n); own[rng.choice(n, 80, replace=False)] = 1.0
+        m = V.sharing_mask({"a": words, "b": np.roll(words, 3), "c": own}, n, thr=0.6)
+        self.assertGreater(m["a"].mean(), 0.8)
+        self.assertGreater(m["b"].mean(), 0.8)       # same words, 30 ms apart
+        self.assertLess(m["c"].mean(), 0.2)          # its own line: left alone
+
+    def test_still_parts_keep_the_original_audio(self):
+        sr = 22050
+        orig = np.random.default_rng(2).standard_normal((sr, 1))
+        warped = orig * 0.5
+        out, frac = V.keep_original_where_still(orig, warped, np.zeros(int(1 / V.FR_S)), sr)
+        self.assertEqual(frac, 0.0)
+        self.assertTrue(np.array_equal(out, orig))

@@ -292,7 +292,44 @@ def grid_lag(env, n, bpm, max_ms=60.0):
     return np.interp(np.arange(n), centres, lags)
 
 
-def stack_align(paths, outdir=None, strength=0.5, grid=0.3, bpm=None, max_ms=60.0):
+def sharing_mask(envs, n, thr=0.6, win_s=2.0, max_ms=150.0):
+    """{part: 0..1 per 10 ms frame}: 1 where the part sings the same words at the same time as another part
+    (its onset envelope correlates >= thr with another part's within +-max_ms, per window), smoothed."""
+    from scipy.ndimage import uniform_filter1d
+    W, M = int(win_s / FR_S), int(max_ms / 1000 / FR_S)
+    names = list(envs)
+    out = {p_: np.zeros(n) for p_ in names}
+    for s0 in range(0, n - W + 1, W):
+        segs = {p_: envs[p_][s0:s0 + W] for p_ in names}
+        for p_ in names:
+            a = segs[p_]
+            if a.std() < 1e-6:
+                continue
+            a = (a - a.mean()) / (a.std() * len(a))
+            best = 0.0
+            for q in names:
+                if q == p_ or segs[q].std() < 1e-6:
+                    continue
+                b = (segs[q] - segs[q].mean()) / segs[q].std()
+                c = np.correlate(np.pad(b, M), a, mode="valid")          # lags -M..M
+                best = max(best, float(c.max()))
+            if best >= thr:
+                out[p_][s0:s0 + W] = 1.0
+    return {p_: uniform_filter1d(m, int(0.5 / FR_S), mode="nearest") for p_, m in out.items()}   # 500 ms edges
+
+
+def keep_original_where_still(orig, warped, o, sr, still=0.05, fade_s=0.01):
+    """WSOLA changes audio slightly even at zero offset: wherever the move is under ~0.5 ms, keep the original
+    sample for sample (10 ms crossfades at the edges)."""
+    from scipy.ndimage import uniform_filter1d
+    moving = (np.abs(o) >= still).astype(float)
+    m = np.repeat(moving, int(round(FR_S * sr)))[:len(orig)]
+    m = np.pad(m, (0, max(0, len(orig) - len(m))))
+    m = uniform_filter1d(m, max(1, int(fade_s * sr)), mode="nearest")
+    return orig * (1 - m[:, None]) + warped * m[:, None], float(moving.mean())
+
+
+def stack_align(paths, outdir=None, strength=0.5, grid=0.3, bpm=None, max_ms=60.0, same_words=0.6):
     """Gentle group alignment: nobody is forced onto one lead. Each part moves `strength` of the way toward the
     group's average timing (the mean over the parts singing at that moment, 250 ms smoothed; the first part is
     only a ruler and moves too), and with --bpm the whole stack is pulled `grid` of the way toward the 8th-note
@@ -316,16 +353,22 @@ def stack_align(paths, outdir=None, strength=0.5, grid=0.3, bpm=None, max_ms=60.
         offs[p_], acts[p_] = off, both
     n = min([len(act_ref)] + [len(o) for o in offs.values() if o is not None])
     offs[ref] = np.zeros(n)
-    O = np.stack([offs[p_][:n] for p_ in paths]); A = np.stack([acts[p_][:n] for p_ in paths]).astype(float)
+    envs = {}
+    for p_ in paths:                     # onset envelopes in 10 ms frames (16 kHz, hop 160)
+        o = librosa.onset.onset_strength(y=librosa.resample(audio[p_].mean(1).astype(np.float32), orig_sr=sr,
+                                                              target_sr=16000), sr=16000, hop_length=160)[:n]
+        envs[p_] = np.pad(o, (0, n - len(o)))
+    # only parts singing the same words at the same time are nudged together; a part on its own line is left alone
+    share = sharing_mask(envs, n, same_words) if same_words > 0 else {p_: np.ones(n) for p_ in paths}
+    O = np.stack([offs[p_][:n] for p_ in paths])
+    A = np.stack([acts[p_][:n] * (share[p_] > 0.5) for p_ in paths]).astype(float)
     cnt = A.sum(0)
     mean = uniform_filter1d(np.where(cnt > 0, (O * A).sum(0) / np.maximum(cnt, 1), 0.0), 25)
     gshift = np.zeros(n)
     if grid > 0 and bpm:
         env = np.zeros(n)
         for p_ in paths:
-            o = librosa.onset.onset_strength(y=librosa.resample(audio[p_].mean(1).astype(np.float32), orig_sr=sr,
-                                                                  target_sr=16000), sr=16000, hop_length=160)[:n]
-            env[:len(o)] += o / (o.max() + 1e-9)
+            env += envs[p_] / (envs[p_].max() + 1e-9)
         gshift = grid_lag(env, n, bpm)
     cap = max_ms / 1000 / FR_S
     t_frames = np.arange(n) * FR_S
@@ -333,18 +376,23 @@ def stack_align(paths, outdir=None, strength=0.5, grid=0.3, bpm=None, max_ms=60.
     od = out_at(outdir, "vocalign")
     rows = []
     for p_ in paths:
-        o = np.clip(uniform_filter1d(strength * (O[paths.index(p_)] - mean) + grid * gshift, 15), -cap, cap)
+        o = np.clip(uniform_filter1d(strength * (O[paths.index(p_)] - mean) + grid * gshift, 15), -cap, cap) * share[p_]
         fn = lambda t, o=o: float(np.interp(t / sr, t_frames, o * FR_S))
-        out = wsola_warp(audio[p_], sr, fn)
+        out, moved_frac = keep_original_where_still(audio[p_], wsola_warp(audio[p_], sr, fn)[:len(audio[p_])], o, sr)
         others = group(p_)
         before, after = onset_lag_ms(others, audio[p_], sr), onset_lag_ms(others, out, sr)
         sung = acts[p_][:n]
-        row = dict(file=Path(p_).name, before_ms=round(before), after_ms=round(after),
+        sung_ = acts[p_][:n]
+        shared_pct = round(100 * float((share[p_][sung_] > 0.5).mean())) if sung_.any() else 0
+        row = dict(file=Path(p_).name, before_ms=round(before), after_ms=round(after), shared_pct=shared_pct,
                    median_move_ms=round(float(np.median(np.abs(o[sung])) * FR_S * 1000), 1) if sung.any() else 0.0,
                    max_move_ms=round(float(np.abs(o).max() * FR_S * 1000), 1))
-        if after > before + 1.0:
+        if moved_frac == 0:
             row["kept"] = False
-            row["note"] = "not closer to the group afterwards: left as it was"
+            row["note"] = "never shares words with another part at the same time: left as it was"
+        elif after > before - 1.0:
+            row["kept"] = False
+            row["note"] = "not measurably closer to the others: left as it was"
         else:
             row["kept"] = True
             row["out"] = str(dsp.save(od / f"{Path(p_).stem} (stack aligned).wav", out, sr, 24))
@@ -367,20 +415,27 @@ def main():
     ap.add_argument("--grid", type=float, default=0.3, help="stack mode: share of the stack's lag to the 8th-note grid (needs --bpm)")
     ap.add_argument("--bpm", type=float, help="stack mode: the song's tempo, for the grid pull")
     ap.add_argument("--cap-ms", type=float, default=60.0, help="stack mode: never move anything more than this")
+    ap.add_argument("--same-words", type=float, default=0.6,
+                    help="stack mode: only nudge parts singing the same words at the same time (onset correlation "
+                         "threshold, 0-1; 0 = every part)")
     ap.add_argument("--mode", choices=["tight", "gentle"], default="tight",
                     help="Rubber Band engine: tight (closest timing) or gentle (smoother speed changes, less warble)")
     a = ap.parse_args()
     od = out_at(a.out, "vocalign")
     if len(a.overdubs) >= 2 and not a.to_lead:
-        rows, meta = stack_align([a.lead] + a.overdubs, a.out, a.stack_strength, a.grid if a.bpm else 0.0, a.bpm, a.cap_ms)
+        rows, meta = stack_align([a.lead] + a.overdubs, a.out, a.stack_strength, a.grid if a.bpm else 0.0, a.bpm, a.cap_ms,
+                                 a.same_words)
         md = [f"# Gentle stack alignment ({len(rows)} parts)", "",
               f"Each part moved {a.stack_strength:.0%} of the way toward the group's average timing"
               + (f"; the whole stack {a.grid:.0%} of the way toward the 8th-note grid at {a.bpm:g} BPM (it sat "
                  f"{meta['grid_offset_ms']:+.0f} ms off it)" if a.bpm else " (no --bpm: no grid pull)")
               + f"; never more than {a.cap_ms:g} ms. Checked independently: distance from the other parts.", "",
-              "| part | before | after | median move | biggest move | result |", "|---|---|---|---|---|---|"]
+              f"Only where a part sings the same words at the same time as another (--same-words {a.same_words:g}); "
+              "everywhere else, and wherever nothing moves, the original audio is kept sample for sample.", "",
+              "| part | sings shared words | before | after | median move | biggest move | result |",
+              "|---|---|---|---|---|---|---|"]
         for r in rows:
-            md.append(f"| {r['file']} | {r['before_ms']} ms | {r['after_ms']} ms | {r['median_move_ms']} ms | "
+            md.append(f"| {r['file']} | {r['shared_pct']}% | {r['before_ms']} ms | {r['after_ms']} ms | {r['median_move_ms']} ms | "
                       f"{r['max_move_ms']} ms | {'written' if r['kept'] else r['note']} |")
         md += ["", *[f"- `{r['out']}`" for r in rows if r.get("out")]]
         (od / "VOCALIGN.md").write_text("\n".join(md) + "\n")
