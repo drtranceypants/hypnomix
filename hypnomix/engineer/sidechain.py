@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Make sidechain compression sound good: measure what each sidechained Compressor in a Live set
-actually does to the music, and suggest settings that duck cleanly and in time.
+"""Make sidechain compression sound good: measure what each sidechained Compressor or Glue Compressor
+in a Live set actually does to the music, and suggest settings that duck cleanly and in time.
 
-For every Compressor with its sidechain on, it simulates the compressor driven by the trigger track
+For every Compressor and Glue Compressor with its sidechain on, it simulates the compressor driven by the trigger track
 and measures, hit by hit:
 
   depth        how far the target is turned down (dB)
@@ -34,7 +34,8 @@ Outputs (hypnomix-out/sidechain/<set>/): a gain-reduction plot per compressor (c
 on the beat grid) and, when the target's audio is available, before/after previews of the target.
 
 The compressor model is an approximation of Live's Compressor (Peak/RMS detector, knee, attack,
-release, lookahead, sidechain gain and EQ). Check the result by ear. Close the set in Live before
+release, lookahead, sidechain gain and EQ) and Glue Compressor (its menu values for attack, release and
+ratio, Range, a soft knee; its Auto release is modelled as a fixed 300 ms). Check the result by ear. Close the set in Live before
 --apply; the new set is written next to the original so its samples stay linked.
 """
 import argparse, gzip, math, re, sys
@@ -56,6 +57,11 @@ BLOCK = 16          # gain-computer block (0.7 ms at 22.05 kHz)
 SC_EQ_TYPES = ["low shelf", "band-pass", "high shelf", "low-pass", "bell", "high-pass", "notch"]
 LOWPASS, BANDPASS, HIGHPASS = 3, 1, 5
 LOOKAHEAD_MS = [0.0, 1.0, 10.0]
+# Glue Compressor menus (stored as positions): attack ms, release ms (None = Auto), ratio
+GLUE_ATTACK = [0.01, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0]
+GLUE_RELEASE = [100.0, 200.0, 400.0, 600.0, 800.0, 1200.0, None]
+GLUE_RATIO = [2.0, 4.0, 10.0]
+GLUE_AUTO_MS = 300.0      # Auto release is program-dependent; modelled as a fixed 300 ms
 MODELS = ["Peak", "RMS", "Expand"]
 STYLES = {
     #             depth dB, ratio, knee, model, attack ms, lookahead index
@@ -116,26 +122,54 @@ def read_compressor(d):
     )
 
 
+def read_glue(d):
+    sc = d.find("./SideChain")
+    eq = d.find("./SideChainEq")
+    pick = lambda table, i: table[min(max(int(i), 0), len(table) - 1)]
+    rel_i = int(manual(d, "Release", default=2))
+    return dict(
+        kind="glue",
+        on=manual(d, "On", lambda s: s == "true", True),
+        sc_on=v(sc, "./OnOff/Manual") == "true",
+        source_target=v(sc, ".//RoutedInput//Target", ""),
+        source_name=v(sc, ".//RoutedInput//UpperDisplayString", ""),
+        source_tap=v(sc, ".//RoutedInput//LowerDisplayString", ""),
+        sc_gain_db=20 * math.log10(max(float(v(sc, "./Volume/Manual", 1.0)), 1e-9)),
+        threshold_db=manual(d, "Threshold", default=-10.0),            # Glue stores dB directly
+        ratio=pick(GLUE_RATIO, manual(d, "Ratio", default=1)),
+        attack=pick(GLUE_ATTACK, manual(d, "Attack", default=2)),
+        release=pick(GLUE_RELEASE, rel_i) or GLUE_AUTO_MS,
+        auto_release=pick(GLUE_RELEASE, rel_i) is None,
+        range_db=manual(d, "Range", default=70.0),
+        knee=4.0, model=0, lookahead=0,
+        dry_wet=manual(d, "DryWet", default=1.0),
+        eq_on=v(eq, "./On/Manual") == "true",
+        eq_mode=int(float(v(eq, "./Mode/Manual", 5))),
+        eq_freq=float(v(eq, "./Freq/Manual", 200)),
+        eq_q=float(v(eq, "./Q/Manual", 0.707)),
+        eq_gain=float(v(eq, "./Gain/Manual", 0)),
+    )
+
+
 def find_sidechains(root):
-    """Every Compressor with its sidechain on, with the track that hosts it."""
+    """Every Compressor and Glue Compressor with its sidechain on, with the track that hosts it."""
     ids = {t.get("Id"): t for t in all_tracks(root) if t.get("Id")}
-    out, glue, off = [], [], []
+    out, off = [], []
     for t in all_tracks(root):
         host = track_name(t)
-        for d in t.iter("Compressor2"):
-            c = read_compressor(d)
+        devs = [(d, read_compressor(d)) for d in t.iter("Compressor2")] + \
+               [(d, read_glue(d)) for d in t.iter("GlueCompressor")]
+        for d, c in devs:
             if not c["sc_on"]:
                 continue
+            c.setdefault("kind", "compressor")
             m = re.search(r"Track\.(\d+)", c["source_target"])
             c.update(el=d, host=host, host_tag=t.tag, host_el=t,
                      source_el=ids.get(m.group(1)) if m else None)
             if c["source_el"] is not None:
                 c["source_name"] = track_name(c["source_el"])     # the stored label can be stale
             (out if c["on"] else off).append(c)
-        for d in t.iter("GlueCompressor"):
-            if v(d, "./SideChain/OnOff/Manual") == "true":
-                glue.append(host)
-    return out, off, glue
+    return out, off
 
 
 # ---------------------------------------------------------------- audio
@@ -265,6 +299,8 @@ def gain_reduction(lvl, c):
     slope = 1 - 1 / max(c["ratio"], 1.0)
     gr = np.where(over <= -k / 2, 0.0,
                   np.where(over >= k / 2, -over * slope, -((over + k / 2) ** 2) / (2 * k) * slope))
+    if c.get("range_db") is not None:
+        gr = np.maximum(gr, -float(c["range_db"]))   # Glue's Range caps the reduction
     return dsp._smooth_db(gr, SR, max(c["attack"], 0.01), max(c["release"], 1.0), BLOCK)
 
 
@@ -395,9 +431,16 @@ def suggest(trig, hits, cur, style, decay, f0, gap_ms, beat_ms, is_vocal, active
     """Search settings for `style`. Returns (settings, notes)."""
     s = dict(STYLES[style])
     c = dict(cur)
-    c.update(model=s["model"], knee=s["knee"], attack=s["attack"], lookahead=s["lookahead"])
-    c["ratio"] = min(cur["ratio"], 6.0 if style == "clarity" else 10.0) \
-        if cur["ratio"] >= 2 and style != "vocal-duck" and not cur.get("fresh") else s["ratio"]
+    glue = cur.get("kind") == "glue"
+    snap = lambda x, table: min((t for t in table if t is not None), key=lambda t: abs(math.log(t / x)))
+    if glue:
+        # Glue: no lookahead, menu values only, fixed soft knee and detector
+        c.update(attack=snap(s["attack"], GLUE_ATTACK), auto_release=False)
+        c["ratio"] = {"clarity": 4.0, "pump": 4.0 if cur["ratio"] < 10 else 10.0, "vocal-duck": 2.0}[style]
+    else:
+        c.update(model=s["model"], knee=s["knee"], attack=s["attack"], lookahead=s["lookahead"])
+        c["ratio"] = min(cur["ratio"], 6.0 if style == "clarity" else 10.0) \
+            if cur["ratio"] >= 2 and style != "vocal-duck" and not cur.get("fresh") else s["ratio"]
     notes = []
     floor = 30.0
     if f0:
@@ -409,6 +452,8 @@ def suggest(trig, hits, cur, style, decay, f0, gap_ms, beat_ms, is_vocal, active
     if style == "vocal-duck":
         metric = lambda gr, _h: {"depth": phrase_measure(gr, active)["depth"]}
         c["release"] = float(np.clip(0.35 * beat_ms, 200, 400))
+        if glue:
+            c["release"] = snap(c["release"], GLUE_RELEASE)
         fit_threshold(detector(trig, c), hits, c, s["depth"], metric)
         return c, notes
 
@@ -416,7 +461,9 @@ def suggest(trig, hits, cur, style, decay, f0, gap_ms, beat_ms, is_vocal, active
     deadline = max(deadline, floor * 1.5)
     metric = lambda gr, h: measure(gr, h)
     best = None
-    for rel in np.geomspace(max(floor, 15), 2000, 18):
+    rels = [r for r in GLUE_RELEASE if r is not None and r >= floor] if glue else \
+        np.geomspace(max(floor, 15), 2000, 18)
+    for rel in rels:
         c["release"] = float(rel)
         fit_threshold(lvl, seg_hits, c, s["depth"], metric)
         m = measure(gain_reduction(lvl, c), seg_hits)
@@ -427,32 +474,54 @@ def suggest(trig, hits, cur, style, decay, f0, gap_ms, beat_ms, is_vocal, active
         elif best is not None:
             break
     if best is None:
-        c["release"] = float(max(floor, 15))
+        c["release"] = float(rels[0]) if glue and len(rels) else float(max(floor, 15))
         fit_threshold(lvl, seg_hits, c, s["depth"], metric)
-        why = f"two cycles of the target's {f0:.0f} Hz low end" if f0 else "a click-free release"
-        notes.append(f"a release short enough to recover fully before the next hit would be under {why}; "
-                     f"this uses the shortest safe release ({c['release']:.0f} ms), so a little ducking "
-                     "carries over")
+        if glue and (not f0 or 2000.0 / f0 <= GLUE_RELEASE[0]):
+            notes.append("the hits come faster than the Glue's shortest release (0.1 s) can recover from; it "
+                         "uses 0.1 s, so a little ducking carries over (the regular Compressor can go shorter)")
+        else:
+            why = f"two cycles of the target's {f0:.0f} Hz low end" if f0 else "about 30 ms (clicks)"
+            notes.append(f"a release short enough to recover fully before the next hit would be under {why}; "
+                         f"this uses the shortest safe release ({c['release']:.0f} ms), so a little ducking "
+                         "carries over")
         return c, notes
     return best[0], notes
 
 
 # ---------------------------------------------------------------- explaining
 def describe(c, rel=None):
-    eq = "off"
-    if c.get("eq_on"):
-        t = SC_EQ_TYPES[c["eq_mode"]] if 0 <= c["eq_mode"] < len(SC_EQ_TYPES) else f"type {c['eq_mode']}"
-        eq = f"{t} {c['eq_freq']:.0f} Hz" + (f" {c['eq_gain']:+.1f} dB" if c["eq_mode"] in (0, 2, 4) else "")
+    if c.get("kind") == "glue":
+        return describe_glue(c, rel)
+    return describe_comp(c, rel)
+
+
+def eq_text(c):
+    if not c.get("eq_on"):
+        return "off"
+    t = SC_EQ_TYPES[c["eq_mode"]] if 0 <= c["eq_mode"] < len(SC_EQ_TYPES) else f"type {c['eq_mode']}"
+    return f"{t} {c['eq_freq']:.0f} Hz" + (f" {c['eq_gain']:+.1f} dB" if c["eq_mode"] in (0, 2, 4) else "")
+
+
+def threshold_text(c, rel):
     if rel is None:
-        th = f"threshold {c['threshold_db']:.1f} dB"
-    else:
-        where = "the main hits' peaks on the Compressor's input meter"
-        th = (f"threshold about {-rel:.0f} dB below {where}" if rel < -0.5 else
-              f"threshold about {rel:.0f} dB above {where} (the knee does the work)" if rel > 0.5
-              else f"threshold at {where}")
-    return (f"{th}, ratio {c['ratio']:.1f}:1, attack {c['attack']:.2g} ms, "
+        return f"threshold {c['threshold_db']:.1f} dB"
+    where = "the main hits' peaks on the input meter"
+    return (f"threshold about {-rel:.0f} dB below {where}" if rel < -0.5 else
+            f"threshold about {rel:.0f} dB above {where} (the knee does the work)" if rel > 0.5
+            else f"threshold at {where}")
+
+
+def describe_glue(c, rel=None):
+    r = "Auto" if c.get("auto_release") else (f"{c['release'] / 1000:g} s")
+    rng = "" if c.get("range_db", 70) >= 69 else f", range {c['range_db']:.0f} dB"
+    return (f"Glue: {threshold_text(c, rel)}, ratio {c['ratio']:g}, attack {c['attack']:g} ms, release {r}"
+            f"{rng}, S/C EQ {eq_text(c)}")
+
+
+def describe_comp(c, rel=None):
+    return (f"{threshold_text(c, rel)}, ratio {c['ratio']:.1f}:1, attack {c['attack']:.2g} ms, "
             f"release {c['release']:.0f} ms, knee {c['knee']:.0f} dB, {MODELS[min(c['model'], 2)]}, "
-            f"lookahead {LOOKAHEAD_MS[min(c['lookahead'], 2)]:g} ms, S/C EQ {eq}")
+            f"lookahead {LOOKAHEAD_MS[min(c['lookahead'], 2)]:g} ms, S/C EQ {eq_text(c)}")
 
 
 def verdict(m, style, f0, c, decay, exact=True):
@@ -476,6 +545,9 @@ def verdict(m, style, f0, c, decay, exact=True):
     if m["spread"] > 3:
         out.append(f"depth varies by {m['spread']:.1f} dB between hits: the groove pumps unevenly "
                    "(uneven hits, or other drums triggering it)")
+    if c.get("auto_release"):
+        out.append("release is on Auto: it lengthens as the compression goes on, so recovery between hits "
+                   f"is modelled at about {GLUE_AUTO_MS:.0f} ms; a fixed release gives a steadier groove")
     if f0 and c["release"] < 2000 / f0:
         out.append(f"release {c['release']:.0f} ms is under two cycles of the target's {f0:.0f} Hz low end "
                    f"({2000 / f0:.0f} ms): bends the waveform, sounds like distortion on the bass")
@@ -543,7 +615,24 @@ def set_manual(d, name, value):
         x.set("Value", value)
 
 
+def write_glue(d, c):
+    idx = lambda x, table: str(min(range(len(table)), key=lambda i: abs(math.log((table[i] or 1e9) / x))))
+    set_manual(d, "Threshold", repr(float(np.clip(c["threshold_db"], -40, 0))))
+    set_manual(d, "Ratio", idx(c["ratio"], GLUE_RATIO))
+    set_manual(d, "Attack", idx(c["attack"], GLUE_ATTACK))
+    set_manual(d, "Release", "6" if c.get("auto_release") else idx(c["release"], GLUE_RELEASE))
+    eq = d.find("./SideChainEq")
+    if eq is not None:
+        for k, val in (("On", "true" if c.get("eq_on") else "false"), ("Mode", str(int(c["eq_mode"]))),
+                       ("Freq", repr(float(c["eq_freq"])))):
+            x = eq.find(f"./{k}/Manual")
+            if x is not None:
+                x.set("Value", val)
+
+
 def write_settings(d, c):
+    if c.get("kind") == "glue":
+        return write_glue(d, c)
     set_manual(d, "Threshold", repr(10 ** (c["threshold_db"] / 20)))
     set_manual(d, "Ratio", repr(float(c["ratio"])))
     set_manual(d, "Attack", repr(float(c["attack"])))
@@ -667,10 +756,10 @@ def main():
     root = tree.getroot()
     tempo = float(v(root, ".//Tempo/Manual"))
     beat_ms = 60000 / tempo
-    comps, off, glue = find_sidechains(root)
+    comps, off = find_sidechains(root)
     if a.host:
         comps = [c for c in comps if a.host.lower() in c["host"].lower()]
-    print(f"{src.name}: {tempo:g} BPM (a beat is {beat_ms:.0f} ms); {len(comps)} sidechained Compressor(s)\n")
+    print(f"{src.name}: {tempo:g} BPM (a beat is {beat_ms:.0f} ms); {len(comps)} sidechained compressor(s)\n")
     od = out_at(a.out, "sidechain", src.stem)
     cache, changed = {}, 0
     use = {}
@@ -740,9 +829,8 @@ def main():
             write_settings(c["el"], sug)
             changed += 1
     for c in off:
-        print(f"(switched off: Compressor on {c['host']} <- {c['source_name']})")
-    if glue:
-        print(f"(Glue Compressor sidechains not analysed: {', '.join(sorted(set(glue)))})")
+        name = "Glue Compressor" if c.get("kind") == "glue" else "Compressor"
+        print(f"(switched off: {name} on {c['host']} <- {c['source_name']})")
     print(f"\nplots{' and previews' if any(True for _ in od.glob('*.wav')) else ''} in {od}")
     if a.apply:
         if not changed:
