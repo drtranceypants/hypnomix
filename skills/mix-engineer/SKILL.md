@@ -29,6 +29,11 @@ Fastest: load the stems into tracks named after them, then `hypnomix chain strip
 
 `recipe.json` lists, per stem, the EQ Eight bands, Compressor settings, Utility gain, pan and send. With the Ableton MCP: create an audio track per stem, load the stem, then load EQ Eight, Compressor and Utility. Then set values with `hypnomix live paramd <track> "EQ Eight" "1 Frequency A" 300` (displayed units) and `hypnomix live db/pan/send`. Make one return with Hybrid Reverb (1.8 s, 25 ms pre-delay).
 
+## Last step before the mixdown: movement
+When the balance is done, offer `hypnomix motion` (see docs/WORKFLOW.md §5): effect moves on repetitive sections and
+transitions, learned from the person's own automation (`motion --learn`). Present them as a menu of options with
+their fine controls; never approve them on the person's behalf, and say which ones change clips (stutters).
+
 ## Before you start, and before you change anything
 
 - Run `hypnomix prefs` and follow it (targets, protected tracks, what is deliberate, how much to explain). No

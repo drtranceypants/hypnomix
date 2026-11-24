@@ -37,7 +37,7 @@ in Live are not in the file this reads. Every run appends to SCAN_DIR/fix-log.md
 import argparse, json, re, shutil, subprocess, sys, time
 from pathlib import Path
 
-ORDER = ["distortion", "sidechain", "smooth", "timing", "order"]   # track names come last, after all of these
+ORDER = ["distortion", "sidechain", "smooth", "timing", "motion", "order"]   # track names come last, after all of these
 DECISIONS = ("approve", "skip", "change")
 
 
@@ -99,6 +99,8 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
         args += ["--mix", scan["mix"]]
     if tool == "order":
         args += ["--names", sd / "raw" / "names" / "names.json"]
+    if tool == "motion":
+        args += motion_args(sd, scan)
     hx(*args)
     if not j.exists():
         return None
@@ -109,6 +111,18 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
     for r in rows:
         r.setdefault("tool", tool)
     return rows
+
+
+def motion_args(sd, scan):
+    out = []
+    if scan.get("mix"):
+        out += ["--mix", scan["mix"]]
+    nj = sd / "raw" / "names" / "names.json"
+    if nj.exists():
+        out += ["--names", nj]
+    if scan.get("motion_style"):
+        out += ["--style", scan["motion_style"]]
+    return out
 
 
 def rematch(items, now):
@@ -317,6 +331,12 @@ def main():
                         args += ["--mix", scan["mix"]]
                     if tool == "order":
                         args += ["--names", sd / "raw" / "names" / "names.json"]
+                    if tool == "motion":   # the person's fine controls from the review notes
+                        args += motion_args(sd, scan)
+                        for f in items:
+                            note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
+                            if note and f["id"] in ids:
+                                args += ["--tweak", f"{f['id']}:{note}"]
                     code, txt = hx(*args)
                     ok = code == 0 and nxt.exists()
                     if not ok:
@@ -356,6 +376,11 @@ def main():
             log += ["### verify (the new set, measured again)", ""]
             for tool in applied_tools:
                 if tool == "sidechain":
+                    continue
+                if tool == "motion":   # options, not problems: report what was written instead of re-measuring
+                    line = "- motion: approved moves written as automation / clip edits (listed above); listen to each"
+                    print("verify     " + line[2:])
+                    log.append(line)
                     continue
                 items = [f for f in set_items if f["tool"] == tool]
                 now = recheck(tool, out, sd, scan, timing_tracks, "post")

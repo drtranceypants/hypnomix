@@ -81,7 +81,7 @@ def devices(t):
 
 def clip_rows(t):
     rows = {}
-    for c in t.findall(".//ArrangerAutomation/Events/AudioClip"):
+    for c in t.findall(".//ArrangerAutomation/Events/AudioClip") + t.findall(".//ArrangerAutomation/Events/MidiClip"):
         key = (c.get("Id"), gv(c, "./Name") or "")
         rows[key] = c
     return rows

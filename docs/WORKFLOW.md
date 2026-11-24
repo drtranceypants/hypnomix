@@ -186,6 +186,36 @@ the changed spots with the original at the same bars. Then:
 hypnomix prefs learn "hypnomix-out/scan/Song"
 ```
 
+## 5. Before the final mixdown: keep it moving
+
+Loops that repeat for 16 or 32 bars feel static. `motion` offers the moves a DJ-style producer draws by hand, on
+the effects the set already has (sends to the reverb and delay returns, filters on Main or on instruments, filter
+and reverb macros of your racks). Every move is an **option**: none is applied by default.
+
+```bash
+hypnomix motion --learn "Finished Song.als" "Another.als"     # once: your moves, lengths and depths
+hypnomix motion "Song.als" --mix "Song mix.wav" --names DIR/raw/names/names.json --plan
+hypnomix fix "hypnomix-out/scan/Song (motion)" --decide motion-3=approve --note "bars=6 depth=0.3"
+hypnomix fix "hypnomix-out/scan/Song (motion)" --approved --out "Song (motion).als"
+```
+
+| move | where | what it writes |
+|---|---|---|
+| riser | into a bigger, repeated or louder section | filter opens / DJ filter sweeps up, reverb builds; snaps back on the one |
+| dip | inside a repetitive section | a slow low-pass down and back up |
+| drift | across 32+ bars | the filter wanders, a point every 16 bars |
+| swell | second half of a section | a reverb send or return stepped up bar by bar, back at the end |
+| throw | phrase ends | a delay send up for the last beat of each phrase |
+| outro | the last section | the reverb rises to the end |
+| stutter | transitions and 8-bar turnarounds | the last 2 beats of a drum clip re-triggered: 1/8s, then 1/16s (clip slices; the rest plays on time) |
+| gate | transitions and turnarounds | a rhythmic volume chop (16ths, 8ths, dotted, triplet-ish) for the last bar |
+| dropout | into a drop | drums or bass silent for the last beat, then hit the one |
+
+Fine controls in the decision note: `bars=`, `depth=` (share of the control's range), `dB=` (sends), `every=`
+(throws), `beats=` (stutter, drop-out), `pattern=` (gate), `track=` (another track with the same kind of control).
+It never writes where you already automated that control, and never edits comped clips (stutters on comped tracks
+are listed by hand).
+
 ## Other DAWs
 
 Export every track as a full-length file from the same start point, with processing off, then

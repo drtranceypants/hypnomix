@@ -56,6 +56,7 @@ GROUPS = [
         ("audit", "hypnomix.session.audit", "flags EQ, stacked limiters, bypassed devices; bounce vs your profile"),
         ("automation", "hypnomix.session.automation", "list/show/offset/dip automation envelopes (writes a new set)"),
         ("smooth", "hypnomix.session.smooth", "find clicks, level jumps at cuts and spikes on clips; ease them (writes a new set)"),
+        ("motion", "hypnomix.session.motion", "keep repetitive sections alive: filter sweeps, reverb/delay throws, stutters, gate chops, drop-outs, as options learned from your own automation (writes a new set)"),
         ("order", "hypnomix.session.order", "put tracks in working order (drums, bass, keys/guitar/synth, vocals, other; low to high) and vocal-stack clips on the track for their pitch (writes a new set)"),
         ("timing", "hypnomix.session.timing", "find hits out of time with the band; nudge only those with warp markers (writes a new set)"),
         ("tempomap", "hypnomix.session.tempomap", "map the tempo of a take played without a click; warp it to the grid, or make the grid follow it"),
