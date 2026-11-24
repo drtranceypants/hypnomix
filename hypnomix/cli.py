@@ -57,8 +57,9 @@ GROUPS = [
         ("profile", "hypnomix.session.profile", "build your sound profile from songs you love"),
     ]),
     ("Workflow: scan a song, review, fix", [
-        ("scan", "hypnomix.workflow.scan", "first pass: run every check on a set, change nothing, write REVIEW.md (one item at a time)"),
+        ("scan", "hypnomix.workflow.scan", "first pass: run every check on a set or a folder of recordings, change nothing, write REVIEW.md"),
         ("fix", "hypnomix.workflow.fix", "apply only the findings you approved, into ONE new set (original untouched)"),
+        ("prefs", "hypnomix.workflow.prefs", "your preferences, asked once: targets, protected tracks, how you like to review"),
     ]),
     ("Setup", [
         ("install", "hypnomix.install", "install the Live remote script, write Claude Code config"),

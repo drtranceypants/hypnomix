@@ -5,6 +5,9 @@ description: Run a recording session for real instruments and vocals in Ableton 
 
 # Tracking session
 
+Read `hypnomix prefs` first. Recording and routing change the person's open set: say what you are about to do
+and wait for a yes each time. One agent drives Live at a time.
+
 ## Before recording
 1. `hypnomix soundcheck --list`, then `hypnomix soundcheck --device "<interface>" --channel N` while they play the loudest part. Relay the advice exactly: aim for peaks of -12 to -6 dBFS in 24-bit. Hum or noise means fix the source (cable, socket, distance), not plugins.
 2. `hypnomix soundcheck --watch` gives a live meter while they adjust the preamp.

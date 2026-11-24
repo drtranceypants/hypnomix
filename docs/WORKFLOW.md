@@ -1,9 +1,12 @@
-# First pass: scan → review → fix
+# First pass: preferences → scan → review → fix → verify
 
-The fastest safe way to clean up a song: every check runs at once, nothing changes until a person approves
-it, and every approved change lands in **one new set** next to the original.
+The fastest safe way to clean up a song. Every check runs at once, nothing changes until a person approves
+it, every approved change lands in **new files** next to the originals, and the result is measured again.
 
 ```
+ hypnomix prefs  (once)      your targets, protected tracks, what is deliberate, how you like to review
+        │
+        ▼
              ┌─ files    (refs)          missing audio
              ├─ clips    (smooth)        clicks, level jumps at cuts, spikes
  Song.als ───┼─ timing   (timing)        hits out of time with the band
@@ -11,33 +14,69 @@ it, and every approved change lands in **one new set** next to the original.
              ├─ effects  (distortion,    distortion in takes and device chains,
              │            sidechain,     sidechain ducking, device-chain audit
              │            audit)
-             └─ mix      (measure, qc,   loudness, true peak, release checks
-                          translate)     (needs --mix)
+             └─ mix      (measure, qc,   loudness and true peak vs your target, release
+                          translate)     checks (needs --mix)
+
+ a folder ───┬─ recordings               clipping, levels, noise floor, DC, clicks (per file)
+ of audio    └─ stems    (masking)       which parts fight over which frequencies
                     │
                     ▼
      findings.json + REVIEW.md  (most severe first, each with an id)
                     │  person: approve / skip / change, one item at a time
+                    │  hypnomix fix DIR --decide ID=approve|skip|change     → decisions.json
                     ▼
-     hypnomix fix --approve … --out "Song (fixed).als"
+     hypnomix fix DIR --approved --out "Song (fixed).als"
+                    │  looks each finding up again, applies it, measures the new set
+                    ▼
+     A/B by ear, then  hypnomix prefs learn DIR
 ```
+
+## 0. Preferences (once)
+
+```bash
+hypnomix prefs                  # what is saved, and what is still unanswered
+hypnomix prefs questions        # the first-run questions (JSON, for an AI agent to ask one by one)
+hypnomix prefs set targets.lufs=-14 targets.true_peak=-1 review.style=one-at-a-time \
+                   protect.tracks="Lead Vox,Strings" protect.notes="long reverb tail in the outro"
+```
+
+Saved in `~/.hypnomix/preferences.json`. Every scan reads it:
+
+- **targets**: the mix check compares loudness and true peak with your numbers (default -14 LUFS, -1 dBTP).
+- **protect.tracks**: findings on these tracks are marked PROTECTED, and `fix` refuses them until you say yes
+  again (`--allow-protected`).
+- **protect.notes**: things that are deliberate. They are printed at the top of every review so nobody
+  "fixes" your fade or your long delay.
+- **review**, **taste**, **tools**: how you like to review, how strict tuning and timing should be, your DAW
+  and the free plug-ins you have.
+- **learned**: after each review, `hypnomix prefs learn DIR` counts what you approved and skipped per kind of
+  finding. The next review shows it ("in past reviews you skipped 9 of 10 like this"). It is advice for the
+  reviewer. Nothing is ever applied because of it.
+
+`hypnomix profile build song1.wav song2.wav …` is the other half: your sound as measured ranges, from finished
+songs you like.
 
 ## 1. Scan (read-only)
 
 ```bash
-hypnomix name "Song.als" --out "hypnomix-out/scan/Song/raw/names"   # track roles: lead, harmonies, drums…
 hypnomix scan "Song.als" --mix "Song mix.wav" --ref "Song instrumental.wav" --key "F# major"
+hypnomix scan "raw takes/"          # recordings or exported stems from any DAW: no Live set needed
 ```
 
 - `--mix`: a bounce of the whole song (loudness, true peak, release checks, and a fallback for `--ref`).
 - `--ref`: the mix or an instrumental. The vocal check measures the song's real tuning from it (songs are often
   not at A=440; one test song sat at A=435.4 Hz) and its key. `hypnomix separate mix.wav` makes an instrumental.
-- `--key`: confirm it; it only decides notes sung near a quarter-tone.
+- `--key`: the key, confirmed by the person. Vocal tuning is not applied without it.
+- Track roles come from `hypnomix name` (run automatically); override with `--vocal-track` / `--timing-track`
+  / `--lead-track` when it's unsure.
 - Groups run in parallel (`--jobs 4`). To spread them over several agents, run one group each with
   `--only GROUP --out SAME_DIR`, then `hypnomix scan --merge SAME_DIR`.
-- Track roles come from `hypnomix name`; override with `--vocal-track` / `--timing-track` when it's unsure.
 
-Output in `hypnomix-out/scan/<song>/`: `REVIEW.md`, `findings.json`, one `<group>.json` per group, and `raw/`
-(each tool's own report, renders of the vocal tracks).
+Output in `hypnomix-out/scan/<song>/`: `REVIEW.md`, `findings.json`, `scan.json` (what was scanned, and when the
+set was last saved), one `<group>.json` per group, and `raw/` (each tool's own report, renders of the vocals).
+
+If a check could not run, the review lists it under **"Checks that did NOT run"**. No findings from a check
+that did not run means nothing.
 
 ## 2. Review (one item at a time)
 
@@ -47,30 +86,72 @@ Each finding has: `id`, `severity` (high / medium / low / info), `track`, `where
 | applies | meaning | done by |
 |---|---|---|
 | `set` | a change to the Live set | `hypnomix fix` (into one new set) |
-| `audio` | a new audio file (pitch-corrected vocal) | `hypnomix fix` writes it to `Samples/Tuned/`; you put it on a track |
-| `manual` | needs hands or ears in Live (e.g. a loop seam, a crowded hit) | you |
+| `audio` | a new audio file (a tuned vocal, a de-hissed take) | `hypnomix fix`; you put it on a track |
+| `manual` | needs hands or ears in the DAW (a loop seam, a crowded hit, a re-record) | you |
 | `info` | a measurement | nothing |
 
-Copies of the same audio (a repeated loop, a pasted chorus) are grouped under one finding. Decisions can be kept
-in `decisions.json` in the scan folder so a review can be resumed.
+Copies of the same audio (a repeated loop, a pasted chorus) are grouped under one finding. Record each decision
+as it is made, so a review can stop and resume:
+
+```bash
+hypnomix fix "hypnomix-out/scan/Song" --decide smooth-14=approve,timing-7=skip
+hypnomix fix "hypnomix-out/scan/Song" --decide tune-Lead=change --note "lighter on the verse"
+hypnomix fix "hypnomix-out/scan/Song" --list        # every finding with its decision
+```
+
+Always asked one at a time: high severity, PROTECTED tracks, and anything about taste.
 
 ## 3. Fix (only what was approved)
 
 Close the set in Live first, then:
 
 ```bash
-hypnomix fix "hypnomix-out/scan/Song" --approve distortion-2,smooth-14,timing-7,tune-Lead --out "Song (fixed).als"
+hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).als"
+# or name the ids:   --approve distortion-2,smooth-14,timing-7,tune-Lead
 ```
 
-Order inside the new set: distortion parameter fixes → sidechain settings → clip fades and volume eases → warp-
-marker nudges. Each step re-runs its tool on the previous step's set with the approved ids only. To hear each
-change before the next, apply one id per run and chain them with `--from "Song (fixed 1).als" --out "Song (fixed 2).als"`.
-`fix-log.md` records every run.
+Order inside the new set: distortion parameter fixes → sidechain settings → clip fades and volume eases →
+warp-marker nudges. To hear each change before the next, apply one id per run and chain them with
+`--from "Song (fixed 1).als" --out "Song (fixed 2).als"`.
 
-## With Claude Code
+What `fix` checks itself, and stops on:
 
-The `first-pass` skill runs the whole thing: one `hypnomix-scanner` subagent per group in parallel, a merged
-summary, then the review one item at a time (approve / skip / change), then `fix`. Ask:
+| check | what happens |
+|---|---|
+| the set was saved again after the scan | stops; re-scan (or `--stale-ok` if you know the change is unrelated) |
+| the output name already exists, or is the original | stops; nothing is ever overwritten |
+| an id was recorded as skip or change | stops; record the new decision first |
+| a finding is on a protected track | stops; ask again, then `--allow-protected` |
+| vocal tuning without a confirmed key | that item is refused; pass `--key "F# major"` |
+| a finding is no longer in the set (already fixed, or ids moved) | skipped and listed, never swapped for its neighbour |
+| a step fails | listed under FAILED, exit code 1; the other steps still apply |
+| after writing | the new set is measured again: "N of M approved problems no longer measured" |
+
+Tuned vocals go to `<project>/Samples/Tuned/` (a new numbered file if one exists): put each on a new track at
+bar 1, warp off, and A/B with the original's mute. Folder scans write repaired copies to `<scan>/fixed/`.
+`fix-log.md` records every run: approved, applied, skipped and why, failed, and the verification.
+
+## 4. Listen, then learn
+
+The numbers say the problem is no longer measured. Only ears say it sounds right: open the new set and compare
+the changed spots with the original at the same bars. Then:
+
+```bash
+hypnomix prefs learn "hypnomix-out/scan/Song"
+```
+
+## Other DAWs
+
+Export every track as a full-length file from the same start point, with processing off, then
+`hypnomix scan "that folder/"`. The review works the same way; repaired audio comes back as new files, and
+anything that has to happen in the DAW (an EQ cut, a fader move) is listed as a to-do. `prep`, `automix`,
+`masking`, `tune`, `vocalign`, `master`, `translate` and `qc` all work on files from any DAW.
+
+## With an AI agent
+
+The `first-pass` skill (`skills/first-pass/SKILL.md`) runs the whole loop: preferences, one read-only
+`hypnomix-scanner` subagent per group in parallel, a merged summary, the review one item at a time, then `fix`
+and the verification. Any agent can follow `AGENTS.md` to do the same. Ask:
 
 > "Do a first pass on ~/Music/Song Project/Song.als. The mix is Song.wav."
 
@@ -81,5 +162,8 @@ summary, then the review one item at a time (approve / skip / change), then `fix
   slides and only moves each note's centre.
 - **Music.** Drum-like tracks aren't checked for spikes; loops that grow louder by design aren't "jumps";
   lasting level changes inside a take are only checked with `smooth --steps`.
+- **Intent.** Automation, effects and levels you set are treated as choices. Things you listed as deliberate
+  are shown on every review.
 - **Undecidable cases** are flagged for a person: a note sung halfway between two pitches, a hit with
-  neighbours too close to stretch cleanly, a loop seam that clicks.
+  neighbours too close to stretch cleanly, a loop seam that clicks, a steady quiet sound that could be hiss or
+  a pad.

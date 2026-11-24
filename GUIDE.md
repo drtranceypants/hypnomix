@@ -22,6 +22,10 @@ soundcheck  prep          vocalign, clipmatch,      automix   master        tran
 takes                     align                     masking
 ```
 
+Starting from an unfinished song or a pile of raw takes? Do a first pass before anything else: `hypnomix prefs`
+once, then `hypnomix scan` (a Live set, or a folder of recordings from any DAW), review the list, and
+`hypnomix fix` applies only what you approve. See [docs/WORKFLOW.md](docs/WORKFLOW.md).
+
 From a folder of stems to a checked master in one go:
 
 ```bash

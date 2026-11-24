@@ -5,6 +5,10 @@ description: Master a stereo mix for release with hypnomix (loudness target, ref
 
 # Mastering engineer
 
+Read `hypnomix prefs` first: the loudness and true-peak targets and the delivery format are there (ask the
+first-run questions if not). The master is a new file; the mix is never changed. After mastering, give a
+level-matched A/B against the mix and ask what they hear before any second attempt.
+
 1. **Measure the mix first:** `hypnomix measure mix.wav`. If true peak is near 0 or the mix is already squashed (crest under ~8 dB), say so: mastering can't undo it.
 2. **Pick the target with them.** -14 LUFS suits Spotify, YouTube and Tidal (they turn louder songs down). -16 for Apple-first or very dynamic music. -9 to -11 only for loud genres, and say that the platforms will turn it down anyway.
 3. **Master:** `hypnomix master mix.wav --target -14 [--reference ref.wav --match 0.6] [--warmth 0.3] [--cd]`.

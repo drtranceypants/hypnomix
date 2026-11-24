@@ -1,33 +1,129 @@
 #!/usr/bin/env python3
-"""Apply the findings you approved after `hypnomix scan`, and nothing else.
+"""Apply the findings a person approved after `hypnomix scan`, and nothing else.
 
-  hypnomix fix SCAN_DIR --approve ID,ID,...  --out "Song (fixed).als"
+  hypnomix fix SCAN_DIR --list                              every finding id, with its recorded decision
+  hypnomix fix SCAN_DIR --decide ID=approve,ID=skip [--note "why"]
+                                                            record the person's decisions (decisions.json)
+  hypnomix fix SCAN_DIR --approved --out "Song (fixed).als" apply everything recorded as approved
+  hypnomix fix SCAN_DIR --approve ID,ID,... --out "Song (fixed).als"
+                                                            same, naming the ids here (also recorded)
   hypnomix fix SCAN_DIR --approve ID --from "Song (fixed 1).als" --out "Song (fixed 2).als"
-                                             (one fix at a time, each on top of the last, to hear each)
-  hypnomix fix SCAN_DIR --list               (show every finding id)
+                                                            one fix at a time, each on top of the last
 
 What happens to each approved finding (see REVIEW.md for the ids):
   set     written into ONE new set next to the original, in this order: distortion parameter fixes,
           sidechain settings, clip fades / volume eases (smooth), warp-marker nudges (timing).
           The original set is never touched; temporary step files are removed at the end.
-  audio   tune: the vocal is rendered from the set (clip gain, fades, warps baked in) and pitch-corrected
-          into <project>/Samples/Tuned/. Put it on a new track at bar 1 and A/B against the original.
+  audio   a new audio file. tune: the vocal is rendered from the set (clip gain, fades, warps baked in) and
+          pitch-corrected into <project>/Samples/Tuned/ (never over an existing file). Folder scans: the
+          repaired copy goes to SCAN_DIR/fixed/. Source audio is never changed.
   manual  listed with what to do by hand.
   info    nothing to apply.
 
-Close the set in Live first: Live would overwrite edits on its next save. Every run appends to
-SCAN_DIR/fix-log.md (what was applied, what was skipped and why).
+Safety checks made here, in code (they stop the run rather than guess):
+  - the scanned set must not have changed since the scan (re-scan, or --stale-ok if you know why)
+  - every approved finding is looked up again in the set being written, by track + kind + position, because
+    ids are only numbers in a list: if it is no longer there (already fixed, or the set changed) it is
+    skipped and reported, never swapped for its neighbour
+  - findings on tracks you protected (`hypnomix prefs`) need --allow-protected
+  - vocal tuning needs a confirmed key: `scan --key` or `fix --key "F# major"`
+  - after writing, the new set is checked again: the log says which approved problems are gone and which
+    are still measured (--no-verify to skip)
+  - any failed step makes the exit code 1 and is listed under FAILED; nothing is reported as done that wasn't
+
+Close the set in Live first: Live would overwrite edits on its next save, and changes you have not saved
+in Live are not in the file this reads. Every run appends to SCAN_DIR/fix-log.md.
 """
-import argparse, json, shutil, subprocess, sys, time
+import argparse, json, re, shutil, subprocess, sys, time
 from pathlib import Path
 
 ORDER = ["distortion", "sidechain", "smooth", "timing"]
+DECISIONS = ("approve", "skip", "change")
 
 
-def hx(*args):
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True)
+def hx(*args, timeout=7200):
+    try:
+        r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True,
+                           timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return 1, f"timed out after {timeout} s: hypnomix {' '.join(map(str, args[:2]))}"
     out = (r.stdout or "") + (r.stderr or "")
     return r.returncode, "\n".join(l for l in out.splitlines() if "Warning" not in l and "warnings.warn" not in l)
+
+
+def safe_name(track):
+    return re.sub(r'[\\/:*?"<>|]', "-", track)
+
+
+def fingerprint(f):
+    """What a finding IS, independent of its number in the list."""
+    return (f.get("tool"), f.get("track") or "", f.get("kind") or "", f.get("where") or "", f.get("device") or "")
+
+
+def load_decisions(sd):
+    p = sd / "decisions.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def save_decisions(sd, dec):
+    (sd / "decisions.json").write_text(json.dumps(dec, indent=1))
+
+
+def decision_of(dec, fid):
+    d = dec.get(fid)
+    return d.get("decision") if isinstance(d, dict) else d
+
+
+def live_running():
+    try:
+        return subprocess.run(["pgrep", "-x", "Live"], capture_output=True, timeout=5).returncode == 0
+    except Exception:
+        return False
+
+
+def recheck(tool, als, sd, scan, timing_tracks, tag):
+    """Analyse `als` again with `tool` (read-only) and return its findings in the scan's shape, or None."""
+    j = sd / "raw" / f"recheck-{tool}-{tag}.json"
+    j.parent.mkdir(parents=True, exist_ok=True)
+    if j.exists():
+        j.unlink()
+    args = [tool, als, "--json", j]
+    if tool == "timing":
+        args += ["--list", "0"]
+        for t in timing_tracks:
+            args += ["--track", t]
+    if tool == "distortion" and scan.get("mix"):
+        args += ["--mix", scan["mix"]]
+    hx(*args)
+    if not j.exists():
+        return None
+    rows = json.loads(j.read_text()).get("findings", [])
+    if tool == "distortion":
+        rows = [dict(id=(r.get("evidence") or {}).get("id"), tool="distortion", kind=r.get("kind"),
+                     track=r.get("track"), where=r.get("where", ""), device=r.get("device", "")) for r in rows]
+    for r in rows:
+        r.setdefault("tool", tool)
+    return rows
+
+
+def rematch(items, now):
+    """Pair approved findings with the same findings in the current set. Returns (ids to apply, skipped)."""
+    by_fp, old_fp = {}, {}
+    for r in now:
+        by_fp.setdefault(fingerprint(r), []).append(r)
+    for f in items:
+        old_fp.setdefault(fingerprint(f), []).append(f)
+    ids, skipped = [], []
+    for fp, olds in old_fp.items():
+        news = by_fp.get(fp, [])
+        if not news:
+            skipped += [(f, "no longer found in this set (already fixed, or the set changed)") for f in olds]
+        elif len(news) != len(olds):
+            skipped += [(f, f"ambiguous: {len(news)} findings now match where {len(olds)} did; re-scan") for f in olds]
+        else:
+            for r in news:
+                ids += r.get("ids") or [r["id"]]
+    return sorted(set(ids)), skipped
 
 
 def main():
@@ -35,40 +131,87 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("scan_dir")
     ap.add_argument("--approve", default="", help="comma-separated finding ids (or item numbers) to apply")
+    ap.add_argument("--approved", action="store_true", help="apply every finding recorded as approved in decisions.json")
+    ap.add_argument("--decide", default="", help="record decisions and exit: ID=approve|skip|change[,ID=...]")
+    ap.add_argument("--note", default="", help="with --decide: the person's reason or requested change")
     ap.add_argument("--out", help='new set to write, e.g. "Song (fixed).als" (same folder as the original)')
     ap.add_argument("--from", dest="from_set", help="start from this set instead of the scanned one (to apply "
                     "fixes one at a time, each on top of the last); must be in the same folder")
+    ap.add_argument("--key", help='confirmed song key for vocal tuning, e.g. "F# major"')
+    ap.add_argument("--allow-protected", action="store_true", help="the person re-confirmed changes on protected tracks")
+    ap.add_argument("--stale-ok", action="store_true", help="apply although the set changed since the scan")
+    ap.add_argument("--no-verify", action="store_true", help="skip the check of the new set after writing")
     ap.add_argument("--list", action="store_true", help="list findings and exit")
     a = ap.parse_args()
     sd = Path(a.scan_dir)
     data = json.loads((sd / "findings.json").read_text())
     scan = json.loads((sd / "scan.json").read_text()) if (sd / "scan.json").exists() else {}
     findings = data["findings"]
+    dec = load_decisions(sd)
+    by_key = {f["id"]: f for f in findings}
+    by_key.update({str(f["n"]): f for f in findings})
+
     if a.list:
         for f in findings:
             print(f"{f['n']:4d}  {f['id']:<22} [{f.get('severity')}] {f.get('applies'):<6} "
+                  f"{decision_of(dec, f['id']) or '-':<8}{'PROTECTED ' if f.get('protected') else ''}"
                   f"{f['tool']}: {f.get('track') or '-'} {f.get('where', '')}  {str(f.get('problem'))[:80]}")
         return
+
+    if a.decide:
+        for item in a.decide.split(","):
+            if "=" not in item:
+                sys.exit(f"expected ID=decision, got {item!r}")
+            k, v = (x.strip() for x in item.split("=", 1))
+            if k not in by_key:
+                sys.exit(f"unknown id: {k}")
+            if v not in DECISIONS:
+                sys.exit(f"decision must be one of {', '.join(DECISIONS)} (got {v!r})")
+            dec[by_key[k]["id"]] = {"decision": v, "note": a.note, "at": time.strftime("%Y-%m-%d %H:%M")}
+        save_decisions(sd, dec)
+        n = {d: sum(1 for k in dec if decision_of(dec, k) == d) for d in DECISIONS}
+        left = sum(1 for f in findings if f.get("applies") != "info" and f["id"] not in dec)
+        print(f"recorded. approve {n['approve']}, skip {n['skip']}, change {n['change']}; {left} still undecided")
+        return
+
     want = {x.strip() for x in a.approve.split(",") if x.strip()}
-    if not want:
-        sys.exit("nothing approved: pass --approve ID,ID,... (see REVIEW.md or --list)")
-    by_key = {f["id"]: f for f in findings}
-    by_key.update({str(f["n"]): f for f in findings})
     unknown = sorted(w for w in want if w not in by_key)
     if unknown:
         sys.exit(f"unknown ids: {', '.join(unknown)}")
-    chosen = {by_key[w]["id"]: by_key[w] for w in want}.values()
+    want = {by_key[w]["id"] for w in want}
+    if a.approved:
+        want |= {k for k in dec if decision_of(dec, k) == "approve" and k in by_key}
+    if not want:
+        sys.exit("nothing approved: pass --approve ID,ID,... or record decisions with --decide and use --approved")
+    refused = sorted(w for w in want if decision_of(dec, w) in ("skip", "change"))
+    if refused:
+        sys.exit(f"these were recorded as skip/change, not approve: {', '.join(refused)}. "
+                 "Record the new decision with --decide first.")
+    chosen = [by_key[w] for w in sorted(want)]
+    prot = [f["id"] for f in chosen if f.get("protected")]
+    if prot and not a.allow_protected:
+        sys.exit(f"on protected tracks: {', '.join(prot)}. Ask the person again, then add --allow-protected.")
 
-    orig = Path(data["set"])
-    src = Path(a.from_set).resolve() if a.from_set else orig
-    if src.parent != orig.resolve().parent:
-        sys.exit(f"--from must be in the same folder as the scanned set ({orig.parent})")
-    log = [f"\n## fix run {time.strftime('%Y-%m-%d %H:%M')}", "", f"approved: {', '.join(sorted(f['id'] for f in chosen))}", ""]
     set_items = [f for f in chosen if f.get("applies") == "set"]
     audio_items = [f for f in chosen if f.get("applies") == "audio"]
     manual_items = [f for f in chosen if f.get("applies") in ("manual", "info")]
+    folder_mode = scan.get("mode") == "folder"
+    orig = Path(data["set"]) if data.get("set") and not folder_mode else None
+    src = Path(a.from_set).resolve() if a.from_set else orig
+    out = None
 
+    if orig and (set_items or audio_items):
+        if not orig.exists():
+            sys.exit(f"the scanned set is gone: {orig}")
+        if src.parent != orig.resolve().parent:
+            sys.exit(f"--from must be in the same folder as the scanned set ({orig.parent})")
+        was = scan.get("set_mtime")
+        if was and not a.from_set and abs(orig.stat().st_mtime - was) > 1 and not a.stale_ok:
+            sys.exit("the set was saved again after the scan, so the findings may not match it any more.\n"
+                     "Re-scan it (recommended), or pass --stale-ok if the change cannot affect these findings.")
     if set_items:
+        if not orig:
+            sys.exit("this scan has no Live set: set changes cannot be applied")
         if not a.out:
             sys.exit("approved set changes need --out NEW.als")
         out = Path(a.out)
@@ -76,74 +219,165 @@ def main():
             out = src.parent / out
         if out.resolve().parent != src.resolve().parent:
             sys.exit(f"--out must be in the same folder as the original ({src.parent})")
-        if out.resolve() == src.resolve():
+        if out.resolve() in (src.resolve(), orig.resolve()):
             sys.exit("refusing to overwrite the original set")
-        cur, step, temps = src, 0, []
-        for tool in ORDER:
-            items = [f for f in set_items if f["tool"] == tool]
-            if not items:
-                continue
-            step += 1
-            nxt = src.parent / f"{src.stem} (fix step {step}).als"
-            temps.append(nxt)
-            if tool == "smooth":
-                ids = sorted({i for f in items for i in f.get("ids", [f["id"]])})
-                code, txt = hx("smooth", cur, "--apply", nxt, "--ids", ",".join(ids))
-            elif tool == "timing":
-                tj = json.loads((sd / "raw" / "timing.json").read_text())
-                args = ["timing", cur, "--apply", nxt, "--ids", ",".join(f["id"] for f in items), "--list", "0"]
-                for t in tj["tracks"]:
-                    args += ["--track", t]
-                code, txt = hx(*args)
-            elif tool == "distortion":
-                args = ["distortion", cur, "--apply", nxt, "--ids", ",".join(f["id"] for f in items)]
-                if scan.get("mix"):
-                    args += ["--mix", scan["mix"]]
-                code, txt = hx(*args)
-            else:  # sidechain: one host at a time
-                code, txt, tmp = 0, "", cur
-                for k, f in enumerate(items):
-                    target = nxt if k == len(items) - 1 else src.parent / f"{src.stem} (fix step {step}.{k}).als"
-                    if target != nxt:
-                        temps.append(target)
-                    extra = ["--glue-to-compressor"] if f.get("glue") else []
-                    c, t = hx("sidechain", tmp, "--host", f["host"], "--apply", target, *extra)
-                    code, txt, tmp = code or c, txt + t, target
-            ok = code == 0 and nxt.exists()
-            log += [f"### {tool}: {'applied' if ok else 'FAILED'} ({len(items)} findings)", "", "```",
-                    txt.strip()[-2500:], "```", ""]
-            print(f"{tool:<11} {'ok' if ok else 'FAILED'}  ({len(items)} findings)")
-            if ok:
-                cur = nxt
-        if cur == src:
-            print("no set changes could be applied; see fix-log.md")
-        else:
-            shutil.copyfile(cur, out)
-            print(f"wrote {out}")
-        for t in temps:
-            if t.exists() and t.resolve() != out.resolve():
-                t.unlink()
+        if out.exists():
+            sys.exit(f"{out.name} already exists: choose a new name (nothing is ever overwritten)")
+    if orig and (set_items or audio_items) and live_running():
+        print("NOTE: Live is running. Changes not saved in Live are not in the file being read, and the set "
+              "must be closed in Live before the new one is opened.\n")
 
-    for f in audio_items:  # tune: render the take from the set, correct it into the project
-        proj = src.parent
-        tdir = proj / "Samples" / "Tuned"
-        tdir.mkdir(parents=True, exist_ok=True)
-        rendered = sd / "raw" / "renders" / f"{f['track']}.wav"
+    for f in chosen:  # an explicit --approve is a decision too
+        if f["id"] not in dec:
+            dec[f["id"]] = {"decision": "approve", "note": "via --approve", "at": time.strftime("%Y-%m-%d %H:%M")}
+    save_decisions(sd, dec)
+    log = [f"\n## fix run {time.strftime('%Y-%m-%d %H:%M')}", "",
+           f"approved: {', '.join(f['id'] for f in chosen)}", ""]
+    failed, skipped_all = [], []
+
+    if set_items:
+        tj = sd / "raw" / "timing.json"
+        timing_tracks = json.loads(tj.read_text())["tracks"] if tj.exists() else []
+        cur, step, temps, applied_tools = src, 0, [], []
+        try:
+            for tool in ORDER:
+                items = [f for f in set_items if f["tool"] == tool]
+                if not items:
+                    continue
+                step += 1
+                nxt = src.parent / f"{src.stem} (fix step {step}).als"
+                temps.append(nxt)
+                txt = ""
+                if tool == "sidechain":  # addressed by host track, one at a time
+                    tmp = cur
+                    for k, f in enumerate(items):
+                        target = src.parent / f"{src.stem} (fix step {step}.{k}).als"
+                        temps.append(target)
+                        extra = ["--glue-to-compressor"] if f.get("glue") else []
+                        c, t = hx("sidechain", tmp, "--host", f["host"], "--apply", target, *extra)
+                        txt += t + "\n"
+                        if c == 0 and target.exists():
+                            tmp = target
+                        else:
+                            failed.append(f"{f['id']}: sidechain on {f['host']} failed")
+                    ok = tmp != cur
+                    if ok:
+                        shutil.copyfile(tmp, nxt)
+                else:
+                    now = recheck(tool, cur, sd, scan, timing_tracks, f"pre{step}")
+                    if now is None:
+                        failed += [f"{f['id']}: could not re-check the set with {tool}" for f in items]
+                        log += [f"### {tool}: FAILED (re-check did not run)", ""]
+                        print(f"{tool:<11} FAILED  (re-check did not run)")
+                        continue
+                    ids, skipped = rematch(items, now)
+                    skipped_all += skipped
+                    if not ids:
+                        log += [f"### {tool}: nothing to apply (see skipped)", ""]
+                        print(f"{tool:<11} nothing to apply ({len(skipped)} skipped)")
+                        continue
+                    args = [tool, cur, "--apply", nxt, "--ids", ",".join(ids)]
+                    if tool == "timing":
+                        args += ["--list", "0"]
+                        for t in timing_tracks:
+                            args += ["--track", t]
+                    if tool == "distortion" and scan.get("mix"):
+                        args += ["--mix", scan["mix"]]
+                    code, txt = hx(*args)
+                    ok = code == 0 and nxt.exists()
+                    if not ok:
+                        failed += [f"{f['id']}: {tool} --apply failed" for f in items]
+                log += [f"### {tool}: {'applied' if ok else 'FAILED'} ({len(items)} approved)", "", "```",
+                        txt.strip()[-2500:], "```", ""]
+                print(f"{tool:<11} {'ok' if ok else 'FAILED'}  ({len(items)} approved)")
+                if ok:
+                    cur = nxt
+                    applied_tools.append(tool)
+            if cur == src:
+                print("no set changes could be applied; see fix-log.md")
+                out = None
+            else:
+                shutil.copyfile(cur, out)
+                print(f"wrote {out}")
+        finally:
+            for t in temps:
+                if t.exists():
+                    t.unlink()
+
+        if out and not a.no_verify:  # measure the new set: are the approved problems gone?
+            log += ["### verify (the new set, measured again)", ""]
+            for tool in applied_tools:
+                if tool == "sidechain":
+                    continue
+                items = [f for f in set_items if f["tool"] == tool]
+                now = recheck(tool, out, sd, scan, timing_tracks, "post")
+                if now is None:
+                    line = f"- {tool}: could not be re-checked"
+                else:
+                    left = {fingerprint(r) for r in now}
+                    still = [f["id"] for f in items if fingerprint(f) in left]
+                    line = (f"- {tool}: {len(items) - len(still)} of {len(items)} approved problems no longer measured"
+                            + (f"; still measured: {', '.join(still)} (listen there: a gentle fix can leave a "
+                               f"smaller version of the problem)" if still else ""))
+                print("verify     " + line[2:])
+                log.append(line)
+            log.append("")
+
+    for f in audio_items:
+        if f.get("run"):  # folder scan: a repaired copy into SCAN_DIR/fixed
+            fixed = sd / "fixed"
+            fixed.mkdir(exist_ok=True)
+            code, txt = hx(*[str(x).replace("{out}", str(fixed)) for x in f["run"]])
+            ok = code == 0
+            log += [f"### {f['id']} {f.get('track')}: {'written to ' + str(fixed) if ok else 'FAILED'}", "", "```",
+                    txt.strip()[-1200:], "```", ""]
+            print(f"{f['tool']:<11} {'ok' if ok else 'FAILED'}  {f.get('track')}" + (f"  → {fixed}" if ok else ""))
+            if not ok:
+                failed.append(f"{f['id']}: {f['tool']} failed")
+            continue
+        if not orig:
+            failed.append(f"{f['id']}: no Live set in this scan")
+            continue
+        key = a.key or scan.get("key")  # tune
+        if not key:
+            failed.append(f"{f['id']}: not tuned: confirm the key with the person, then pass --key \"<key>\" "
+                          f"(the scan estimated {f.get('key')})")
+            print(f"tune       REFUSED  {f['track']}: the key is not confirmed (--key)")
+            continue
+        rdir = sd / "raw" / ("renders" if not a.from_set else f"renders-{safe_name(src.stem)}")
+        rendered = rdir / f"{safe_name(f['track'])}.wav"
         if not rendered.exists():
-            code, txt = hx("render", src, "--tracks", f["track"], "--out", sd / "raw" / "renders")
-        dest = tdir / f"{f['track']} (tuned).wav"
-        args = ["tune", rendered, dest]
+            hx("render", src, "--tracks", f["track"], "--out", rdir)
+        if not rendered.exists():
+            failed.append(f"{f['id']}: could not render {f['track']} from the set")
+            print(f"tune       FAILED  {f['track']}: render failed")
+            continue
+        tdir = src.parent / "Samples" / "Tuned"
+        tdir.mkdir(parents=True, exist_ok=True)
+        dest, k = tdir / f"{safe_name(f['track'])} (tuned).wav", 1
+        while dest.exists():
+            k += 1
+            dest = tdir / f"{safe_name(f['track'])} (tuned {k}).wav"
+        args = ["tune", rendered, dest, "--key", key]
         if scan.get("ref"):
             args += ["--ref", scan["ref"]]
-        if f.get("key"):
-            args += ["--key", f["key"]]
         code, txt = hx(*args)
         ok = code == 0 and dest.exists()
         log += [f"### tune {f['track']}: {'written' if ok else 'FAILED'}", "", "```", txt.strip()[-1500:], "```", ""]
         print(f"tune       {'ok' if ok else 'FAILED'}  {dest if ok else f['track']}")
         if ok:
-            print(f"           put it on a new audio track at bar 1 (warp off), mute the original, A/B")
+            print("           put it on a new audio track at bar 1 (warp off), mute the original, A/B")
+        else:
+            failed.append(f"{f['id']}: tune failed on {f['track']}")
 
+    if skipped_all:
+        print("\nskipped (not applied):")
+        log += ["### skipped (not applied)", ""]
+        for f, why in skipped_all:
+            line = f"- {f['id']} {f.get('track') or ''} {f.get('where', '')}: {why}"
+            print(line)
+            log.append(line)
+        log.append("")
     if manual_items:
         print("\nby hand (not changed automatically):")
         log += ["### by hand", ""]
@@ -151,9 +385,19 @@ def main():
             line = f"- {f['id']} {f.get('track') or ''} {f.get('where', '')}: {str(f.get('fix'))[:300]}"
             print(line)
             log.append(line)
+        log.append("")
+    if failed:
+        print("\nFAILED (not done):")
+        log += ["### FAILED (not done)", ""] + [f"- {x}" for x in failed] + [""]
+        for x in failed:
+            print(f"- {x}")
     with open(sd / "fix-log.md", "a") as fh:
         fh.write("\n".join(log) + "\n")
-    print(f"\nlog: {sd / 'fix-log.md'}. Close the original in Live, then open the new set.")
+    print(f"\nlog: {sd / 'fix-log.md'}")
+    if out:
+        print("Close the original in Live, open the new set, and A/B the changed spots against the original.")
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

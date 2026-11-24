@@ -7,10 +7,17 @@ description: Mix inside the open Ableton Live set with hypnomix through AbletonO
 
 Requirements: `hypnomix doctor` shows Live connected; for `loop` also BlackHole and a Multi-Output Device.
 
+Mixing in the open set is the last resort: prefer `hypnomix scan` + `fix` (new set, nothing overwritten) when
+the job can be done on the saved file. Read `hypnomix prefs` first (protected tracks, what is deliberate).
+
 ## Safety rules
+- **One change, one approval.** Propose the move, get a yes, make it, A/B it, report the numbers and what to
+  listen for. After three moves, stop and ask what they hear.
+- **One driver.** If another agent or session may be using Live, ask the person before touching it.
 - **Snapshot first:** `hypnomix live snapshot` (faders, pans, sends). `hypnomix live restore <file>` undoes.
 - **Automation:** setting an automated control overrides its envelope. Check with `hypnomix automation list Set.als` before touching a control, and run `hypnomix live reenable` after edits, or exports lose the automation.
-- Ask before taste-defining moves (signature reverb, vocal tone) and before saving the set.
+- Ask before taste-defining moves (signature reverb, delay character, vocal tone) and before saving the set.
+- `--revert` puts back what the loop changed; check with `hypnomix live snapshot` before and after if unsure.
 
 ## Controls
 - Mixer: `hypnomix live db Lead -3.5`, `nudge`, `pan`, `send Lead A 0.3`, `mute`, `solo`.

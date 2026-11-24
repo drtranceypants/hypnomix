@@ -25,14 +25,20 @@ prep pass (clicks, clipping, plosives, breaths, noise, silence, fades) …
 ## First pass on a new song
 
 ```
+hypnomix prefs                                   # once: your targets, protected tracks, how you like to review
 hypnomix scan "Song.als" --mix "Song.wav"        # every check at once; changes nothing
-#   → REVIEW.md: clicks, cuts, spikes, timing, vocal pitch, distortion, sidechains, loudness…
-hypnomix fix  <scan folder> --approve smooth-3,timing-7 --out "Song (fixed).als"
+hypnomix scan "raw takes/"                       # or a folder of recordings / stems from any DAW
+#   → REVIEW.md: clicks, cuts, spikes, timing, vocal pitch, distortion, sidechains, loudness, noise…
+hypnomix fix  <scan folder> --decide smooth-3=approve,timing-7=skip      # record each decision
+hypnomix fix  <scan folder> --approved --out "Song (fixed).als"          # apply only what you approved
 ```
 
-The scan runs every check below in parallel and writes one review list, most severe first. You (or Claude, item
-by item with you) approve what to fix; `fix` writes only those changes into **one new set** next to the original.
-See [docs/WORKFLOW.md](docs/WORKFLOW.md).
+The scan runs every check below in parallel and writes one review list, most severe first. You (or an AI agent,
+item by item with you) approve what to fix; `fix` writes only those changes into **one new set** next to the
+original, then measures the new set again and tells you which problems are gone. It refuses to run if the set
+changed since the scan, never overwrites a file, and won't touch tracks you marked as protected without asking
+again. `prefs` remembers what you usually approve and skip, so each review starts closer to how you work.
+See [docs/WORKFLOW.md](docs/WORKFLOW.md); what's coming, including Logic Pro and Pro Tools: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## What's in the box
 
@@ -112,13 +118,13 @@ Open the repo in Claude Code and ask for what you want:
 >
 > "Master this for Spotify and check it'll survive on a phone."
 
-Five skills ship in `skills/`: **first-pass** (scan a whole song with parallel subagents, then review and apply fixes one at a time), **mix-engineer**, **mastering-engineer**, **tracking-session** and **live-mixing**. `agents/` holds the **hypnomix-scanner** subagent the first pass uses. They teach Claude the workflows, the safety rules (snapshot before touching your set, respect automation, ask before taste calls), and how to explain each move.
+Five skills ship in `skills/`: **first-pass** (ask your preferences once, scan a whole song with parallel subagents, then review and apply fixes one at a time), **mix-engineer**, **mastering-engineer**, **tracking-session** and **live-mixing**. `agents/` holds the **hypnomix-scanner** subagent the first pass uses. They teach Claude the workflows, the safety rules (snapshot before touching your set, respect automation, ask before taste calls), and how to explain each move.
 
 To use the skills from any project, add the repo as a plugin marketplace: `/plugin marketplace add drtranceypants/hypnomix`.
 
 `.mcp.json` also connects the [Ableton MCP](https://github.com/ahujasid/ableton-mcp) (telemetry off), which lets Claude create tracks and load devices. Together with `hypnomix live` it can rebuild an automix inside your set from `recipe.json`.
 
-**Other AI agents** (Codex, Cursor, Aider…): start with [AGENTS.md](AGENTS.md): setup, the command map, the safety rules and how to extend the code.
+**Other AI agents** (Codex, Cursor, Aider…): start with [AGENTS.md](AGENTS.md): setup, the loop every job follows, the safety rules, the command map and how to extend the code. [docs/LESSONS.md](docs/LESSONS.md) lists the mistakes those rules come from.
 
 ## Only free, open-source or stock tools
 
