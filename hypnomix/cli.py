@@ -48,6 +48,7 @@ GROUPS = [
         ("mine", "hypnomix.session.miner", "tempo, key, tracks, plug-in chains, routing, levels from a set"),
         ("audit", "hypnomix.session.audit", "flags EQ, stacked limiters, bypassed devices; bounce vs your profile"),
         ("automation", "hypnomix.session.automation", "list/show/offset/dip automation envelopes (writes a new set)"),
+        ("smooth", "hypnomix.session.smooth", "find clicks, level jumps at cuts and spikes on clips; ease them (writes a new set)"),
         ("refs", "hypnomix.session.refs", "find missing audio files in sets"),
         ("profile", "hypnomix.session.profile", "build your sound profile from songs you love"),
     ]),
