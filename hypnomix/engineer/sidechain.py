@@ -1,0 +1,761 @@
+#!/usr/bin/env python3
+"""Make sidechain compression sound good: measure what each sidechained Compressor in a Live set
+actually does to the music, and suggest settings that duck cleanly and in time.
+
+For every Compressor with its sidechain on, it simulates the compressor driven by the trigger track
+and measures, hit by hit:
+
+  depth        how far the target is turned down (dB)
+  recovery     how much of that has come back by the next hit (100% = fully back in time)
+  back at      when the gain is 90% back, against the gap to the next hit
+  consistency  how much the depth varies between hits (a steady groove wants a steady duck)
+  low end      a release (or attack) shorter than about two cycles of the target's lowest note
+               bends the waveform and sounds like distortion or clicks on bass
+
+Then it searches for settings that hit a style:
+
+  clarity     (default for drum triggers) 2-4 dB, back before the next hit: kick and bass stop
+              fighting without audible pumping
+  pump        6-10 dB with the release timed so the level comes back right at the next hit
+  vocal-duck  (default for returns fed by a vocal) about 3 dB while the singer sings, ~10 ms attack,
+              200-400 ms release: delays and reverbs get out of the way, then bloom in the gaps
+
+Usage:
+  hypnomix sidechain SET.als [--stems DIR] [--style clarity|pump|vocal-duck] [--out DIR]
+  hypnomix sidechain SET.als --apply "SET (sidechain).als"       # write the suggestions to a new set
+  hypnomix sidechain --trigger kick.wav --target bass.wav --bpm 92 [--style ...]   # any two files
+
+Trigger audio: audio tracks are rendered straight from the set. MIDI tracks (drum racks, synths) need
+their audio: export them (File > Export Audio/Video > All Individual Tracks) into a folder and pass
+--stems DIR; files are matched by track name. The sidechain listens after the trigger's effects
+(Post FX), which is what an individual-track export gives you.
+
+Outputs (hypnomix-out/sidechain/<set>/): a gain-reduction plot per compressor (current vs suggested,
+on the beat grid) and, when the target's audio is available, before/after previews of the target.
+
+The compressor model is an approximation of Live's Compressor (Peak/RMS detector, knee, attack,
+release, lookahead, sidechain gain and EQ). Check the result by ear. Close the set in Live before
+--apply; the new set is written next to the original so its samples stay linked.
+"""
+import argparse, gzip, math, re, sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+from scipy.signal import resample_poly
+
+from hypnomix.core import dsp
+from hypnomix.core.paths import out_at
+
+SR = 22050          # analysis rate: ducking lives in the low end and the envelope, not in the air band
+BLOCK = 16          # gain-computer block (0.7 ms at 22.05 kHz)
+# Live stores the S/C EQ type as an index. Read from how Live's own presets use it: 3 = low-pass
+# ("Kick Reducer" at 115 Hz), 5 = high-pass (47 presets at 80-370 Hz, gain unused), 1 = band-pass
+# ("De-esser" at 6 kHz); 0 and 4 carry real gains (shelf / bell). 2 and 6 are guesses.
+SC_EQ_TYPES = ["low shelf", "band-pass", "high shelf", "low-pass", "bell", "high-pass", "notch"]
+LOWPASS, BANDPASS, HIGHPASS = 3, 1, 5
+LOOKAHEAD_MS = [0.0, 1.0, 10.0]
+MODELS = ["Peak", "RMS", "Expand"]
+STYLES = {
+    #             depth dB, ratio, knee, model, attack ms, lookahead index
+    "clarity":    dict(depth=3.0, ratio=4.0, knee=6.0, model=0, attack=1.0, lookahead=1),
+    "pump":       dict(depth=8.0, ratio=6.0, knee=3.0, model=0, attack=1.0, lookahead=1),
+    "vocal-duck": dict(depth=3.0, ratio=3.0, knee=6.0, model=1, attack=10.0, lookahead=0),
+}
+
+
+# ---------------------------------------------------------------- reading the set
+def v(e, path, default=None):
+    x = e.find(path) if e is not None else None
+    return x.get("Value") if x is not None and x.get("Value") is not None else default
+
+
+def manual(d, name, cast=float, default=None):
+    x = d.find(f"./{name}/Manual")
+    return cast(x.get("Value")) if x is not None else default
+
+
+def track_name(t):
+    if t.tag in ("MainTrack", "MasterTrack"):
+        return "Main"
+    return v(t, "./Name/EffectiveName", "?")
+
+
+def all_tracks(root):
+    ts = list(root.find(".//Tracks"))
+    m = root.find(".//MainTrack")
+    if m is None:
+        m = root.find(".//MasterTrack")
+    return ts + ([m] if m is not None else [])
+
+
+def read_compressor(d):
+    sc = d.find("./SideChain")
+    scgain = float(v(sc, "./Volume/Manual", 1.0))
+    return dict(
+        on=manual(d, "On", lambda s: s == "true", True),
+        sc_on=v(sc, "./OnOff/Manual") == "true",
+        source_target=v(sc, ".//RoutedInput//Target", ""),
+        source_name=v(sc, ".//RoutedInput//UpperDisplayString", ""),
+        source_tap=v(sc, ".//RoutedInput//LowerDisplayString", ""),
+        sc_gain_db=20 * math.log10(max(scgain, 1e-9)),
+        threshold_db=20 * math.log10(max(manual(d, "Threshold", default=0.1), 1e-9)),
+        ratio=manual(d, "Ratio", default=4.0),
+        attack=manual(d, "Attack", default=2.0),
+        release=manual(d, "Release", default=50.0),
+        knee=manual(d, "Knee", default=6.0),
+        model=int(manual(d, "Model", default=0)),
+        lookahead=int(manual(d, "LookAhead", default=0)),
+        dry_wet=manual(d, "DryWet", default=1.0),
+        eq_on=manual(d, "SideChainEq_On", lambda s: s == "true", False),
+        eq_mode=int(manual(d, "SideChainEq_Mode", default=0)),
+        eq_freq=manual(d, "SideChainEq_Freq", default=100.0),
+        eq_q=manual(d, "SideChainEq_Q", default=0.707),
+        eq_gain=manual(d, "SideChainEq_Gain", default=0.0),
+    )
+
+
+def find_sidechains(root):
+    """Every Compressor with its sidechain on, with the track that hosts it."""
+    ids = {t.get("Id"): t for t in all_tracks(root) if t.get("Id")}
+    out, glue, off = [], [], []
+    for t in all_tracks(root):
+        host = track_name(t)
+        for d in t.iter("Compressor2"):
+            c = read_compressor(d)
+            if not c["sc_on"]:
+                continue
+            m = re.search(r"Track\.(\d+)", c["source_target"])
+            c.update(el=d, host=host, host_tag=t.tag, host_el=t,
+                     source_el=ids.get(m.group(1)) if m else None)
+            if c["source_el"] is not None:
+                c["source_name"] = track_name(c["source_el"])     # the stored label can be stale
+            (out if c["on"] else off).append(c)
+        for d in t.iter("GlueCompressor"):
+            if v(d, "./SideChain/OnOff/Manual") == "true":
+                glue.append(host)
+    return out, off, glue
+
+
+# ---------------------------------------------------------------- audio
+def load_mono(path):
+    y, sr = sf.read(str(path), always_2d=True, dtype="float64")
+    return to_sr(y.mean(axis=1), sr)
+
+
+def to_sr(y, sr):
+    if sr == SR:
+        return y
+    g = math.gcd(int(sr), SR)
+    return resample_poly(y, SR // g, int(sr) // g)
+
+
+def norm(s):
+    s = re.sub(r"^\d+[-\s]+", "", s.lower())
+    return re.sub(r"[^a-z0-9]+", "", s)
+
+
+def from_stems(stems, name):
+    if not stems:
+        return None
+    want = norm(name)
+    files = [p for p in Path(stems).iterdir() if p.suffix.lower() in (".wav", ".aif", ".aiff", ".flac")]
+    exact = [p for p in files if norm(p.stem) == want]
+    ends = [p for p in files if norm(p.stem).endswith(want)]   # "Song 2-Slackjaw Kit.wav"
+    hit = exact or ends
+    return hit[0] if len(hit) == 1 else None
+
+
+def track_audio(t, als, root, stems, cache, use=None):
+    """(mono audio at SR, where it came from) for a track, or (None, reason)."""
+    name = track_name(t)
+    if name in cache:
+        return cache[name]
+    p = (use or {}).get(name.lower()) or from_stems(stems, name)
+    if p:
+        res = (load_mono(p), f"file {Path(p).name}")
+    elif t.tag == "AudioTrack":
+        y = render_audio([t], als, root)
+        res = (y, "rendered from the set (before its effects)") if y is not None else (None, "no audio clips")
+    elif t.tag == "GroupTrack":
+        kids = group_members(root, t)
+        midi = [track_name(k) for k in kids if k.tag == "MidiTrack"]
+        audio = [k for k in kids if k.tag == "AudioTrack" and track_on(k)]
+        if midi:
+            res = (None, f"a group with MIDI tracks ({', '.join(midi[:3])}): export it and pass --stems")
+        elif not audio:
+            res = (None, "a group with no playing audio tracks")
+        else:
+            y = render_audio(audio, als, root)
+            res = (y, f"its {len(audio)} playing audio tracks rendered and summed (before effects)")
+    else:
+        kind = {"MidiTrack": "a MIDI track", "GroupTrack": "a group", "ReturnTrack": "a return"}.get(t.tag, t.tag)
+        res = (None, f"{kind}: export it and pass --stems")
+    cache[name] = res
+    return res
+
+
+def track_on(t):
+    sp = t.find("./DeviceChain/Mixer/Speaker/Manual")
+    return sp is None or sp.get("Value") == "true"
+
+
+def group_members(root, g):
+    """Every track inside group g, nested groups included (their own tracks, not the group itself)."""
+    gid, out = g.get("Id"), []
+    for t in root.find(".//Tracks"):
+        if v(t, "./TrackGroupId") == gid:
+            out += group_members(root, t) if t.tag == "GroupTrack" else [t]
+    return out
+
+
+def render_audio(tracks, als, root):
+    from hypnomix.session.render import render_track
+    spb = 60 / float(v(root, ".//Tempo/Manual"))
+    ends = [float(v(c, "./CurrentEnd")) for t in tracks for c in t.iter("AudioClip")]
+    if not ends:
+        return None
+    n = int((max(ends) + 4) * spb * SR)
+    y = np.zeros(n)
+    for t in tracks:
+        y += render_track(t, als, spb, n, SR, None, 0, [])
+    return y
+
+
+# ---------------------------------------------------------------- compressor model
+def sc_filter(x, c):
+    if not c.get("eq_on"):
+        return x
+    f, q, g, mode = c["eq_freq"], max(c["eq_q"], 0.1), c["eq_gain"], c["eq_mode"]
+    f = min(f, SR * 0.45)
+    if mode == LOWPASS:
+        return dsp.filt(x, dsp.lowpass(f, SR, order=2))
+    if mode == BANDPASS:
+        bw = f / q
+        return dsp.filt(dsp.filt(x, dsp.highpass(max(10, f - bw / 2), SR, 2)), dsp.lowpass(f + bw / 2, SR, 2))
+    if mode == HIGHPASS:
+        return dsp.filt(x, dsp.highpass(f, SR, order=2))
+    if mode == 6:
+        return dsp.filt(x, dsp.notch(f, q, SR))
+    if mode == 4:
+        return dsp.filt(x, dsp.peaking(f, g, q, SR))
+    return dsp.filt(x, dsp.shelf(f, g, SR, high=(mode == 2)))
+
+
+def detector(trig, c):
+    """Sidechain level in dB per sample (after S/C gain and EQ)."""
+    x = sc_filter(trig, c) * dsp.undb(c.get("sc_gain_db", 0.0))
+    if c["model"] == 1:
+        from scipy.ndimage import uniform_filter1d
+        p = uniform_filter1d(x ** 2, max(1, int(0.01 * SR)))
+        lvl = 10 * np.log10(np.maximum(p, 0) + 1e-20)
+    else:
+        lvl = 20 * np.log10(np.abs(x) + 1e-10)
+    la = int(LOOKAHEAD_MS[min(max(c["lookahead"], 0), 2)] / 1000 * SR)
+    if la:
+        lvl = np.concatenate([lvl[la:], np.full(la, lvl[-1])])
+    return lvl
+
+
+def gain_reduction(lvl, c):
+    """Gain reduction (dB, <= 0) per sample for detector levels `lvl` and settings `c`."""
+    over = lvl - c["threshold_db"]
+    k = max(c["knee"], 1e-6)
+    slope = 1 - 1 / max(c["ratio"], 1.0)
+    gr = np.where(over <= -k / 2, 0.0,
+                  np.where(over >= k / 2, -over * slope, -((over + k / 2) ** 2) / (2 * k) * slope))
+    return dsp._smooth_db(gr, SR, max(c["attack"], 0.01), max(c["release"], 1.0), BLOCK)
+
+
+# ---------------------------------------------------------------- hits and metrics
+def find_hits(trig):
+    """Onsets of the trigger: sharp rises of its 5 ms level."""
+    hop = int(0.005 * SR)
+    n = len(trig) // hop
+    e = 10 * np.log10(np.maximum((trig[: n * hop] ** 2).reshape(n, hop).mean(axis=1), 1e-20))
+    top = np.percentile(e, 99.5)
+    rise = e[4:] - e[:-4]
+    cand = np.flatnonzero((rise > 9) & (e[4:] > top - 30)) + 4
+    hits, last = [], -10 ** 9
+    for i in cand:
+        if i - last > int(0.09 / 0.005):
+            base = e[i - 4]
+            j = i - 4 + int(np.argmax(e[i - 4:i + 1] > base + 3))   # where the rise starts
+            hits.append(max(0, j - 1) * hop)
+            last = i
+    return np.array(hits, dtype=int), e, hop
+
+
+def decay_ms(env_db, hop, hits):
+    """Median time for the trigger to fall 20 dB below each hit's peak: how long a hit lasts."""
+    out = []
+    for h in hits[:400]:
+        i = h // hop
+        i += int(np.argmax(env_db[i:i + 8]))           # from the hit's peak, not its onset
+        seg = env_db[i:i + int(1.0 / 0.005)]
+        if len(seg) < 3:
+            continue
+        below = np.flatnonzero(seg < seg[0] - 20)
+        out.append((below[0] if len(below) else len(seg)) * 5.0)
+    return float(np.median(out)) if out else 150.0
+
+
+def measure(gr, hits, active=None):
+    """Per-hit depth, recovery at the next hit and the time to be 90% back."""
+    depth, rec, back, gaps = [], [], [], []
+    for a, b in zip(hits[:-1], hits[1:]):
+        gap = b - a
+        if gap < int(0.08 * SR) or gap > int(2.5 * SR):
+            continue
+        if active is not None and not active[a]:
+            continue
+        seg = gr[a:b]
+        dmin = float(seg.min())
+        if dmin > -0.2:
+            depth.append(0.0); rec.append(1.0); back.append(0.0); gaps.append(gap / SR * 1000)
+            continue
+        im = int(np.argmin(seg))
+        end = float(gr[max(a, b - int(0.003 * SR))])
+        after = np.flatnonzero(seg[im:] > 0.1 * dmin)
+        depth.append(-dmin)
+        rec.append(1 - end / dmin)
+        back.append(((im + after[0]) if len(after) else gap) / SR * 1000)
+        gaps.append(gap / SR * 1000)
+    if not depth:
+        return None
+    d, r, bk, g = map(np.array, (depth, rec, back, gaps))
+    main = g >= 0.6 * np.median(g)       # the main pulse: a flam or double kick can't recover in between
+    # depth on the main hits (upper quartile): ghost notes and soft hits shouldn't hide what the kicks do
+    return dict(n=len(d), depth=float(np.percentile(d, 75)), spread=float(np.percentile(d, 90) - np.percentile(d, 10)),
+                recovery=float(np.median(r[main])), back_ms=float(np.median(bk[main])),
+                gap_ms=float(np.median(g[main])), late=float(np.mean(r[main] < 0.9)))
+
+
+def phrase_measure(gr, trig_active):
+    """For vocal triggers: average reduction while singing, and how fast it lets go in the gaps."""
+    sing = gr[trig_active]
+    gaps = []
+    edges = np.flatnonzero(np.diff(trig_active.astype(int)) == -1)
+    for e in edges:
+        w = gr[e:e + int(0.5 * SR)]
+        if len(w) == int(0.5 * SR) and not trig_active[e:e + len(w)].any():
+            gaps.append(float(w[-1]))
+    return dict(depth=float(-np.median(sing)) if len(sing) else 0.0,
+                in_gaps=float(-np.median(gaps)) if gaps else 0.0, n=len(gaps))
+
+
+def lowest_note(y):
+    """Lowest strong frequency (Hz) of the target, for the low-end distortion check."""
+    if y is None:
+        return None
+    loud = y[np.abs(y) > np.abs(y).max() * 0.05]
+    if len(loud) < SR:
+        return None
+    seg = loud[: SR * 60]
+    spec = np.abs(np.fft.rfft(seg * np.hanning(len(seg))))
+    f = np.fft.rfftfreq(len(seg), 1 / SR)
+    band = (f > 28) & (f < 400)
+    if not band.any():
+        return None
+    s = spec[band]
+    peaks = np.flatnonzero(s > s.max() * 0.3)
+    return float(f[band][peaks[0]]) if len(peaks) else None
+
+
+# ---------------------------------------------------------------- search
+def excerpt(trig, hits, secs=40):
+    """The densest `secs` of the trigger (speeds up the search)."""
+    n = int(secs * SR)
+    if len(trig) <= n or len(hits) < 4:
+        return 0, len(trig)
+    best, start = -1, 0
+    for i in range(0, len(trig) - n, int(SR * 2)):
+        k = int(((hits >= i) & (hits < i + n)).sum())
+        if k > best:
+            best, start = k, i
+    return start, start + n
+
+
+def fit_threshold(lvl, hits, c, target, metric):
+    lo, hi = float(np.percentile(lvl, 50)) - 20, float(lvl.max()) + 1
+    for _ in range(14):
+        c["threshold_db"] = (lo + hi) / 2
+        m = metric(gain_reduction(lvl, c), hits)
+        d = m["depth"] if m else 0.0
+        if d > target:
+            lo = c["threshold_db"]
+        else:
+            hi = c["threshold_db"]
+    c["threshold_db"] = (lo + hi) / 2
+    return c
+
+
+def suggest(trig, hits, cur, style, decay, f0, gap_ms, beat_ms, is_vocal, active):
+    """Search settings for `style`. Returns (settings, notes)."""
+    s = dict(STYLES[style])
+    c = dict(cur)
+    c.update(model=s["model"], knee=s["knee"], attack=s["attack"], lookahead=s["lookahead"])
+    c["ratio"] = min(cur["ratio"], 6.0 if style == "clarity" else 10.0) \
+        if cur["ratio"] >= 2 and style != "vocal-duck" and not cur.get("fresh") else s["ratio"]
+    notes = []
+    floor = 30.0
+    if f0:
+        floor = max(floor, 2000.0 / f0)              # release >= two cycles of the lowest note
+    a, b = excerpt(trig, hits)
+    seg_hits = hits[(hits >= a) & (hits < b)] - a
+    lvl = detector(trig[a:b], c)
+
+    if style == "vocal-duck":
+        metric = lambda gr, _h: {"depth": phrase_measure(gr, active)["depth"]}
+        c["release"] = float(np.clip(0.35 * beat_ms, 200, 400))
+        fit_threshold(detector(trig, c), hits, c, s["depth"], metric)
+        return c, notes
+
+    deadline = (0.9 if style == "pump" else 0.6) * gap_ms
+    deadline = max(deadline, floor * 1.5)
+    metric = lambda gr, h: measure(gr, h)
+    best = None
+    for rel in np.geomspace(max(floor, 15), 2000, 18):
+        c["release"] = float(rel)
+        fit_threshold(lvl, seg_hits, c, s["depth"], metric)
+        m = measure(gain_reduction(lvl, c), seg_hits)
+        if m is None:
+            continue
+        if m["back_ms"] <= deadline and m["recovery"] >= (0.9 if style == "clarity" else 0.85):
+            best = (dict(c), m)                      # keep the longest release that still makes it
+        elif best is not None:
+            break
+    if best is None:
+        c["release"] = float(max(floor, 15))
+        fit_threshold(lvl, seg_hits, c, s["depth"], metric)
+        why = f"two cycles of the target's {f0:.0f} Hz low end" if f0 else "a click-free release"
+        notes.append(f"a release short enough to recover fully before the next hit would be under {why}; "
+                     f"this uses the shortest safe release ({c['release']:.0f} ms), so a little ducking "
+                     "carries over")
+        return c, notes
+    return best[0], notes
+
+
+# ---------------------------------------------------------------- explaining
+def describe(c, rel=None):
+    eq = "off"
+    if c.get("eq_on"):
+        t = SC_EQ_TYPES[c["eq_mode"]] if 0 <= c["eq_mode"] < len(SC_EQ_TYPES) else f"type {c['eq_mode']}"
+        eq = f"{t} {c['eq_freq']:.0f} Hz" + (f" {c['eq_gain']:+.1f} dB" if c["eq_mode"] in (0, 2, 4) else "")
+    if rel is None:
+        th = f"threshold {c['threshold_db']:.1f} dB"
+    else:
+        where = "the main hits' peaks on the Compressor's input meter"
+        th = (f"threshold about {-rel:.0f} dB below {where}" if rel < -0.5 else
+              f"threshold about {rel:.0f} dB above {where} (the knee does the work)" if rel > 0.5
+              else f"threshold at {where}")
+    return (f"{th}, ratio {c['ratio']:.1f}:1, attack {c['attack']:.2g} ms, "
+            f"release {c['release']:.0f} ms, knee {c['knee']:.0f} dB, {MODELS[min(c['model'], 2)]}, "
+            f"lookahead {LOOKAHEAD_MS[min(c['lookahead'], 2)]:g} ms, S/C EQ {eq}")
+
+
+def verdict(m, style, f0, c, decay, exact=True):
+    """Plain-English problems with the current settings."""
+    out = []
+    if not exact:
+        m = dict(m) if m else m
+    if m is None:
+        return ["the trigger never pushes the compressor past its threshold: no ducking happens"]
+    if exact and m["depth"] < 0.5:
+        out.append(f"barely ducks ({m['depth']:.1f} dB): the threshold is above the trigger, or the S/C EQ "
+                   "removes what should trigger it")
+    lo, hi = {"clarity": (2, 4.5), "pump": (6, 10), "vocal-duck": (2, 4.5)}[style]
+    if exact and m["depth"] > hi + 1.5:
+        out.append(f"ducks {m['depth']:.1f} dB, deep for {style} ({lo}-{hi} dB): the target drops out "
+                   "on every hit")
+    if m["recovery"] < 0.85:
+        out.append(f"only {m['recovery'] * 100:.0f}% back by the next hit (release too long for "
+                   f"{m['gap_ms']:.0f} ms between hits): the target never returns to full level and the "
+                   "ducks pile up")
+    if m["spread"] > 3:
+        out.append(f"depth varies by {m['spread']:.1f} dB between hits: the groove pumps unevenly "
+                   "(uneven hits, or other drums triggering it)")
+    if f0 and c["release"] < 2000 / f0:
+        out.append(f"release {c['release']:.0f} ms is under two cycles of the target's {f0:.0f} Hz low end "
+                   f"({2000 / f0:.0f} ms): bends the waveform, sounds like distortion on the bass")
+    if c["attack"] < 0.1 and m["depth"] > 4 and LOOKAHEAD_MS[min(c["lookahead"], 2)] == 0:
+        out.append(f"{c['attack']:.2g} ms attack with no lookahead and {m['depth']:.0f} dB of reduction "
+                   "slams the level down within a few samples: an audible click on every hit")
+    if c.get("eq_on") and c["eq_mode"] == HIGHPASS and c["eq_freq"] > 60 and decay < 300:
+        out.append(f"the S/C EQ high-passes the drum trigger at {c['eq_freq']:.0f} Hz: the kick's body is "
+                   "filtered out of what should trigger the ducking (a low-pass is usual for kick triggers)")
+    return out
+
+
+# ---------------------------------------------------------------- outputs
+def plot(path, trig, gr_cur, gr_new, hits, beat_ms, title):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    if len(hits) > 8:
+        a = int(hits[len(hits) // 3]) - int(0.05 * SR)
+    else:
+        a = 0
+    n = int(min(4 * 4 * beat_ms / 1000, 12) * SR)
+    sl = slice(max(0, a), max(0, a) + n)
+    t = np.arange(sl.stop - sl.start) / SR
+    fig, ax = plt.subplots(2, 1, figsize=(11, 5), sharex=True, gridspec_kw=dict(height_ratios=[1, 2]))
+    from scipy.ndimage import uniform_filter1d
+    env = 10 * np.log10(uniform_filter1d(trig[sl] ** 2, int(0.005 * SR)) + 1e-12)
+    ax[0].plot(t, env, lw=0.8, color="0.35")
+    ax[0].set_ylim(max(-70, env.max() - 50), env.max() + 3); ax[0].set_ylabel("trigger dB\n(as heard)")
+    ax[1].plot(t, gr_cur[sl], label="current", color="tab:red", lw=1.2)
+    if gr_new is not None:
+        ax[1].plot(t, gr_new[sl], label="suggested", color="tab:blue", lw=1.2)
+    ax[1].set_ylabel("gain reduction dB"); ax[1].set_xlabel("seconds"); ax[1].legend(loc="lower right")
+    for x in np.arange(0, t[-1], beat_ms / 1000):
+        for axx in ax:
+            axx.axvline(x, color="0.85", lw=0.6, zorder=0)
+    fig.suptitle(title, fontsize=10)
+    fig.tight_layout()
+    fig.savefig(path, dpi=110)
+    plt.close(fig)
+
+
+def previews(od, stem, target, gr_cur, gr_new, hits, wet_cur, wet_new):
+    a = int(hits[len(hits) // 3]) if len(hits) > 8 else 0
+    n = min(len(target) - a, int(12 * SR))
+    if n <= SR:
+        return []
+    seg = target[a:a + n]
+    outs = []
+    takes = [("1-dry", None, 1), ("2-current", gr_cur, wet_cur), ("3-suggested", gr_new, wet_new)]
+    if gr_cur is None:
+        takes = [takes[0], ("2-suggested", gr_new, wet_new)]
+    for tag, gr, wet in takes:
+        y = seg if gr is None else seg * (1 - wet + wet * dsp.undb(gr[a:a + n]))
+        p = od / f"{stem} {tag}.wav"
+        sf.write(str(p), (y / max(1e-9, np.abs(seg).max()) * 0.5).astype(np.float32), SR, subtype="FLOAT")
+        outs.append(p.name)
+    return outs
+
+
+# ---------------------------------------------------------------- apply
+def set_manual(d, name, value):
+    x = d.find(f"./{name}/Manual")
+    if x is not None:
+        x.set("Value", value)
+
+
+def write_settings(d, c):
+    set_manual(d, "Threshold", repr(10 ** (c["threshold_db"] / 20)))
+    set_manual(d, "Ratio", repr(float(c["ratio"])))
+    set_manual(d, "Attack", repr(float(c["attack"])))
+    set_manual(d, "Release", repr(float(c["release"])))
+    set_manual(d, "Knee", repr(float(c["knee"])))
+    set_manual(d, "Model", str(int(c["model"])))
+    set_manual(d, "LookAhead", str(int(c["lookahead"])))
+    set_manual(d, "SideChainEq_On", "true" if c.get("eq_on") else "false")
+    set_manual(d, "SideChainEq_Mode", str(int(c["eq_mode"])))
+    set_manual(d, "SideChainEq_Freq", repr(float(c["eq_freq"])))
+
+
+# ---------------------------------------------------------------- main
+def analyse(c, trig, target, beat_ms, style, exact=True):
+    """exact: the audio is the sidechain tap itself, so absolute levels (threshold, depth) can be trusted.
+    Otherwise only timing is judged, at the style's depth, and the threshold is given relative to the hits."""
+    heard = sc_filter(trig, c)                      # what the compressor hears (after its S/C EQ)
+    hits, env, hop = find_hits(heard)
+    sounding = 20 * np.log10(np.abs(heard) + 1e-9) > -45
+    from scipy.ndimage import maximum_filter1d
+    tact = maximum_filter1d(sounding, int(0.15 * SR))
+    gaps = np.diff(hits) / SR * 1000 if len(hits) > 2 else np.array([beat_ms])
+    gap_ms = float(np.median(gaps[(gaps > 80) & (gaps < 2500)])) if len(gaps) else beat_ms
+    decay = decay_ms(env, hop, hits)
+    hits_per_min = len(hits) / max(1e-9, len(trig) / SR / 60)
+    is_vocal = decay > 300 or hits_per_min < 20
+    if not is_vocal and not c.get("eq_on"):
+        # a whole kit triggers on snare and hats too; judge the hits on its low end, like a low-pass would
+        low = dsp.filt(trig, dsp.lowpass(150, SR, 2))
+        h2, e2, _ = find_hits(low)
+        if len(h2) >= 8:
+            hits, env = h2, e2
+            gaps = np.diff(hits) / SR * 1000
+            gap_ms = float(np.median(gaps[(gaps > 80) & (gaps < 2500)])) if len(gaps) else beat_ms
+            decay = decay_ms(env, hop, hits)
+    if style == "auto":
+        style = "vocal-duck" if is_vocal else "clarity"
+    f0 = lowest_note(target) if target is not None else None
+
+    # current settings, with the trigger kit's other drums: a full drum bus wants a low-pass S/C EQ
+    new_eq = None
+    if not is_vocal and not c.get("eq_on"):
+        hi = dsp.filt(trig, dsp.highpass(300, SR, 2))
+        if np.sqrt(np.mean(hi ** 2)) > 0.5 * np.sqrt(np.mean(trig ** 2)):
+            new_eq = dict(eq_on=True, eq_mode=LOWPASS, eq_freq=150.0)
+
+    lvl_cur = detector(trig, c)
+    c_eval = dict(c)
+    if not exact and style != "vocal-duck":
+        # unknown absolute level: judge the current attack/release at the style's depth instead
+        fit_threshold(lvl_cur, hits, c_eval, STYLES[style]["depth"], lambda gr, h: measure(gr, h))
+    gr_cur = gain_reduction(lvl_cur, c_eval)
+    if style == "vocal-duck":
+        m_cur = phrase_measure(gr_cur, tact)
+    else:
+        m_cur = measure(gr_cur, hits)
+    cur_for_search = dict(c, **(new_eq or {}))
+    sug, notes = suggest(trig, hits, cur_for_search, style, decay, f0, gap_ms, beat_ms, is_vocal, tact)
+    if style != "vocal-duck":                        # timing was chosen on an excerpt; level on the whole song
+        fit_threshold(detector(trig, sug), hits, sug, STYLES[style]["depth"], lambda gr, h: measure(gr, h))
+    lvl_new = detector(trig, sug)
+    gr_new = gain_reduction(lvl_new, sug)
+    m_new = phrase_measure(gr_new, tact) if style == "vocal-duck" else measure(gr_new, hits)
+    w = int(0.08 * SR)                 # a low-passed kick peaks tens of ms after its onset
+    peaks = [lvl_new[h:h + w].max() for h in hits[:600] if h + w < len(lvl_new)]
+    rel = sug["threshold_db"] - float(np.percentile(peaks, 75)) if peaks else None   # vs the main hits
+    return dict(style=style, hits=hits, gap_ms=gap_ms, decay=decay, f0=f0, gr_cur=gr_cur, gr_new=gr_new,
+                m_cur=m_cur, m_new=m_new, sug=sug, notes=notes, new_eq=new_eq, is_vocal=is_vocal,
+                rel_threshold=rel, exact=exact, heard=heard)
+
+
+def fmt_m(m, style):
+    if m is None:
+        return "no ducking"
+    if style == "vocal-duck":
+        return f"{m['depth']:.1f} dB while singing, {m['in_gaps']:.1f} dB left 0.5 s into the gaps"
+    return (f"{m['depth']:.1f} dB on the main hits (spread {m['spread']:.1f}), {m['recovery'] * 100:.0f}% back by the "
+            f"next hit, 90% back after {m['back_ms']:.0f} ms of a {m['gap_ms']:.0f} ms gap")
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="hypnomix sidechain", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("als", nargs="?")
+    ap.add_argument("--stems", help="folder of exported tracks (for MIDI triggers and targets)")
+    ap.add_argument("--style", default="auto", choices=["auto", *STYLES])
+    ap.add_argument("--host", help="only compressors on tracks whose name contains this")
+    ap.add_argument("--use", action="append", default=[], metavar="TRACK=FILE",
+                    help="audio file for a track (e.g. a stem from `hypnomix separate`); repeatable")
+    ap.add_argument("--trigger"); ap.add_argument("--target"); ap.add_argument("--bpm", type=float)
+    ap.add_argument("--out")
+    ap.add_argument("--apply", metavar="OUT.als", help="write the suggestions to this new set")
+    a = ap.parse_args()
+
+    if a.trigger:
+        if not a.bpm:
+            sys.exit("--bpm is needed with --trigger")
+        trig = load_mono(a.trigger)
+        target = load_mono(a.target) if a.target else None
+        c = dict(threshold_db=-20.0, ratio=4.0, attack=1.0, release=100.0, knee=6.0, model=0, lookahead=1,
+                 eq_on=False, eq_mode=LOWPASS, eq_freq=150.0, eq_q=0.707, eq_gain=0.0, sc_gain_db=0.0, dry_wet=1.0,
+                 fresh=True)
+        r = analyse(c, trig, target, 60000 / a.bpm, a.style)
+        od = out_at(a.out, "sidechain", Path(a.trigger).stem)
+        print(f"trigger {Path(a.trigger).name}: {len(r['hits'])} hits, {r['gap_ms']:.0f} ms apart, "
+              f"each lasts ~{r['decay']:.0f} ms" + (f"; target low end ~{r['f0']:.0f} Hz" if r["f0"] else ""))
+        print(f"style {r['style']}\nsuggested: {describe(r['sug'])}\n  -> {fmt_m(r['m_new'], r['style'])}")
+        plot(od / "gain-reduction.png", r["heard"], r["gr_new"], None, r["hits"], 60000 / a.bpm, "suggested")
+        if target is not None:
+            previews(od, "target", target, None, r["gr_new"], r["hits"], 1, 1)
+        print(f"plot and previews in {od}")
+        return
+
+    if not a.als:
+        ap.error("give a set (.als), or --trigger/--target files")
+    src = Path(a.als)
+    if a.apply and Path(a.apply).resolve().parent != src.resolve().parent:
+        sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent}): "
+                 "samples linked by relative path go offline elsewhere")
+    tree = ET.ElementTree(ET.fromstring(gzip.open(src).read()))
+    root = tree.getroot()
+    tempo = float(v(root, ".//Tempo/Manual"))
+    beat_ms = 60000 / tempo
+    comps, off, glue = find_sidechains(root)
+    if a.host:
+        comps = [c for c in comps if a.host.lower() in c["host"].lower()]
+    print(f"{src.name}: {tempo:g} BPM (a beat is {beat_ms:.0f} ms); {len(comps)} sidechained Compressor(s)\n")
+    od = out_at(a.out, "sidechain", src.stem)
+    cache, changed = {}, 0
+    use = {}
+    for u in a.use:
+        if "=" not in u:
+            sys.exit(f"--use wants TRACK=FILE, got {u!r}")
+        k_, f_ = u.split("=", 1)
+        if not Path(f_).exists():
+            sys.exit(f"--use: no file {f_}")
+        use[k_.strip().lower()] = Path(f_)
+    for k, c in enumerate(comps, 1):
+        print(f"[{k}] {c['host']}  <- {c['source_name']} ({c['source_tap']})")
+        print(f"    now: {describe(c)}" + (f", dry/wet {c['dry_wet'] * 100:.0f}%" if c["dry_wet"] < 0.999 else ""))
+        if c["source_el"] is None:
+            print("    trigger track not found in the set\n")
+            continue
+        if c["source_el"] is c["host_el"]:
+            print("    - the compressor listens to its own track's output: that is ordinary compression with "
+                  "extra latency, not ducking. Probably a leftover; point its sidechain at the trigger track.\n")
+            continue
+        trig, how = track_audio(c["source_el"], src, root, a.stems, cache, use)
+        if trig is None:
+            print(f"    trigger audio: {how}\n")
+            continue
+        target, thow = track_audio(c["host_el"], src, root, a.stems, cache, use) \
+            if c["host_tag"] != "MainTrack" else (None, "main")
+        if how.startswith("file") and "pre" in c["source_tap"].lower():
+            how += " (the sidechain listens Pre FX; an export is Post FX, so levels may differ)"
+        post = "post" in c["source_tap"].lower()
+        # trust absolute levels only when the audio IS the tap: an individual-track export (Post FX), or a
+        # single audio track rendered from the set when the sidechain listens Pre FX
+        exact = (how.startswith("file") and post and c["source_name"].lower() not in use) or \
+                (how.startswith("rendered") and not post)
+        r = analyse(c, trig, target, beat_ms, a.style, exact)
+        print(f"    trigger: {how}; {len(r['hits'])} hits, usually {r['gap_ms']:.0f} ms apart, each lasts "
+              f"~{r['decay']:.0f} ms" + (f"; target low end ~{r['f0']:.0f} Hz" if r["f0"] else ""))
+        print(f"    style {r['style']}")
+        if exact:
+            print(f"    now does: {fmt_m(r['m_cur'], r['style'])}")
+        else:
+            print("    (this audio isn't the sidechain's own tap, so its level can't be trusted: depth isn't "
+                  "judged, and the threshold is given relative to the hits)")
+            if r["style"] != "vocal-duck":
+                print(f"    your attack/release at {STYLES[r['style']]['depth']:g} dB of ducking: "
+                      f"{fmt_m(r['m_cur'], r['style'])}")
+        if r["style"] != "vocal-duck":
+            for p in verdict(r["m_cur"], r["style"], r["f0"], c, r["decay"], exact):
+                print(f"      - {p}")
+        print(f"    suggest: {describe(r['sug'], None if exact else r['rel_threshold'])}")
+        print(f"      -> {fmt_m(r['m_new'], r['style'])}")
+        for n in r["notes"]:
+            print(f"      ({n})")
+        if r["new_eq"] and not c.get("eq_on"):
+            print("      (S/C EQ low-pass 150 Hz: the trigger has a lot of snare/hats, which shouldn't duck it)")
+        stem = re.sub(r"[^\w\- ]+", "", f"{k} {c['host']}")[:60]
+        plot(od / f"{stem}.png", r["heard"], r["gr_cur"], r["gr_new"], r["hits"], beat_ms,
+             f"{c['host']} <- {c['source_name']}: current (red) vs suggested (blue)")
+        if target is not None and len(r["hits"]) > 8:
+            previews(od, stem, target, r["gr_cur"], r["gr_new"], r["hits"], c["dry_wet"], c["dry_wet"])
+            print(f"    previews: target {thow}")
+        print()
+        if a.apply:
+            sug = dict(r["sug"])
+            if not exact:
+                sug["threshold_db"] = c["threshold_db"]
+                print("    (--apply keeps your threshold here: set it by ear so the meter shows the suggested depth)")
+            write_settings(c["el"], sug)
+            changed += 1
+    for c in off:
+        print(f"(switched off: Compressor on {c['host']} <- {c['source_name']})")
+    if glue:
+        print(f"(Glue Compressor sidechains not analysed: {', '.join(sorted(set(glue)))})")
+    print(f"\nplots{' and previews' if any(True for _ in od.glob('*.wav')) else ''} in {od}")
+    if a.apply:
+        if not changed:
+            print("nothing analysed, so nothing written")
+            return
+        data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
+        out = Path(a.apply)
+        if out.resolve() == src.resolve():
+            sys.exit("refusing to overwrite the source set")
+        with gzip.open(out, "wb") as f:
+            f.write(data)
+        print(f"wrote {out} ({changed} compressor(s) changed). Close the original in Live, then open this one.")
+
+
+if __name__ == "__main__":
+    main()

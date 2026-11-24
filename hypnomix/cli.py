@@ -10,6 +10,7 @@ GROUPS = [
         ("automix", "hypnomix.engineer.automix", "stems folder → balanced mix + master, with notes on every move"),
         ("master", "hypnomix.engineer.master", "stereo mix → release master at a loudness target (or matched to a reference)"),
         ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices: no paid plug-ins"),
+        ("sidechain", "hypnomix.engineer.sidechain", "sidechain compressors: measure the ducking (depth, recovery, timing) and suggest settings"),
         ("masking", "hypnomix.engineer.masking", "which stems fight over which frequencies, and the cut that fixes it"),
         ("align", "hypnomix.engineer.align", "phase/polarity/time offset between mics on one source"),
         ("translate", "hypnomix.engineer.translate", "mono, phone, earbuds, car, streaming normalisation, codec clipping"),
