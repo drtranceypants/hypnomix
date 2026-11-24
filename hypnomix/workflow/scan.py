@@ -163,8 +163,16 @@ def g_vocals(als, od, a, role):
     files = {t: rd / (re.sub(r'[\\/:*?"<>|]', "-", t) + ".wav") for t in vox}
     files = {t: p for t, p in files.items() if p.exists()}
     lead = a.lead_track or next((t for t in vox if role.get(t, {}).get("label") == "Lead Vocal"), None)
-    if not lead and files:  # `name` didn't single one out: the vocal that sings the most is the lead
-        lead = max(files, key=lambda t: sung_seconds(files[t]))
+    how = "--lead-track" if a.lead_track else "named 'Lead Vocal'" if lead else None
+    if not lead and files:  # `name` didn't single one out: the shared picker (vowel movement, then singing time)
+        from hypnomix.core import dsp
+        from hypnomix.engineer.roles import pick_lead
+        lead = pick_lead([(t, dsp.load(p, 22050)[0]) for t, p in files.items()], 22050)
+        how = "picked by sound: the vocal whose vowels move most (sings the words), then singing time"
+    if lead:
+        info = json.loads((od / "scan.json").read_text()) if (od / "scan.json").exists() else {}
+        info["lead"] = lead
+        (od / "scan.json").write_text(json.dumps(info, indent=1))
     findings, notes = [], []
     kf, kq = key_map(als, od, a)
     findings += kq["findings"]
@@ -212,7 +220,7 @@ def g_vocals(als, od, a, role):
     if tuned:
         first = next(f for f in findings if f.get("tool") == "tune")
         notes.append(f"vocals: key {first['key']} (confirm it before tuning: --key, or the section map's answers); lead taken as "
-                     f"'{lead}' (harmonies are checked against it; --lead-track to change)")
+                     f"'{lead}' ({how}; harmonies are checked against it; --lead-track to change)")
     return findings, notes
 
 
@@ -272,16 +280,6 @@ def doubles(files, lead):
                         applies="audio", run=["vocalign", str(files[lead]), str(p), "--trim-tails", "--out", "{out}"]))
     notes.append(f"doubles: {len(files) - 1} vocal(s) compared with the lead '{lead}' for timing")
     return out, notes
-
-
-def sung_seconds(path, floor_db=-45.0):
-    import numpy as np
-    import soundfile as sf
-    y, sr = sf.read(str(path), dtype="float32", always_2d=True)
-    blk = int(sr * 0.05)
-    n = len(y) // blk
-    rms = np.sqrt((y[: n * blk].mean(1) ** 2).reshape(n, blk).mean(1) + 1e-12)
-    return float((20 * np.log10(rms) > floor_db).sum() * 0.05)
 
 
 def g_effects(als, od, a):
@@ -852,7 +850,7 @@ def main():
     wrong = [g for g in groups if g not in mine]
     if wrong:
         sys.exit(f"{', '.join(wrong)}: not a group for a {'folder' if folder else 'Live set'} (use {', '.join(mine)})")
-    info = {"set": str(als), "mode": "folder" if folder else "set", "mix": a.mix, "ref": a.ref, "key": a.key,
+    info = {"set": str(als), "mode": "folder" if folder else "set", "mix": a.mix, "ref": a.ref, "key": a.key, "lead": None,
             "set_mtime": als.stat().st_mtime}
     (od / "raw").mkdir(exist_ok=True)
     sj = od / "scan.json"

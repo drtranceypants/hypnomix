@@ -101,6 +101,30 @@ def preset(role):
     return dict(prio=prio, level=level, pan=pan, hpf=hpf, reverb=rev, comp=comp)
 
 
+def lead_score(y, sr):
+    """The lead sings the words: its vowels move the most (harmonies often hold oohs and long vowels);
+    singing time breaks ties."""
+    b = dsp.block_rms_db(y, sr, 0.05)
+    sung = float((b > b.max() - 35).sum()) * 0.05
+    try:
+        from hypnomix.session.names import audio_features
+        m = y.mean(axis=1) if y.ndim > 1 else y
+        return (round(audio_features(m, sr)["vowel_move"], 0), sung)
+    except Exception:
+        return (0, sung)
+
+
+def pick_lead(vocals, sr):
+    """Name of the lead among [(name, audio)] vocal stems. The one lead picker: scan, doubles, tune --guide,
+    prep, masking and automix all use it, so they agree."""
+    vocals = list(vocals)
+    if not vocals:
+        return None
+    if len(vocals) == 1:
+        return vocals[0][0]
+    return max(vocals, key=lambda nv: lead_score(nv[1], sr))[0]
+
+
 def classify_all(stems, sr):
     """{name: (role, how)} for a set of stems. Only one stem can be the lead vocal by guesswork: if a stem
     is *named* as the lead, stems guessed as voices by sound become backing vocals; if several are guessed,
@@ -111,20 +135,7 @@ def classify_all(stems, sr):
     if named:
         keep = None
     elif len(guessed) > 1:
-        ys = dict(stems)
-
-        def lead_score(n):
-            # the lead sings the words: its vowels move the most (harmonies often hold oohs and long vowels);
-            # singing time breaks ties
-            b = dsp.block_rms_db(ys[n], sr, 0.05)
-            sung = float((b > b.max() - 35).sum()) * 0.05
-            try:
-                from hypnomix.session.names import audio_features
-                y = ys[n].mean(axis=1) if ys[n].ndim > 1 else ys[n]
-                return (round(audio_features(y, sr)["vowel_move"], 0), sung)
-            except Exception:
-                return (0, sung)
-        keep = max(guessed, key=lead_score)
+        keep = pick_lead([(n, y) for n, y in stems if n in guessed], sr)
     else:
         keep = guessed[0] if guessed else None
     for n in guessed:

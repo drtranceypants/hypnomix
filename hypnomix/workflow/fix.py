@@ -445,6 +445,13 @@ def main():
             k += 1
             dest = tdir / f"{safe_name(f['track'])} (tuned {k}).wav"
         args = ["tune", rendered, dest, *tune_key]
+        lead = scan.get("lead")
+        if lead and lead != f["track"]:      # a harmony: settle in-between notes against the same lead as the scan
+            lrend = rdir / f"{safe_name(lead)}.wav"
+            if not lrend.exists():
+                hx("render", src, "--tracks", lead, "--out", rdir)
+            if lrend.exists():
+                args += ["--guide", lrend]
         if scan.get("ref"):
             args += ["--ref", scan["ref"]]
         code, txt = hx(*args)
