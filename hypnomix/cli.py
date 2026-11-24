@@ -32,6 +32,7 @@ GROUPS = [
     ("Ears: measure and compare", [
         ("measure", "hypnomix.ears.measure", "loudness, true peak, bands, stereo, tempo, key → JSON"),
         ("spectrogram", "hypnomix.ears.spectrogram", "spectrogram + loudness curve + average spectrum PNG"),
+        ("key", "hypnomix.ears.key", "song key + section-by-section scale map with confidence; names the disputed note when unsure"),
         ("pitchcheck", "hypnomix.ears.pitchcheck", "pitch (cents) + loudness difference between two captures: check every re-render"),
         ("clicks", "hypnomix.ears.clicks", "find clicks and crackle in renders and processed files"),
         ("punch", "hypnomix.ears.punch", "transient punch / pumping / harmonics A/B at matched loudness"),

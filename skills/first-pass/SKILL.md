@@ -97,3 +97,14 @@ Then stop and ask what they heard. Don't start another round on your own.
   seams, a steady quiet sound that might be a pad) say so: hand those to the person rather than guessing.
 - Keep the human feel: timing fixes only touch outliers against the band, pitch fixes keep vibrato and slides.
 - Say plainly what failed or was not checked. "Done" means applied and measured again.
+
+## Key and scale (before any tuning)
+After the first scan, run `hypnomix key --set "<SET>" --audio "<MIX>" --sections` (MIDI notes in the set + the
+mix + where the bass rests; whole-song key and a scale map per section). Songs can change key or borrow chords,
+so tuning should follow the section map, not one key for the whole song.
+- `sure` and no UNSURE sections: tell the person the key (and any section that changes scale) in one line and
+  pass it on (`--key`).
+- UNSURE: do **not** guess. Ask the person the QUESTION it prints, which names the one disputed note and the
+  bars, e.g. "in bars 15-52, is the note F or F#?" ("both" is a valid answer: a borrowed chord). Their answer
+  decides the scale for those bars. Record it (`hypnomix prefs set protect.notes=...` or the review notes) so it
+  is not asked again.
