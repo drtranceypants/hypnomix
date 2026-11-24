@@ -1187,6 +1187,7 @@ def main():
     ap.add_argument("--json", metavar="OUT.json", help="also write the report as JSON")
     ap.add_argument("--apply", metavar="OUT.als", help="write the parameter fixes to this NEW set")
     ap.add_argument("--apply-severity", choices=list(SEV), default="medium", help="smallest severity --apply fixes")
+    ap.add_argument("--ids", help="with --apply: only these finding ids (comma-separated, from --json)")
     a = ap.parse_args()
     als = [x for x in a.inputs if x.lower().endswith(".als")]
     audio = [x for x in a.inputs if not x.lower().endswith(".als")]
@@ -1196,11 +1197,19 @@ def main():
         sys.exit("--apply needs a .als")
     rep = scan(als[0] if als else None, audio, post=a.post, mix=a.mix, tracks=a.track, include_off=a.include_off,
                harmonics=not a.no_harmonics, min_severity=a.min_severity, log=lambda *x: print(*x, file=sys.stderr))
+    for n, f in enumerate(rep.findings, 1):
+        f.evidence = dict(f.evidence or {}, id=f"distortion-{n}")
     print_report(rep)
     if a.json:
         Path(a.json).write_text(json.dumps(rep.to_dict(), indent=2, default=float))
         print(f"→ {a.json}")
     if a.apply:
+        if a.ids:
+            want = {x.strip() for x in a.ids.split(",") if x.strip()}
+            rep.findings = [f for f in rep.findings if f.evidence.get("id") in want]
+            if not rep.findings:
+                sys.exit("none of those ids were found (same options as the scan?)")
+            a.apply_severity = "low"
         try:
             done, skipped = apply(rep, a.apply, a.apply_severity)
         except ValueError as e:

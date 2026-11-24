@@ -56,6 +56,10 @@ GROUPS = [
         ("refs", "hypnomix.session.refs", "find missing audio files in sets"),
         ("profile", "hypnomix.session.profile", "build your sound profile from songs you love"),
     ]),
+    ("Workflow: scan a song, review, fix", [
+        ("scan", "hypnomix.workflow.scan", "first pass: run every check on a set, change nothing, write REVIEW.md (one item at a time)"),
+        ("fix", "hypnomix.workflow.fix", "apply only the findings you approved, into ONE new set (original untouched)"),
+    ]),
     ("Setup", [
         ("install", "hypnomix.install", "install the Live remote script, write Claude Code config"),
         ("doctor", "hypnomix.install", "check Live, AbletonOSC, BlackHole, ffmpeg, plug-in parameter access"),

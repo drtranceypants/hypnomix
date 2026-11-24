@@ -452,6 +452,33 @@ def describe(i, a):
     return f"{what} {abs(i['size']):.1f} dB {word}", fix
 
 
+def write_json(path, src, tempo, issues, notes, a):
+    """One finding per distinct problem (copies of the same audio share one finding and list all ids)."""
+    import json
+    out = []
+    for group in grouped(issues, tempo):
+        i = group[0]
+        prob, fix = describe(i, a)
+        size = abs(i["size"])
+        if i["kind"] == "spike":
+            sev = "high" if size >= 18 else "medium"
+        elif i["kind"] == "cut":
+            sev = "medium" if size >= 8 else "low"
+        elif i["kind"] == "click":
+            sev = "low" if i.get("edge") == "loop" else "medium"
+        else:
+            sev = "low"
+        manual = i["kind"] == "click" and i.get("edge") == "loop"
+        out.append(dict(id=i["id"], ids=[g["id"] for g in group], tool="smooth", kind=i["kind"],
+                        severity=sev, track=i["track"], where=where(i["beat"]),
+                        also_at=[where(g["beat"]) for g in group[1:]], problem=prob, fix=fix,
+                        applies="set" if not manual else "manual"))
+    Path(path).write_text(json.dumps({"tool": "smooth", "set": str(src), "tempo": tempo,
+                                      "findings": out, "notes": {k: (sorted(v) if isinstance(v, set) else v)
+                                                                 for k, v in notes.items()}},
+                                     indent=1, default=str))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix smooth", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("als")
@@ -468,6 +495,8 @@ def main():
     ap.add_argument("--amount", type=float, default=0.5, help="share of each jump to ease away (0-1)")
     ap.add_argument("--ease-ms", type=float, default=300.0, help="how long the eased jump takes")
     ap.add_argument("--fade-ms", type=float, default=5.0, help="clip fade length for clicks and cuts")
+    ap.add_argument("--json", metavar="OUT.json", help="also write the findings as JSON (each with an id)")
+    ap.add_argument("--ids", help="with --apply: only fix these finding ids (comma-separated, from --json)")
     a = ap.parse_args()
     if not 0 < a.amount <= 1:
         sys.exit("--amount must be between 0 and 1")
@@ -479,6 +508,10 @@ def main():
                                     a.spike_db, a.explicit_fades, a.include_off)
     if a.only:
         issues = [i for i in issues if i["kind"] in a.only]
+    for n, i in enumerate(issues, 1):
+        i["id"] = f"smooth-{n}"
+    if a.json:
+        write_json(a.json, src, tempo, issues, notes, a)
 
     print(f"{src.name}: {notes['clips']} arrangement audio clips checked, tempo {tempo:g} BPM\n")
     if issues:
@@ -517,6 +550,11 @@ def main():
         if not issues:
             print("Nothing to apply.")
             return
+        if a.ids:
+            want = {x.strip() for x in a.ids.split(",") if x.strip()}
+            issues = [i for i in issues if i["id"] in want]
+            if not issues:
+                sys.exit("none of those ids were found (same options as the scan?)")
         done = apply(root, issues, tempo, a)
         aa.save(tree, src, a.apply)
         print(f"applied {len(done)} fixes. Close the original set in Live before opening the new one.")

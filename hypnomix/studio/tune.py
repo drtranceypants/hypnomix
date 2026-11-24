@@ -395,6 +395,26 @@ def write_report(path, notes, tuning_c, key, keysrc, a, lag=None):
     return lines[:6]
 
 
+def write_json(path, a, notes, tuning_c, key, keysrc):
+    import json
+    cents = np.array([abs(n["cents"]) for n in notes])
+    med = float(np.median(cents)) if len(cents) else 0.0
+    within = float((cents <= 15).mean() * 100) if len(cents) else 100.0
+    nfix = sum(n["action"] == "fix" for n in notes)
+    flags = [n for n in notes if n["action"] == "flag"]
+    sev = "high" if med >= 25 else "medium" if med >= 15 else "low"
+    summary = dict(
+        id="tune-" + Path(a.input).stem, tool="tune", kind="pitch", severity=sev, track=Path(a.input).stem,
+        where="whole take", problem=f"median {med:.0f} cents off, {within:.0f}% of notes within ±15 cents",
+        fix=f"tune {nfix} notes ({a.amount:.0%} of the way), {len(flags)} ambiguous notes flagged for your ear",
+        applies="audio", input=str(a.input))
+    Path(path).write_text(json.dumps({
+        "tool": "tune", "input": str(a.input), "tuning_cents": round(tuning_c, 1),
+        "key": f"{NOTE_NAMES[key[0]]} {key[1]}", "key_source": keysrc, "findings": [summary],
+        "flagged": [dict(time=_mmss(n["t0"]), sung=note_name(n["centre"]), cents=round(n["cents"])) for n in flags],
+    }, indent=1))
+
+
 def _mmss(t):
     return f"{int(t // 60)}:{t % 60:05.2f}"
 
@@ -452,6 +472,7 @@ def main():
     ap.add_argument("--drift", type=float, default=0.0, help="also flatten slow drift inside notes, 0-1 (0)")
     ap.add_argument("--tuning", type=float, help="song tuning in cents from A=440 (default: measured)")
     ap.add_argument("--ref", help="the song's mix or instrumental: measure tuning and key from it (recommended)")
+    ap.add_argument("--json", metavar="OUT.json", help="also write a summary + the notes as JSON")
     a = ap.parse_args()
     if not a.report_only and not a.output:
         sys.exit("give an OUT.wav, or --report-only")
@@ -501,6 +522,8 @@ def main():
         Path("reports/tune").mkdir(parents=True, exist_ok=True)
         out_path = Path("reports/tune") / Path(a.input).stem
         report_path = Path(str(out_path) + ".notes.txt")
+    if a.json:
+        write_json(a.json, a, notes, tuning_c, key, keysrc)
     if a.report_only:
         head = write_report(report_path, notes, tuning_c, key, keysrc, a)
         print("\n".join(head))

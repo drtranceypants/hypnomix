@@ -274,6 +274,27 @@ def where(beat):
     return f"{int(beat // BPB) + 1}.{beat % BPB + 1:.2f}"
 
 
+def write_json(path, src, tempo, tracks, issues, notes, a):
+    import json
+    out = []
+    for i in issues:
+        tol = max(SLOTS[i["kind"]][0], SLOTS[i["kind"]][1] * notes["looseness"])
+        sev = "high" if abs(i["off"]) > 1.5 * tol or i["kind"] == "downbeat" else "medium"
+        ci = i["hit"]["clip"]
+        manual = not fixable(ci)
+        late = "late" if i["off"] > 0 else "early"
+        out.append(dict(id=i["id"], tool="timing", kind=i["kind"], severity=sev, track=i["track"],
+                        where=where(i["beat"]),
+                        problem=f"{i['kind']} hit {abs(i['off']) * 1000:.0f} ms {late} against the {i['ref']}",
+                        fix=(f"nudge {i['move'] * a.strength * 1000:+.0f} ms with warp markers" if not manual
+                             else "clip is looped or not warped: nudge it by hand in Live"),
+                        applies="manual" if manual else "set"))
+    feel = {t: {"lag_ms": round(l * 1000, 1), "spread_ms": round(sp * 1000, 1)} for t, (l, sp) in notes["feel"].items()}
+    Path(path).write_text(json.dumps({"tool": "timing", "set": str(src), "tempo": tempo,
+                                      "looseness_ms": round(notes["looseness"] * 1000, 1), "feel": feel,
+                                      "tracks": [t for t, _, _ in tracks], "findings": out}, indent=1))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix timing", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("als")
@@ -283,6 +304,8 @@ def main():
     ap.add_argument("--apply", metavar="OUT.als", help="write warp-marker fixes to this new set")
     ap.add_argument("--strength", type=float, default=1.0, help="scale every move (0-1, default 1)")
     ap.add_argument("--list", type=int, default=40, help="how many problem hits to print (default 40)")
+    ap.add_argument("--json", metavar="OUT.json", help="also write the findings as JSON (each with an id)")
+    ap.add_argument("--ids", help="with --apply: only nudge these finding ids (comma-separated, from --json)")
     a = ap.parse_args()
     src = Path(a.als)
     if a.apply and Path(a.apply).resolve().parent != src.resolve().parent:
@@ -291,6 +314,10 @@ def main():
     root = tree.getroot()
     tempo, tracks, issues, notes = analyse(root, src.parent, a.track, a.to_grid, a.include_off)
     spb = 60 / tempo
+    for n, i in enumerate(issues, 1):
+        i["id"] = f"timing-{n}"
+    if a.json:
+        write_json(a.json, src, tempo, tracks, issues, notes, a)
     print(f"{src.name}: {tempo:g} BPM, {len(tracks)} tracks, "
           f"{sum(len(h) for _, _, h in tracks)} hits compared\n")
     for tname, _, hits in tracks:
@@ -321,6 +348,11 @@ def main():
         print(f"skipped (audio file not found): {m}")
 
     if a.apply:
+        if a.ids:
+            want = {x.strip() for x in a.ids.split(",") if x.strip()}
+            issues = [i for i in issues if i["id"] in want]
+            if not issues:
+                sys.exit("none of those ids were found (same options as the scan?)")
         done, skipped = apply(issues, tracks, tempo, a.strength)
         aa.save(tree, src, a.apply)
         print(f"applied {len(done)} nudges as warp markers; {len(skipped)} left alone:")
