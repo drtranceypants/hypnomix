@@ -63,6 +63,61 @@ SR_O = 22050
 HOP_O = 64            # ~3 ms onset resolution
 
 
+LOW_TOL = 0.8          # bass and drums: tighter tolerance than the other parts (the low end carries the groove)
+LOCK_MIN = 0.012       # bass vs the drums on beats and downbeats: never looser than this
+LOCK_MULT = 1.5        # or this many times the song's looseness
+LOCK_SHARE = 0.7       # a bass hit off the drums moves this much of the way toward them
+MIDI_LANE = "./DeviceChain/MainSequencer/ClipTimeable/ArrangerAutomation/Events/MidiClip"
+DRUMS_RE = r"drum|kit|kick|snare|perc|beat|loop|808 kit"
+BASS_RE = r"\bbass|\bsub\b|808(?! kit)"
+
+
+def midi_hits(t):
+    """Note starts of a MIDI track's Arrangement clips as hits (beats from bar 1). A looped clip plays each note on
+    every pass: those hits share the note, so a fix moves it for every pass."""
+    out = []
+    for c in t.findall(MIDI_LANE):
+        g = lambda p: c.find(p).get("Value") if c.find(p) is not None else None
+        if g("./Disabled") == "true":
+            continue
+        cs, ce = float(g("./CurrentStart")), float(g("./CurrentEnd"))
+        ls, le = float(g("./Loop/LoopStart")), float(g("./Loop/LoopEnd"))
+        rel, loop = float(g("./Loop/StartRelative") or 0), g("./Loop/LoopOn") == "true"
+        L = max(1e-6, le - ls)
+        ci = dict(kind="midi", el=c, loop_on=loop, start=cs, end=ce)
+        for kt in c.findall(".//KeyTracks/KeyTrack"):
+            for ev in kt.findall("./Notes/MidiNoteEvent"):
+                if ev.get("IsEnabled") == "false":
+                    continue
+                nt, vel = float(ev.get("Time")), float(ev.get("Velocity", 100))
+                if loop:
+                    x = cs + ((nt - ls - rel) % L)
+                    while x < ce - 1e-9:
+                        out.append(dict(beat=x, sec=None, strength=vel, clip=ci, note=ev, midi=True))
+                        x += L
+                elif ls - 1e-9 <= nt < le:
+                    x = cs + (nt - ls)
+                    if cs - 1e-9 <= x < ce:
+                        out.append(dict(beat=x, sec=None, strength=vel, clip=ci, note=ev, midi=True))
+    return out
+
+
+def midi_tracks(root, names, include_off=False, skipped=None):
+    out = []
+    for t in root.find(".//Tracks"):
+        if t.tag != "MidiTrack":
+            continue
+        name = t.find("./Name/EffectiveName").get("Value")
+        if not include_off and t.find("./DeviceChain/Mixer/Speaker/Manual").get("Value") == "false":
+            if skipped is not None:
+                skipped.append(name)
+            continue
+        if names and not any(n.lower() == name.lower() or name.lower().startswith(n.lower()) for n in names):
+            continue
+        out.append((name, t))
+    return out
+
+
 def slot_kind(key12):
     """What kind of grid line a hit sits on, from its position in twelfths of a beat (holds 16ths and triplets)."""
     if key12 % (12 * BPB) == 0:
@@ -134,11 +189,42 @@ def arr_to_clipbeat(ci, arr_beats):
 
 
 # ---------------------------------------------------------------- analysis
-def analyse(root, als_dir, names, to_grid, include_off=False, melodic=()):
+def analyse(root, als_dir, names, to_grid, include_off=False, melodic=(), bass=None, drums=None):
     tempo = float(root.find(".//Tempo/Manual").get("Value"))
     spb = 60.0 / tempo                     # seconds per beat
     tracks, notes = [], {"unfixable": {}, "missing": set(), "off": []}
-    for tname, t in sm.audio_tracks(root, names, include_off, notes["off"]):
+    import re as _re
+    try:
+        audio = sm.audio_tracks(root, names, include_off, notes["off"])
+    except SystemExit:                 # every named track is MIDI
+        audio = []
+    try:
+        midi = midi_tracks(root, names, include_off, notes["off"])
+    except SystemExit:
+        midi = []
+    if bass is None:
+        bass = {n for n, t in audio + midi if _re.search(BASS_RE, n, _re.I)}
+    if drums is None:
+        drums = {n for n, t in audio + midi if any(d.tag == "DrumGroupDevice" for d in t.iter())
+                 or (_re.search(DRUMS_RE, n, _re.I) and n not in bass)}
+    bass, drums = set(bass), set(drums)
+    notes["bass"], notes["drums"] = sorted(bass), sorted(drums)
+    for tname, t in audio + midi:
+        if t.tag == "MidiTrack":
+            hits = midi_hits(t)
+            if not hits:
+                continue
+            floor = np.percentile([h["strength"] for h in hits], 30)        # ghost notes: leave them
+            hits = [h for h in sorted(hits, key=lambda h: h["beat"]) if h["strength"] >= floor]
+            clean = []
+            for h in hits:
+                if clean and (h["beat"] - clean[-1]["beat"]) * spb < 0.040:
+                    continue
+                clean.append(h)
+            for h in clean:
+                h["track"] = tname
+            tracks.append((tname, t, clean))
+            continue
         ev = t.find("./DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events")
         if ev is None:
             continue
@@ -201,9 +287,21 @@ def analyse(root, als_dir, names, to_grid, include_off=False, melodic=()):
         tol0 = max(floor_tol, mult * looseness)
         for h in group:
             mel = h["track"] in melodic
-            tol = tol0 * (MELODIC_TOL if mel else 1.0)
+            low = h["track"] in bass or h["track"] in drums
+            tol = tol0 * (MELODIC_TOL if mel else LOW_TOL if low else 1.0)
             others = [o for o in group if o["track"] != h["track"]]
-            if len(others) >= 2 and not to_grid:
+            drum_hits = [o for o in others if o["track"] in drums]
+            lock = h["track"] in bass and drum_hits and kind in ("downbeat", "beat") and not to_grid
+            sh = share
+            if lock:                                   # the bass locks to the drums where both hit the beat
+                ref_err = float(np.median([o["grid_err"] for o in drum_hits]))
+                ref, tol, sh = "drums", max(LOCK_MIN, LOCK_MULT * looseness), max(share, LOCK_SHARE)
+            elif h["track"] in drums and not to_grid:  # the drums are the reference: never pulled toward the band
+                if len(drum_hits) >= 2:
+                    ref_err, ref = float(np.median([o["grid_err"] for o in drum_hits])), "drums"
+                else:
+                    ref_err, ref = feel[h["track"]][0], "grid"
+            elif len(others) >= 2 and not to_grid:
                 ref_err = float(np.median([o["grid_err"] for o in others]))
                 ref = "band"
             else:
@@ -211,12 +309,30 @@ def analyse(root, als_dir, names, to_grid, include_off=False, melodic=()):
             off = h["grid_err"] - ref_err
             if abs(off) <= tol:
                 continue
-            move = -off * share
-            if mel:
+            move = -off * sh
+            if mel and not lock:
                 move = float(np.clip(-off * min(share, MELODIC_SHARE), -MELODIC_MAX, MELODIC_MAX))
             issues.append(dict(track=h["track"], hit=h, slot=slot, kind=kind, ref=ref,
-                               off=off, move=move, beat=h["beat"], optional=mel))
-    issues.sort(key=lambda i: i["beat"])
+                               off=off, move=move, beat=h["beat"], optional=mel and not lock, low=low, lock=bool(lock)))
+    # a MIDI note that is off the same way on every pass of a looped clip is a programmed groove (a laid-back
+    # snare, a pushed bass note): flag it as probably deliberate instead of a mistake
+    passes = {}
+    for _, _, hs in tracks:
+        for h in hs:
+            if h.get("midi"):
+                passes[id(h["note"])] = passes.get(id(h["note"]), 0) + 1
+    by_note = {}
+    for i in issues:
+        if i["hit"].get("midi"):
+            by_note.setdefault(id(i["hit"]["note"]), []).append(i)
+    for k, items in by_note.items():
+        offs = np.array([x["off"] for x in items])
+        if passes.get(k, 0) >= 3 and len(items) >= 0.8 * passes[k] and np.ptp(offs) <= 0.006:
+            for x in items:
+                x["deliberate"] = True
+                if not x.get("lock"):
+                    x["optional"] = True
+    issues.sort(key=lambda i: (0 if i.get("lock") else 1 if i.get("low") else 2, i["beat"]))   # low end first
     return tempo, tracks, issues, notes
 
 
@@ -287,6 +403,23 @@ def apply(issues, tracks, tempo, strength, warp_unwarped=False):
     for _, _, hits in tracks:
         for h in hits:
             hits_by_clip.setdefault(id(h["clip"]), []).append(h)
+    midi_moves = {}
+    for i in issues:
+        if i["hit"].get("midi"):
+            midi_moves.setdefault(id(i["hit"]["note"]), []).append(i)
+    for key, items in midi_moves.items():          # one note, possibly heard on several loop passes
+        ev = items[0]["hit"]["note"]
+        passes = sum(1 for _, _, hs in tracks for h in hs if h.get("note") is ev)
+        moves = np.array([x["move"] * strength / spb for x in items])     # beats
+        same_way = np.all(np.sign(moves) == np.sign(moves[0])) and len(items) >= max(1, passes * 0.6)
+        if not same_way:
+            for x in items:
+                skipped.append((x, "a note in a looped clip that is off differently on each pass: move it by hand"))
+            continue
+        mv = float(np.median(moves))
+        ev.set("Time", repr(max(0.0, float(ev.get("Time")) + mv)))
+        done += items
+    issues = [i for i in issues if not i["hit"].get("midi")]
     for i in issues:
         h, ci = i["hit"], i["hit"]["clip"]
         if not fixable(ci) and warp_unwarped and not ci["warped"] and not ci["loop_on"]:
@@ -372,6 +505,20 @@ def where(beat):
     return f"{int(beat // BPB) + 1}.{beat % BPB + 1:.2f}"
 
 
+def fix_text(i, strength, manual):
+    mv = i["move"] * strength * 1000
+    if manual:
+        return "clip is looped or not warped: nudge it by hand in Live (or --warp-unwarped)"
+    if i["hit"].get("midi"):
+        return (f"move the note {mv:+.0f} ms" + (" toward the drums" if i.get("lock") else "")
+                + (" (it plays on every pass of a looped clip: moved only if it is off the same way each time)"
+                   if i["hit"]["clip"].get("loop_on") else ""))
+    out = f"nudge {mv:+.0f} ms with warp markers" + (" toward the drums" if i.get("lock") else "")
+    if i.get("optional"):
+        out += " (a gentle partial move, not onto the grid; skip it to keep the feel)"
+    return out
+
+
 def write_json(path, src, tempo, tracks, issues, notes, a):
     import json
     out = []
@@ -380,21 +527,28 @@ def write_json(path, src, tempo, tracks, issues, notes, a):
         sev = "high" if abs(i["off"]) > 1.5 * tol or i["kind"] == "downbeat" else "medium"
         if i.get("optional"):
             sev = "low"
+        if i.get("lock"):
+            sev = "high"                     # bass off the drums on the beat: the low end gets attention first
         ci = i["hit"]["clip"]
-        manual = not fixable(ci)
+        manual = (not i["hit"].get("midi")) and not fixable(ci)
         late = "late" if i["off"] > 0 else "early"
         out.append(dict(id=i["id"], tool="timing", kind=i["kind"], severity=sev, track=i["track"],
                         where=where(i["beat"]),
                         problem=(("OPTIONAL (melodic part: its looseness is part of the feel). " if i.get("optional") else "")
-                                 + f"{i['kind']} hit {abs(i['off']) * 1000:.0f} ms {late} against the {i['ref']}"),
-                        fix=(f"nudge {i['move'] * a.strength * 1000:+.0f} ms with warp markers"
-                             + (" (a gentle partial move, not onto the grid; skip it to keep the feel)" if i.get("optional") else "")
-                             if not manual else "clip is looped or not warped: nudge it by hand in Live"),
+                                 + ("LOW END: " if i.get("low") else "")
+                                 + (f"bass {abs(i['off']) * 1000:.0f} ms {late} against the drums on the {i['kind']}"
+                                    if i.get("lock") else
+                                    f"{i['kind']} hit {abs(i['off']) * 1000:.0f} ms {late} against the {i['ref']}")
+                                 + (" (MIDI note)" if i["hit"].get("midi") else "")
+                                 + ("; it is exactly the same on every pass of the loop, so it looks deliberate (a "
+                                    "programmed feel): ask before moving it" if i.get("deliberate") else "")),
+                        fix=fix_text(i, a.strength, manual),
                         applies="manual" if manual else "set", optional=bool(i.get("optional"))))
     feel = {t: {"lag_ms": round(l * 1000, 1), "spread_ms": round(sp * 1000, 1)} for t, (l, sp) in notes["feel"].items()}
     Path(path).write_text(json.dumps({"tool": "timing", "set": str(src), "tempo": tempo,
                                       "looseness_ms": round(notes["looseness"] * 1000, 1), "feel": feel,
-                                      "grid": notes.get("grid", []),
+                                      "grid": notes.get("grid", []), "bass": notes.get("bass", []),
+                                      "drums": notes.get("drums", []),
                                       "tracks": [t for t, _, _ in tracks], "melodic": sorted(getattr(a, "melodic", []) or []),
                                       "findings": out}, indent=1))
 
@@ -405,6 +559,8 @@ def main():
     ap.add_argument("--track", action="append", default=[], help="instrument tracks to compare (repeatable)")
     ap.add_argument("--to-grid", action="store_true", help="compare every hit with the grid, not the band")
     ap.add_argument("--include-off", action="store_true", help="also use switched-off tracks")
+    ap.add_argument("--bass", action="append", help="bass tracks (default: by name); they lock to the drums on beats")
+    ap.add_argument("--drums", action="append", help="drum tracks (default: drum racks and names); the low-end reference")
     ap.add_argument("--warp-unwarped", action="store_true",
                     help="switch warp on for unwarped clips that need a nudge (they play as before; warp mode unchanged)")
     ap.add_argument("--all-listed", action="store_true",
@@ -423,7 +579,7 @@ def main():
     tree = aa.load(src)
     root = tree.getroot()
     tempo, tracks, issues, notes = analyse(root, src.parent, a.track, a.to_grid, a.include_off,
-                                           set() if a.all_listed else set(a.melodic))
+                                           set() if a.all_listed else set(a.melodic), a.bass, a.drums)
     spb = 60 / tempo
     for n, i in enumerate(issues, 1):
         i["id"] = f"timing-{n}"
@@ -473,7 +629,9 @@ def main():
             print(f"warp switched on (playing as before, same warp mode) for clips on: {', '.join(switched)}; "
                   "listen to them: Live's warping can colour audio slightly")
         aa.save(tree, src, a.apply)
-        print(f"applied {len(done)} nudges as warp markers; {len(skipped)} left alone:")
+        nm_ = sum(1 for i in done if i["hit"].get("midi"))
+        print(f"applied {len(done)} nudges ({len(done) - nm_} as warp markers, {nm_} as moved MIDI notes); "
+              f"{len(skipped)} left alone:")
         reasons = {}
         for _, why in skipped:
             reasons[why] = reasons.get(why, 0) + 1

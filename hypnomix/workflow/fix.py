@@ -93,8 +93,13 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
         for t in timing_tracks:
             args += ["--track", t]
         tj = sd / "raw" / "timing.json"
-        for t in (json.loads(tj.read_text()).get("melodic", []) if tj.exists() else []):
+        tjd_ = json.loads(tj.read_text()) if tj.exists() else {}
+        for t in tjd_.get("melodic", []):
             args += ["--melodic", t]
+        for t in tjd_.get("bass", []):
+            args += ["--bass", t]
+        for t in tjd_.get("drums", []):
+            args += ["--drums", t]
     if tool == "distortion" and scan.get("mix"):
         args += ["--mix", scan["mix"]]
     if tool in ("order", "cliplevel", "duck"):
@@ -291,6 +296,7 @@ def main():
         tj = sd / "raw" / "timing.json"
         tjd = json.loads(tj.read_text()) if tj.exists() else {}
         timing_tracks, timing_melodic = tjd.get("tracks", []), tjd.get("melodic", [])
+        timing_low = [("--bass", t) for t in tjd.get("bass", [])] + [("--drums", t) for t in tjd.get("drums", [])]
         cur, step, temps, applied_tools = src, 0, [], []
         try:
             for tool in ORDER:
@@ -336,6 +342,8 @@ def main():
                             args += ["--track", t]
                         for t in timing_melodic:
                             args += ["--melodic", t]
+                        for flag, t in timing_low:
+                            args += [flag, t]
                     if tool == "distortion" and scan.get("mix"):
                         args += ["--mix", scan["mix"]]
                     if tool in ("order", "cliplevel", "duck"):

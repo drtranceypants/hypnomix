@@ -90,3 +90,18 @@ class WarpOn(unittest.TestCase):
         after = T.file_to_arr(ci, secs, tempo)
         self.assertTrue(np.allclose(before, after))
         self.assertEqual(el.find("./IsWarped").get("Value"), "true")
+
+
+class MidiHits(unittest.TestCase):
+    def test_a_looped_note_is_heard_on_every_pass(self):
+        import xml.etree.ElementTree as ET
+        t = ET.fromstring(
+            '<MidiTrack><DeviceChain><MainSequencer><ClipTimeable><ArrangerAutomation><Events>'
+            '<MidiClip Id="0"><CurrentStart Value="16"/><CurrentEnd Value="32"/><Disabled Value="false"/>'
+            '<Loop><LoopStart Value="0"/><LoopEnd Value="4"/><StartRelative Value="0"/><LoopOn Value="true"/></Loop>'
+            '<Notes><KeyTracks><KeyTrack><Notes><MidiNoteEvent Time="1.05" Duration="0.5" Velocity="100" IsEnabled="true"/>'
+            '</Notes><MidiKey Value="36"/></KeyTrack></KeyTracks></Notes></MidiClip>'
+            '</Events></ArrangerAutomation></ClipTimeable></MainSequencer></DeviceChain></MidiTrack>')
+        hs = T.midi_hits(t)
+        self.assertEqual([round(h["beat"], 2) for h in hs], [17.05, 21.05, 25.05, 29.05])
+        self.assertTrue(all(h["note"] is hs[0]["note"] for h in hs))   # one note, four passes

@@ -179,8 +179,8 @@ def g_clips(als, od, a):
 
 
 def g_timing(als, od, a, role):
-    tracks = [t for t, r in role.items() if r["kind"] in ("Audio", "AudioTrack", "") and not is_vocal(r["label"])
-              and "Group" not in r["label"]]
+    tracks = [t for t, r in role.items() if r["kind"] in ("Audio", "AudioTrack", "Midi", "MidiTrack", "")
+              and not is_vocal(r["label"]) and "Group" not in r["label"]]
     if a.timing_track:
         tracks = a.timing_track
     if not tracks:
@@ -192,6 +192,12 @@ def g_timing(als, od, a, role):
     melodic = [t for t in tracks if is_melodic(role.get(t, {}).get("label", ""))]
     for t in melodic:
         args += ["--melodic", t]
+    bass = [t for t in tracks if role.get(t, {}).get("label", "").startswith("Bass")]
+    drums = [t for t in tracks if role.get(t, {}).get("label", "").startswith(("Drums", "Kick", "Snare", "Hats", "Perc"))]
+    for t in bass:
+        args += ["--bass", t]
+    for t in drums:
+        args += ["--drums", t]
     code, out = hx(*args)
     save(od / "raw" / "timing.txt", strip_warnings(out))
     if not j.exists():
@@ -204,6 +210,9 @@ def g_timing(als, od, a, role):
         trip = [r for r in runs if "triplet" in r[2]]
         notes.append("timing: grid " + ("; ".join(f"bars {a}-{b}: {nm}" for a, b, nm in runs[:8]) if trip else
                                          f"straight 16ths throughout") + " (nudges go toward this grid)")
+    if bass or drums:
+        notes.append(f"timing: low end first: bass ({', '.join(bass) or 'none found'}) is checked against the drums "
+                     f"({', '.join(drums) or 'none found'}) on every beat, with tighter tolerances")
     if melodic:
         notes.append(f"timing: melodic parts ({', '.join(melodic)}) only get OPTIONAL, partial nudges (at most 30% "
                      "of the way and 15 ms), and only for clear outliers: their looseness is part of the feel")

@@ -207,8 +207,16 @@ def diff(old, new, show_all=False):
                 a_, b_ = gv(o, path), gv(c, path)
                 if a_ != b_ and a_ is not None and b_ is not None:
                     add(name, f"{lab} ({label})", f(a_), f(b_), w)
-            w0 = [(w_.get("SecTime"), w_.get("BeatTime")) for w_ in o.iter("WarpMarker")]
-            w1 = [(w_.get("SecTime"), w_.get("BeatTime")) for w_ in c.iter("WarpMarker")]
+            if c.tag == "MidiClip":                          # notes moved (timing fixes on MIDI)
+                n0 = [float(e.get("Time")) for e in o.iter("MidiNoteEvent")]
+                n1 = [float(e.get("Time")) for e in c.iter("MidiNoteEvent")]
+                moved = [b_ - a_ for a_, b_ in zip(n0, n1) if abs(b_ - a_) > 1e-9]
+                if moved or len(n0) != len(n1):
+                    add(name, f"notes moved ({label})", f"{len(n0)} notes",
+                        f"{len(moved)} moved, by {min(moved) * spb * 1000:+.0f} to {max(moved) * spb * 1000:+.0f} ms"
+                        if moved else f"{len(n1)} notes", w)
+            w0 = [(w_.get("SecTime"), w_.get("BeatTime")) for w_ in o.findall("./WarpMarkers/WarpMarker")]
+            w1 = [(w_.get("SecTime"), w_.get("BeatTime")) for w_ in c.findall("./WarpMarkers/WarpMarker")]
             if w0 != w1:
                 shift = ""
                 if len(w0) == len(w1):
