@@ -64,7 +64,8 @@ def stretched(src, k, SR):
     key = (str(src), round(k, 6), SR)
     if key in _STRETCH:
         return _STRETCH[key]
-    a, sr = sf.read(str(src), always_2d=True)
+    from hypnomix.core import dsp
+    a, sr = dsp.load(src)                  # falls back to ffmpeg for formats soundfile can't read (some .aif loops)
     a = a.mean(1)
     if abs(k - 1) >= 1e-5:
         if shutil.which("rubberband"):
@@ -110,7 +111,12 @@ def render_track(t, als, spb, N, SR, sources, tighten, warn):
             to_sec = lambda x: x
             per_beat = 1 / spb                                 # unwarped: loop/start values are in seconds
         k = spb / slope                          # how much longer the clip plays than it was recorded
-        a = stretched(src, k, SR)                # pitch-preserving stretch of the whole source
+        try:
+            a = stretched(src, k, SR)            # pitch-preserving stretch of the whole source
+        except Exception as e_:                  # a file nothing can decode: leave this clip out, say so
+            if warn is not None:
+                warn.append(f"could not read {Path(src).name} ({type(e_).__name__}): clip left out of the render")
+            continue
         clip_len = int((e - s) * spb * SR)
         # play it like Live: start at the start marker; a looped clip wraps from loop end back to loop start
         need = (e - s) * per_beat

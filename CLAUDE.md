@@ -6,7 +6,8 @@ from. Claude Code specifics:
 
 - Skills in `skills/` load automatically (`.claude/skills` links there): **first-pass** (preferences, parallel
   scan, review one fix at a time, apply, verify), **mix-engineer**, **mastering-engineer**,
-  **tracking-session**, **live-mixing**.
+  **tracking-session**, **live-mixing**, **harmony-balance** (learn how the person spaces harmonies from their own
+  finished songs, then only correct what falls outside that).
 - Subagent definitions in `agents/` (`.claude/agents` links there): **hypnomix-scanner** runs one scan group,
   read-only. Start several in one message to scan in parallel. Scanning is the only thing to hand to
   subagents: the review and every decision stay in the conversation with the person.

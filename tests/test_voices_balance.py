@@ -80,3 +80,26 @@ class UnderTheLead(unittest.TestCase):
         pt = {"lead": np.array([262.0]), "h1": np.array([196.0]), "h2": np.array([330.0])}
         _, rows = plan(lv, pt, "lowest", "above", 0.0, 0.0, "ladder", 6.0, tolerance=1.5, lead="lead", lead_margin=1.5)
         self.assertTrue(rows[0]["harmonies_same_level"])
+
+
+class LearnStyle(unittest.TestCase):
+    def test_each_song_counts_once_and_skipped_songs_are_ignored(self):
+        from hypnomix.studio import voices as V
+        fake = {
+            "a": dict(song="a", lead="L", harmonies=["h"], windows=50,
+                      lead_margin=dict(p10=1.0, p25=2.0, median=4.0, p75=6.0),
+                      higher_minus_lower=dict(p10=-3, median=-1.0, p90=1.0, abs_median=1.2, pairs=40)),
+            "b": dict(song="b", lead="L", harmonies=["h"], windows=50,
+                      lead_margin=dict(p10=2.0, p25=3.0, median=5.0, p75=7.0),
+                      higher_minus_lower=dict(p10=-4, median=-2.0, p90=2.0, abs_median=2.0, pairs=40)),
+            "c": dict(song="c", skipped="fewer than two playing vocal tracks"),
+        }
+        orig = V.song_spacing
+        V.song_spacing = lambda sp, win_s=2.0: fake[sp]
+        try:
+            st = V.learn_style(["a", "b", "c"])
+        finally:
+            V.song_spacing = orig
+        self.assertEqual(st["lead_margin"], 2.5)        # median of the songs' 25th percentiles
+        self.assertEqual(st["tolerance"], 1.5)          # median of the songs' 90th percentiles
+        self.assertEqual(st["lead_margin_median"], 4.5)

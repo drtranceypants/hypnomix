@@ -133,7 +133,7 @@ Open the repo in Claude Code and ask for what you want:
 >
 > "Master this for Spotify and check it'll survive on a phone."
 
-Five skills ship in `skills/`: **first-pass** (ask your preferences once, scan a whole song with parallel subagents, then review and apply fixes one at a time), **mix-engineer**, **mastering-engineer**, **tracking-session** and **live-mixing**. `agents/` holds the **hypnomix-scanner** subagent the first pass uses. They teach Claude the workflows, the safety rules (snapshot before touching your set, respect automation, ask before taste calls), and how to explain each move.
+Six skills ship in `skills/`: **first-pass** (ask your preferences once, scan a whole song with parallel subagents, then review and apply fixes one at a time), **mix-engineer**, **mastering-engineer**, **tracking-session**, **live-mixing** and **harmony-balance** (`voices --learn` measures how far your harmonies sit under the lead and from each other in your own finished songs; `--tame` then only corrects what falls outside your habits). `agents/` holds the **hypnomix-scanner** subagent the first pass uses. They teach Claude the workflows, the safety rules (snapshot before touching your set, respect automation, ask before taste calls), and how to explain each move.
 
 To use the skills from any project, add the repo as a plugin marketplace: `/plugin marketplace add drtranceypants/hypnomix`.
 

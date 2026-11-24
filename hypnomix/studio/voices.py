@@ -38,9 +38,10 @@ Usage:
   hypnomix voices STEMS... --anchor lead --reduce above --above-db 1.5 --spread flat [--out DIR]
   hypnomix voices STEMS... --split [--min-gap 0.25] [--overlap 0.3]
 """
-import argparse, json, os
+import argparse, json, os, re
 import numpy as np, soundfile as sf, librosa
 
+from pathlib import Path
 from hypnomix.core.paths import out_at
 from concurrent.futures import ProcessPoolExecutor
 
@@ -188,6 +189,140 @@ def question(names, levels, pitches, win_s):
     print("Nothing was changed.")
 
 
+# ---------------------------------------------------------------- learn the person's own harmony spacing
+STYLE = Path.home() / ".hypnomix" / "harmony-style.json"
+CACHE = Path.home() / ".hypnomix" / "cache"
+VOCAL = ("Lead Vocal", "Vocal", "Harmony", "Backing Vocal")
+
+
+def _hx(*args):
+    import subprocess, sys as _s
+    r = subprocess.run([_s.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True)
+    return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+
+def song_spacing(set_path, win_s=2.0):
+    """How one finished song balances its vocals: per window where the lead and harmonies sing together, how far
+    each harmony sits under the lead and how far each higher harmony sits from the one below it (dB, after faders;
+    same measurement as the balancing itself). Returns a dict, or None if the song has no lead + harmony."""
+    import gzip, hashlib, math, os, xml.etree.ElementTree as ET
+    set_path = Path(set_path)
+    st = os.stat(set_path)
+    key = hashlib.sha1(f"{set_path.resolve()}|{st.st_size}|{st.st_mtime_ns}".encode()).hexdigest()[:16]
+    nd, rd = CACHE / "names" / key, CACHE / "renders" / key
+    nj = nd / "names.json"
+    if not nj.exists():
+        code, out = _hx("name", set_path, "--out", nd)
+        if not nj.exists():
+            return dict(song=set_path.stem, skipped=f"naming failed: {out.strip()[-160:]}")
+    rows = json.loads(nj.read_text())["tracks"]
+    voc = [r for r in rows if r.get("kind") == "Audio" and r.get("on", True) and float(r.get("confidence") or 0) >= 0.5
+           and any(str(r.get("final") or r.get("label") or "").startswith(x) for x in VOCAL)]
+    if len(voc) < 2:
+        return dict(song=set_path.stem, skipped="fewer than two playing vocal tracks")
+    dup = sorted({r["old"] for r in voc if sum(1 for x in voc if x["old"] == r["old"]) > 1})
+    if dup:
+        return dict(song=set_path.stem, skipped=f"several vocal tracks share one name ({', '.join(dup)}): rename them to "
+                                                "tell the parts apart")
+    lead_row = next((r for r in voc if str(r.get("final") or r.get("label")).startswith("Lead Vocal")), None)
+    names = [r["old"] for r in voc]
+    safe = lambda n: re.sub(r'[\\/:*?"<>|]', "-", n)
+    missing = [n for n in names if not (rd / f"{safe(n)}.wav").exists()]
+    if missing:
+        _hx("render", set_path, "--tracks", *missing, "--out", rd)
+    files = {n: rd / f"{safe(n)}.wav" for n in names if (rd / f"{safe(n)}.wav").exists()}
+    if len(files) < 2:
+        return dict(song=set_path.stem, skipped="could not render the vocals")
+    root = ET.fromstring(gzip.open(set_path).read())
+    fader = {}
+    for t in root.find(".//Tracks"):
+        nm = t.find("./Name/EffectiveName").get("Value")
+        vol = t.find("./DeviceChain/Mixer/Volume/Manual")
+        if nm in files and vol is not None and float(vol.get("Value")) > 0:
+            fader[nm] = 20 * math.log10(float(vol.get("Value")))
+    res = {n: measure(str(p), win_s) for n, p in files.items()}
+    nwin = max(len(r[1]) for r in res.values())
+    pad = lambda x: np.pad(x, (0, nwin - len(x)), constant_values=np.nan)
+    lv = {n: pad(r[1]) + fader.get(n, 0.0) for n, r in res.items()}
+    pt = {n: pad(r[2]) for n, r in res.items()}
+    lead = lead_row["old"] if lead_row and lead_row["old"] in files else None
+    if lead is None:
+        from hypnomix.core import dsp
+        from hypnomix.engineer.roles import pick_lead
+        lead = pick_lead([(n, dsp.load(p, 22050)[0]) for n, p in files.items()], 22050)
+    margins, steps, doubles = [], [], []
+    st_ = lambda f1, f2: abs(12 * math.log2(f1 / f2))
+    lead_ok = lv[lead][np.isfinite(lv[lead])]
+    lead_floor = float(np.median(lead_ok)) - 6.0 if len(lead_ok) else -np.inf   # the lead singing at its normal level
+    for w in range(nwin):
+        if not (np.isfinite(lv[lead][w]) and np.isfinite(pt[lead][w])) or lv[lead][w] < lead_floor:
+            continue                    # not where the lead sings out (word tails and breaths would skew the margin)
+        sing = [n for n in files if n != lead and np.isfinite(lv[n][w]) and np.isfinite(pt[n][w])]
+        # a part on the lead's own note (within a semitone) is a double or a comp piece, not a harmony
+        dbl = [n for n in sing if st_(pt[n][w], pt[lead][w]) < 1.0]
+        doubles += [float(lv[lead][w] - lv[n][w]) for n in dbl]
+        harm = [n for n in sing if n not in dbl]
+        if not harm:
+            continue
+        margins += [float(lv[lead][w] - lv[n][w]) for n in harm]
+        harm.sort(key=lambda n: pt[n][w])
+        steps += [float(lv[b][w] - lv[a][w]) for a, b in zip(harm, harm[1:])
+                  if st_(pt[b][w], pt[a][w]) >= 1.0]                          # higher minus lower, different notes
+    if len(margins) < 5:
+        return dict(song=set_path.stem, skipped="the lead and harmonies hardly sing together")
+    q = lambda x, p: round(float(np.percentile(x, p)), 1)
+    out = dict(song=set_path.stem, set=str(set_path), lead=lead, harmonies=[n for n in files if n != lead],
+               windows=len(margins), lead_margin=dict(p10=q(margins, 10), p25=q(margins, 25), median=q(margins, 50),
+                                                       p75=q(margins, 75)))
+    if len(steps) >= 5:
+        out["higher_minus_lower"] = dict(p10=q(steps, 10), median=q(steps, 50), p90=q(steps, 90),
+                                         abs_median=q(np.abs(steps), 50), pairs=len(steps))
+    if len(doubles) >= 5:
+        out["doubles_under_lead"] = dict(median=q(doubles, 50), readings=len(doubles))
+    return out
+
+
+def learn_style(sets):
+    songs = []
+    for sp in sets:
+        r = song_spacing(sp)
+        songs.append(r)
+        if r.get("skipped"):
+            print(f"  {r['song']}: skipped ({r['skipped']})")
+        else:
+            lm = r["lead_margin"]; hl = r.get("higher_minus_lower")
+            print(f"  {r['song']}: lead {r['lead']} vs {len(r['harmonies'])} harmonies, {r['windows']} readings: harmonies sit "
+                  f"{lm['median']:+.1f} dB under the lead (middle half {lm['p25']:+.1f} to {lm['p75']:+.1f})"
+                  + (f"; a higher harmony vs the one below: median {hl['median']:+.1f} dB (90% at or under "
+                     f"{hl['p90']:+.1f}), typical gap {hl['abs_median']:.1f} dB" if hl else ""))
+    ok = [r for r in songs if not r.get("skipped")]
+    if not ok:
+        raise SystemExit("no song with a lead and harmonies singing together: nothing learned")
+    med = lambda xs: round(float(np.median(xs)), 1)          # each song counts once
+    lm25 = med([r["lead_margin"]["p25"] for r in ok])
+    hl = [r["higher_minus_lower"] for r in ok if r.get("higher_minus_lower")]
+    style = dict(
+        songs=songs,
+        lead_margin=max(0.0, lm25),                              # 3 in 4 of your readings already sit at least this far under
+        lead_margin_median=med([r["lead_margin"]["median"] for r in ok]),
+        tolerance=max(0.5, med([h["p90"] for h in hl])) if hl else 1.5,   # a higher harmony louder than this over the one below is unusual for you
+        higher_minus_lower_median=med([h["median"] for h in hl]) if hl else None,
+        same_db=min(1.0, max(0.3, med([h["abs_median"] for h in hl]) / 2)) if hl else 1.0,
+        note="lead_margin = the 25th percentile of how far your harmonies sit under the lead (per song, then the median "
+             "song); tolerance = the 90th percentile of how much louder a higher harmony is than the one below it. "
+             "Balancing only moves what falls outside your own habits.")
+    return style
+
+
+def style_defaults():
+    if STYLE.exists():
+        try:
+            return json.loads(STYLE.read_text())
+        except Exception:
+            return None
+    return None
+
+
 def balance(a):
     win_s = a.window or ((60.0 / a.bpm) * a.bar_beats if a.bpm else 2.0)
     with ProcessPoolExecutor(min(8, len(a.stems))) as ex:
@@ -252,14 +387,16 @@ def balance(a):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix voices", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("stems", nargs="+"); ap.add_argument("--out")
+    ap.add_argument("stems", nargs="*"); ap.add_argument("--out")
+    ap.add_argument("--learn", nargs="+", metavar="SONG.als",
+                    help="learn how YOU space harmonies from finished songs; --tame then uses your numbers")
     ap.add_argument("--anchor", help="part to prioritise: a stem name, lead, lowest or highest (without it: the question)")
     ap.add_argument("--reduce", choices=["above", "below", "both"], default="above")
     ap.add_argument("--above-db", type=float, default=0.0, help="dB quieter per step above the anchor (you choose)")
     ap.add_argument("--below-db", type=float, default=0.0, help="dB quieter per step below the anchor (you choose)")
     ap.add_argument("--spread", choices=["ladder", "flat"], default="ladder")
     ap.add_argument("--max-cut", type=float, default=6.0)
-    ap.add_argument("--tolerance", type=float, default=1.5,
+    ap.add_argument("--tolerance", type=float, default=None,
                     help="only turn a part down where it is louder than its limit by more than this many dB (default 1.5); "
                          "with --tame it comes down to exactly this far above the part below, no further")
     ap.add_argument("--lead", help="the lead part (default: the shared lead rule)")
@@ -277,9 +414,33 @@ def main():
     ap.add_argument("--min-gap", type=float, default=0.25); ap.add_argument("--min-len", type=float, default=0.2)
     ap.add_argument("--overlap", type=float, default=0.3, help="fraction of a phrase two parts must share to count as singing together")
     a = ap.parse_args()
+    a.tolerance_given = a.tolerance is not None
+    if a.tolerance is None:
+        a.tolerance = 1.5
+    if a.learn:
+        print(f"learning how you balance harmonies from {len(a.learn)} song(s)…")
+        st = learn_style(a.learn)
+        STYLE.parent.mkdir(parents=True, exist_ok=True)
+        STYLE.write_text(json.dumps(st, indent=1))
+        print(f"\nyour pattern: harmonies sit about {st['lead_margin_median']:.1f} dB under the lead (3 in 4 at least "
+              f"{st['lead_margin']:.1f} dB); a higher harmony is at most {st['tolerance']:.1f} dB louder than the one below it "
+              f"in 9 of 10 readings" + (f" (median {st['higher_minus_lower_median']:+.1f} dB)" if st.get('higher_minus_lower_median') is not None else "")
+              + f"\n→ --tame now uses: lead margin {st['lead_margin']:.1f} dB, tolerance {st['tolerance']:.1f} dB.  Saved: {STYLE}")
+        if not a.stems:
+            return
+    if not a.stems:
+        ap.error("give the vocal stems (or --learn SONG.als …)")
     if not a.split:
         if a.tame:
             a.anchor, a.reduce, a.above_db = a.anchor or "lowest", "above", 0.0
+            st = style_defaults()
+            if st and a.lead_margin is None:
+                a.lead_margin = float(st["lead_margin"])
+            if st and a.tolerance_given is False:
+                a.tolerance = float(st["tolerance"])
+            if st:
+                print(f"your own spacing (from {sum(1 for x in st['songs'] if not x.get('skipped'))} songs): "
+                      f"lead margin {a.lead_margin:.1f} dB, tolerance {a.tolerance:.1f} dB")
             if a.lead_margin is None:
                 a.lead_margin = 1.5
         if a.lead_margin is None:

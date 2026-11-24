@@ -483,19 +483,22 @@ def main():
         if f.get("tool") == "voices":  # harmony balance: only with the settings the person chose
             note = ((dec.get(f["id"]) or {}).get("note") or "")
             kv = dict(x.split("=", 1) for x in note.replace(",", " ").split() if "=" in x)
-            if "anchor" not in kv:      # approved as suggested: harmonies under the lead, no overshadowing
-                kv = dict(kv, anchor="lowest", reduce="above", above=kv.get("above", "0"),
-                          **{"lead-margin": kv.get("lead-margin", "1.5")})
             dest = sd / "fixed" / "voices"
             k = 1
             while dest.exists():
                 k += 1
                 dest = sd / "fixed" / f"voices {k}"
-            args = ["voices", *f["stems"], "--anchor", kv["anchor"] if kv["anchor"] != "lead" or not f.get("lead") else f["lead"],
-                    "--reduce", kv.get("reduce", "above"), "--above-db", kv.get("above", "0"),
-                    "--below-db", kv.get("below", "0"), "--spread", kv.get("spread", "ladder"),
-                    "--max-cut", kv.get("max-cut", "6"), "--tolerance", kv.get("tolerance", "1.5"),
-                    "--lead-margin", kv.get("lead-margin", "0"), "--out", dest]
+            if "anchor" not in kv:      # approved as suggested: the person's own spacing (voices --learn), else 1.5 dB
+                args = ["voices", *f["stems"], "--tame", "--out", dest]
+                for key_ in ("tolerance", "lead-margin", "max-cut"):
+                    if key_ in kv:
+                        args += [f"--{key_}", kv[key_]]
+            else:
+                args = ["voices", *f["stems"], "--anchor", kv["anchor"] if kv["anchor"] != "lead" or not f.get("lead") else f["lead"],
+                        "--reduce", kv.get("reduce", "above"), "--above-db", kv.get("above", "0"),
+                        "--below-db", kv.get("below", "0"), "--spread", kv.get("spread", "ladder"),
+                        "--max-cut", kv.get("max-cut", "6"), "--tolerance", kv.get("tolerance", "1.5"),
+                        "--lead-margin", kv.get("lead-margin", "0"), "--out", dest]
             if f.get("lead"):
                 args += ["--lead", f["lead"]]
             for nm, db in (f.get("faders") or {}).items():   # renders are raw clips: compare levels as heard

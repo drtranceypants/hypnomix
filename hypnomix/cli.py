@@ -74,6 +74,7 @@ GROUPS = [
     ("Workflow: scan a song, review, fix", [
         ("scan", "hypnomix.workflow.scan", "first pass: run every check on a set or a folder of recordings, change nothing, write REVIEW.md"),
         ("fix", "hypnomix.workflow.fix", "apply only the findings you approved, into ONE new set (original untouched)"),
+        ("taste", "hypnomix.workflow.taste", "your tastes and standards from your own finished songs: levels, pans, sends, chains, vocals (TASTE.md)"),
         ("prefs", "hypnomix.workflow.prefs", "your preferences, asked once: targets, protected tracks, how you like to review"),
         ("ab", "hypnomix.workflow.ab", "before/after clips for each proposed fix, level-matched, so you hear it before approving"),
         ("review", "hypnomix.workflow.review", "the review as one page: play each A/B, tick approve / skip / change"),
