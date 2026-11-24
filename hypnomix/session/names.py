@@ -32,8 +32,12 @@ SR = 44100
 def set_info(als):
     r = ET.fromstring(gzip.open(als).read())
     tempo = float(v(r, ".//Tempo/Manual"))
-    ends = [float(v(c, "./CurrentEnd")) for c in list(r.iter("AudioClip")) + list(r.iter("MidiClip"))]
-    return r, tempo, max(ends or [0])
+    from hypnomix.session.render import song_end
+    end, strays = song_end(r)                       # not a stray clip far past the song
+    if end <= 0:
+        ends = [float(v(c, "./CurrentEnd")) for c in list(r.iter("AudioClip")) + list(r.iter("MidiClip"))]
+        end = max(ends or [0])
+    return r, tempo, end
 
 DEFAULT_NAME = re.compile(r"^(\d+-)*(\d+-)?(audio|midi|group|track)?\s*\d*(\s+\d+)*$|^\d+-\d+-(audio|midi)\s*\d*(\s+\d+)*$|^\d+-(audio|midi|group)\b.*$", re.I)
 KEYWORDS = [  # (regex, label) -- first match wins

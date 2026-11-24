@@ -84,6 +84,29 @@ def stretched(src, k, SR):
     return a
 
 
+def song_end(root):
+    """(end in beats, [stray clips]) for the whole song: where the main-lane clips on playing tracks end. A clip
+    or two running far past everything else (a stray loop, a forgotten take) is not the song: those are listed,
+    and the song ends where the rest does."""
+    ends = []
+    for t in root.find(".//Tracks"):
+        if t.tag not in ("AudioTrack", "MidiTrack") or v(t, "./DeviceChain/Mixer/Speaker/Manual") == "false":
+            continue
+        lane = t.find("./DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events") if t.tag == "AudioTrack" else \
+            t.find("./DeviceChain/MainSequencer/ClipTimeable/ArrangerAutomation/Events")
+        for c in (list(lane) if lane is not None else []):
+            if v(c, "./Disabled") != "true" and c.find("./CurrentEnd") is not None:
+                ends.append((float(v(c, "./CurrentEnd")), v(t, "./Name/EffectiveName"), float(v(c, "./CurrentStart"))))
+    if not ends:
+        return 0.0, []
+    e = np.array([x[0] for x in ends])
+    p90 = float(np.percentile(e, 90))
+    keep = e <= max(p90 * 1.25, p90 + 64)              # 16 bars of grace past where 9 in 10 clips end
+    end = float(e[keep].max()) if keep.any() else float(e.max())
+    strays = [f"{nm}: a clip from bar {cs / 4 + 1:.0f} to bar {ce / 4 + 1:.0f}" for (ce, nm, cs), k in zip(ends, keep) if not k]
+    return end, strays
+
+
 def render_track(t, als, spb, N, SR, sources, tighten, warn):
     y = np.zeros(N)
     name = v(t, "./Name/EffectiveName")
@@ -182,7 +205,11 @@ def main():
     ends = [float(v(c, "./CurrentEnd")) for t in pick for c in t.iter("AudioClip")]
     if not ends:
         sys.exit("no audio clips on the chosen tracks")
-    N = int((max(ends) + 8) * spb * a.sr)
+    end, strays = song_end(r)
+    if strays:
+        print("WARNING: clips far past the end of the song are left out of the render (the song ends at bar "
+              f"{end / 4 + 1:.0f}): " + "; ".join(strays[:6]), file=sys.stderr)
+    N = int((min(max(ends), end if end > 0 else max(ends)) + 8) * spb * a.sr)
     od = out_at(a.out, "render", Path(a.als).stem)
     warn = []
     for t in pick:

@@ -42,6 +42,7 @@ import argparse, json, os, re
 import numpy as np, soundfile as sf, librosa
 
 from pathlib import Path
+from scipy.ndimage import uniform_filter1d
 from hypnomix.core.paths import out_at
 from concurrent.futures import ProcessPoolExecutor
 
@@ -53,7 +54,8 @@ def phrases_of(path, min_gap, min_len):
     """Phrases = stretches where the stem is within 40 dB of its own loud level; gaps >= min_gap split them."""
     y, sr = sf.read(path, always_2d=True); m = y.mean(1)
     hop = int(0.01 * sr)
-    e = np.sqrt(np.convolve(m ** 2, np.ones(hop * 3) / (hop * 3), "same")[::hop])
+    from scipy.ndimage import uniform_filter1d
+    e = np.sqrt(uniform_filter1d(m ** 2, hop * 3, mode="nearest")[::hop])          # running mean: O(n)
     edb = 20 * np.log10(e + 1e-12)
     loud = np.percentile(edb[edb > -100], 95) if (edb > -100).any() else -100
     act = edb > loud - 40
@@ -104,7 +106,7 @@ def measure(path, win_s):
         seg = kx[w * win:(w + 1) * win]
         if len(seg) < sr // 4:
             continue
-        fr = np.sqrt(np.convolve(seg ** 2, np.ones(sr // 20) / (sr // 20), "valid")[::blk] + 1e-20)
+        fr = np.sqrt(uniform_filter1d(seg ** 2, sr // 20, mode="nearest")[::blk] + 1e-20)   # running mean: O(n)
         fdb = 20 * np.log10(fr); sung = fdb > -50
         if not len(fdb) or sung.mean() < 0.15:
             continue                                                  # not really singing in this window
@@ -346,14 +348,16 @@ def balance(a):
         print(f"lead (shared rule): {anchor}")
     elif anchor not in ("lowest", "highest") and anchor not in names:
         raise SystemExit(f"--anchor {anchor!r}: not one of the parts ({', '.join(names)}), lead, lowest or highest")
-    lead = None
-    if a.lead_margin > 0:
-        lead = a.lead if a.lead in names else None
-        if lead is None:
-            from hypnomix.core import dsp
-            from hypnomix.engineer.roles import pick_lead
-            lead = pick_lead([(n, dsp.load(p, 22050)[0]) for n, p in zip(names, a.stems)], 22050)
-        print(f"lead: {lead} (every other part kept at least {a.lead_margin:g} dB under it where both sing)")
+    # the lead is always known, so it is never cut (whatever the margin)
+    if a.lead and a.lead not in names:
+        raise SystemExit(f"--lead {a.lead!r}: not one of the parts ({', '.join(names)})")
+    lead = a.lead
+    if lead is None:
+        from hypnomix.core import dsp
+        from hypnomix.engineer.roles import pick_lead
+        lead = pick_lead([(n, dsp.load(p, 22050)[0]) for n, p in zip(names, a.stems)], 22050)
+    print(f"lead: {lead} (never turned down" + (f"; every other part kept at least {a.lead_margin:g} dB under it where "
+                                                 f"both sing)" if a.lead_margin > 0 else ")"))
     gains, rows = plan(levels, pitches, anchor, a.reduce, a.above_db, a.below_db, a.spread, a.max_cut, a.tolerance,
                        lead, a.lead_margin)
     od = out_at(a.out, "voices", "balance")
@@ -367,7 +371,7 @@ def balance(a):
         env = np.repeat(10 ** (g / 20), win)[:L]
         env = np.pad(env, (0, max(0, L - len(env))), constant_values=1.0)
         k = int(0.25 * sr)
-        env = np.convolve(np.pad(env, (k, k), mode="edge"), np.ones(k) / k, "same")[k:k + L]
+        env = uniform_filter1d(env, max(1, k), mode="nearest")[:L]          # 250 ms ramps, O(n)
         y, _ = sf.read(path, always_2d=True)
         sf.write(str(od / f"{n} (balanced).wav"), (y * env[:len(y), None]).astype(np.float32), sr, subtype="FLOAT")
     settings = dict(anchor=anchor, reduce=a.reduce, above_db=a.above_db, below_db=a.below_db, spread=a.spread,
@@ -404,6 +408,9 @@ def main():
                     help="raw (pre-fader) renders: the track's fader in dB, so parts compare as heard (repeatable)")
     ap.add_argument("--lead-margin", type=float, default=None,
                     help="keep every other part at least this many dB under the lead where both sing (--tame: 1.5)")
+    ap.add_argument("--use-learned", action="store_true", help="with --tame: use the numbers learned from your songs this time")
+    ap.add_argument("--confirm", nargs="+", metavar="KEY=VALUE",
+                    help="make learned (or your own) numbers the --tame default: lead_margin=3 tolerance=1.5")
     ap.add_argument("--tame", action="store_true",
                     help="the gentle default: only tame overshadowing parts (anchor lowest, above, 0 dB step): a higher "
                          "part is turned down only where it is louder than the part below it by more than --tolerance, and only to that edge")
@@ -428,21 +435,33 @@ def main():
               + f"\n→ --tame now uses: lead margin {st['lead_margin']:.1f} dB, tolerance {st['tolerance']:.1f} dB.  Saved: {STYLE}")
         if not a.stems:
             return
+    if a.confirm:
+        st = style_defaults() or {}
+        st["confirmed"] = {k: float(x) for k, _, x in (c.partition("=") for c in a.confirm) if k in ("lead_margin", "tolerance")}
+        STYLE.parent.mkdir(parents=True, exist_ok=True)
+        STYLE.write_text(json.dumps(st, indent=1))
+        print(f"--tame default now: {st['confirmed']} (saved in {STYLE})")
+        if not a.stems:
+            return
     if not a.stems:
-        ap.error("give the vocal stems (or --learn SONG.als …)")
+        ap.error("give the vocal stems (or --learn SONG.als …, or --confirm …)")
     if not a.split:
         if a.tame:
             a.anchor, a.reduce, a.above_db = a.anchor or "lowest", "above", 0.0
-            st = style_defaults()
-            if st and a.lead_margin is None:
-                a.lead_margin = float(st["lead_margin"])
-            if st and a.tolerance_given is False:
-                a.tolerance = float(st["tolerance"])
-            if st:
-                print(f"your own spacing (from {sum(1 for x in st['songs'] if not x.get('skipped'))} songs): "
-                      f"lead margin {a.lead_margin:.1f} dB, tolerance {a.tolerance:.1f} dB")
+            # the stated rule (1.5 / 1.5) unless the person confirmed learned values; learned ones are only offered
+            st = style_defaults() or {}
+            conf = st.get("confirmed") or {}
+            use = conf if conf else ({"lead_margin": st.get("lead_margin"), "tolerance": st.get("tolerance")} if a.use_learned else {})
             if a.lead_margin is None:
-                a.lead_margin = 1.5
+                a.lead_margin = float(use["lead_margin"]) if use.get("lead_margin") is not None else 1.5
+            if not a.tolerance_given and use.get("tolerance") is not None:
+                a.tolerance = float(use["tolerance"])
+            src_ = "your confirmed numbers" if conf else ("learned from your songs (--use-learned)" if use else "the stated rule")
+            print(f"margins: lead {a.lead_margin:.1f} dB, tolerance {a.tolerance:.1f} dB ({src_})")
+            if st and not conf and not a.use_learned:
+                print(f"  your songs suggest: harmonies about {st.get('lead_margin_median')} dB under the lead, a higher "
+                      f"part at most {st.get('tolerance')} dB over the one below (an option: --use-learned, or confirm "
+                      f"them with `hypnomix voices --confirm lead_margin=X tolerance=Y`)")
         if a.lead_margin is None:
             a.lead_margin = 0.0
         steps = {"above": [a.above_db], "below": [a.below_db], "both": [a.above_db, a.below_db]}[a.reduce]

@@ -183,6 +183,30 @@ def residual_ms(lead, over, sr, max_ms):
     return float(np.median(a)), float(np.percentile(a, 95))
 
 
+class RefusedAlign(Exception):
+    pass
+
+
+def onset_lag_ms(lead, x, sr, win_s=2.0, max_ms=150):
+    """Independent timing check: median |lag| (ms) of onset-strength envelopes, cross-correlated per window
+    where both parts have onsets. Not the DTW the aligner uses, so a wrong plan can't grade itself."""
+    import librosa
+    from scipy.signal import correlate
+    hop = 128
+    mono = lambda y: (y.mean(1) if y.ndim > 1 else y).astype(np.float32)
+    ea = librosa.onset.onset_strength(y=mono(lead), sr=sr, hop_length=hop)
+    eb = librosa.onset.onset_strength(y=mono(x), sr=sr, hop_length=hop)
+    fps = sr / hop; W = int(win_s * fps); M = int(max_ms / 1000 * fps)
+    lags = []
+    for s0 in range(0, min(len(ea), len(eb)) - W, W):
+        a, b = ea[s0:s0 + W], eb[s0:s0 + W]
+        if a.std() < 1e-3 or b.std() < 1e-3:
+            continue
+        c = correlate(b - b.mean(), a - a.mean(), mode="full")[W - 1 - M: W + M]
+        lags.append(abs(np.argmax(c) - M) / fps * 1000)
+    return float(np.median(lags)) if lags else 0.0
+
+
 def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None, outdir=None, engine="auto", mode="tight"):
     lead, sr = dsp.load(lead_path)
     over, _ = dsp.load(over_path, sr)
@@ -192,19 +216,35 @@ def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None
     before = residual_ms(lead, over, sr, max_ms)
     import shutil
     notes = []
-    if engine == "rubberband" or (engine == "auto" and shutil.which("rubberband")):
-        from hypnomix.studio._rbalign import align_rb, HOP
-        out, off_rb, both_rb = align_rb(lead, over, sr, min(max_ms, 120), strength, mode)
-        # report in this module's 10 ms frames
-        k = max(1, int(round(FR_S * sr / HOP)))
-        off = off_rb[::k] * HOP / sr / FR_S; both = both_rb[::k]
-        notes.append(f"Rubber Band engine, {mode}")
-    else:
-        off, both, raw = offset_curve(lead, over, sr, max_ms, strength)
-        t_frames = np.arange(len(off)) * FR_S
+    # one plan for both engines: the offset curve on the lead's timeline (y[t] = x[t + off(t)])
+    off, both, raw = offset_curve(lead, over, sr, max_ms, strength)
+    t_frames = np.arange(len(off)) * FR_S
+    candidates = []
+    if engine in ("rubberband", "auto") and shutil.which("rubberband"):
+        from hypnomix.studio import _rbalign as RB
+        RB.MODE = mode; RB.SING_LIMITS, RB.GAP_LIMITS = RB.LIMITS[mode]
+        # Rubber Band's map goes the other way (harmony time -> lead time): invert the curve onto the
+        # harmony's own timeline and flip its sign. (Its own DTW plan drifted 60-80 ms on harmonies that
+        # sing other notes; this plan is the one the WSOLA engine already gets right.)
+        dub_t = t_frames + off * FR_S
+        grid = np.arange(len(over) // RB.HOP + 1) * RB.HOP / sr
+        off_rb = np.interp(grid, dub_t, -off * FR_S) * sr / RB.HOP
+        cand = RB.stretch_phrases(over.mean(1).astype(np.float32), off_rb, sr, audio=over)
+        candidates.append((f"Rubber Band engine, {mode}", cand))
+    if engine in ("wsola", "auto") or not candidates:
         fn = lambda t: float(np.interp(t / sr, t_frames, off * FR_S))
-        out = wsola_warp(over, sr, fn)
-        notes.append("WSOLA engine (install `rubberband` for the cleaner, tighter engine)")
+        candidates.append(("WSOLA engine", wsola_warp(over, sr, fn)))
+    # check every result with an independent measure, keep the best, refuse anything not tighter than the input
+    ref = onset_lag_ms(lead, over, sr)
+    scored = [(onset_lag_ms(lead, c, sr), name, c) for name, c in candidates]
+    best = min(scored, key=lambda x: x[0])
+    for sc, name, _ in scored:
+        notes.append(f"{name}: independent check {ref:.0f} → {sc:.0f} ms")
+    if best[0] >= ref - 1.0:
+        raise RefusedAlign(f"{Path(over_path).name}: no engine made it tighter (independent check {ref:.0f} ms before, "
+                           f"best {best[0]:.0f} ms after); nothing written")
+    out = best[2]
+    notes.append(f"kept: {best[1]}")
     if trim:
         out, frac = trim_tails(lead, out, sr)
         notes.append(f"tails trimmed on {frac * 100:.0f}% of its sung time")
@@ -221,6 +261,97 @@ def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None
                 max_shift=float(np.max(np.abs(off)) * FR_S * 1000))
 
 
+def grid_lag(env, n, bpm, max_ms=60.0):
+    """Per bar: how many 10 ms frames the stack's onsets sit late (+) or early (-) against the 8th-note grid,
+    smoothed over ~5 bars. Gaussian score around each grid line, searched within +-max_ms."""
+    step = 60 / bpm / 2 / FR_S
+    W = int(4 * 60 / bpm / FR_S)
+    M = int(max_ms / 1000 / FR_S)
+    lags = []
+    for s0 in range(0, n - W, W):
+        seg = env[s0:s0 + W]
+        if seg.sum() < 1e-3:
+            lags.append(np.nan); continue
+        k = np.arange(s0, s0 + W)
+        best, bl = -1.0, 0
+        for L in range(-M, M + 1):
+            ph = (k - L) % step
+            d = np.minimum(ph, step - ph)
+            sc = float((seg * np.exp(-0.5 * (d / 1.5) ** 2)).sum())
+            if sc > best:
+                best, bl = sc, L
+        lags.append(bl)
+    lags = np.array(lags, float)
+    if not np.isfinite(lags).any():
+        return np.zeros(n)
+    idx = np.flatnonzero(np.isfinite(lags))
+    lags = np.interp(np.arange(len(lags)), idx, lags[idx])
+    from scipy.ndimage import uniform_filter1d
+    lags = uniform_filter1d(lags, 5, mode="nearest")
+    centres = np.arange(len(lags)) * W + W / 2
+    return np.interp(np.arange(n), centres, lags)
+
+
+def stack_align(paths, outdir=None, strength=0.5, grid=0.3, bpm=None, max_ms=60.0):
+    """Gentle group alignment: nobody is forced onto one lead. Each part moves `strength` of the way toward the
+    group's average timing (the mean over the parts singing at that moment, 250 ms smoothed; the first part is
+    only a ruler and moves too), and with --bpm the whole stack is pulled `grid` of the way toward the 8th-note
+    grid (phrase by phrase, ~5-bar smoothing). Capped at max_ms, pitch untouched (WSOLA). Every part is checked
+    independently afterwards and kept only if it ends up closer to the others than before."""
+    import librosa
+    from scipy.ndimage import uniform_filter1d
+    audio = {}
+    sr = None
+    for p_ in paths:
+        y, sr_ = dsp.load(p_, sr)
+        sr = sr or sr_
+        audio[p_] = y
+    n_s = max(len(y) for y in audio.values())
+    audio = {k: np.pad(y, ((0, n_s - len(y)), (0, 0))) for k, y in audio.items()}
+    ref = paths[0]
+    _, act_ref = features(audio[ref], sr)
+    offs, acts = {ref: None}, {ref: act_ref}
+    for p_ in paths[1:]:
+        off, both, _ = offset_curve(audio[ref], audio[p_], sr, 150, 1.0)   # part[t + off] ~ ruler[t]
+        offs[p_], acts[p_] = off, both
+    n = min([len(act_ref)] + [len(o) for o in offs.values() if o is not None])
+    offs[ref] = np.zeros(n)
+    O = np.stack([offs[p_][:n] for p_ in paths]); A = np.stack([acts[p_][:n] for p_ in paths]).astype(float)
+    cnt = A.sum(0)
+    mean = uniform_filter1d(np.where(cnt > 0, (O * A).sum(0) / np.maximum(cnt, 1), 0.0), 25)
+    gshift = np.zeros(n)
+    if grid > 0 and bpm:
+        env = np.zeros(n)
+        for p_ in paths:
+            o = librosa.onset.onset_strength(y=librosa.resample(audio[p_].mean(1).astype(np.float32), orig_sr=sr,
+                                                                  target_sr=16000), sr=16000, hop_length=160)[:n]
+            env[:len(o)] += o / (o.max() + 1e-9)
+        gshift = grid_lag(env, n, bpm)
+    cap = max_ms / 1000 / FR_S
+    t_frames = np.arange(n) * FR_S
+    group = lambda skip: np.sum([audio[q].mean(1) for q in paths if q != skip], axis=0)[:, None]
+    od = out_at(outdir, "vocalign")
+    rows = []
+    for p_ in paths:
+        o = np.clip(uniform_filter1d(strength * (O[paths.index(p_)] - mean) + grid * gshift, 15), -cap, cap)
+        fn = lambda t, o=o: float(np.interp(t / sr, t_frames, o * FR_S))
+        out = wsola_warp(audio[p_], sr, fn)
+        others = group(p_)
+        before, after = onset_lag_ms(others, audio[p_], sr), onset_lag_ms(others, out, sr)
+        sung = acts[p_][:n]
+        row = dict(file=Path(p_).name, before_ms=round(before), after_ms=round(after),
+                   median_move_ms=round(float(np.median(np.abs(o[sung])) * FR_S * 1000), 1) if sung.any() else 0.0,
+                   max_move_ms=round(float(np.abs(o).max() * FR_S * 1000), 1))
+        if after > before + 1.0:
+            row["kept"] = False
+            row["note"] = "not closer to the group afterwards: left as it was"
+        else:
+            row["kept"] = True
+            row["out"] = str(dsp.save(od / f"{Path(p_).stem} (stack aligned).wav", out, sr, 24))
+        rows.append(row)
+    return rows, dict(grid_offset_ms=round(float(np.median(gshift)) * FR_S * 1000, 1), grid=grid, strength=strength)
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix vocalign", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("lead"); ap.add_argument("overdubs", nargs="+")
@@ -230,14 +361,39 @@ def main():
     ap.add_argument("--level", type=float)
     ap.add_argument("--out")
     ap.add_argument("--engine", choices=["auto", "rubberband", "wsola"], default="auto")
+    ap.add_argument("--to-lead", action="store_true",
+                    help="align every part to the lead (the old way); default with 2+ parts: the gentle stack mode")
+    ap.add_argument("--stack-strength", type=float, default=0.5, help="stack mode: share of the way to the group average")
+    ap.add_argument("--grid", type=float, default=0.3, help="stack mode: share of the stack's lag to the 8th-note grid (needs --bpm)")
+    ap.add_argument("--bpm", type=float, help="stack mode: the song's tempo, for the grid pull")
+    ap.add_argument("--cap-ms", type=float, default=60.0, help="stack mode: never move anything more than this")
     ap.add_argument("--mode", choices=["tight", "gentle"], default="tight",
                     help="Rubber Band engine: tight (closest timing) or gentle (smoother speed changes, less warble)")
     a = ap.parse_args()
     od = out_at(a.out, "vocalign")
-    rows = []
+    if len(a.overdubs) >= 2 and not a.to_lead:
+        rows, meta = stack_align([a.lead] + a.overdubs, a.out, a.stack_strength, a.grid if a.bpm else 0.0, a.bpm, a.cap_ms)
+        md = [f"# Gentle stack alignment ({len(rows)} parts)", "",
+              f"Each part moved {a.stack_strength:.0%} of the way toward the group's average timing"
+              + (f"; the whole stack {a.grid:.0%} of the way toward the 8th-note grid at {a.bpm:g} BPM (it sat "
+                 f"{meta['grid_offset_ms']:+.0f} ms off it)" if a.bpm else " (no --bpm: no grid pull)")
+              + f"; never more than {a.cap_ms:g} ms. Checked independently: distance from the other parts.", "",
+              "| part | before | after | median move | biggest move | result |", "|---|---|---|---|---|---|"]
+        for r in rows:
+            md.append(f"| {r['file']} | {r['before_ms']} ms | {r['after_ms']} ms | {r['median_move_ms']} ms | "
+                      f"{r['max_move_ms']} ms | {'written' if r['kept'] else r['note']} |")
+        md += ["", *[f"- `{r['out']}`" for r in rows if r.get("out")]]
+        (od / "VOCALIGN.md").write_text("\n".join(md) + "\n")
+        print("\n".join(md))
+        return
+    rows, refused = [], []
     for o in a.overdubs:
         print(f"aligning {Path(o).name} to {Path(a.lead).name} …", file=sys.stderr)
-        rows.append(align(a.lead, o, a.strength, a.max_ms, a.trim_tails, a.level, od, a.engine, a.mode))
+        try:
+            rows.append(align(a.lead, o, a.strength, a.max_ms, a.trim_tails, a.level, od, a.engine, a.mode))
+        except RefusedAlign as e:
+            refused.append(str(e))
+            print(f"REFUSED {e}", file=sys.stderr)
     md = [f"# Vocal alignment to {Path(a.lead).name}", "",
           "Timing difference from the lead while both sing (median / worst 5%):", "",
           "| overdub | before | after | frames moved >5 ms | biggest shift | notes |", "|---|---|---|---|---|---|"]
@@ -246,6 +402,9 @@ def main():
                   f"{r['moved'] * 100:.0f}% | {r['max_shift']:.0f} ms | {'; '.join(r['notes'])} |")
     md += ["", "Under ~10 ms reads as one voice; 20–40 ms as a natural double; above that, flams and smeared consonants.",
            "If something sounds robotic, rerun with --strength 0.7.", "", *[f"- `{r['out']}`" for r in rows]]
+    if refused:
+        md += ["", "Refused (the result would not have been tighter than the take; the take is fine as it is, or "
+                   "needs a hand):", "", *[f"- {x}" for x in refused]]
     (od / "VOCALIGN.md").write_text("\n".join(md) + "\n")
     print("\n".join(md))
 
