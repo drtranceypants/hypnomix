@@ -46,7 +46,8 @@ prep pass (clicks, clipping, plosives, breaths, noise, silence, fades) …
 | `takes` | Ranks takes by clipping, noise, hum, pitch and timing, and writes a comp list: the best take for each section. |
 | `soundcheck` | Listens to your interface input and tells you how to set the preamp before you record. `--watch` gives a live meter. |
 | `cleanup` | Demo rescue: hum, steady noise, rumble, DC, silence. |
-| `dehiss` | Spectral de-hiss plus a smart gate for one track: learns the hiss from the quietest moments, turns down only the frequency bins that sit at hiss level (smoothed so it never sounds watery), and fades the gaps with look-ahead so note attacks and tails stay natural. |
+| `dehiss` | Spectral de-hiss plus a smart gate for one track: learns the hiss from the quietest moments, turns down only the frequency bins that sit at hiss level (smoothed so it never sounds watery), and fades the gaps with look-ahead so note attacks and tails stay natural. The gate has hysteresis and a 150 ms hold, so soft note tails can't make it chatter (which sounds like crackle). |
+| `voices` | Re-arranges harmony stems into **Voice 1 (lowest) … Voice N (highest)**: every phrase goes to the voice matching its pitch rank among the parts singing with it, so one fader per voice sets each step of the stack (e.g. lower parts louder, each higher part a little quieter). The voices add up to the input stems exactly, so the mix doesn't change until you move a fader. Use post-chain stems (Live: Export → All Individual Tracks) and put the voice tracks in the same group with no devices, 0 dB and centre pan. |
 
 **Live: hands on the set** (through a patched [AbletonOSC](https://github.com/ideoforms/AbletonOSC), bundled)
 
@@ -56,9 +57,9 @@ prep pass (clicks, clipping, plosives, breaths, noise, silence, fades) …
 | `loop` | Plays bars, records them, measures them, and compares with the previous take and your profile. `--ab "db Lead -2" --revert` for one-change A/Bs. |
 | `diagnose` | Solos each group in the loudest section of a song: who owns the sub, the bass and the vocal band. |
 
-**Session files:** `render` turns tracks in a `.als` into full-length stems without opening Live (clip gain, clip fades and warps baked in; `--sources` swaps in cleaned files, `--tighten` silences the hiss around each clip's performance). Also `mine`, `audit`, `automation`, `refs`, `profile`.
+**Session files:** `render` turns tracks in a `.als` into full-length stems without opening Live (clip gain, clip fades and warps baked in, warped clips stretched **without changing pitch** like Live does; `--sources` swaps in cleaned files, `--tighten` silences the hiss around each clip's performance). `name` names every track and group by how it sounds: drums, kick, bass, guitar (notes that die away), strings (held notes, steady tone), lead vocal and harmonies (moving vowels), keys, pads; text clues from names, files and presets first; unsure tracks become "Instrument" and are listed for you; `--apply` renames them in the open set, `--undo` puts them back. Also `mine`, `audit`, `automation`, `refs`, `profile`.
 
-**Ears:** `measure`, `spectrogram`, `punch`, `stems`. Run `hypnomix` for the full list and `hypnomix <command> -h` for each one.
+**Ears:** `measure`, `spectrogram`, `punch`, `stems`, `pitchcheck` (pitch and loudness difference between two captures: run it after any re-render), `clicks` (finds clicks and crackle). Run `hypnomix` for the full list and `hypnomix <command> -h` for each one.
 
 ## Install
 

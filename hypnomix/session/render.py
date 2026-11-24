@@ -14,11 +14,17 @@ Usage:
   --tighten   auto-fade each clip where it is this many dB below its own peak (silences the hiss before and
               after the performance inside each clip; 35 is a good start for vocals)
 
+Warped clips are stretched WITHOUT changing pitch, like Live's warp modes (Rubber Band R3 when the
+`rubberband` CLI is installed, `brew install rubberband`; otherwise a phase vocoder). Resampling instead
+would detune them: a 3% tempo difference is 55 cents. Verified against Live 12 captures: 0 cents, +-0.05 LU.
+Every clip edge gets Live's default ~3 ms fade so cuts don't click.
+
 Limits: warped clips are rendered from their first and last warp markers (a straight-line stretch); clips
 with several warp markers that bend the timing will drift between markers. Unwarped clips are exact.
-Output is 32-bit float, so nothing clips.
+Output is 32-bit float, so nothing clips. Write re-renders to a NEW folder: Live caches audio by file
+path and keeps playing the old audio if you overwrite a file it has loaded.
 """
-import argparse, gzip, re, sys
+import argparse, gzip, os, re, shutil, subprocess, sys, tempfile
 import xml.etree.ElementTree as ET
 from fractions import Fraction
 from pathlib import Path
@@ -47,6 +53,33 @@ def clip_source(c, als, sources):
     return cand
 
 
+_STRETCH = {}
+
+
+def stretched(src, k, SR):
+    """Whole source file (mono) time-stretched by factor k (output = k x input length), pitch unchanged, at SR."""
+    key = (str(src), round(k, 6), SR)
+    if key in _STRETCH:
+        return _STRETCH[key]
+    a, sr = sf.read(str(src), always_2d=True)
+    a = a.mean(1)
+    if abs(k - 1) >= 1e-5:
+        if shutil.which("rubberband"):
+            with tempfile.TemporaryDirectory() as td:
+                fi, fo = os.path.join(td, "i.wav"), os.path.join(td, "o.wav")
+                sf.write(fi, a.astype(np.float32), sr, subtype="FLOAT")
+                subprocess.run(["rubberband", "-3", "-q", "-t", f"{k:.8f}", fi, fo], check=True, capture_output=True)
+                a = sf.read(fo, always_2d=True)[0].mean(1)
+        else:
+            import librosa
+            a = librosa.effects.time_stretch(a.astype(np.float32), rate=1 / k)
+    if sr != SR:
+        ratio = Fraction(SR / sr).limit_denominator(2000)
+        a = resample_poly(a, ratio.numerator, ratio.denominator)   # sample-rate change only: pitch-neutral
+    _STRETCH[key] = a
+    return a
+
+
 def render_track(t, als, spb, N, SR, sources, tighten, warn):
     y = np.zeros(N)
     name = v(t, "./Name/EffectiveName")
@@ -58,8 +91,6 @@ def render_track(t, als, spb, N, SR, sources, tighten, warn):
         if not src.exists():
             warn.append(f"{name}: missing file {src.name}")
             continue
-        a, sr = sf.read(str(src), always_2d=True)
-        a = a.mean(1)
         if v(c, "./IsWarped") == "true":
             m = [(float(w.get("SecTime")), float(w.get("BeatTime"))) for w in c.find("./WarpMarkers")]
             if len(m) > 2:
@@ -67,15 +98,15 @@ def render_track(t, als, spb, N, SR, sources, tighten, warn):
             (s0, b0), (s1, b1) = m[0], m[-1]
             slope = (s1 - s0) / (b1 - b0) if b1 != b0 else spb
             src0 = s0 + (ls - b0) * slope
-            srclen = (e - s) * slope
         else:
-            slope, src0, srclen = spb, ls, (e - s) * spb
-        seg = a[max(0, int(src0 * sr)): int((src0 + srclen) * sr)]
-        if src0 < 0:
-            seg = np.concatenate([np.zeros(int(-src0 * sr)), seg])
-        ratio = Fraction(spb / slope * SR / sr).limit_denominator(2000)
-        if ratio != 1:
-            seg = resample_poly(seg, ratio.numerator, ratio.denominator)
+            slope, src0 = spb, ls
+        k = spb / slope                          # how much longer the clip plays than it was recorded
+        a = stretched(src, k, SR)                # pitch-preserving stretch of the whole source
+        p0 = src0 * k                            # clip start inside the stretched source (seconds)
+        clip_len = int((e - s) * spb * SR)
+        seg = a[max(0, int(round(p0 * SR))): max(0, int(round(p0 * SR))) + clip_len]
+        if p0 < 0:
+            seg = np.concatenate([np.zeros(int(-p0 * SR)), seg])
         seg = seg * float(v(c, "./SampleVolume") or 1)
         fi = float(v(c, "./Fades/FadeInLength") or 0) * spb * SR       # Live stores clip fades in beats
         fo = float(v(c, "./Fades/FadeOutLength") or 0) * spb * SR
@@ -92,10 +123,9 @@ def render_track(t, als, spb, N, SR, sources, tighten, warn):
                 r0 = slice(max(0, a0 - f0), a0); m[r0] = np.linspace(0, 1, r0.stop - r0.start)
                 r1 = slice(b0, min(len(seg), b0 + f1)); m[r1] = np.linspace(1, 0, r1.stop - r1.start)
                 seg = seg * m
-        if fi >= 1:
-            k = min(int(fi), len(seg)); seg[:k] *= np.linspace(0, 1, k)
-        if fo >= 1:
-            k = min(int(fo), len(seg)); seg[len(seg) - k:] *= np.linspace(1, 0, k)
+        fi, fo = max(fi, 0.003 * SR), max(fo, 0.003 * SR)           # Live's default ~3 ms edge fades
+        kk = min(int(fi), len(seg)); seg[:kk] *= np.linspace(0, 1, kk)
+        kk = min(int(fo), len(seg)); seg[len(seg) - kk:] *= np.linspace(1, 0, kk)
         i = int(round(s * spb * SR))
         L = min(len(seg), N - i)
         if L > 0:

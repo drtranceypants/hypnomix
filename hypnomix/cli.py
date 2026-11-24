@@ -22,11 +22,14 @@ GROUPS = [
         ("vocalign", "hypnomix.studio.vocalign", "time-align doubles and harmonies to the lead, pitch untouched"),
         ("clipmatch", "hypnomix.studio.clipmatch", "even out clips recorded at different gain / mic positions (files or a Live track)"),
         ("dehiss", "hypnomix.studio.dehiss", "spectral de-hiss + smart gate for one track (free stand-in for a spectral de-noiser)"),
+        ("voices", "hypnomix.studio.voices", "re-arrange harmony stems into Voice 1 (lowest) … Voice N tracks: one fader per harmony step"),
         ("cleanup", "hypnomix.studio.cleanup", "demo rescue: hum, noise, rumble, DC, silence"),
     ]),
     ("Ears: measure and compare", [
         ("measure", "hypnomix.ears.measure", "loudness, true peak, bands, stereo, tempo, key → JSON"),
         ("spectrogram", "hypnomix.ears.spectrogram", "spectrogram + loudness curve + average spectrum PNG"),
+        ("pitchcheck", "hypnomix.ears.pitchcheck", "pitch (cents) + loudness difference between two captures: check every re-render"),
+        ("clicks", "hypnomix.ears.clicks", "find clicks and crackle in renders and processed files"),
         ("punch", "hypnomix.ears.punch", "transient punch / pumping / harmonics A/B at matched loudness"),
         ("stems", "hypnomix.ears.stems", "who owns which band (and a resonance) in a folder of stems"),
         ("reference", "hypnomix.ears.reference", "what it would take to sound like a reference  [extra: reference]"),
@@ -41,6 +44,7 @@ GROUPS = [
     ]),
     ("Session files (.als, Live closed or open)", [
         ("render", "hypnomix.session.render", "render tracks from a .als to stems without opening Live (clip gain, fades, warps)"),
+        ("name", "hypnomix.session.names", "name every track and group by how it sounds (vocal, harmony, guitar, strings, drums…)"),
         ("mine", "hypnomix.session.miner", "tempo, key, tracks, plug-in chains, routing, levels from a set"),
         ("audit", "hypnomix.session.audit", "flags EQ, stacked limiters, bypassed devices; bounce vs your profile"),
         ("automation", "hypnomix.session.automation", "list/show/offset/dip automation envelopes (writes a new set)"),
