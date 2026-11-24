@@ -127,7 +127,10 @@ def classify_audio(F):
         if F["low"] > 0.45: return "Kick", 0.8, "percussive, energy below 150 Hz"
         if F["centroid"] > 4500: return "Hats", 0.75, "percussive and bright"
         return "Drums", 0.75, "percussive"
-    if F["f0"] and F["f0"] < 140 and F["low"] > 0.35: return "Bass", 0.8, f"pitched, median {F['f0']} Hz"
+    # a very low pitch reading (< 55 Hz) on a part whose vowels move is the pitch tracker slipping on a quiet
+    # vocal (rumble, breath), not a bass: it only counts when the sound is otherwise bass-like
+    if F["f0"] and F["f0"] < 140 and F["low"] > 0.35 and (F["f0"] >= 55 or vow < 11.5):
+        return "Bass", 0.8, f"pitched, median {F['f0']} Hz"
     if dec <= -12:
         return ("Guitar", 0.75, f"plucked: notes die away ({dec} dB/s)") if F["perc"] > 0.04 or F["chord_notes"] < 2.6 \
             else ("Keys", 0.5, f"struck chords ({dec} dB/s)")
@@ -217,6 +220,34 @@ def propose(rows, parent, fix=None, rename_all=False):
                 lab = "Vocal" if is_vocal_label(y["label"]) else y["label"]
                 x.update(label=lab, confidence=y["confidence"],
                          reason=f"a copy of '{y['old']}' ({y['label']}); its own sound: {x['reason']}")
+    # 1b. a track playing clips from the same recordings as a clearly vocal track is a vocal too (comped copies,
+    #     edits, doubles cut from one take), whatever its own sound measured
+    vocal_src = set()
+    for r in rows.values():
+        if is_vocal_label(r["label"]) and r["confidence"] >= CONFIDENT:
+            vocal_src |= set(r.get("sources") or [])
+    for r in rows.values():
+        srcs = set(r.get("sources") or [])
+        if srcs and not is_vocal_label(r["label"]) and len(srcs & vocal_src) >= max(1, len(srcs) / 2):
+            r.update(label="Vocal", confidence=0.8,
+                     reason=f"plays {len(srcs & vocal_src)} of its {len(srcs)} recordings from clearly vocal tracks "
+                            f"(its own sound read as {r['label']}: {r['reason']})")
+    # 1c. an unsure track inside a group that is mostly clear and whose clear members are at least two-thirds
+    #     vocals is a vocal too (a group of mostly guesses says nothing)
+    members = defaultdict(list)
+    for tid, r in rows.items():
+        if parent.get(tid) not in (None, "-1"):
+            members[parent[tid]].append(tid)
+    for gid, ch in members.items():
+        sure = [t for t in ch if rows[t]["confidence"] >= CONFIDENT and rows[t]["label"] and rows[t]["label"] != "Instrument"]
+        nv = sum(1 for t in sure if is_vocal_label(rows[t]["label"]))
+        if len(sure) >= 3 and nv >= 2 / 3 * len(sure) and len(sure) >= len(ch) / 2:   # mostly clear, mostly vocal
+            for t in ch:
+                r = rows[t]
+                if r["kind"] == "Audio" and r["confidence"] < CONFIDENT and not is_vocal_label(r["label"]):
+                    r.update(label="Vocal", confidence=0.6,
+                             reason=f"in a group of vocals ({nv} of {len(sure)} clear members); its own sound read as "
+                                    f"{r['label']} ({r['reason']}), unsure")
     # 2. vocals: one Lead Vocal among the ones that PLAY, by the shared rule (roles.choose_lead, as scan, tune and
     #    automix use); the other playing vocals Harmony 1..n from low to high. A copy that doesn't play is counted
     #    once, through its partner.
@@ -316,6 +347,7 @@ def main():
                "on": v(t, "./DeviceChain/Mixer/Speaker/Manual") != "false"}
         devs = device_names(t)
         files = [os.path.basename(v(c, "./SampleRef/FileRef/Path") or "") for c in t.iter("AudioClip")][:20]
+        rec["sources"] = sorted({v(c, "./SampleRef/FileRef/Path") or "" for c in t.iter("AudioClip")} - {""})
         clipnames = [v(c, "./Name") for c in list(t.iter("AudioClip")) + list(t.iter("MidiClip"))][:20]
         rec["text_clue"] = text_clue(n if not DEFAULT_NAME.match(n) else "", " ".join(devs), " ".join(files), " ".join(c or "" for c in clipnames))
         if t.tag == "AudioTrack":

@@ -59,3 +59,42 @@ class Names(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SharedRecordings(unittest.TestCase):
+    def test_tracks_playing_vocal_recordings_are_vocals(self):
+        rows = {
+            "v": dict(tr("1-Audio", "Vocal", 0.9, vowel=15, active=60, f0=200), sources=["take1.wav", "take2.wav"]),
+            "b": dict(tr("2-Audio", "Bass", 0.8, vowel=14, active=20, f0=41), sources=["take1.wav"]),
+            "k": dict(tr("3-Audio", "Keys", 0.4, active=20), sources=["keys.wav"]),
+        }
+        out = propose(rows, {k: "-1" for k in rows})
+        self.assertTrue(out["b"]["label"].startswith(("Harmony", "Lead", "Vocal")))
+        self.assertEqual(out["k"]["label"], "Keys")
+
+
+class LowPitchReading(unittest.TestCase):
+    def test_41hz_on_moving_vowels_is_not_bass(self):
+        from hypnomix.session.names import classify_audio
+        F = dict(decay_db_s=-3.0, vowel_move=14.0, perc=0.1, voiced=0.6, low=0.4, centroid=1500, f0=41.0,
+                 chord_notes=1.5, onsets_per_s=2.0, flatness=0.05)
+        self.assertNotEqual(classify_audio(F)[0], "Bass")
+        F2 = dict(F, vowel_move=6.0)
+        self.assertEqual(classify_audio(F2)[0], "Bass")      # a real low E (41 Hz) bass still reads as bass
+
+
+class GroupOfVocals(unittest.TestCase):
+    def test_unsure_member_of_a_vocal_group_is_a_vocal(self):
+        rows = {"g": tr("Vocals", None, 0, kind="Group")}
+        for k in range(4):
+            rows[f"v{k}"] = tr(f"{k + 1}-Audio", "Vocal", 0.9, group="Vocals", vowel=14, active=30 + k, f0=200 + 20 * k)
+        rows["u"] = tr("9-Audio", "Keys", 0.4, group="Vocals", vowel=11, active=20, f0=230)
+        rows["s"] = tr("10-Audio", "Guitar", 0.75, group="Vocals")          # a clear non-vocal stays itself
+        parent = {k: ("g" if k != "g" else "-1") for k in rows}
+        out = propose(rows, parent)
+        self.assertTrue(is_vocalish(out["u"]["label"]))
+        self.assertEqual(out["s"]["label"], "Guitar")
+
+
+def is_vocalish(lab):
+    return lab.startswith(("Harmony", "Lead Vocal", "Vocal"))
