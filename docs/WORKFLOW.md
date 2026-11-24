@@ -87,6 +87,7 @@ that did not run means nothing.
 
 - **noise**: takes boosted +12 dB or more with clip gain whose own noise floor comes up with them.
 - **doubles**: how far each harmony or double sits from the lead in time (part of the vocals group).
+- **ducking**: whether the vocal reverb and delay returns duck while the singer sings (`duck`): tune the ducking you have, or add a Compressor fed by the vocals. Options only; when the vocals' own effects come before the sidechain, the item says to check the gain-reduction meter in Live first.
 - **intent**: "is this deliberate?" Every automated control, hard-panned track and switched-off track with
   clips, as questions. Confirm them once and save them: `hypnomix prefs set protect.notes="…"`.
 - **stems** (`--deep`): renders every track and reports each frequency fight between two tracks and the phase

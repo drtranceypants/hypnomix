@@ -282,6 +282,17 @@ def g_vocals(als, od, a, role):
             findings += json.loads(j.read_text())["findings"]
         else:
             notes.append(f"clip levels of lower harmonies: did NOT run ({out.strip()[-160:]})")
+    if files:              # the vocal reverb and delay: ducked while the singer sings?
+        j = od / "raw" / "duck.json"
+        args = ["duck", als, "--json", j, "--renders", rd]
+        if (od / "raw" / "names" / "names.json").exists():
+            args += ["--names", od / "raw" / "names" / "names.json"]
+        code, out = hx(*args)
+        save(od / "raw" / "duck.txt", strip_warnings(out))
+        if j.exists():
+            findings += json.loads(j.read_text())["findings"]
+        else:
+            notes.append(f"vocal reverb/delay ducking: did NOT run ({out.strip()[-160:]})")
     if len(files) > 1:
         try:
             findings += harmony_question(files, lead, als)
