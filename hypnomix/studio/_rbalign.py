@@ -78,7 +78,7 @@ def offsets(g, d, sr, maxms, chunk_s=30.0, overlap_s=5.0):
 
 
 
-# "tight" (default; chosen by ear on Let Me Love You): word starts land closest to the guide.
+# "tight" (default; preferred by ear on a real harmony stack): word starts land closest to the guide.
 # "gentle": smoother, smaller speed changes while singing -- use if a part sounds warbly.
 MODE = "tight"
 LIMITS = {"tight": ((0.6, 1.6), (0.6, 1.6)), "gentle": ((0.85, 1.18), (0.5, 2.0))}
