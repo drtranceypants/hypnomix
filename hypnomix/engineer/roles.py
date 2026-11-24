@@ -24,7 +24,8 @@ ROLES = {
     "guitar": (r"gtr|guitar|acoustic|strum|riff|electric", 6, -7.0, 0.6, 90, -20, (2.5, 3, 15, 120)),
     "keys": (r"key|piano|pno|rhodes|organ|wurli|ep\b", 6, -7.0, 0.3, 70, -18, (2.0, 2, 20, 150)),
     "synth": (r"synth|lead ?syn|arp|pluck|bell", 5, -8.0, 0.4, 80, -18, (2.0, 2, 15, 120)),
-    "pad": (r"pad|string|strings|atmo|drone|texture|ambience", 3, -12.0, 0.0, 120, -14, None),
+    "strings": (r"string|violin|viola|cello|fiddle|quartet", 5, -9.0, 0.3, 120, -14, (2.0, 2, 20, 150)),
+    "pad": (r"pad|atmo|drone|texture|ambience", 3, -12.0, 0.0, 120, -14, None),
     "brass": (r"brass|horn|trumpet|sax|trombone|wind|flute", 5, -8.0, 0.3, 100, -18, (2.5, 3, 10, 120)),
     "fx": (r"\bfx|sfx|riser|sweep|impact|noise|vinyl|foley", 2, -14.0, 0.0, 100, -16, None),
     "other": (r"$^", 4, -9.0, 0.0, 60, -18, (2.0, 2, 15, 120)),
@@ -35,7 +36,7 @@ def by_name(name):
     n = name.lower().replace("_", " ").replace("-", " ")
     n = re.sub(r"^\d+\s*", "", n)
     order = ["backing_vocal", "synth", "lead_vocal", "kick", "snare", "toms", "hats", "overheads", "bass", "drums",
-             "guitar", "keys", "synth", "pad", "brass", "fx"]
+             "guitar", "strings", "keys", "synth", "pad", "brass", "fx"]
     for r in order:
         if re.search(ROLES[r][0], n):
             return r
@@ -51,12 +52,32 @@ def side_from_name(name):
     return 0
 
 
+# hypnomix name's classifier labels -> automix roles
+_FROM_NAME_LABEL = {"Kick": "kick", "Snare": "snare", "Hats": "hats", "Drums": "drums", "Bass": "bass",
+                    "Guitar": "guitar", "Keys": "keys", "Pad": "pad", "Strings": "strings", "Vocal": "lead_vocal",
+                    "Synth": "synth", "FX": "fx", "Lead": "other", "Instrument": "other"}
+
+
 def by_sound(y, sr):
-    """Fallback when the name says nothing: spectral shape, transients and pitchedness."""
+    """Fallback when the name says nothing. Uses the same tested cues as `hypnomix name`: percussiveness,
+    low end, single-note pitch, vowel movement (voices change tone constantly, bowed strings don't) and note
+    decay (plucked notes die away, bowed ones hold). Falls back to a simple spectral guess if that fails."""
+    try:
+        from hypnomix.session.names import audio_features, classify_audio
+        m = y.mean(axis=1) if y.ndim > 1 else y
+        lab, conf, _ = classify_audio(audio_features(m, sr))
+        if conf >= 0.35:
+            return _FROM_NAME_LABEL.get(lab, "other")
+    except Exception:
+        pass
+    return _by_sound_simple(y, sr)
+
+
+def _by_sound_simple(y, sr):
+    """Spectral shape, transients and pitchedness (the original guess)."""
     edges = [(20, 60), (60, 250), (250, 2000), (2000, 6000), (6000, 20000)]
     e, _ = dsp.band_energy(y, sr, edges)
     share = e / (e.sum() + 1e-20)
-    m = y.mean(axis=1)
     b = dsp.block_rms_db(y, sr, 0.02)
     active = b[b > b.max() - 40]
     transient = float(np.percentile(active, 95) - np.percentile(active, 50)) if len(active) > 10 else 0
@@ -67,19 +88,6 @@ def by_sound(y, sr):
         return "hats"
     if transient > 16 and share[2] > 0.3:
         return "snare"
-    # voice-like: most energy 250 Hz–6 kHz and a lot of pitched frames in the vocal range
-    if share[2] + share[3] > 0.7:
-        try:
-            import librosa
-            seg = m[: sr * 30]
-            f0, vf, _ = librosa.pyin(librosa.resample(seg, orig_sr=sr, target_sr=16000), fmin=80, fmax=1000, sr=16000,
-                                     frame_length=1024)
-            voiced = float(np.mean(vf)) if len(vf) else 0
-            if voiced > 0.35:
-                return "lead_vocal"
-        except Exception:
-            pass
-        return "guitar"
     return "other"
 
 
@@ -95,8 +103,8 @@ def preset(role):
 
 def classify_all(stems, sr):
     """{name: (role, how)} for a set of stems. Only one stem can be the lead vocal by guesswork: if a stem
-    is *named* as the lead, pitched stems guessed by sound become 'other'; if several are guessed, the
-    most voice-like (loudest in 1–4 kHz) keeps the role."""
+    is *named* as the lead, stems guessed as voices by sound become backing vocals; if several are guessed,
+    the one whose vowels move most (it sings the words) is the lead and the rest are backing vocals."""
     out = {n: classify(n, y, sr) for n, y in stems}
     named = any(r == "lead_vocal" and h == "name" for r, h in out.values())
     guessed = [n for n, (r, h) in out.items() if r == "lead_vocal" and h == "sound"]
@@ -104,11 +112,22 @@ def classify_all(stems, sr):
         keep = None
     elif len(guessed) > 1:
         ys = dict(stems)
-        keep = max(guessed, key=lambda n: dsp.band_energy(ys[n], sr, [(1000, 4000)])[0][0] /
-                   (dsp.band_energy(ys[n], sr, [(20, 20000)])[0][0] + 1e-20))
+
+        def lead_score(n):
+            # the lead sings the words: its vowels move the most (harmonies often hold oohs and long vowels);
+            # singing time breaks ties
+            b = dsp.block_rms_db(ys[n], sr, 0.05)
+            sung = float((b > b.max() - 35).sum()) * 0.05
+            try:
+                from hypnomix.session.names import audio_features
+                y = ys[n].mean(axis=1) if ys[n].ndim > 1 else ys[n]
+                return (round(audio_features(y, sr)["vowel_move"], 0), sung)
+            except Exception:
+                return (0, sung)
+        keep = max(guessed, key=lead_score)
     else:
         keep = guessed[0] if guessed else None
     for n in guessed:
         if n != keep:
-            out[n] = ("other", "sound")
+            out[n] = ("backing_vocal", "sound")
     return out

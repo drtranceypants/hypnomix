@@ -100,14 +100,14 @@ def eq_for(role, f, P, segs, sr):
     lowmid = band_db(f, P, 200, 500) - band_db(f, P, 500, 4000)
     harsh = band_db(f, P, 2500, 5000) - band_db(f, P, 1000, 2500)
     air = band_db(f, P, 8000, 16000) - band_db(f, P, 2000, 5000)
-    if role in ("lead_vocal", "backing_vocal", "guitar", "keys", "snare", "toms", "overheads", "synth", "brass", "other") and lowmid > 3:
+    if role in ("lead_vocal", "backing_vocal", "guitar", "keys", "strings", "snare", "toms", "overheads", "synth", "brass", "other") and lowmid > 3:
         g = -min(4.0, 1.0 + (lowmid - 3) * 0.5)
         eq.add("bell", 300, g, 1.0, why=f"200–500 Hz sits {lowmid:.1f} dB above its mids: that's the 'mud' or "
                                          "'cardboard' region; a wide cut opens the part up")
     for hz, ex in resonances(f, P, segs, 150, 8000 if role not in ("hats",) else 12000):
         eq.add("bell", hz, -min(4.0, ex - 3), 4.0, why=f"a narrow ring {ex:.1f} dB above its neighbours at {hz:.0f} Hz "
                                                        "(room mode, drum ring or a harsh note); narrow cuts remove it without dulling the part")
-    if role in ("lead_vocal", "backing_vocal", "guitar", "synth", "brass", "overheads") and harsh > 1.5:
+    if role in ("lead_vocal", "backing_vocal", "guitar", "strings", "synth", "brass", "overheads") and harsh > 1.5:
         eq.add("bell", 3500, -min(3.0, harsh - 0.5), 2.0, why=f"2.5–5 kHz is {harsh:.1f} dB hot against 1–2.5 kHz: "
                                                              "the ear is most sensitive here, so it reads as harsh")
     if role == "lead_vocal":

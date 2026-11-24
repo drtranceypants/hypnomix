@@ -13,6 +13,8 @@ Usage:
   --strength   0–1: how far to move toward the lead (0.7 keeps a little natural looseness)
   --trim-tails fade overdub word-endings that hang past the lead's (the classic stacked-"s" problem)
   --level      set each overdub this many dB under the lead's loudness while both sing (omit to keep levels)
+  --engine     auto (Rubber Band if `rubberband` is installed, else WSOLA) | rubberband | wsola
+  --mode       tight (default) | gentle: for the Rubber Band engine; use gentle if a part sounds warbly
 
 All files must start at the same point in the song (export them from the same bar).
 Writes "<name> (aligned).wav" for each overdub and a VOCALIGN.md with before/after timing.
@@ -128,7 +130,7 @@ def wsola_warp(x, sr, offset_s, frame=1024, hop=256, search=128):
     prev_in = None
     mono = xp.mean(axis=1)
     for t in range(0, n, hop):
-        want = t + int(round(offset_s(t) * sr))
+        want = int(np.clip(t + int(round(offset_s(t) * sr)), -frame, n))   # stay inside the (padded) file
         if prev_in is not None:
             nat = prev_in + hop
             if abs(want - nat) <= 1:
@@ -137,8 +139,11 @@ def wsola_warp(x, sr, offset_s, frame=1024, hop=256, search=128):
                 # pick the position near `want` whose frame best continues the previous one
                 ref = mono[base + nat: base + nat + frame]
                 seg = mono[base + want - search: base + want + search + frame]
-                c = np.correlate(seg, ref, "valid")
-                pos = want - search + int(np.argmax(c))
+                if len(ref) == frame and len(seg) >= frame:      # near the end there may be nothing to search
+                    c = np.correlate(seg, ref, "valid")
+                    pos = want - search + int(np.argmax(c))
+                else:
+                    pos = want
         else:
             pos = want
         pos = int(np.clip(pos, -frame, n))
@@ -178,18 +183,28 @@ def residual_ms(lead, over, sr, max_ms):
     return float(np.median(a)), float(np.percentile(a, 95))
 
 
-def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None, outdir=None):
+def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None, outdir=None, engine="auto", mode="tight"):
     lead, sr = dsp.load(lead_path)
     over, _ = dsp.load(over_path, sr)
     n = max(len(lead), len(over))
     lead = np.pad(lead, ((0, n - len(lead)), (0, 0)))
     over = np.pad(over, ((0, n - len(over)), (0, 0)))
     before = residual_ms(lead, over, sr, max_ms)
-    off, both, raw = offset_curve(lead, over, sr, max_ms, strength)
-    t_frames = np.arange(len(off)) * FR_S
-    fn = lambda t: float(np.interp(t / sr, t_frames, off * FR_S))
-    out = wsola_warp(over, sr, fn)
+    import shutil
     notes = []
+    if engine == "rubberband" or (engine == "auto" and shutil.which("rubberband")):
+        from hypnomix.studio._rbalign import align_rb, HOP
+        out, off_rb, both_rb = align_rb(lead, over, sr, min(max_ms, 120), strength, mode)
+        # report in this module's 10 ms frames
+        k = max(1, int(round(FR_S * sr / HOP)))
+        off = off_rb[::k] * HOP / sr / FR_S; both = both_rb[::k]
+        notes.append(f"Rubber Band engine, {mode}")
+    else:
+        off, both, raw = offset_curve(lead, over, sr, max_ms, strength)
+        t_frames = np.arange(len(off)) * FR_S
+        fn = lambda t: float(np.interp(t / sr, t_frames, off * FR_S))
+        out = wsola_warp(over, sr, fn)
+        notes.append("WSOLA engine (install `rubberband` for the cleaner, tighter engine)")
     if trim:
         out, frac = trim_tails(lead, out, sr)
         notes.append(f"tails trimmed on {frac * 100:.0f}% of its sung time")
@@ -214,12 +229,15 @@ def main():
     ap.add_argument("--trim-tails", action="store_true")
     ap.add_argument("--level", type=float)
     ap.add_argument("--out")
+    ap.add_argument("--engine", choices=["auto", "rubberband", "wsola"], default="auto")
+    ap.add_argument("--mode", choices=["tight", "gentle"], default="tight",
+                    help="Rubber Band engine: tight (closest timing) or gentle (smoother speed changes, less warble)")
     a = ap.parse_args()
     od = out_at(a.out, "vocalign")
     rows = []
     for o in a.overdubs:
         print(f"aligning {Path(o).name} to {Path(a.lead).name} …", file=sys.stderr)
-        rows.append(align(a.lead, o, a.strength, a.max_ms, a.trim_tails, a.level, od))
+        rows.append(align(a.lead, o, a.strength, a.max_ms, a.trim_tails, a.level, od, a.engine, a.mode))
     md = [f"# Vocal alignment to {Path(a.lead).name}", "",
           "Timing difference from the lead while both sing (median / worst 5%):", "",
           "| overdub | before | after | frames moved >5 ms | biggest shift | notes |", "|---|---|---|---|---|---|"]

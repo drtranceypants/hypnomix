@@ -206,7 +206,7 @@ def main():
         if plural == "Vocals":
             voc = [c for c in ch if rows[c]["label"] in ("Vocal", "Lead Vocal", "Harmony") and rows[c].get("features")]
             if voc:
-                lead = max(voc, key=lambda c: rows[c]["features"]["active_s"])
+                lead = max(voc, key=lambda c: (round(rows[c]["features"]["vowel_move"]), rows[c]["features"]["active_s"]))  # lead sings the words: vowels move most
                 rows[lead]["label"] = "Lead Vocal"
                 rest = sorted([c for c in voc if c != lead], key=lambda c: rows[c]["features"]["f0"] or 0)
                 for i, c in enumerate(rest): rows[c]["label"] = f"Harmony {i + 1}"

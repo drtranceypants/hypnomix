@@ -41,7 +41,7 @@ prep pass (clicks, clipping, plosives, breaths, noise, silence, fades) …
 | command | what it does |
 |---|---|
 | `prep` | The assistant-engineer pass: rebuilds clipped peaks, repairs clicks and pops, removes plosive thumps, turns breaths down, removes hum and hiss (only where present), silences gaps with fades, fades every edge, converts dual-mono to mono, matches formats and lengths, gain-stages, names files in mix order. Every fix is logged with a timestamp. |
-| `vocalign` | Time-aligns doubles and harmonies to the lead without touching pitch (feature-based DTW + WSOLA), trims overdub tails, sets harmony levels. |
+| `vocalign` | Time-aligns doubles and harmonies to the lead without touching pitch: pitch-independent features + banded DTW, then each phrase is re-timed with Rubber Band (falls back to WSOLA if `rubberband` isn't installed). `--mode tight` (default) or `--mode gentle` if a part sounds warbly. Trims overdub tails, sets harmony levels. On a 5-part stack: word-start error ~40 ms → ~23 ms. |
 | `clipmatch` | Evens out clips recorded at different gain or mic positions: loudness and tone. Works on files, or on a track in your Live set, where it can set each clip's Clip Gain directly. |
 | `takes` | Ranks takes by clipping, noise, hum, pitch and timing, and writes a comp list: the best take for each section. |
 | `soundcheck` | Listens to your interface input and tells you how to set the preamp before you record. `--watch` gives a live meter. |
