@@ -36,7 +36,8 @@ until they approve it, originals are never overwritten, and every applied fix is
    `hypnomix prefs set cleanup.order=off` for every song). `fix --approved` includes these unless skipped.
    The tidy-up is also **on by default**: `retire-1` removes switched-off tracks after writing a full
    "(archive, all takes)" copy (note "keep: Name, Name" keeps some), and `merge-N` puts one instrument's clips on
-   one track where two tracks sound the same and nothing overlaps (fader difference made up with clip gain).
+   one track where two tracks sound the same (fader difference made up with clip gain); an overlap is allowed
+   only where it is silence, which is cut away (never sound).
    Opt out per item, or `hypnomix prefs set cleanup.retire=off` / `cleanup.consolidate=off`. Grouping similar
    instruments into a NEW group needs Live (select, Cmd/Ctrl-G): say which ones.
 

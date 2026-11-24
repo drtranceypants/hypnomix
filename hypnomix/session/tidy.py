@@ -17,7 +17,9 @@ Part of the first clean-up, with `name` and `order`. ON BY DEFAULT in scan/fix (
 2. Consolidate (merge-N). Two tracks of the same instrument, side by side in one group, become one track when:
      - the same devices with the same settings, the same sends, pan and output (so they sound the same)
      - neither track is automated, the one emptied has no take lanes and no Session clips
-     - a clip goes over only where nothing already plays on the other track (no overlap)
+     - a clip goes over only where it doesn't overlap a clip on the other track, or where the overlap is silence:
+     then one of the two clips is cut back to the other's edge, and only when the part cut off is silent
+     (rendered, under --silence-db, -55 dBFS). No sound is ever overwritten; a clip inside another stays
    A different fader is made up with clip gain, so every clip plays at the same level as before. When every clip
    fits, the emptied track is removed; clips that don't fit stay where they are (the review says which).
    Check it afterwards with `hypnomix render` (both tracks before, the one track after: they should match).
@@ -201,13 +203,55 @@ def same_instrument(a, b, labels):
     return bool(sa) and sa == sb and not re.fullmatch(r"(\d+-)*(audio|midi)", sa)
 
 
-def fits(c, dst_spans):
-    a, b = span(c)
-    return all(b <= s + 1e-6 or a >= e - 1e-6 for s, e in dst_spans)
+MIN_LEN = 0.25          # beats: a cut never leaves a clip shorter than this
 
 
-def merge_plan(root, labels=None):
-    """[dict(dst, src, move=[clips], stay=[clips], why)] for neighbouring tracks of one instrument."""
+def per_beat(c, tempo):
+    """Content units per arrangement beat (beats for warped audio and MIDI, seconds for unwarped audio)."""
+    return 1.0 if (c.tag == "MidiClip" or v(c, "./IsWarped") == "true") else 60.0 / tempo
+
+
+def overlaps(x, y):
+    return x[0] < y[1] - 1e-6 and y[0] < x[1] - 1e-6
+
+
+def cut_options(c, d, cur, owner):
+    """Ways to end the overlap of moving clip c with clip d by cutting one of them back to the other's edge:
+    [(clip, edge, new position, track, silent-from, silent-to)]. A clip inside another would need splitting: none."""
+    (ca, cb), (da, db) = cur[c], cur[d]
+    if da < ca - 1e-6 and ca < db <= cb + 1e-6:          # d runs into c's start
+        return [(d, "end", ca, owner[d], ca, db), (c, "start", db, owner[c], ca, db)]
+    if ca <= da + 1e-6 and da < cb - 1e-6 and cb < db - 1e-6:   # c runs into d's start
+        return [(c, "end", da, owner[c], da, cb), (d, "start", cb, owner[d], da, cb)]
+    return []
+
+
+def resolve(c, placed, cur, owner, silent):
+    """Cuts (clip, edge, new) that let c sit beside every placed clip, cutting only where the cut-off part is
+    silent; None when some overlap holds sound."""
+    trial, cuts = dict(cur), []
+    for d in sorted(placed, key=lambda x: trial[x][0]):
+        if not overlaps(trial[c], trial[d]):
+            continue
+        done = False
+        for el, edge, new, trk, s, e in cut_options(c, d, trial, owner):
+            a, b = trial[el]
+            rest = (b - new) if edge == "start" else (new - a)
+            if v(el, "./Loop/LoopOn") == "true" or rest < MIN_LEN or silent is None or not silent(trk, s, e):
+                continue
+            trial[el] = (new, b) if edge == "start" else (a, new)
+            cuts.append((el, edge, new, s, e))
+            done = True
+            break
+        if not done:
+            return None
+    return cuts, trial
+
+
+def merge_plan(root, labels=None, silent=None):
+    """[dict(dst, src, move=[clips], stay=[clips], cuts=[...], why)] for neighbouring tracks of one instrument.
+    `silent(track, from_beat, to_beat)` says whether a track plays nothing there; with it, overlapping clips are
+    cut back where the overlapped part is silent (no sound is ever overwritten); without it they stay."""
     labels = labels or {}
     tracks = [t for t in root.find(".//Tracks") if t.tag in ("AudioTrack", "MidiTrack") and is_on(t)]
     used, out = set(), []
@@ -230,23 +274,87 @@ def merge_plan(root, labels=None):
                 why = f"another track listens to {name(src)}"
             elif any(c.find("./Envelopes/Envelopes/ClipEnvelope") is not None for c in clips(src)):
                 why = f"{name(src)} has clip envelopes"
-            spans = [span(c) for c in clips(dst)]
-            move, stay = [], []
+            owner = {c: dst for c in clips(dst)} | {c: src for c in clips(src)}
+            cur = {c: span(c) for c in owner}
+            placed = list(clips(dst))
+            move, stay, cuts = [], [], []
             for c in sorted(clips(src), key=lambda c: span(c)[0]):
-                if fits(c, spans):
-                    move.append(c); spans.append(span(c))
-                else:
+                r = resolve(c, placed, cur, owner, silent if c.tag == "AudioClip" else None)
+                if r is None:
                     stay.append(c)
+                    continue
+                cuts += r[0]
+                cur = r[1]
+                move.append(c); placed.append(c)
             if not move:
                 continue
             used |= {a.get("Id"), b.get("Id")}
-            out.append(dict(dst=dst, src=src, move=move, stay=stay, why=why,
+            out.append(dict(dst=dst, src=src, move=move, stay=stay, cuts=cuts, why=why,
                             gain_db=fader_db(src) - fader_db(dst)))
     return out
 
 
-def merge(root, m):
+def cut(c, edge, new, tempo):
+    """Shorten clip c to `new` at one edge (a loop-off clip: its start or end marker moves the same amount). The
+    cut lands in silence, so that edge gets no fade (a fade there would now dip audible sound)."""
+    a, b = span(c)
+    per = per_beat(c, tempo)
+    if edge == "start":
+        c.find("./CurrentStart").set("Value", repr(float(new)))
+        ls = c.find("./Loop/LoopStart")
+        ls.set("Value", repr(float(ls.get("Value")) + (new - a) * per))
+        fl, fd = "./Fades/FadeInLength", "./Fades/IsDefaultFadeIn"
+    else:
+        c.find("./CurrentEnd").set("Value", repr(float(new)))
+        le = c.find("./Loop/LoopEnd")
+        le.set("Value", repr(float(le.get("Value")) - (b - new) * per))
+        fl, fd = "./Fades/FadeOutLength", "./Fades/IsDefaultFadeOut"
+    if c.find(fl) is not None:
+        c.find(fl).set("Value", "0")
+        if c.find(fd) is not None:
+            c.find(fd).set("Value", "false")
+    n = span(c)[1] - span(c)[0]
+    for p in ("./Fades/FadeInLength", "./Fades/FadeOutLength"):      # no fade longer than the clip
+        f = c.find(p)
+        if f is not None and float(f.get("Value")) > n:
+            f.set("Value", repr(n))
+
+
+def silence_probe(set_path, tempo, floor_db=-55.0):
+    """silent(track, a, b): renders a track (once) and says whether it stays under floor_db (RMS, 20 ms windows)
+    from beat a to beat b."""
+    import subprocess, tempfile
+    import numpy as np
+    from hypnomix.core import dsp
+    tmp, cache, spb = Path(tempfile.mkdtemp(prefix="tidy-")), {}, 60.0 / tempo
+
+    def silent(t, a, b):
+        nm = name(t)
+        if nm not in cache:
+            subprocess.run([sys.executable, "-m", "hypnomix.cli", "render", str(set_path), "--tracks", nm, "--out", str(tmp)],
+                           capture_output=True, text=True)
+            f = tmp / (re.sub(r'[\\/:*?"<>|]', "-", nm) + ".wav")
+            cache[nm] = dsp.load(f) if f.exists() else None
+        if cache[nm] is None:
+            return False                                 # could not hear it: never cut
+        y, sr = cache[nm]
+        y = np.asarray(y, float)
+        y = y if y.ndim == 1 else np.abs(y).max(axis=0 if y.shape[0] <= 2 else 1)
+        seg = y[max(0, int(a * spb * sr)):int(b * spb * sr)]
+        if not len(seg):
+            return True
+        w = max(1, int(0.02 * sr))
+        k = len(seg) // w
+        frames = seg[:k * w].reshape(k, w) if k else seg[None, :]
+        rms = np.sqrt((frames ** 2).mean(axis=1)) if k else np.sqrt((seg ** 2).mean(keepdims=True))
+        return bool(20 * np.log10(max(float(rms.max()), 1e-9)) < floor_db)
+    return silent
+
+
+def merge(root, m, tempo=120.0):
     """Move the plan's clips onto the destination track; remove the source when it is empty. Returns clips moved."""
+    for c, edge, new, _, _ in m.get("cuts", []):
+        cut(c, edge, new, tempo)
     dl, sl = lane(m["dst"]), lane(m["src"])
     used = {int(c.get("Id")) for c in clips(m["dst"]) if (c.get("Id") or "").isdigit()}
     k = 0
@@ -291,7 +399,9 @@ def findings(rplan, mplan, mode="remove"):
     for n, m in enumerate(mplan, 1):
         s, d = name(m["src"]), name(m["dst"])
         ok = not m["why"]
-        stay = f"; {len(m['stay'])} clip(s) overlap and stay on {s} (bars {', '.join(bar(span(c)[0]) for c in m['stay'][:6])})" if m["stay"] else ""
+        cuts = (f"; {len(m['cuts'])} overlap(s) cut back where the cut-off part is silent (bars "
+                f"{', '.join(bar(x[3]) for x in m['cuts'][:6])}): no sound is overwritten") if m.get("cuts") else ""
+        stay = f"; {len(m['stay'])} clip(s) overlap where there is sound and stay on {s} (bars {', '.join(bar(span(c)[0]) for c in m['stay'][:6])})" if m["stay"] else ""
         out.append(dict(id=f"merge-{n}", tool="tidy", kind="consolidate", severity="low", track=f"{s} → {d}",
                         where=f"{len(m['move'])} clip(s)", default="approve" if ok else None,
                         src=m["src"].get("Id"), dst=m["dst"].get("Id"), removes=not m["stay"],
@@ -299,7 +409,7 @@ def findings(rplan, mplan, mode="remove"):
                                 "two tracks, so one fader doesn't set the part",
                         fix=(f"move {len(m['move'])} clip(s) from {s} onto {d}" +
                              (f", clip gain {m['gain_db']:+.1f} dB to make up the fader difference" if abs(m['gain_db']) > 0.05 else "") +
-                             (f", then remove the empty {s}" if not m["stay"] else "") + stay +
+                             (f", then remove the empty {s}" if not m["stay"] else "") + cuts + stay +
                              (". ON BY DEFAULT: skip to keep both tracks" if ok else f". By hand: {m['why']}")),
                         applies="set" if ok else "manual"))
     return out
@@ -329,6 +439,8 @@ def main():
     ap.add_argument("--mode", choices=["remove", "bottom"], default="remove", help="retired tracks: removed, or moved to the bottom")
     ap.add_argument("--tweak", action="append", help='review notes, e.g. "retire-1:keep: Guitar 2, Vox old"')
     ap.add_argument("--archive-from", metavar="ORIGINAL.als", help="the set to archive (default: SET.als)")
+    ap.add_argument("--silence-db", type=float, default=-55.0,
+                    help="an overlap may be cut only where the cut-off part stays under this (dBFS RMS, 20 ms)")
     ap.add_argument("--no-retire", action="store_true"); ap.add_argument("--no-merge", action="store_true")
     a = ap.parse_args()
     src = Path(a.als)
@@ -338,7 +450,8 @@ def main():
         sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent})")
     root = ET.fromstring(gzip.open(src).read())
     rplan = [] if a.no_retire else retire_plan(root, tweaks(a.tweak))
-    mplan = [] if a.no_merge else merge_plan(root, labels_from(a.names))
+    tempo = float(v(root, ".//Tempo/Manual") or 120)
+    mplan = [] if a.no_merge else merge_plan(root, labels_from(a.names), silence_probe(src, tempo, a.silence_db))
     fs = findings(rplan, mplan, a.mode)
     for f in fs:
         print(f"{f['id']}: {f['problem']}\n   → {f['fix']}\n")
@@ -352,7 +465,7 @@ def main():
         merged = []
         for f, m in zip([f for f in fs if f["kind"] == "consolidate"], mplan):
             if f["id"] in want and f["applies"] == "set":
-                moved += merge(root, m)
+                moved += merge(root, m, tempo)
                 merged.append(name(m["src"]))
         gone = []
         if "retire-1" in want and rplan:

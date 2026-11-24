@@ -9,7 +9,10 @@ from hypnomix.session import check as K
 
 def track(tid, name, on=True, group="-1", clips=(), fader="1", devices="<Eq8><On><Manual Value=\"true\"/></On></Eq8>",
           sidechain_from=None, kind="AudioTrack"):
-    cl = "".join(f'<AudioClip Id="{k}"><CurrentStart Value="{a}"/><CurrentEnd Value="{b}"/>'
+    cl = "".join(f'<AudioClip Id="{k}"><CurrentStart Value="{a}"/><CurrentEnd Value="{b}"/><IsWarped Value="true"/>'
+                 f'<Loop><LoopStart Value="{10 + a}"/><LoopEnd Value="{10 + b}"/><LoopOn Value="false"/></Loop>'
+                 f'<Fades><FadeInLength Value="2"/><FadeOutLength Value="2"/><IsDefaultFadeIn Value="true"/>'
+                 f'<IsDefaultFadeOut Value="true"/></Fades>'
                  f'<SampleVolume Value="1"/></AudioClip>' for k, (a, b) in enumerate(clips))
     sc = f'<Routing><Target Value="AudioIn/Track.{sidechain_from}/PostFxOut"/></Routing>' if sidechain_from else ""
     return (f'<{kind} Id="{tid}"><Name><EffectiveName Value="{name}"/><UserName Value="{name}"/></Name>'
@@ -66,6 +69,36 @@ class Consolidate(unittest.TestCase):
         moved = [c for c in C.clips(a) if C.span(c) == (16, 32)][0]
         self.assertAlmostEqual(float(moved.find("./SampleVolume").get("Value")), 0.5, places=4)
         self.assertEqual([C.span(c) for c in C.clips(b)], [(40, 44)])     # the overlapping clip stays
+
+    def test_silent_overlap_is_cut_back_sound_never_overwritten(self):
+        # B's clip 14-32 runs into A's clip 0-16 (overlap 14-16); B is silent from 14 to 16 (its take starts late)
+        r = song(track(1, "Gtr A", clips=[(0, 16), (40, 48)]), track(2, "Gtr B", clips=[(14, 32), (38, 44)]))
+        quiet = {("Gtr B", 14, 16)}                      # B silent at 14-16; nothing silent at 38-44's overlap
+        silent = lambda t, a, b: (C.name(t), a, b) in quiet
+        m = C.merge_plan(r, {"Gtr A": "Guitar", "Gtr B": "Guitar"}, silent)[0]
+        self.assertEqual(len(m["move"]), 1); self.assertEqual(len(m["stay"]), 1)
+        C.merge(r, m, tempo=120)
+        a = list(r.find(".//Tracks"))[0]
+        c = [x for x in C.clips(a) if C.span(x)[1] == 32][0]
+        self.assertEqual(C.span(c), (16.0, 32.0))                       # start cut back to A's edge
+        self.assertAlmostEqual(float(c.find("./Loop/LoopStart").get("Value")), 26.0)   # content moved the same 2 beats
+        self.assertEqual(c.find("./Fades/FadeInLength").get("Value"), "0")
+        self.assertEqual(C.span(C.clips(a)[0]), (0, 16))                # A's clip untouched
+
+    def test_overlap_with_sound_or_no_probe_stays(self):
+        r = song(track(1, "Gtr A", clips=[(0, 16), (50, 52), (60, 62)]), track(2, "Gtr B", clips=[(14, 32), (40, 44)]))
+        lab = {"Gtr A": "Guitar", "Gtr B": "Guitar"}
+        for probe in (None, lambda t, a, b: False):
+            m = C.merge_plan(r, lab, probe)[0]
+            self.assertEqual([C.span(c) for c in m["stay"]], [(14, 32)])
+
+    def test_cut_the_other_clip_when_only_it_is_silent(self):
+        r = song(track(1, "Gtr A", clips=[(0, 16), (50, 60)]), track(2, "Gtr B", clips=[(14, 32)]))
+        silent = lambda t, a, b: C.name(t) == "Gtr A" and (a, b) == (14, 16)   # A's tail is silent
+        m = C.merge_plan(r, {"Gtr A": "Guitar", "Gtr B": "Guitar"}, silent)[0]
+        C.merge(r, m, tempo=120)
+        a = list(r.find(".//Tracks"))[0]
+        self.assertEqual([C.span(c) for c in C.clips(a)], [(0, 14.0), (14, 32), (50, 60)])
 
     def test_different_sound_or_instrument_is_left_alone(self):
         r = song(track(1, "Gtr A", clips=[(0, 4)]), track(2, "Gtr B", clips=[(8, 12)], devices=""))
