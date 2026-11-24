@@ -252,6 +252,7 @@ and the verification. Any agent can follow `AGENTS.md` to do the same. Ask:
 
 ## What the checks deliberately leave alone
 
+- **Grid.** Timing work snaps toward the song's own grid, detected bar by bar from the hits (straight 16ths, triplets or mixed; reported in the scan notes). `vocalign`'s pull toward the tempo uses the same detection.
 - **Feel.** `timing` measures the band's own looseness and only flags outliers (downbeats held tightest,
   16ths loosest), comparing each instrument with the others before the grid. Melodic parts (guitar, keys,
   strings: `--melodic`) only get clear outliers, as OPTIONAL low-severity items, moved at most 30% of the way

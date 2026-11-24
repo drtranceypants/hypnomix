@@ -281,22 +281,30 @@ def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None
                 max_shift=float(np.max(np.abs(off)) * FR_S * 1000))
 
 
-def grid_lag(env, n, bpm, max_ms=60.0):
-    """Per bar: how many 10 ms frames the stack's onsets sit late (+) or early (-) against the 8th-note grid,
+def grid_lag(env, n, bpm, max_ms=60.0, grid=None):
+    """Per bar: how many 10 ms frames the stack's onsets sit late (+) or early (-) against the song's own grid
+    (straight 8ths/16ths, or triplets where the song uses them: detected from these onsets unless given),
     smoothed over ~5 bars. Gaussian score around each grid line, searched within +-max_ms."""
-    step = 60 / bpm / 2 / FR_S
-    W = int(4 * 60 / bpm / FR_S)
+    from scipy.signal import find_peaks
+    spb = 60 / bpm
+    W = int(4 * spb / FR_S)
     M = int(max_ms / 1000 / FR_S)
+    if grid is None:
+        from hypnomix.core import grid as G
+        pk, pr = find_peaks(env, height=env.max() * 0.15 if env.max() > 0 else 1, distance=5)
+        grid = G.detect(pk * FR_S / spb, pr["peak_heights"], 4)
     lags = []
     for s0 in range(0, n - W, W):
         seg = env[s0:s0 + W]
         if seg.sum() < 1e-3:
             lags.append(np.nan); continue
+        bar = s0 // W
+        lines = np.array(sorted({p for p in grid.positions(bar)} | {12})) / 12      # in-beat fractions
         k = np.arange(s0, s0 + W)
         best, bl = -1.0, 0
         for L in range(-M, M + 1):
-            ph = (k - L) % step
-            d = np.minimum(ph, step - ph)
+            fr = ((k - L) * FR_S / spb) % 1.0
+            d = np.min(np.abs(fr[:, None] - lines[None, :]), axis=1) * spb / FR_S     # frames to the nearest line
             sc = float((seg * np.exp(-0.5 * (d / 1.5) ** 2)).sum())
             if sc > best:
                 best, bl = sc, L

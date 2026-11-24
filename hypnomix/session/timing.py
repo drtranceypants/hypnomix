@@ -49,6 +49,8 @@ SLOTS = {  # name: (minimum tolerance s, multiple of the song's own looseness, s
     "beat": (0.020, 2.5, 0.6),
     "8th": (0.030, 3.0, 0.4),
     "16th": (0.040, 3.5, 0.3),
+    "triplet": (0.030, 3.0, 0.4),       # 8th-note triplets: as loose as off-beat 8ths
+    "16th triplet": (0.040, 3.5, 0.3),
 }
 # Melodic parts (guitar, keys, strings) carry the feel: only clear outliers, only as an option, and only partway.
 MELODIC_TOL = 1.5      # their tolerance is this many times the usual one
@@ -60,14 +62,19 @@ SR_O = 22050
 HOP_O = 64            # ~3 ms onset resolution
 
 
-def slot_kind(slot16):
-    if slot16 % (4 * BPB) == 0:
+def slot_kind(key12):
+    """What kind of grid line a hit sits on, from its position in twelfths of a beat (holds 16ths and triplets)."""
+    if key12 % (12 * BPB) == 0:
         return "downbeat"
-    if slot16 % 4 == 0:
+    if key12 % 12 == 0:
         return "beat"
-    if slot16 % 2 == 0:
+    if key12 % 6 == 0:
         return "8th"
-    return "16th"
+    if key12 % 4 == 0:
+        return "triplet"
+    if key12 % 3 == 0:
+        return "16th"
+    return "16th triplet"
 
 
 # ---------------------------------------------------------------- onsets per clip
@@ -156,11 +163,21 @@ def analyse(root, als_dir, names, to_grid, include_off=False, melodic=()):
                 continue
             clean.append(h)
         for h in clean:
-            slot = int(round(h["beat"] * 4))
-            h["slot"] = slot
-            h["grid_err"] = (h["beat"] - slot / 4) * spb
             h["track"] = tname
-        tracks.append((tname, t, [h for h in clean if abs(h["grid_err"]) <= SEARCH]))
+        tracks.append((tname, t, clean))
+    # the song's own grid (straight 16ths, triplets or mixed, bar by bar), from every track's hits
+    from hypnomix.core import grid as G
+    allh = [h for _, _, hs in tracks for h in hs]
+    g = G.detect([h["beat"] for h in allh], [h["strength"] for h in allh], BPB)
+    notes["grid"] = g.summary()
+    kept = []
+    for tname, t, hs in tracks:
+        for h in hs:
+            snapped, key = g.snap(h["beat"])
+            h["slot"] = key
+            h["grid_err"] = (h["beat"] - snapped) * spb
+        kept.append((tname, t, [h for h in hs if abs(h["grid_err"]) <= SEARCH]))
+    tracks = kept
 
     by_slot = {}
     feel = {}
@@ -334,6 +351,7 @@ def write_json(path, src, tempo, tracks, issues, notes, a):
     feel = {t: {"lag_ms": round(l * 1000, 1), "spread_ms": round(sp * 1000, 1)} for t, (l, sp) in notes["feel"].items()}
     Path(path).write_text(json.dumps({"tool": "timing", "set": str(src), "tempo": tempo,
                                       "looseness_ms": round(notes["looseness"] * 1000, 1), "feel": feel,
+                                      "grid": notes.get("grid", []),
                                       "tracks": [t for t, _, _ in tracks], "melodic": sorted(getattr(a, "melodic", []) or []),
                                       "findings": out}, indent=1))
 
@@ -383,6 +401,9 @@ def main():
         late = "late" if i["off"] > 0 else "early"
         print(f"{where(i['beat']):>9}  {i['track'][:24]:<24} {i['kind']:<8} {i['ref']:<5} "
               f"{abs(i['off']) * 1000:4.0f} ms {late:<5}  move {i['move'] * a.strength * 1000:+.0f} ms")
+    if notes.get("grid"):
+        print("grid (from where the hits land): " + "; ".join(f"bars {a}-{b} {nm}" if a != b else f"bar {a} {nm}"
+                                                       for a, b, nm in notes["grid"]))
     kinds = {k: sum(1 for i in issues if i["kind"] == k) for k in SLOTS}
     print(f"song looseness {notes['looseness'] * 1000:.0f} ms (typical player's spread); tolerances: "
           + ", ".join(f"{k} {max(v[0], v[1] * notes['looseness']) * 1000:.0f} ms" for k, v in SLOTS.items()))

@@ -199,6 +199,11 @@ def g_timing(als, od, a, role):
     d = json.loads(j.read_text())
     notes = [f"timing: song looseness {d['looseness_ms']} ms across {len(d['tracks'])} instrument tracks "
              f"(the band's natural feel; only outliers are listed)"]
+    if d.get("grid"):
+        runs = d["grid"]
+        trip = [r for r in runs if "triplet" in r[2]]
+        notes.append("timing: grid " + ("; ".join(f"bars {a}-{b}: {nm}" for a, b, nm in runs[:8]) if trip else
+                                         f"straight 16ths throughout") + " (nudges go toward this grid)")
     if melodic:
         notes.append(f"timing: melodic parts ({', '.join(melodic)}) only get OPTIONAL, partial nudges (at most 30% "
                      "of the way and 15 ms), and only for clear outliers: their looseness is part of the feel")
