@@ -163,7 +163,7 @@ What `fix` checks itself, and stops on:
 | an id was recorded as skip or change | stops; record the new decision first |
 | a finding is on a protected track | stops; ask again, then `--allow-protected` |
 | vocal tuning without a confirmed key | that item is refused; pass `--key "F# major"`, or `--key sections` to follow the scan's key map section by section |
-| `--key sections` with a key question (`key-N`) unanswered | refused; ask it, record it with `--answer F#` (or `"17-24=F"`, or `both`) |
+| `--key sections` with a key question (`key-N`) unanswered | tunes only notes both scales share; notes on the disputed pitches stay exactly as sung. Answer with `--answer F#` (or `"17-24=F"`, or `both`) to tune them too |
 | a finding is no longer in the set (already fixed, or ids moved) | skipped and listed, never swapped for its neighbour |
 | a step fails | listed under FAILED, exit code 1; the other steps still apply |
 | after writing: structure | `hypnomix check` runs on the new set; if it fails the file is renamed "(BROKEN, do not open)" |

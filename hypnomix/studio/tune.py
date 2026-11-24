@@ -21,7 +21,8 @@ Usage:
   hypnomix tune IN.wav --report-only --ref MIX.wav     (just measure; the report goes to ./reports/tune)
   hypnomix tune IN.wav OUT.wav --ref MIX.wav --scales KEY.json [--answer F#] [--answer "17-24=both"]
            per-section scales from `hypnomix key --sections --json KEY.json` (songs that change key or borrow
-           chords); --answer settles the sections the key map was unsure about (unanswered: both notes allowed)
+           chords); --answer settles the sections the key map was unsure about (unanswered: notes on the disputed
+           pitches are left exactly as sung; notes both scales share are tuned)
 Writes OUT.wav plus OUT.notes.txt (every note: time, sung, target, cents before/after) and OUT.png.
 Needs Rubber Band 3+ (`brew install rubberband`).
 """
@@ -243,7 +244,7 @@ def load_scales(path, answers=()):
             q = sorted({f"{x['disputed'][0]} or {x['disputed'][1]}" for x in uns})
             sys.exit(f"--answer {note}: no key question is about that note (questions: {'; '.join(q) or 'none'})")
     for sec in secs:
-        r = sec["root"]
+        r, hold = sec["root"], ()
         base = {(r + st) % 12 for st in MAJOR}
         label = sec["scale"]
         dis = sec.get("disputed")
@@ -254,8 +255,8 @@ def load_scales(path, answers=()):
             ans = by_bars.get(sec["bars"])
             if ans is None:
                 ans = next((x for x in every if x.lower() == "both" or hit(x)), None)
-            if ans is None:
-                pcs, label = union, f"{dis[0]} or {dis[1]} (UNANSWERED: both accepted)"
+            if ans is None:   # unsure and unanswered: tune only notes common to both scales, leave the rest as sung
+                pcs, hold, label = union - mine - other, mine | other, f"{dis[0]} or {dis[1]} (UNANSWERED: {dis[0]} and {dis[1]} left as sung)"
                 open_q.append(f"bars {sec['bars']}: {dis[0]} or {dis[1]}?")
             elif ans.lower() == "both":
                 pcs, label = union, f"{label} + {dis[1]} (both, as answered)"
@@ -267,15 +268,23 @@ def load_scales(path, answers=()):
                 sys.exit(f"--answer {ans!r} for bars {sec['bars']}: the question there is {dis[0]} or {dis[1]}")
         else:
             pcs = base
-        out.append((float(sec["t0"]), float(sec["t1"]), frozenset(pcs), f"bars {sec['bars']}: {label}"))
+        out.append((float(sec["t0"]), float(sec["t1"]), frozenset(pcs), f"bars {sec['bars']}: {label}", frozenset(hold)))
     return out, open_q
 
 
 def scale_at(scales, t, default):
-    for t0, t1, pcs, _ in scales or ():
+    for t0, t1, pcs, *_ in scales or ():
         if t0 <= t < t1:
             return pcs
     return default
+
+
+def hold_at(scales, t):
+    """Pitch classes left exactly as sung at time t (the disputed notes of an unanswered section)."""
+    for t0, t1, _, _, hold in scales or ():
+        if t0 <= t < t1:
+            return hold
+    return frozenset()
 
 
 def note_name(m):
@@ -321,7 +330,9 @@ def choose_targets(notes, tuning_c, key, guide_midi, a):
         n["why"] = why
         n["cents"] = (n["centre"] - n["target"]) * 100
         n["out_of_key"] = (pick % 12) not in scale
-        if abs(n["cents"]) < a.tolerance:
+        if (pick % 12) in hold_at(getattr(a, "_scales", None), n["t0"]):
+            n["action"] = "hold"   # the key there is unsure and unanswered, and this is the disputed note
+        elif abs(n["cents"]) < a.tolerance:
             n["action"] = "ok"
         elif (len(cand) == 2 and why == "nearest") or abs(n["cents"]) > a.max:
             n["action"] = "flag"   # halfway between two notes and nothing says which was meant
@@ -354,7 +365,7 @@ def shift_curve(midi, notes, a, ramp_s=0.03):
     return np.convolve(np.pad(curve, (w // 2, w - 1 - w // 2), mode="edge"), kernel, mode="valid")
 
 
-def render(in_path, out_path, curve, sr, n_samples, channels):
+def render(in_path, out_path, curve, sr, n_samples, channels, keep=()):
     """Shift each sung phrase separately (Rubber Band's pitch-map mode drifts over long files),
     line each phrase up with the original sample-for-sample, and splice it back in."""
     from concurrent.futures import ThreadPoolExecutor
@@ -407,6 +418,17 @@ def render(in_path, out_path, curve, sr, n_samples, channels):
             w[:fade] = np.linspace(0, 1, fade)
             w[n - fade:] = np.linspace(1, 0, fade)
             out[i0:i1] = out[i0:i1] * (1 - w[:, None]) + y[:n] * w[:, None]
+    for t0, t1 in keep:                     # held notes: the original audio, sample for sample, 10 ms crossfades
+        i0, i1 = max(0, int(t0 * sr)), min(len(src), int(t1 * sr))
+        n = i1 - i0
+        if n <= 0:
+            continue
+        fade = min(int(0.01 * sr), n // 4)
+        w = np.ones(n, np.float32)
+        if fade:
+            w[:fade] = np.linspace(0, 1, fade)
+            w[n - fade:] = np.linspace(1, 0, fade)
+        out[i0:i1] = out[i0:i1] * (1 - w[:, None]) + src[i0:i1] * w[:, None]
     info = sf.info(str(in_path))
     sf.write(str(out_path), out if channels > 1 else out[:, 0], sr, subtype=info.subtype)
     spread = float(np.median([abs(l - latency) for l in lags])) if lags else 0.0
@@ -453,8 +475,8 @@ def summarise(notes, key="cents"):
 def write_report(path, notes, tuning_c, key, keysrc, a, lag=None):
     lines = [f"tuning: A4 = {440 * 2 ** (tuning_c / 1200):.1f} Hz ({tuning_c:+.0f} cents)",
              f"key: {NOTE_NAMES[key[0]]} {key[1]} ({keysrc})"
-             + ("".join(f"\n  {lab}" for *_, lab in a._scales) if getattr(a, "_scales", None) else "")
-             + (f"\n  OPEN QUESTIONS (both notes accepted there until answered): {'; '.join(a._open)}"
+             + ("".join(f"\n  {lab}" for _, _, _, lab, _ in a._scales) if getattr(a, "_scales", None) else "")
+             + (f"\n  OPEN QUESTIONS (the disputed notes are left as sung there until answered): {'; '.join(a._open)}"
                 if getattr(a, "_open", None) else ""),
              f"amount {a.amount:g}, tolerance {a.tolerance:g} cents, max {a.max:g} cents, drift {a.drift:g}",
              f"before: {summarise(notes)}"]
@@ -468,8 +490,9 @@ def write_report(path, notes, tuning_c, key, keysrc, a, lag=None):
         aft = f"{n['after']:+6.0f}" if np.isfinite(n.get("after", np.nan)) else "     -"
         why = "" if n["why"] == "nearest" else f" ({n['why']})"
         act = {"ok": "ok", "fix": f"moved {n['shift'] * 100:+.0f}",
-               "flag": "FLAG: between two notes, left alone"}[n["action"]]
-        if n.get("out_of_key"):
+               "flag": "FLAG: between two notes, left alone",
+               "hold": "HOLD: disputed note, key unsure here, left as sung"}[n["action"]]
+        if n.get("out_of_key") and n["action"] != "hold":
             act += " [out of key]"
         lines.append(f"{_mmss(n['t0']):>8}  {n['t1'] - n['t0']:5.2f}  {note_name(n['centre']):>5} -> "
                      f"{note_name(n['target']):<6} {n['cents']:+6.0f}  {aft}  {act}{why}")
@@ -488,12 +511,14 @@ def write_json(path, a, notes, tuning_c, key, keysrc):
     summary = dict(
         id="tune-" + Path(a.input).stem, tool="tune", kind="pitch", severity=sev, track=Path(a.input).stem,
         where="whole take", problem=f"median {med:.0f} cents off, {within:.0f}% of notes within ±15 cents",
-        fix=f"tune {nfix} notes ({a.amount:.0%} of the way), {len(flags)} ambiguous notes flagged for your ear",
+        fix=f"tune {nfix} notes ({a.amount:.0%} of the way), {len(flags)} ambiguous notes flagged for your ear"
+            + (f", {sum(n['action'] == 'hold' for n in notes)} left as sung where the key is unsure (answer the key "
+               "question to tune them)" if any(n["action"] == "hold" for n in notes) else ""),
         applies="audio", input=str(a.input))
     Path(path).write_text(json.dumps({
         "tool": "tune", "input": str(a.input), "tuning_cents": round(tuning_c, 1),
         "key": f"{NOTE_NAMES[key[0]]} {key[1]}", "key_source": keysrc, "findings": [summary],
-        "scales": [lab for *_, lab in (getattr(a, "_scales", None) or [])], "open_questions": getattr(a, "_open", []),
+        "scales": [lab for _, _, _, lab, _ in (getattr(a, "_scales", None) or [])], "open_questions": getattr(a, "_open", []),
         "flagged": [dict(time=_mmss(n["t0"]), sung=note_name(n["centre"]), cents=round(n["cents"])) for n in flags],
     }, indent=1))
 
@@ -626,12 +651,15 @@ def main():
         print("\n".join(head))
         nfix = sum(n["action"] == "fix" for n in notes)
         nflag = sum(n["action"] == "flag" for n in notes)
-        print(f"{len(notes)} notes: {nfix} would move, {nflag} flagged. Report: {report_path}")
+        nhold = sum(n["action"] == "hold" for n in notes)
+        print(f"{len(notes)} notes: {nfix} would move, {nflag} flagged" + (f", {nhold} held (disputed note, key unsure)" if nhold else "")
+              + f". Report: {report_path}")
         return
 
     curve = shift_curve(midi, notes, a)
     print("shifting with Rubber Band…")
-    lags, out = render(a.input, out_path, curve, sr, len(y), y2.shape[1])
+    keep = [(nt["t0"] - 0.01, nt["t1"] + 0.01) for nt in notes if nt["action"] == "hold"]
+    lags, out = render(a.input, out_path, curve, sr, len(y), y2.shape[1], keep)
     lag = f"{lags[2]} phrases, Rubber Band latency {lags[0]} samples (removed from all), " \
           f"per-phrase estimates within {lags[1]:.0f} samples of it"
     print("checking the result…")
@@ -641,7 +669,9 @@ def main():
     print("\n".join(head))
     nfix = sum(n["action"] == "fix" for n in notes)
     nflag = sum(n["action"] == "flag" for n in notes)
-    print(f"{len(notes)} notes: {nfix} moved, {nflag} flagged (left alone).")
+    nhold = sum(n["action"] == "hold" for n in notes)
+    print(f"{len(notes)} notes: {nfix} moved, {nflag} flagged (left alone)"
+          + (f", {nhold} held as sung (disputed note where the key is unsure)" if nhold else "") + ".")
     print(f"wrote {out_path}, {report_path.name}, {out_path.with_suffix('.png').name}")
 
 

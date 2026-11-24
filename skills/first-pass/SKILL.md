@@ -108,5 +108,6 @@ not one key for the whole song.
   "in bars 17-52, is the note F or F#?" ("both" is a valid answer: a borrowed chord). Record the answer straight
   away: `hypnomix fix "<SCAN_DIR>" --answer F#` (every section with that question), `--answer "17-24=F"` (one
   section) or `--answer both`. It is saved in the scan, and it says which questions are still open.
-- Then apply tuning with `hypnomix fix "<SCAN_DIR>" --approved --key sections --out …`. `fix` refuses while any
-  question is open. (`hypnomix tune IN OUT --scales raw/key.json --answer F#` does the same for one file.)
+- Then apply tuning with `hypnomix fix "<SCAN_DIR>" --approved --key sections --out …`. Where a question is still
+  open, notes on the disputed pitches are **left exactly as sung** (the original audio is spliced back) and only
+  notes both scales share are tuned; `fix` says so. Answering the question lets those notes be tuned too. (`hypnomix tune IN OUT --scales raw/key.json --answer F#` does the same for one file.)

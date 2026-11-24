@@ -419,11 +419,10 @@ def main():
                 continue
             answers = scan.get("answers", []) + a.answer
             _, open_q = load_scales(key_json, answers)
-            if open_q:
-                failed.append(f"{f['id']}: not tuned: ask the person first ({'; '.join(open_q)}), then "
-                              "--answer NOTE (or \"BARS=NOTE\", or both)")
-                print(f"tune       REFUSED  {f['track']}: key questions not answered ({len(open_q)} section(s))")
-                continue
+            if open_q:   # the person's rule: where the key is unsure, leave the disputed notes exactly as sung
+                print(f"tune       {f['track']}: {len(open_q)} key question(s) open; the disputed notes there are "
+                      "left as sung (answer them with --answer to tune those too)")
+                log.append(f"- {f['id']}: key questions open, disputed notes left as sung: {'; '.join(open_q)}")
             tune_key = ["--scales", key_json] + [x for ans in answers for x in ("--answer", ans)]
         elif not key:
             hint = " or --key sections after answering its questions" if key_json.exists() else ""
