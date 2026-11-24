@@ -426,7 +426,7 @@ def apply(issues, tracks, tempo, strength, warp_unwarped=False):
             if warp_on(ci, tempo):
                 i["warp_switched_on"] = True
         if not fixable(ci):
-            skipped.append((i, "clip is looped" if ci["loop_on"] else
+            skipped.append((i, "clip is looped (--unroll-loops copies it out pass by pass, then nudges that copy)" if ci["loop_on"] else
                             "clip is not warped (--warp-unwarped switches warp on for it, playing as before)"))
             continue
         neigh = sorted(hits_by_clip[id(ci)], key=lambda x: x["sec"])
@@ -530,7 +530,8 @@ def write_json(path, src, tempo, tracks, issues, notes, a):
         if i.get("lock"):
             sev = "high"                     # bass off the drums on the beat: the low end gets attention first
         ci = i["hit"]["clip"]
-        manual = (not i["hit"].get("midi")) and not fixable(ci)
+        looped = (not i["hit"].get("midi")) and bool(ci.get("loop_on")) and ci.get("warped")
+        manual = (not i["hit"].get("midi")) and not fixable(ci) and not looped
         late = "late" if i["off"] > 0 else "early"
         out.append(dict(id=i["id"], tool="timing", kind=i["kind"], severity=sev, track=i["track"],
                         where=where(i["beat"]),
@@ -542,7 +543,10 @@ def write_json(path, src, tempo, tracks, issues, notes, a):
                                  + (" (MIDI note)" if i["hit"].get("midi") else "")
                                  + ("; it is exactly the same on every pass of the loop, so it looks deliberate (a "
                                     "programmed feel): ask before moving it" if i.get("deliberate") else "")),
-                        fix=fix_text(i, a.strength, manual),
+                        fix=(f"unroll this looped clip into one copy per pass (it plays the same; editing the loop in Live "
+                             f"later won't change every pass), then nudge that copy {i['move'] * a.strength * 1000:+.0f} ms. "
+                             "An option" if looped else fix_text(i, a.strength, manual)),
+                        unroll=bool(looped),
                         applies="manual" if manual else "set", optional=bool(i.get("optional"))))
     feel = {t: {"lag_ms": round(l * 1000, 1), "spread_ms": round(sp * 1000, 1)} for t, (l, sp) in notes["feel"].items()}
     Path(path).write_text(json.dumps({"tool": "timing", "set": str(src), "tempo": tempo,
@@ -551,6 +555,47 @@ def write_json(path, src, tempo, tracks, issues, notes, a):
                                       "drums": notes.get("drums", []),
                                       "tracks": [t for t, _, _ in tracks], "melodic": sorted(getattr(a, "melodic", []) or []),
                                       "findings": out}, indent=1))
+
+
+def unroll_for(root, src, approved, tempo, skipped):
+    """Unroll the looped clips that hold approved hits (one copy per pass), each checked by rendering its track before
+    and after: a clip that would not play sample for sample the same is put back. True if anything was unrolled."""
+    import copy as _copy
+    from hypnomix.session import unroll as U
+    from hypnomix.session.render import render_track
+    spb, SR = 60.0 / tempo, 22050
+    by_track = {}
+    for i in approved:
+        ci = i["hit"]["clip"]
+        if ci.get("loop_on"):
+            by_track.setdefault(i["track"], {})[id(ci["el"])] = ci["el"]
+    tracks = {t.find("./Name/EffectiveName").get("Value"): t for t in root.find(".//Tracks")}
+    any_ = False
+    for name, clips in by_track.items():
+        t = tracks.get(name)
+        if t is None:
+            continue
+        lane = t.find(U.AUDIO) if t.tag == "AudioTrack" else t.find(U.MIDI)
+        saved = _copy.deepcopy(t)
+        for el in clips.values():
+            U.unroll_clip(lane, el, tempo)
+        ok = True
+        if t.tag == "AudioTrack":                 # MIDI copies are exact by construction (same notes, same times)
+            ends = [float(c.find("./CurrentEnd").get("Value")) for c in lane.findall("AudioClip")]
+            N = int((max(ends) + 4) * spb * SR)
+            b = render_track(saved, src, spb, N, SR, None, 0, [])
+            aft = render_track(t, src, spb, N, SR, None, 0, [])
+            ok = float(np.max(np.abs(b - aft))) < 1e-4
+        if ok:
+            print(f"unrolled {len(clips)} looped clip(s) on {name} into one copy per pass (checked: plays the same)")
+            any_ = True
+        else:
+            idx = list(root.find(".//Tracks")).index(t)
+            root.find(".//Tracks").remove(t); root.find(".//Tracks").insert(idx, saved)
+            for i in approved:
+                if i["track"] == name and i["hit"]["clip"].get("loop_on"):
+                    skipped.append((i, "unrolling this loop would not play exactly the same: left looped (by hand)"))
+    return any_
 
 
 def apply_in_passes(root, src, a, approved, tracks, tempo, notes):
@@ -562,11 +607,15 @@ def apply_in_passes(root, src, a, approved, tracks, tempo, notes):
               ("the rest", lambda tr: tr not in drums and tr not in bass)]
     done_all, skipped_all = [], []
     cur_issues, cur_tracks, cur_tempo = approved, tracks, tempo
+    remeasure = False
+    if getattr(a, "unroll_loops", False):
+        remeasure = unroll_for(root, src, approved, tempo, skipped_all)
     for k, (stage, sel) in enumerate(stages):
         want = [i for i in approved if sel(i["track"])]
         if not want:
             continue
-        if k > 0 and done_all:                    # measure again on the set as corrected so far
+        if (k > 0 and done_all) or remeasure:     # measure again on the set as corrected (or unrolled) so far
+            remeasure = False
             cur_tempo, cur_tracks, fresh, _ = analyse(root, src.parent, a.track, a.to_grid, a.include_off,
                                                       set() if a.all_listed else set(a.melodic), a.bass, a.drums)
             chosen, gone = [], []
@@ -593,6 +642,9 @@ def main():
     ap.add_argument("--drums", action="append", help="drum tracks (default: drum racks and names); the low-end reference")
     ap.add_argument("--warp-unwarped", action="store_true",
                     help="switch warp on for unwarped clips that need a nudge (they play as before; warp mode unchanged)")
+    ap.add_argument("--unroll-loops", action="store_true",
+                    help="a looped clip holding an outlier is replaced by one copy per loop pass (checked to play the same), "
+                         "then only that copy is nudged; editing the loop in Live later won't change every pass")
     ap.add_argument("--all-listed", action="store_true",
                     help="treat melodic tracks like the others (normal tolerance, full move): when you ask for them")
     ap.add_argument("--melodic", action="append", default=[], help="a melodic track (guitar, keys, strings; repeatable): "

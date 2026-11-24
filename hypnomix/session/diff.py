@@ -203,9 +203,14 @@ def diff(old, new, show_all=False):
                                  ("clip gain", "./SampleVolume", fmt_db),
                                  ("fade in", "./Fades/FadeInLength", lambda x: f"{float(x) * spb * 1000:.0f} ms"),
                                  ("fade out", "./Fades/FadeOutLength", lambda x: f"{float(x) * spb * 1000:.0f} ms"),
-                                 ("clip switched off", "./Disabled", str), ("warp", "./IsWarped", str)):
+                                 ("clip switched off", "./Disabled", str), ("warp", "./IsWarped", str),
+                                 ("loop", "./Loop/LoopOn", str)):
                 a_, b_ = gv(o, path), gv(c, path)
-                if a_ != b_ and a_ is not None and b_ is not None:
+                try:
+                    same = abs(float(a_) - float(b_)) < 1e-9          # 96 and 96.0 are the same value
+                except (TypeError, ValueError):
+                    same = a_ == b_
+                if not same and a_ is not None and b_ is not None:
                     add(name, f"{lab} ({label})", f(a_), f(b_), w)
             if c.tag == "MidiClip":                          # notes moved (timing fixes on MIDI)
                 n0 = [float(e.get("Time")) for e in o.iter("MidiNoteEvent")]

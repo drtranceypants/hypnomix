@@ -344,6 +344,8 @@ def main():
                             args += ["--melodic", t]
                         for flag, t in timing_low:
                             args += [flag, t]
+                        if any(f.get("unroll") for f in items):     # approved looped-clip items: unroll, then nudge
+                            args += ["--unroll-loops"]
                     if tool == "distortion" and scan.get("mix"):
                         args += ["--mix", scan["mix"]]
                     if tool in ("order", "cliplevel", "duck"):

@@ -200,7 +200,11 @@ def render_track(t, als, spb, N, SR, sources, tighten, warn):
                 r0 = slice(max(0, a0 - f0), a0); m[r0] = np.linspace(0, 1, r0.stop - r0.start)
                 r1 = slice(b0, min(len(seg), b0 + f1)); m[r1] = np.linspace(1, 0, r1.stop - r1.start)
                 seg = seg * m
-        fi, fo = max(fi, 0.003 * SR), max(fo, 0.003 * SR)           # Live's default ~3 ms edge fades
+        # Live's default ~3 ms edge fades, unless the clip's fade was set explicitly (an unrolled loop's seams: 0)
+        if v(c, "./Fades/IsDefaultFadeIn") != "false" or fi > 0:
+            fi = max(fi, 0.003 * SR)
+        if v(c, "./Fades/IsDefaultFadeOut") != "false" or fo > 0:
+            fo = max(fo, 0.003 * SR)
         kk = min(int(fi), len(seg)); seg[:kk] *= np.linspace(0, 1, kk)
         kk = min(int(fo), len(seg)); seg[len(seg) - kk:] *= np.linspace(1, 0, kk)
         i = int(round(s * spb * SR))
