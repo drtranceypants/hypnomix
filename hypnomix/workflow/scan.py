@@ -17,11 +17,17 @@ Groups (each can run on its own with --only, so several agents can scan in paral
   effects  distortion in recordings and device chains,
            sidechain compressors, device-chain audit            (distortion, sidechain, audit)
   mix      loudness, true peak, release checks, translation     (measure, qc, translate; needs --mix)
+  noise    takes whose big clip-gain boost lifts their noise floor into the mix
+  intent   "is this deliberate?": every automated control, big clip gains, hard pans, switched-off tracks
+  stems    with --deep only (renders every track): frequency fights between tracks, mic phase and polarity
+
+The vocals group also measures how far doubles and harmonies sit from the lead in time (vocalign).
 
 A FOLDER of audio files is scanned in two groups instead:
 
   recordings  per file: clipping, hot or very quiet levels, noise floor, DC offset, clicks
-  stems       how the files sit together: frequency fights between parts          (masking)
+  stems       how the files sit together: each frequency fight between two parts as its own finding
+              (masking), and phase / polarity between files that record the same source (align)
 
 Output folder (default hypnomix-out/scan/<song>/):
   <group>.json      normalised findings from that group (id, severity, track, where, problem, fix, applies)
@@ -45,10 +51,11 @@ from pathlib import Path
 
 from hypnomix.core.paths import out_at
 
-GROUPS = ["files", "clips", "timing", "vocals", "effects", "mix"]
+GROUPS = ["files", "clips", "timing", "vocals", "effects", "mix", "noise", "intent", "stems"]
 FOLDER_GROUPS = ["recordings", "stems"]
 AUDIO_EXT = (".wav", ".aif", ".aiff", ".flac")
-ALL_GROUPS = GROUPS + FOLDER_GROUPS
+PLAN_GROUPS = ["prep", "automix", "master"]         # written by `prep|automix|master --plan`
+ALL_GROUPS = list(dict.fromkeys(GROUPS + FOLDER_GROUPS + PLAN_GROUPS))
 SEV = {"high": 0, "medium": 1, "low": 2, "info": 3}
 VOCAL_LABELS = ("Lead Vocal", "Vocal", "Harmony", "Backing Vocal")
 
@@ -188,10 +195,44 @@ def g_vocals(als, od, a, role):
             if not a.ref and not any("tuning measured from the singer" in n for n in notes):
                 notes.append("vocals: tuning measured from the singers themselves; give --ref MIX.wav for a "
                              "reliable grid")
-    if findings:
+    if lead in files and len(files) > 1:
+        try:
+            d_f, d_n = doubles(files, lead)
+            notes += d_n
+        except Exception as e:
+            d_f = []
+            notes.append(f"doubles: failed ({e})")
+        tuned = bool(findings)
+        findings += d_f
+    else:
+        tuned = bool(findings)
+    if tuned:
         notes.append(f"vocals: key {findings[0]['key']} (confirm it before tuning: --key); lead taken as "
                      f"'{lead}' (harmonies are checked against it; --lead-track to change)")
     return findings, notes
+
+
+def doubles(files, lead):
+    """How far each other vocal sits from the lead in time, where both sing (median and worst 5%)."""
+    from hypnomix.core import dsp
+    from hypnomix.studio import vocalign as V
+    yl, sr = dsp.load(files[lead], 22050)
+    out, notes = [], []
+    for n, (t, p) in enumerate(((t, p) for t, p in files.items() if t != lead), 1):
+        yo, _ = dsp.load(p, 22050)
+        m = min(len(yl), len(yo))
+        med, p95 = V.residual_ms(yl[:m].mean(1), yo[:m].mean(1), sr, 150)
+        if med < 20 and p95 < 60:
+            continue
+        sev = "medium" if med >= 35 or p95 >= 90 else "low"
+        out.append(dict(id=f"doubles-{n}", tool="vocalign", kind="vocal-timing", severity=sev, track=t, where="",
+                        problem=f"sits {med:.0f} ms from the lead on average where both sing (worst moments {p95:.0f} ms): "
+                                "words start and end apart, which smears consonants",
+                        fix="time-align it to the lead, pitch untouched, into a new file (vocalign). Skip this if it is a "
+                            "counter-melody or sings different words: it is only for parts that follow the lead.",
+                        applies="audio", run=["vocalign", str(files[lead]), str(p), "--trim-tails", "--out", "{out}"]))
+    notes.append(f"doubles: {len(files) - 1} vocal(s) compared with the lead '{lead}' for timing")
+    return out, notes
 
 
 def sung_seconds(path, floor_db=-45.0):
@@ -265,6 +306,26 @@ def g_mix(als, od, a):
         save(od / "raw" / f"{tool}.txt", out)
         if tool == "measure":
             findings += target_check(out)
+    try:  # sections: needs the tempo, which a set knows
+        from hypnomix.session import automation as aa
+        from hypnomix.ears import sections as SE
+        tempo = float(aa.load(als).getroot().find(".//Tempo/Manual").get("Value")) if Path(als).is_file() else None
+        if tempo:
+            r = SE.analyse(a.mix, bpm=tempo)
+            save(od / "raw" / "sections.json", json.dumps(r, indent=1, default=str))
+            findings += [f for f in r["findings"] if f.get("severity") != "info"]
+    except Exception as e:
+        findings.append(dict(id="sections-0", tool="sections", kind="sections", severity="info", track="mix", where="",
+                             problem=f"section check failed ({e})", fix="", applies="info"))
+    if a.like:
+        try:
+            from hypnomix.ears import match as MA
+            r = MA.analyse(a.mix, a.like)
+            save(od / "raw" / "match.json", json.dumps(r, indent=1, default=str))
+            findings += r["findings"]
+        except Exception as e:
+            findings.append(dict(id="match-0", tool="match", kind="match", severity="info", track="mix", where="",
+                                 problem=f"reference comparison failed ({e})", fix="", applies="info"))
         sev = "high" if (tool == "qc" and code != 0) else "info"
         findings.append(dict(id=f"mix-{n}", tool=tool, kind=tool, severity=sev, track="mix", where="",
                              problem=f"{tool} of the mix" + (" FAILED release checks" if sev == "high" else ""),
@@ -355,6 +416,25 @@ def check_recording(path):
                     "level (hiss, room or preamp noise between phrases; check by ear that it is noise, not a pad)",
                     "gentle spectral de-hiss plus soft gate into a new file; listen for dulled highs and cut-off tails",
                     ["dehiss", path, "{out}/" + path.stem + " (dehiss).wav"]))
+    try:  # voices: sibilance and breaths, as proposals
+        from hypnomix.engineer import roles
+        role, _ = roles.classify(path.stem, y, sr)
+        if role in ("lead_vocal", "backing_vocal"):
+            from hypnomix.studio import deess as DE, breaths as BR
+            ev = DE.analyse(y, sr)
+            if len(ev) >= 5:
+                worst = max(e["over_db"] for e in ev)
+                out.append(("sibilance", "medium" if len(ev) >= 40 else "low",
+                            f"{len(ev)} harsh 's' / 't' sounds (the strongest {worst:.0f} dB over the voice's own level)",
+                            "turn down only the high band during those moments (de-ess) into a new file; listen that "
+                            "the words stay crisp, not lispy", ["deess", path, "{out}/" + path.stem + " (deess).wav"]))
+            br = BR.analyse(y, sr)
+            if len(br) >= 4:
+                out.append(("breaths", "low", f"{len(br)} breaths between phrases",
+                            "turn them down 8 dB (not off) into a new file. Skip if the breaths are part of the feel.",
+                            ["breaths", path, "{out}/" + path.stem + " (breaths).wav"]))
+    except Exception as e:
+        out.append(("vocal-check", "info", f"sibilance and breath check failed ({e})", "", None))
     return out, dict(peak_db=round(peak_db, 1), level_db=round(level, 1), floor_db=round(floor, 1))
 
 
@@ -388,18 +468,224 @@ def g_recordings(folder, od, a):
     return findings, notes
 
 
+PAIR_WORDS = {"in", "out", "top", "bottom", "btm", "bot", "di", "amp", "mic", "close", "far", "room", "inside",
+              "outside", "front", "back", "1", "2", "a", "b"}
+
+
+def pair_base(name):
+    """'Kick In' -> 'kick': the name without the words that tell two mics on one source apart."""
+    words = [w for w in re.split(r"[\s_\-.()]+", Path(name).stem.lower()) if w and not w.isdigit() or w in ("1", "2")]
+    left = [w for w in words if w not in PAIR_WORDS]
+    return " ".join(left) if len(left) < len(words) else None
+
+
+def phase_findings(stems, sr, paths=None):
+    """Files that record the same source (by name): time offset and polarity between them."""
+    from hypnomix.engineer import align as A
+    groups, out = {}, []
+    for n, y in stems:
+        b = pair_base(n)
+        if b:
+            groups.setdefault(b, []).append((n, y))
+    k = 0
+    for base, members in groups.items():
+        ref_n, ref = members[0]
+        for n, y in members[1:]:
+            m = min(len(ref), len(y))
+            lag, pol, peak = A.offset(ref[:m], y[:m], sr, 20)
+            if peak < 0.2:          # not the same source after all
+                continue
+            ms = lag / sr * 1000
+            if pol > 0 and abs(ms) < 0.25:
+                continue
+            k += 1
+            what = ("polarity is flipped against it" if pol < 0 else "") + (" and " if pol < 0 and abs(ms) >= 0.25 else "") \
+                + (f"it is {abs(ms):.2f} ms {'late' if ms > 0 else 'early'}" if abs(ms) >= 0.25 else "")
+            f = dict(id=f"phase-{k}", tool="align", kind="phase", severity="medium" if pol < 0 else "low", track=n,
+                     where="", problem=f"same source as '{ref_n}': {what}. Summed, the low end partly cancels.",
+                     fix=("flip its polarity" if pol < 0 else "") + (" and " if pol < 0 and abs(ms) >= 0.25 else "")
+                         + (f"shift it {abs(ms):.2f} ms {'earlier' if ms > 0 else 'later'}" if abs(ms) >= 0.25 else "")
+                         + ". Listen to the two together: the low end should get fuller, not thinner.",
+                     applies="manual")
+            if paths and ref_n in paths and n in paths:
+                f["applies"] = "audio"
+                f["run"] = ["align", str(paths[ref_n]), str(paths[n]), "--apply", "--out", "{out}"]
+            out.append(f)
+    return out
+
+
+def stem_findings(stems, sr, paths=None, top=8):
+    """Masking as one finding per fight, plus phase between same-source files."""
+    from hypnomix.engineer import masking as M
+    collisions, role_of = M.analyse(stems, sr)
+    same = lambda c: pair_base(c["a"]) is not None and pair_base(c["a"]) == pair_base(c["b"])
+    collisions = [c for c in collisions if not same(c)]      # two mics on one source share every band by design
+    out = []
+    for k, c in enumerate(collisions[:top], 1):
+        out.append(dict(id=f"mask-{k}", tool="masking", kind="masking", severity="medium" if c["frac"] >= 0.5 else "low",
+                        track=c["give"], where="",
+                        problem=f"fights with '{c['keep']}' in {c['band_name']}: similar level there "
+                                f"{int(c['frac'] * 100)}% of the time both play ({c['seconds']:.0f} s)",
+                        fix=M.advice(c).replace("**", "") + ". Listen for the part that should lead getting clearer, "
+                            "not for the cut itself.", applies="manual"))
+    notes = [f"stems: {len(stems)} parts compared; roles by name then sound: "
+             + ", ".join(f"{n}={r}" for n, r in list(role_of.items())[:12])]
+    if len(collisions) > top:
+        notes.append(f"stems: {len(collisions) - top} smaller frequency fights not listed (hypnomix masking shows all)")
+    return out + phase_findings(stems, sr, paths), notes
+
+
 def g_stems(folder, od, a):
-    if len(audio_files(folder)) < 2:
+    from hypnomix.engineer import masking as M
+    files = audio_files(folder)
+    if len(files) < 2:
         return [], ["stems: fewer than two files, nothing to compare"]
-    rep_md = od / "raw" / "masking.md"
-    code, out = hx("masking", folder, "--out", rep_md)
-    out = strip_warnings(out)
-    save(od / "raw" / "masking.txt", out)
-    if code != 0:
-        return [], [f"masking failed: {out[-300:]}"]
-    return [dict(id="stems-1", tool="masking", kind="masking", severity="info", track="", where="",
-                 problem="frequency fights between the parts (who should give way, and the cut that does it)",
-                 fix=out.strip()[:1800], applies="info")], []
+    stems, sr = M.load_stems(folder)
+    return stem_findings(stems, sr, {p.stem: p for p in files})
+
+
+# ---------------------------------------------------------------- deeper checks on a set
+def g_stems_set(als, od, a):
+    """--deep: render every audio track that is on (clip gain, fades, warps; no devices) and compare them."""
+    if not a.deep:
+        return [], ["stems: skipped (add --deep to render every track and check frequency fights and mic phase)"]
+    from hypnomix.engineer import masking as M
+    rd = od / "raw" / "renders-all"
+    code, out = hx("render", als, "--out", rd)
+    save(od / "raw" / "render-all.txt", strip_warnings(out))
+    on = {re.sub(r'[\\/:*?"<>|]', "-", t) for t in tracks_on(als)}
+    keep = [p for p in audio_files(rd)] if rd.exists() else []
+    if len(keep) < 2:
+        return [], [f"stems: render failed or fewer than two tracks ({out[-200:]})"]
+    stems, sr = M.load_stems(rd)
+    stems = [(n, y) for n, y in stems if n in on]
+    if len(stems) < 2:
+        return [], ["stems: fewer than two switched-on audio tracks with clips"]
+    f, notes = stem_findings(stems, sr)
+    notes.append("stems: tracks were rendered without their effects, so EQ already on a track is not counted")
+    return f, notes
+
+
+def g_noise(als, od, a):
+    """Clips boosted a lot with clip gain: the boost lifts the take's own noise floor by the same amount."""
+    import math
+    import numpy as np
+    import soundfile as sf
+    from hypnomix.session import automation as aa
+    from hypnomix.session import smooth as S
+    root = aa.load(als).getroot()
+    bpb = aa.BPB
+    tempo = float(root.find(".//Tempo/Manual").get("Value"))
+    floors, rows = {}, {}
+
+    def floor_of(path):
+        if path not in floors:
+            try:
+                y, sr = sf.read(str(path), dtype="float32", always_2d=True)
+                m = y.mean(1)
+                blk = int(sr * 0.05)
+                n = max(1, len(m) // blk)
+                db = 10 * np.log10((m[: n * blk] ** 2).reshape(n, blk).mean(1) + 1e-14)
+                live = db[db > -90]
+                steady = len(live) > 20 and float(np.percentile(live, 15) - np.percentile(live, 2)) < 4
+                floors[path] = (float(np.percentile(live, 5)), steady) if len(live) else (None, False)
+            except Exception:
+                floors[path] = (None, False)
+        return floors[path]
+    for t in root.find(".//Tracks"):
+        if t.tag != "AudioTrack" or not S.track_on(t):
+            continue
+        name = t.find("./Name/EffectiveName").get("Value")
+        for c in t.findall(".//ArrangerAutomation/Events/AudioClip"):
+            ci = S.clip_info(c, Path(als).parent, tempo)
+            if ci["disabled"] or not ci["gain"] or ci["gain"] < 3.98 or not ci["path"].exists():   # +12 dB and up
+                continue
+            g = 20 * math.log10(ci["gain"])
+            fl, steady = floor_of(ci["path"])
+            if fl is None or fl + g < -55:
+                continue
+            r = rows.setdefault((name, str(ci["path"])), dict(gain=g, floor=fl, steady=steady, beats=[]))
+            r["gain"] = max(r["gain"], g)
+            r["beats"].append(ci["start"])
+    out = []
+    for n, ((track, path), r) in enumerate(sorted(rows.items(), key=lambda kv: -(kv[1]["floor"] + kv[1]["gain"])), 1):
+        eff = r["floor"] + r["gain"]
+        b = min(r["beats"])
+        where = f"{int(b // bpb) + 1}.{int(b % bpb) + 1}.{int(round((b % 1) * 100)):02d}"
+        out.append(dict(id=f"noise-{n}", tool="dehiss", kind="boosted-noise", track=track, where=where,
+                        severity="high" if eff > -40 else "medium" if eff > -48 else "low",
+                        problem=f"{len(r['beats'])} clip(s) of '{Path(path).name}' are boosted up to +{r['gain']:.0f} dB with "
+                                f"clip gain; the quietest moments of that file sit at {r['floor']:.0f} dBFS, so they play "
+                                f"at about {eff:.0f} dBFS" + ("" if r["steady"] else " (may be quiet playing, not noise: listen)"),
+                        fix=f"listen to the gaps between phrases there. If it is hiss: `hypnomix dehiss \"{path}\"` makes a "
+                            "cleaned copy to swap in (or `hypnomix render --sources`); or record that part hotter. "
+                            "Turning the clip down hides the part, not the noise.",
+                        applies="manual"))
+    return out, [f"noise: {len(rows)} boosted take(s) of +12 dB or more with an audible floor"] if rows else []
+
+
+def g_intent(als, od, a):
+    """Things that look unusual but are probably choices. Listed as questions, never as problems."""
+    import math
+    from hypnomix.session import automation as aa
+    from hypnomix.session import smooth as S
+    root = aa.load(als).getroot()
+    bpb = aa.BPB
+    bar = lambda beats: max(1.0, beats / bpb + 1)
+    out, n = [], 0
+
+    def add(track, problem, where=""):
+        nonlocal n
+        n += 1
+        out.append(dict(id=f"intent-{n}", tool="intent", kind="deliberate?", severity="info", track=track, where=where,
+                        problem=problem, applies="info",
+                        fix="If this is on purpose, nothing to do: tools will not change it. To have it shown on every "
+                            "review: hypnomix prefs set protect.notes=\"...\""))
+    extra = 0
+    for t in aa.tracks(root):
+        if t is None:
+            continue
+        name = aa.tname(t)
+        parent = t.find("./AutomationEnvelopes/Envelopes")
+        tg = aa.targets(t)
+        for env in (parent if parent is not None else []):
+            pid = env.find("./EnvelopeTarget/PointeeId").get("Value")
+            if pid not in tg:
+                continue
+            lab, _, vol_like = tg[pid]
+            pts = []
+            for e in env.find("./Automation/Events"):
+                try:
+                    tm, v = float(e.get("Time")), float(e.get("Value"))
+                except (TypeError, ValueError):
+                    continue
+                if tm > -1e6:
+                    pts.append((tm, v))
+            if len(pts) < 2:
+                continue
+            vals = [v for _, v in pts]
+            if max(vals) - min(vals) < 1e-6:
+                continue
+            if len(out) >= 30:
+                extra += 1
+                continue
+            if vol_like:
+                d = lambda v: f"{20 * math.log10(v):+.1f} dB" if v > 0 else "silence"
+                rng = f"{d(min(vals))} to {d(max(vals))}"
+            else:
+                rng = f"{min(vals):.3g} to {max(vals):.3g}"
+            add(name, f"{lab} is automated from bar {int(bar(pts[0][0]))} to {int(bar(pts[-1][0]))} ({len(pts)} points, {rng})",
+                f"{int(bar(pts[0][0]))}.1.00")
+        if t.tag == "AudioTrack":
+            if not S.track_on(t) and t.find(".//ArrangerAutomation/Events/AudioClip") is not None:
+                add(name, "the track is switched off but has clips (it is not checked and not heard)")
+            pan = t.find("./DeviceChain/Mixer/Pan/Manual")
+            if pan is not None and abs(float(pan.get("Value"))) >= 0.9 and S.track_on(t):
+                add(name, f"panned hard {'right' if float(pan.get('Value')) > 0 else 'left'}")
+    notes = [f"intent: {n} thing(s) that look deliberate, listed as questions"]
+    if extra:
+        notes.append(f"intent: {extra} more automated controls not listed (hypnomix automation list shows all)")
+    return out, notes
 
 
 # ---------------------------------------------------------------- merge + review
@@ -493,12 +779,16 @@ def main():
     ap.add_argument("--mix", help="a bounce of the full mix (loudness, true peak, release checks)")
     ap.add_argument("--ref", help="mix or instrumental for tuning and key (vocals); defaults to --mix")
     ap.add_argument("--key", help='song key for the vocal check, e.g. "F# major"')
+    ap.add_argument("--like", metavar="REFERENCE.wav", help="a finished song you want this mix to sit next to: "
+                    "tone, dynamics and width differences become proposals (needs --mix)")
     ap.add_argument("--out", help="output folder (default hypnomix-out/scan/<song>)")
-    ap.add_argument("--only", action="append", choices=ALL_GROUPS, help="run only these groups (repeatable)")
+    ap.add_argument("--only", action="append", choices=sorted(set(GROUPS + FOLDER_GROUPS)), help="run only these groups (repeatable)")
     ap.add_argument("--vocal-track", action="append", help="vocal tracks to check (default: from `name`)")
     ap.add_argument("--lead-track", help="the lead vocal (default: from `name`, else the vocal that sings most)")
     ap.add_argument("--timing-track", action="append", help="instrument tracks for timing (default: from `name`)")
     ap.add_argument("--jobs", type=int, default=4, help="parallel jobs (default 4)")
+    ap.add_argument("--deep", action="store_true", help="a set: also render every track and check frequency fights "
+                    "and mic phase between tracks (slower)")
     ap.add_argument("--merge", metavar="DIR", help="only rebuild findings.json + REVIEW.md from DIR")
     a = ap.parse_args()
     if a.merge:
@@ -540,7 +830,9 @@ def main():
         fn = {"files": lambda: g_files(als, od, a), "clips": lambda: g_clips(als, od, a),
               "timing": lambda: g_timing(als, od, a, role), "vocals": lambda: g_vocals(als, od, a, role),
               "effects": lambda: g_effects(als, od, a), "mix": lambda: g_mix(als, od, a),
-              "recordings": lambda: g_recordings(als, od, a), "stems": lambda: g_stems(als, od, a)}[g]
+              "noise": lambda: g_noise(als, od, a), "intent": lambda: g_intent(als, od, a),
+              "recordings": lambda: g_recordings(als, od, a),
+              "stems": lambda: (g_stems(als, od, a) if folder else g_stems_set(als, od, a))}[g]
         try:
             f, notes = fn()
         except Exception as e:  # one failing check must not sink the scan

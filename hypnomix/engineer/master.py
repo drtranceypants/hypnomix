@@ -73,15 +73,33 @@ def top_and_tail(y, sr, log):
     return y
 
 
-def master(y, sr, target=-14.0, ceiling=-1.0, reference=None, match=0.6, glue_gr=1.5, warmth=0.0, width=1.0, log=None):
+KEYS = {"Subsonic clean-up": "hpf", "Reference tone match": "match", "Glue compression": "glue",
+        "Mono low end": "monolow", "Stereo width": "width", "Warmth": "warmth", "Limiter": "limiter",
+        "Codec-safe ceiling": "limiter", "Top and tail": "toptail"}
+
+
+def master(y, sr, target=-14.0, ceiling=-1.0, reference=None, match=0.6, glue_gr=1.5, warmth=0.0, width=1.0, log=None,
+           only=None):
+    """only: a set of stage keys (hpf, match, glue, monolow, width, warmth, limiter, toptail) to run and nothing
+    else: the approved moves of a plan. None = the whole chain."""
     log = log if log is not None else []
+    on = lambda k: only is None or k in only
+    if not on("match"):
+        reference = None
+    if not on("glue"):
+        glue_gr = 0
+    if not on("warmth"):
+        warmth = 0.0
+    if not on("width"):
+        width = 1.0
     st = dict(hpf_hz=22)                                     # the settings, as numbers (used by `hypnomix chain`)
     y = dsp.stereo(y)
     before = dict(lufs=dsp.lufs(y, sr), tp=dsp.true_peak(y, sr), corr_low=dsp.correlation(y, sr, 150))
 
-    y = dsp.filt(y, dsp.highpass(22, sr, 2))
-    log.append(("Subsonic clean-up", "high-pass 22 Hz, 12 dB/oct",
-                "Energy below ~25 Hz is felt by no speaker but still eats limiter headroom."))
+    if on("hpf"):
+        y = dsp.filt(y, dsp.highpass(22, sr, 2))
+        log.append(("Subsonic clean-up", "high-pass 22 Hz, 12 dB/oct",
+                    "Energy below ~25 Hz is felt by no speaker but still eats limiter headroom."))
 
     if reference is not None:
         r, _ = dsp.load(reference, sr)
@@ -109,7 +127,7 @@ def master(y, sr, target=-14.0, ceiling=-1.0, reference=None, match=0.6, glue_gr
                     "1–2 dB is glue; more is an effect."))
 
     cl = dsp.correlation(y, sr, 150)
-    if cl < 0.97:
+    if cl < 0.97 and on("monolow"):
         y = dsp.mono_below(y, sr, 120)
         st["bass_mono_hz"] = 120
         log.append(("Mono low end", f"everything below 120 Hz summed to mono (low-end L/R correlation was {cl:.2f})",
@@ -126,6 +144,11 @@ def master(y, sr, target=-14.0, ceiling=-1.0, reference=None, match=0.6, glue_gr
         log.append(("Warmth", f"tanh saturation, drive {warmth * 4:.1f} dB at 35% mix",
                     "Gentle harmonics make bass audible on small speakers and round off harsh peaks before the limiter."))
 
+    if not on("limiter"):                      # approved moves only, loudness left where the mix was
+        out = top_and_tail(y, sr, log) if on("toptail") else y
+        after = dict(lufs=dsp.lufs(out, sr), tp=dsp.true_peak(out, sr), corr_low=dsp.correlation(out, sr, 150),
+                     avg_gr=0.0, max_gr=0.0, pct_limiting=0.0, settings=st)
+        return out, before, after, log
     out, gr, g, L = loudness_to_target(y, sr, target, ceiling)
     # codec-safe: encode test copies; if AAC/MP3 decoding overshoots, lower the ceiling and limit again
     used_ceiling, first_worst, worst = ceiling, None, None
@@ -149,7 +172,8 @@ def master(y, sr, target=-14.0, ceiling=-1.0, reference=None, match=0.6, glue_gr
                                           + (f" (now {worst:+.2f} dBTP after encoding)" if worst is not None else ""),
                     "Lossy encoders (Spotify, Apple Music, YouTube) rebuild the waveform and overshoot the original "
                     "peaks; a dense master can clip after encoding even when the WAV doesn't."))
-    out = top_and_tail(out, sr, log)
+    if on("toptail"):
+        out = top_and_tail(out, sr, log)
     tp = dsp.true_peak(out, sr)
     after = dict(lufs=L, tp=tp, corr_low=dsp.correlation(out, sr, 150), avg_gr=avg_gr, max_gr=float(-gr.min()), pct_limiting=pct)
     st["limiter"] = dict(gain_db=g, ceiling_dbtp=used_ceiling, release_ms=80)
@@ -191,14 +215,43 @@ def main():
     ap.add_argument("--width", type=float, default=1.0)
     ap.add_argument("--cd", action="store_true", help="also write a 16-bit / 44.1 kHz dithered copy")
     ap.add_argument("--out")
+    ap.add_argument("--plan", nargs="?", const=True, metavar="SCAN_DIR",
+                    help="change nothing: list every stage of the chain as a finding for review")
+    ap.add_argument("--only", help="run only these stages: " + ", ".join(sorted(set(KEYS.values()))))
     a = ap.parse_args()
     y, sr = dsp.load(a.mix)
     name = Path(a.mix).stem
+    only = {s.strip() for s in a.only.split(",") if s.strip()} if a.only else None
+    if only and only - set(KEYS.values()):
+        sys.exit(f"unknown stage(s): {', '.join(sorted(only - set(KEYS.values())))}")
+    if a.plan:
+        import time
+        from hypnomix.workflow import plan as P
+        t0 = time.time()
+        print(f"planning the master of {name} (nothing is written) …", file=sys.stderr)
+        _, before, after, log = master(y, sr, a.target, a.ceiling, a.reference, a.match, a.glue, a.warmth, a.width)
+        settings = dict(target=a.target, ceiling=a.ceiling, reference=a.reference, match=a.match, glue=a.glue,
+                        warmth=a.warmth, width=a.width)
+        findings = [dict(kind=KEYS.get(what, "stage"), severity="medium" if KEYS.get(what) == "limiter" else "low",
+                         track=Path(a.mix).name, problem=f"{what}: {setting}", fix=why,
+                         plan=dict(tool="master", file=str(Path(a.mix).resolve()), key=KEYS.get(what, "stage"), **settings))
+                    for what, setting, why in log]
+        plan_notes = [f"master plan: the mix is {before['lufs']:.1f} LUFS, {before['tp']:.1f} dBTP; with every stage it "
+                 f"would be {after['lufs']:.1f} LUFS, {after['tp']:.1f} dBTP (limiter avg {after['avg_gr']:.1f} dB "
+                 f"when working)", "approved stages run in chain order into fixed/master/; without the limiter the "
+                 "loudness stays where the mix is"]
+        P.write(P.scan_dir(a.plan, a.mix, " master"), "master", a.mix, findings, plan_notes, time.time() - t0)
+        return
     print(f"mastering {name} → {a.target} LUFS, {a.ceiling} dBTP …", file=sys.stderr)
-    out, before, after, log = master(y, sr, a.target, a.ceiling, a.reference, a.match, a.glue, a.warmth, a.width)
+    out, before, after, log = master(y, sr, a.target, a.ceiling, a.reference, a.match, a.glue, a.warmth, a.width,
+                                     only=only)
     od = out_at(a.out, "master")
     od.mkdir(parents=True, exist_ok=True)
-    files = [dsp.save(od / f"{name} (master).wav", out, sr, 24)]
+    dest, k = od / f"{name} (master).wav", 1
+    while only and dest.exists():              # approved-moves runs never overwrite an earlier result
+        k += 1
+        dest = od / f"{name} (master {k}).wav"
+    files = [dsp.save(dest, out, sr, 24)]
     if a.cd:
         cd, _ = (out, sr) if sr == 44100 else (dsp.load(files[0], 44100))
         files.append(dsp.save(od / f"{name} (master 16-44).wav", cd, 44100, 16))

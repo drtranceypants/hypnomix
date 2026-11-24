@@ -19,6 +19,8 @@ Per stem, in this order (each step only acts where it finds a problem, and every
 
 Usage:
     hypnomix prep STEMS_DIR [--out DIR] [--keep-levels] [--no-breaths] [--no-silence] [--no-noise]
+    hypnomix prep STEMS_DIR --plan [SCAN_DIR]     change nothing: every move becomes a finding to review
+    hypnomix prep FILE.wav --steps declick,noise  only these steps, on one file (what `fix` runs for approved moves)
 """
 from hypnomix.core.paths import out_at
 import argparse, re, sys
@@ -294,26 +296,39 @@ def denoise(y, sr, log, role):
 
 
 # ---------------------------------------------------------------- the pass
+STEPS = ["declip", "rumble", "declick", "plosives", "breaths", "noise", "silence", "mono", "gain"]
+STEP_OF = {"hum": "noise", "hiss": "noise"}          # log prefix -> step name, where they differ
+
+
 def prep_stem(name, y, sr, role, opts):
+    """opts["steps"]: a set of step names to run and nothing else (the approved moves of a plan); None = all."""
+    only = opts.get("steps")
+    on = lambda s: only is None or s in only
     log = []
-    y = declip(y, sr, log)                     # first: any filtering would round off the flat tops it looks for
-    y = y - y.mean(axis=0)
-    y = dsp.filt(y, dsp.highpass(25, sr, 2))
-    if role not in DRUMS:
+    if on("declip"):
+        y = declip(y, sr, log)                 # first: any filtering would round off the flat tops it looks for
+    if on("rumble"):
+        dc = float(np.max(np.abs(y.mean(axis=0))))
+        y = y - y.mean(axis=0)
+        y = dsp.filt(y, dsp.highpass(25, sr, 2))
+        if dc > 0.003:
+            log.append(f"rumble: DC offset of {dc * 100:.1f}% of full scale removed, high-pass at 25 Hz")
+    if role not in DRUMS and on("declick"):
         y = declick(y, sr, log)
     if role in VOCAL:
-        y = deplosive(y, sr, log)
-        if opts.get("breaths", True):
+        if on("plosives"):
+            y = deplosive(y, sr, log)
+        if opts.get("breaths", True) and on("breaths"):
             y = breaths(y, sr, log)
-    if opts.get("noise", True):
+    if opts.get("noise", True) and on("noise"):
         y = denoise(y, sr, log, role)
-    if opts.get("silence", True) and role not in ("pad", "fx"):
+    if opts.get("silence", True) and role not in ("pad", "fx") and on("silence"):
         y = strip_silence(y, sr, log)
     y = edge_fades(y, sr)
-    if y.shape[1] == 2 and np.allclose(y[:, 0], y[:, 1], atol=1e-4):
+    if on("mono") and y.shape[1] == 2 and np.allclose(y[:, 0], y[:, 1], atol=1e-4):
         y = y[:, :1]
         log.append("mono: left and right were identical, saved as a mono file")
-    if not opts.get("keep_levels"):
+    if not opts.get("keep_levels") and on("gain"):
         L = dsp.active_lufs(y, sr)
         g = -20 - L
         pk = dsp.sample_peak(y) + g
@@ -358,12 +373,93 @@ def prep(folder, outdir=None, **opts):
     return od, out, "\n".join(report)
 
 
+WHY = {
+    "declip": ("high", "flattened waveform tops are rebuilt by curve-fitting across them. A repair, not a cure: "
+                       "re-record if you can. Listen for dull or 'soft' peaks."),
+    "rumble": ("low", "DC offset and energy under 25 Hz eat headroom and cause clicks at edits. Inaudible when it works."),
+    "declick": ("medium", "isolated clicks and pops are replaced by predicting the waveform from both sides. "
+                          "Listen that consonants and pick attacks are still crisp."),
+    "plosives": ("medium", "the low thump of 'p' and 'b' is removed only during each burst. Listen that the word "
+                           "still has its weight."),
+    "breaths": ("low", "breaths between phrases are turned down, not removed, so it still sounds like a person. "
+                       "Skip this if the breaths are part of the performance."),
+    "noise": ("medium", "steady hum or hiss is reduced, only because this file measured noisy. Listen for dulled "
+                        "highs or a 'watery' sound in quiet moments."),
+    "silence": ("low", "gaps where nothing plays are made silent with short fades, so the mix isn't a stack of noise "
+                       "floors. Listen that no tail or quiet entry is cut off."),
+    "mono": ("low", "left and right are identical, so the file is saved as mono. No audible change."),
+    "gain": ("low", "the level is set for mixing (about -20 LUFS while playing). Changes loudness only."),
+}
+
+
+def plan(folder, plan_dir=None, **opts):
+    """Every move `prep` would make on this folder, as findings in a scan folder. Writes no audio."""
+    import time
+    from hypnomix.workflow import plan as P
+    t0 = time.time()
+    files = sorted(p for p in Path(folder).iterdir() if p.suffix.lower() in dsp.AUDIO_EXT and not p.name.startswith("."))
+    if not files:
+        sys.exit(f"no audio in {folder}")
+    loaded = []
+    for p in files:
+        y, sr = dsp.load(p)
+        if np.max(np.abs(y)) >= 1e-5:
+            loaded.append((p, y, sr))
+    roles_of = roles.classify_all([(p.stem, y) for p, y, _ in loaded], loaded[0][2])
+    findings, notes = [], []
+    for p, y, sr in loaded:
+        role, how = roles_of[p.stem]
+        print(f"  planning {p.name} ({role}) …", file=sys.stderr)
+        _, log = prep_stem(p.stem, y, sr, role, opts)
+        for line in log:
+            key, _, text_ = line.partition(": ")
+            step = STEP_OF.get(key, key)
+            sev, why = WHY.get(step, ("low", ""))
+            findings.append(dict(kind=step, severity=sev, track=p.name, problem=f"{text_} ({role.replace('_', ' ')}, by {how})",
+                                 fix=why, plan=dict(tool="prep", file=str(p.resolve()), step=step)))
+    notes.append(f"prep plan: {len(loaded)} files; approved steps are applied per file into fixed/prep/ "
+                 "(same length and start as the original)")
+    return P.write(P.scan_dir(plan_dir, folder), "prep", folder, findings, notes, time.time() - t0)
+
+
+def prep_file(path, steps, outdir):
+    """Run only `steps` on one file and save `<name> (prep).wav` in outdir. Used for approved plan moves."""
+    path = Path(path)
+    y, sr = dsp.load(path)
+    role, _ = roles.classify_all([(path.stem, y)], sr)[path.stem]
+    z, log = prep_stem(path.stem, y, sr, role, dict(steps=set(steps)))
+    od = Path(outdir)
+    od.mkdir(parents=True, exist_ok=True)
+    dest, k = od / f"{path.stem} (prep).wav", 1
+    while dest.exists():
+        k += 1
+        dest = od / f"{path.stem} (prep {k}).wav"
+    dsp.save(dest, z, sr, 24)
+    return dest, log
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix prep", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("folder"); ap.add_argument("--out")
     ap.add_argument("--keep-levels", action="store_true"); ap.add_argument("--no-breaths", action="store_true")
     ap.add_argument("--no-silence", action="store_true"); ap.add_argument("--no-noise", action="store_true")
+    ap.add_argument("--plan", nargs="?", const=True, metavar="SCAN_DIR",
+                    help="change nothing: list every move as a finding for review (hypnomix review / fix)")
+    ap.add_argument("--steps", help=f"with a single FILE: run only these steps ({', '.join(STEPS)})")
     a = ap.parse_args()
+    if a.plan:
+        plan(a.folder, a.plan, keep_levels=a.keep_levels, breaths=not a.no_breaths, silence=not a.no_silence,
+             noise=not a.no_noise)
+        return
+    if Path(a.folder).is_file():
+        steps = [s.strip() for s in (a.steps or "").split(",") if s.strip()]
+        bad = [s for s in steps if s not in STEPS]
+        if not steps or bad:
+            sys.exit(f"a single file needs --steps from: {', '.join(STEPS)}" + (f" (unknown: {', '.join(bad)})" if bad else ""))
+        dest, log = prep_file(a.folder, steps, a.out or out_at(None, "prep", Path(a.folder).stem))
+        print("\n".join(f"- {x}" for x in log) or "- nothing to fix with those steps")
+        print(f"→ {dest}")
+        return
     od, files, text = prep(a.folder, a.out, keep_levels=a.keep_levels, breaths=not a.no_breaths,
                            silence=not a.no_silence, noise=not a.no_noise)
     print(text)

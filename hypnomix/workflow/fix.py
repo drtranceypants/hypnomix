@@ -195,7 +195,7 @@ def main():
     set_items = [f for f in chosen if f.get("applies") == "set"]
     audio_items = [f for f in chosen if f.get("applies") == "audio"]
     manual_items = [f for f in chosen if f.get("applies") in ("manual", "info")]
-    folder_mode = scan.get("mode") == "folder"
+    folder_mode = scan.get("mode") in ("folder", "file")
     orig = Path(data["set"]) if data.get("set") and not folder_mode else None
     src = Path(a.from_set).resolve() if a.from_set else orig
     out = None
@@ -203,7 +203,7 @@ def main():
     if orig and (set_items or audio_items):
         if not orig.exists():
             sys.exit(f"the scanned set is gone: {orig}")
-        if src.parent != orig.resolve().parent:
+        if src.resolve().parent != orig.resolve().parent:
             sys.exit(f"--from must be in the same folder as the scanned set ({orig.parent})")
         was = scan.get("set_mtime")
         if was and not a.from_set and abs(orig.stat().st_mtime - was) > 1 and not a.stale_ok:
@@ -304,6 +304,20 @@ def main():
                 if t.exists():
                     t.unlink()
 
+        if out:  # structure first: a broken set must never be opened
+            from hypnomix.session import check as C, diff as D
+            errs, warns, _ = C.check(out, src)
+            if errs:
+                bad = out.with_name(out.stem + " (BROKEN, do not open).als")
+                out.rename(bad)
+                failed += [f"structure check: {e}" for e in errs]
+                log += ["### structure check: FAILED", ""] + [f"- {e}" for e in errs] + [""]
+                print(f"check      FAILED: the written set is not sound. Renamed to {bad.name}; keep using the original.")
+                out = None
+            else:
+                rows = D.diff(src, out)
+                log += ["### what changed (old set → new set)", "", "```", D.text(rows), "```", ""]
+                print(f"check      structure OK; {len(rows)} change(s) written (listed in fix-log.md; `hypnomix diff` shows them)")
         if out and not a.no_verify:  # measure the new set: are the approved problems gone?
             log += ["### verify (the new set, measured again)", ""]
             for tool in applied_tools:
@@ -322,6 +336,46 @@ def main():
                 print("verify     " + line[2:])
                 log.append(line)
             log.append("")
+
+    # ---- approved moves of a plan (prep / automix / master --plan): run the tool with only those moves
+    planned = [f for f in audio_items if f.get("plan")]
+    audio_items = [f for f in audio_items if not f.get("plan")]
+    jobs = {}
+    for f in planned:
+        pl = f["plan"]
+        jobs.setdefault((pl["tool"], pl["file"]), []).append(f)
+    for (tool, source), items in jobs.items():
+        dest = sd / "fixed" / tool
+        k = 1
+        while tool != "prep" and dest.exists():       # one folder per run, never over an earlier result
+            k += 1
+            dest = sd / "fixed" / f"{tool} {k}"
+        if tool == "prep":
+            steps = sorted({f["plan"]["step"] for f in items})
+            code, txt = hx("prep", source, "--steps", ",".join(steps), "--out", dest)
+        elif tool == "automix":
+            kf = sd / "raw" / "approved-automix.json"
+            kf.parent.mkdir(parents=True, exist_ok=True)
+            kf.write_text(json.dumps(sorted(f["plan"]["key"] for f in items)))
+            code, txt = hx("automix", source, "--no-prep", "--no-master", "--only", kf, "--out", dest)
+        elif tool == "master":
+            pl = items[0]["plan"]
+            args = ["master", source, "--only", ",".join(sorted({f["plan"]["key"] for f in items})), "--out", dest,
+                    "--target", pl.get("target", -14), "--ceiling", pl.get("ceiling", -1), "--match", pl.get("match", 0.6),
+                    "--glue", pl.get("glue", 1.5), "--warmth", pl.get("warmth", 0), "--width", pl.get("width", 1)]
+            if pl.get("reference"):
+                args += ["--reference", pl["reference"]]
+            code, txt = hx(*args)
+        else:
+            code, txt = 1, f"unknown plan tool {tool}"
+        ok = code == 0
+        ids = ", ".join(f["id"] for f in items)
+        log += [f"### {tool} ({Path(source).name}): {'written to ' + str(dest) if ok else 'FAILED'}", "",
+                f"approved moves: {ids}", "", "```", txt.strip()[-1500:], "```", ""]
+        print(f"{tool:<11} {'ok' if ok else 'FAILED'}  {Path(source).name}: {len(items)} approved move(s)"
+              + (f"  → {dest}" if ok else ""))
+        if not ok:
+            failed.append(f"{ids}: {tool} failed on {Path(source).name}")
 
     for f in audio_items:
         if f.get("run"):  # folder scan: a repaired copy into SCAN_DIR/fixed

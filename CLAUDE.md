@@ -10,6 +10,8 @@ from. Claude Code specifics:
 - Subagent definitions in `agents/` (`.claude/agents` links there): **hypnomix-scanner** runs one scan group,
   read-only. Start several in one message to scan in parallel. Scanning is the only thing to hand to
   subagents: the review and every decision stay in the conversation with the person.
+- Before the review, `hypnomix ab DIR` builds before / after clips; `hypnomix review DIR --serve` gives the
+  person a page to listen and click on (start it with the preview tool or in their terminal, not a blocking shell).
 - Use the question tool for approve / skip / change, with your recommendation first, and record each answer
   with `hypnomix fix DIR --decide` as it is given.
 - `.mcp.json` connects the Ableton MCP (telemetry off) for creating tracks and loading devices. It drives the

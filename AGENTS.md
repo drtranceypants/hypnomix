@@ -35,9 +35,12 @@ Live restart.
 ```
 0. preferences   hypnomix prefs                  once per person; read it at the start of every session
 1. scan          hypnomix scan SET.als|FOLDER    read-only; every check in parallel → REVIEW.md
+   (or a plan)   prep|automix|master --plan      the moves a tool WOULD make, as findings; nothing written
+1b. previews     hypnomix ab DIR                 before/after clips per fix, level-matched
 2. review        with the person, item by item   hypnomix fix DIR --decide ID=approve|skip|change
+                 or the page                     hypnomix review DIR --serve   (they listen and click)
 3. apply         hypnomix fix DIR --approved …   only approved items, into NEW files; re-checks each one
-4. verify        read what fix printed           "no longer measured" / "still measured" / FAILED
+4. verify        read what fix printed           structure check, what changed, "no longer measured" / FAILED
 5. listen        the person A/Bs old vs new      you measured; only they can hear
 6. learn         hypnomix prefs learn DIR        counts what they approve and skip, for next time
 ```
@@ -61,12 +64,30 @@ Preferences shape proposals. They never replace asking: taste calls are always a
 |---|---|
 | a Live set | `hypnomix scan "Song.als" --mix mix.wav --ref instrumental.wav --key "F# major"` |
 | raw recordings or exported stems (any DAW) | `hypnomix scan "folder/"` |
-| a finished stereo mix only | `hypnomix measure`, `translate`, `qc` on it; `hypnomix separate` if stems would help |
+| stems to clean up, mix or master | `hypnomix prep FOLDER --plan`, `automix FOLDER --plan`, `master MIX.wav --plan` |
+| a finished stereo mix only | `hypnomix measure`, `translate`, `qc`, `sections --bpm N`, `match MIX REF` on it; `separate` if stems would help |
 | nothing recorded yet | the `tracking-session` skill (`soundcheck` first) |
 
 The scan writes `hypnomix-out/scan/<song>/REVIEW.md` and `findings.json` (most severe first, each with an id),
 plus each tool's own report under `raw/`. Several agents can scan in parallel: one group each with
 `--only GROUP --out SAME_DIR`, then `hypnomix scan --merge SAME_DIR`.
+
+A set scan also lists takes whose clip-gain boost lifts their noise (`noise`), how far harmonies sit from the
+lead in time, and an **"is this deliberate?"** inventory (`intent`): every automated control, hard pans,
+switched-off tracks. Read that inventory to the person at the first scan and save what they confirm with
+`hypnomix prefs set protect.notes=…`. `--deep` also renders every track and reports frequency fights and mic
+phase between tracks. `--like REF.wav` (with `--mix`) adds tone, dynamics and width proposals against a song
+they love.
+
+**Plans.** `prep`, `automix` and `master` make many moves at once. Never run them straight on someone's work:
+run them with `--plan` first. Each move (rebuild clipped peaks on this file, this EQ on that stem, the limiter)
+becomes a finding in a scan folder and goes through the same review; `fix --approved` then runs the tool with
+only the approved moves.
+
+**Previews.** After any scan or plan, run `hypnomix ab "<SCAN_DIR>"`. It builds a before / after pair for each
+fix it can render offline (clip fixes, tuning, repaired recordings), level-matched, in `<SCAN_DIR>/ab/`, and
+says which fixes it cannot preview (timing nudges, device changes: those are heard by applying that one fix
+into a new set). The preview is the track alone without effects: say so.
 
 If the scan prints **"check(s) did NOT run"**, say so. A group with no findings because its check failed is not
 a clean group.
@@ -80,6 +101,11 @@ what the fix would do, and **what to listen for there**. Then ask: approve, skip
 hypnomix fix "<SCAN_DIR>" --decide smooth-3=approve,timing-7=skip
 hypnomix fix "<SCAN_DIR>" --decide tune-Lead=change --note "less correction on the verse"
 ```
+
+Or let them do it themselves: `hypnomix review "<SCAN_DIR>" --serve` opens a local page with every finding,
+play buttons for each A/B, and approve / skip / change buttons that save straight to `decisions.json`. You stay
+available to explain items; you don't click for them. (`hypnomix review DIR` without `--serve` writes a static
+`REVIEW.html`; they download their decisions and you run `hypnomix review DIR --import FILE`.)
 
 Always one at a time, whatever the preferences say: anything **high** severity, anything marked **PROTECTED**,
 anything about taste (reverb, delay, tone, how loud the vocal sits, how much tuning). Batching ("approve all the
@@ -101,8 +127,11 @@ neighbour. Don't work around a refusal: read it, tell the person, and do what it
 
 ### 4–6. Verify, listen, learn
 
-`fix` measures the new set again and prints which approved problems are gone and which are still measured, and
-lists anything that FAILED (exit code 1). Report exactly that, including failures. Then give the person the A/B:
+`fix` runs a structure check on every set it writes (`hypnomix check`: duplicate ids, broken envelopes, warp
+markers out of order). A set that fails is renamed "(BROKEN, do not open)" and the run fails: never tell the
+person to open it. It then lists what changed in plain words (`hypnomix diff OLD.als NEW.als`), measures the new
+set again, and prints which approved problems are gone and which are still measured, and anything that FAILED
+(exit code 1). Report exactly that, including failures. Then give the person the A/B:
 which spots to compare between the old and new set. When the review is finished, `hypnomix prefs learn "<SCAN_DIR>"`.
 
 ## Rules (they protect the person's work)
@@ -147,10 +176,14 @@ which spots to compare between the old and new set. When the review is finished,
 | Preferences and sound profile | `prefs`, `profile` | `~/.hypnomix/` only |
 | Find problems in a set | `scan`, `smooth`, `timing`, `distortion`, `sidechain`, `audit`, `refs`, `mine`, `automation list` | nothing |
 | Find problems in recordings | `scan FOLDER`, `stems`, `masking`, `clicks`, `takes`, `align`, `measure`, `spectrogram` | nothing (reports) |
+| Judge a mix | `sections` (give `--bpm`), `match MIX REF`, `translate`, `qc`, `reference`, `punch`, `pitchcheck` | nothing (reports) |
+| Plan many moves for review | `prep --plan`, `automix --plan`, `master --plan` | nothing (findings) |
+| Hear and review | `ab` (before/after clips), `review` (the page; `--serve` saves clicks) | the scan folder only |
 | Fix a set | `fix` (approved findings); or `smooth --apply`, `timing --apply`, `distortion --apply`, `sidechain --apply`, `automation offset/dip` | a new `.als` |
-| Vocals | `tune`, `vocalign`, `voices`, `takes`, `dehiss` | new audio files |
+| Check what was written | `check NEW.als --against OLD.als`, `diff OLD.als NEW.als` | nothing |
+| Vocals | `tune`, `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |
 | Raw takes / stems | `prep`, `cleanup`, `clipmatch`, `render` (set → WAVs, no Live), `separate` (mix → stems) | new audio files |
-| Mix and master files | `automix`, `master`, `translate`, `qc`, `reference`, `punch`, `pitchcheck` | new audio files |
+| Mix and master files | `automix`, `master` (after their `--plan` was reviewed) | new audio files |
 | Inside Live | `live`, `loop`, `diagnose`, `chain`, `name --apply`, `clipmatch --als --apply`, `midi`, `soundcheck` (audio input) | the open set |
 | Setup | `doctor` (checks), `install` (ask first) | Live's remote scripts |
 
@@ -161,6 +194,10 @@ if you call the tools directly, re-run the report on the current set and take th
 
 **Not yet verified in Live** (say so if you use them): `chain` (building device chains) and
 `clipmatch --als --apply`. Use `--dry-run` and show the plan first.
+
+**New and only tested on synthetic audio so far** (say so): `deess`, `breaths`, `sections`, `match`. `sections`
+needs the tempo (`--bpm`; a set scan passes it): without it the bar lines, and so the sections, can be wrong.
+Present their output as "measured, please check by ear", and prefer `--report` before writing a file.
 
 ## Other DAWs (Logic Pro, Pro Tools, anything else)
 
@@ -191,8 +228,12 @@ for deeper support is in `docs/ROADMAP.md`.
 - Read-only commands write only into their report folder. A check that fails must say so in its notes with the
   word "failed" (the review lists it under "did NOT run").
 - Names with spaces, slashes and non-ASCII characters are normal for tracks and files: quote and test them.
-- Test on real material in report mode first; compare before/after numbers (the README quotes them). There is
-  no unit-test suite yet: verify by re-measuring the output (`tune` re-tracks pitch, `fix` re-scans the new set).
+- Tests: `python -m unittest discover -s tests` (synthetic audio and sets built in a temp folder; no audio in
+  the repo). Add a test with every new check or writer, and for every bug you fix. Then test on real material in
+  report mode and compare before/after numbers (the README quotes them).
+- A tool that makes many moves gets a `--plan` (see `hypnomix/workflow/plan.py`): each move is a finding with a
+  `plan` dict (`tool`, `file`, and a `step` or `key`), and the tool accepts "only these moves" so `fix` can run
+  the approved subset.
 - Before committing: no paid product names, no personal paths, no audio files. Other agents may be committing
   here too: commit only the files you changed.
 

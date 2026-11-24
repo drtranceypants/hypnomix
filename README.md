@@ -29,7 +29,9 @@ hypnomix prefs                                   # once: your targets, protected
 hypnomix scan "Song.als" --mix "Song.wav"        # every check at once; changes nothing
 hypnomix scan "raw takes/"                       # or a folder of recordings / stems from any DAW
 #   → REVIEW.md: clicks, cuts, spikes, timing, vocal pitch, distortion, sidechains, loudness, noise…
-hypnomix fix  <scan folder> --decide smooth-3=approve,timing-7=skip      # record each decision
+hypnomix ab     <scan folder>                    # before/after clips for each fix, level-matched
+hypnomix review <scan folder> --serve            # a page: play A and B, click approve / skip / change
+hypnomix fix  <scan folder> --decide smooth-3=approve,timing-7=skip      # or record decisions by hand
 hypnomix fix  <scan folder> --approved --out "Song (fixed).als"          # apply only what you approved
 ```
 
@@ -37,7 +39,10 @@ The scan runs every check below in parallel and writes one review list, most sev
 item by item with you) approve what to fix; `fix` writes only those changes into **one new set** next to the
 original, then measures the new set again and tells you which problems are gone. It refuses to run if the set
 changed since the scan, never overwrites a file, and won't touch tracks you marked as protected without asking
-again. `prefs` remembers what you usually approve and skip, so each review starts closer to how you work.
+again. Every set it writes gets a structure check (`hypnomix check`) and a plain list of what changed
+(`hypnomix diff`). `prep`, `automix` and `master` take `--plan`: instead of doing everything at once, each move
+becomes a finding you approve or skip. Also new: `deess`, `breaths`, `sections` (loudness and vocal balance per
+section) and `match` (your mix against a reference, as proposals). `prefs` remembers what you usually approve and skip, so each review starts closer to how you work.
 See [docs/WORKFLOW.md](docs/WORKFLOW.md); what's coming, including Logic Pro and Pro Tools: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## What's in the box

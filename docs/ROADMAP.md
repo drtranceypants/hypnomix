@@ -6,6 +6,14 @@ every change.
 
 Items marked *(to verify)* rest on research that has not been tested here yet.
 
+**Built since this was first written** (sections 1 to 3 below are kept for the reasoning): `ab`, `diff`, `check`,
+the review page (`review`), the wider scan (noise under clip gain, harmony timing, mic phase, masking as
+findings, the "is this deliberate?" inventory, sections, `--like`), `--plan` for `prep` / `automix` / `master`,
+`deess`, `breaths`, `sections`, `match`, and a first test suite. Still open from those sections: `balance`,
+`plugins`, `listen`, `handoff`, the profile comparison in scan, masking fixes written into a set as stock EQ
+bands, and previews for timing nudges and device changes. `deess`, `breaths`, `sections` and `match` need real
+songs before they are trusted.
+
 ## 1. Make the review audible and visible
 
 The review is the product. Right now it is text; it should be something you can hear and see.

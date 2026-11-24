@@ -27,7 +27,8 @@ until they approve it, originals are never overwritten, and every applied fix is
 ## 1. Scan in parallel
 
 Start one `hypnomix-scanner` subagent per group, **all in the same message** so they run at once.
-A set: `files`, `clips`, `timing`, `vocals`, `effects`, and `mix` (only with `--mix`).
+A set: `files`, `clips`, `timing`, `vocals`, `effects`, `noise`, `intent`, and `mix` (only with `--mix`; add
+`--like REF.wav` if they named a song to sound like). `stems` only when they want the deep pass (`--deep`: renders every track).
 A folder: `recordings`, `stems`. Give each the path, scan folder, group, and the `--mix/--ref/--key` values.
 They are read-only and return a short summary.
 
@@ -41,12 +42,20 @@ person, in a few lines: how many findings by severity, the biggest 3–5 problem
 not run** (the review lists them; an area whose check failed is not clean). If a number looks odd, check the
 measurement before presenting it as a problem. Ask whether to start the review.
 
+Then build the previews: `hypnomix ab "<SCAN_DIR>"` (before / after clips, level-matched). Read the `intent`
+items ("is this deliberate?") to the person first: what they confirm is not a problem, and worth saving with
+`hypnomix prefs set protect.notes="…"`.
+
+If they would rather listen and click than talk it through: `hypnomix review "<SCAN_DIR>" --serve` and give them
+the address. Their clicks are saved to `decisions.json`; stay available to explain items, then go to step 4.
+
 ## 3. Review, one item at a time
 
 Go down `REVIEW.md` in order. For each item:
 
 1. Say what is wrong and where (track, bar.beat or m:ss) in plain words, what the proposed fix does, and what to
-   listen for there. With `review.explain = teach`, add one sentence on the technique and why. Copies of the same
+   listen for there. If `ab/ab.json` has a pair for it, name the two files (A now, B fixed; the track alone, no
+   effects); if it says no preview is possible, say why. With `review.explain = teach`, add one sentence on the technique and why. Copies of the same
    audio are already grouped: one decision covers them. If the item has a `history` line, mention it.
 2. Ask: **approve / skip / change** (use the question tool if available, with your recommendation first).
    "Change" means they want something different: note what, then re-run that tool with different options
@@ -68,7 +77,8 @@ key before approving any vocal-tuning item. `info` items are read-outs: summaris
    `--from "<Song> (fixed 1).als" --out "<Song> (fixed 2).als"`.
 3. If `fix` refuses (set changed since the scan, protected track, name exists, key not confirmed), tell the
    person what it said and do that. Never work around it.
-4. Report exactly what `fix` printed: the new set's name; per tool, how many approved problems are **no longer
+4. Report exactly what `fix` printed: the new set's name; that the structure check passed (if it failed, the
+   file was renamed "(BROKEN, do not open)": say so and stop); what changed (`hypnomix diff`); per tool, how many approved problems are **no longer
    measured** and which are **still measured**; anything **skipped** (no longer found) or **FAILED**; tuned
    vocal files (in `Samples/Tuned/`: put each on a new track at bar 1, warp off, A/B with the original's
    mute); repaired recordings (in `<SCAN_DIR>/fixed/`); and the by-hand list.

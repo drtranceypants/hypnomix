@@ -78,6 +78,43 @@ set was last saved), one `<group>.json` per group, and `raw/` (each tool's own r
 If a check could not run, the review lists it under **"Checks that did NOT run"**. No findings from a check
 that did not run means nothing.
 
+### What a set scan also tells you
+
+- **noise**: takes boosted +12 dB or more with clip gain whose own noise floor comes up with them.
+- **doubles**: how far each harmony or double sits from the lead in time (part of the vocals group).
+- **intent**: "is this deliberate?" Every automated control, hard-panned track and switched-off track with
+  clips, as questions. Confirm them once and save them: `hypnomix prefs set protect.notes="…"`.
+- **stems** (`--deep`): renders every track and reports each frequency fight between two tracks and the phase
+  and polarity between mics on one source ("Kick In" / "Kick Out", "Snare Top" / "Snare Bottom").
+- `--like REF.wav` with `--mix`: tone by band, dynamics, width and loudness against a song you love, as proposals.
+  With `--mix`, sections of the song are found from the set's tempo and compared ("the 2nd chorus is 2 LU quieter").
+
+### Plans: tools that make many moves
+
+```bash
+hypnomix prep "raw takes/" --plan        # every repair it would make, per file, as findings
+hypnomix automix "stems/" --plan         # every EQ, compressor, level, pan and reverb move, plus a trial mix
+hypnomix master "Song mix.wav" --plan    # every stage of the mastering chain
+```
+
+Nothing is written to your files. The moves land in a scan folder and are reviewed like any other finding;
+`hypnomix fix DIR --approved` then runs the tool with only the approved moves, into `DIR/fixed/`.
+
+## 1b. Hear it first
+
+```bash
+hypnomix ab "hypnomix-out/scan/Song"       # before/after clips for each fix, level-matched → ab/
+hypnomix review "hypnomix-out/scan/Song" --serve    # a page: play A, play B, approve / skip / change
+```
+
+`ab` builds the "after" in a temporary copy that is deleted again. It can preview clip fixes (clicks, cuts,
+spikes), vocal tuning and repaired recordings. It cannot preview timing nudges or device changes: for those,
+apply that one fix into a new set and listen in Live. Previews are the track alone, without effects.
+
+The page shows every finding with its players and saves each click to `decisions.json` (with `--serve`, on this
+computer only). Without `--serve` it is a static `REVIEW.html`: download your decisions from it, then
+`hypnomix review DIR --import ~/Downloads/decisions.json`.
+
 ## 2. Review (one item at a time)
 
 Each finding has: `id`, `severity` (high / medium / low / info), `track`, `where` (bar.beat or m:ss), the
@@ -125,7 +162,9 @@ What `fix` checks itself, and stops on:
 | vocal tuning without a confirmed key | that item is refused; pass `--key "F# major"` |
 | a finding is no longer in the set (already fixed, or ids moved) | skipped and listed, never swapped for its neighbour |
 | a step fails | listed under FAILED, exit code 1; the other steps still apply |
-| after writing | the new set is measured again: "N of M approved problems no longer measured" |
+| after writing: structure | `hypnomix check` runs on the new set; if it fails the file is renamed "(BROKEN, do not open)" |
+| after writing: what changed | every change is listed in plain words in `fix-log.md` (`hypnomix diff OLD NEW`) |
+| after writing: result | the new set is measured again: "N of M approved problems no longer measured" |
 
 Tuned vocals go to `<project>/Samples/Tuned/` (a new numbered file if one exists): put each on a new track at
 bar 1, warp off, and A/B with the original's mute. Folder scans write repaired copies to `<scan>/fixed/`.

@@ -1,6 +1,6 @@
 ---
 name: hypnomix-scanner
-description: Runs ONE group of the hypnomix first-pass scan (files, clips, timing, vocals, effects or mix for a Live set; recordings or stems for a folder of audio) and returns a short plain-English summary. Read-only. Used by the first-pass skill, several at once, to scan a song in parallel.
+description: Runs ONE group of the hypnomix first-pass scan (files, clips, timing, vocals, effects, noise, intent, stems or mix for a Live set; recordings or stems for a folder of audio) and returns a short plain-English summary. Read-only. Used by the first-pass skill, several at once, to scan a song in parallel.
 tools: Bash, Read
 ---
 
@@ -10,8 +10,8 @@ You will be given: the path (a Live set or a folder of audio), the scan folder, 
 `--mix`, `--ref`, `--key` values.
 
 1. Run exactly:
-   `hypnomix scan "<SET or FOLDER>" --only <GROUP> --out "<SCAN_DIR>" [--mix "<MIX>"] [--ref "<REF>"] [--key "<KEY>"]`
-   (use `python -m hypnomix.cli scan ...` if `hypnomix` is not on PATH). Do not pass `--merge`; the
+   `hypnomix scan "<SET or FOLDER>" --only <GROUP> --out "<SCAN_DIR>" [--mix "<MIX>"] [--ref "<REF>"] [--key "<KEY>"] [--like "<REFERENCE>"] [--deep]`
+   (pass `--deep` only for the `stems` group of a set, and only if you were told to; use `python -m hypnomix.cli scan ...` if `hypnomix` is not on PATH). Do not pass `--merge`; the
    coordinating agent merges all groups when every scanner is done.
 2. Read `<SCAN_DIR>/<GROUP>.json`.
 3. Reply with at most 150 words: how many findings by severity, the 3 most important ones in plain words

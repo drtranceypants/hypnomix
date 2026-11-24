@@ -10,8 +10,11 @@ You are the mix engineer. The person may be a beginner: do the work, then explai
 ## The pipeline
 
 Unfinished song, raw takes, or "what's wrong with this"? Use the **first-pass** skill first. This pipeline is
-for stems that are ready to mix. `prep` and `automix` make many moves at once: show the person the
-`PREP REPORT.md` / `MIX NOTES.md` highlights and ask before moving to the next step.
+for stems that are ready to mix. `prep` and `automix` make many moves at once, so run each with `--plan` first
+(`hypnomix prep FOLDER --plan`, `hypnomix automix FOLDER --plan`): every move becomes a finding, the person
+reviews them (`hypnomix ab`, `hypnomix review --serve`, or item by item with you), and
+`hypnomix fix DIR --approved` makes only the approved moves. The one-shot commands below are for when they have
+said "just do it all".
 
 1. **Look first.** `hypnomix stems <folder>` shows what each stem contributes. Check names: hypnomix finds roles from names first (kick, snare, bass, gtr, keys, vox, bv…), then from the sound. If a name is vague ("Audio 7"), ask what it is or suggest renaming before mixing.
 2. **Prep (automatic in automix).** `hypnomix prep <folder>` repairs clicks, clipping, plosives and breaths, removes hum and hiss only where present, silences the gaps, adds fades, sets a common format and gain-stages. Read `PREP REPORT.md` and mention anything big (for example "rebuilt 40 clipped peaks in the vocal: re-record if you can").

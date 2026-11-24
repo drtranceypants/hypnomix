@@ -15,6 +15,7 @@ Then it finds frequency fights between stems (see `hypnomix masking`), carves th
 and masters the result (see `hypnomix master`).
 
 Usage:
+    hypnomix automix STEMS_DIR --plan [SCAN_DIR]   change nothing: every move becomes a finding to review
     hypnomix automix STEMS_DIR [--name Song] [--target -14] [--reference ref.wav] [--no-master]
                     [--stems-out] [--dry] [--out DIR]
 
@@ -137,16 +138,19 @@ def is_mono(y):
     return y.shape[1] == 1 or dsp.correlation(y) > 0.995
 
 
-def process_stem(name, y, sr, role, log):
+def process_stem(name, y, sr, role, log, allow=None):
+    """allow: the approved move keys of a plan ("eq:<stem>", "comp:<stem>", "deess:<stem>" …); None = every move."""
+    ok = lambda k: allow is None or f"{k}:{name}" in allow
     p = roles.preset(role)
     steps = []
     f, P, segs = smooth_spectrum(y, sr)
     eq = eq_for(role, f, P, segs, sr)
-    y = eq.apply(y, sr)
-    for b in eq.bands:
-        steps.append(("EQ", b))
+    if ok("eq"):
+        y = eq.apply(y, sr)
+        for b in eq.bands:
+            steps.append(("EQ", b))
     comp = None
-    if p["comp"]:
+    if p["comp"] and ok("comp"):
         ratio, gr, att, rel = p["comp"]
         th = dsp.threshold_for_gr(y, sr, gr, ratio, att, rel)
         y, g = dsp.compress(y, sr, th, ratio, att, rel, 6)
@@ -154,7 +158,7 @@ def process_stem(name, y, sr, role, log):
         avg = float(-np.mean(g[play])) if play.any() else 0
         comp = dict(threshold=round(th, 1), ratio=ratio, attack=att, release=rel, avg_gr=round(avg, 1), max_gr=round(float(-g.min()), 1))
         steps.append(("Compressor", dict(**comp, why=_comp_why(role, ratio, att))))
-    if role in ("lead_vocal", "backing_vocal"):
+    if role in ("lead_vocal", "backing_vocal") and ok("deess"):
         sc = dsp.filt(y, dsp.butter(4, [5000, min(10000, sr * 0.45)], "bandpass", fs=sr, output="sos"))
         lvl = dsp.db(np.max(np.abs(sc), axis=1))
         th = float(np.percentile(lvl[lvl > lvl.max() - 40], 97)) - 4
@@ -202,8 +206,11 @@ def plan_pans(items):
     return pans
 
 
-def automix(folder, name=None, target=-14.0, reference=None, do_master=True, stems_out=False, outdir=None, prep_first=True):
+def automix(folder, name=None, target=-14.0, reference=None, do_master=True, stems_out=False, outdir=None, prep_first=True,
+            allow=None):
+    """allow: a set of approved move keys (see `plan_findings`); only those moves are made. None = every move."""
     t0 = time.time()
+    ok = lambda key: allow is None or key in allow
     if prep_first:
         from hypnomix.studio.prep import prep
         pod = (out_at(outdir, "automix", name or Path(folder).resolve().name)) / "prepped stems"
@@ -228,19 +235,20 @@ def automix(folder, name=None, target=-14.0, reference=None, do_master=True, ste
     processed = {}
     for n, y in stems:
         print(f"  {n:<28} {role_of[n]:<14} (by {how[n]})", file=sys.stderr)
-        processed[n] = process_stem(n, y, sr, role_of[n], log)
+        processed[n] = process_stem(n, y, sr, role_of[n], log, allow)
 
     # level: loudness while playing, against the role balance
     for n, y in processed.items():
         want = ANCHOR_LUFS + roles.preset(role_of[n])["level"] - anchor_level
         have = dsp.active_lufs(y, sr)
-        gain = float(np.clip(want - have, -40, 30))
+        gain = float(np.clip(want - have, -40, 30)) if ok(f"level:{n}") else 0.0
         processed[n] = y * dsp.undb(gain)
         log[n]["gain_db"] = round(gain, 1)
         log[n]["level"] = dict(target_lufs_while_playing=round(want, 1), measured=round(have, 1))
 
     # pan
     pans = plan_pans([(n, role_of[n], is_mono(y)) for n, y in processed.items()])
+    pans = {n: (v if ok(f"pan:{n}") else 0.0) for n, v in pans.items()}
     placed = {}
     for n, y in processed.items():
         mono = is_mono(y)
@@ -258,13 +266,13 @@ def automix(folder, name=None, target=-14.0, reference=None, do_master=True, ste
     for c in collisions:
         key = (c["give"], c["band"])
         if key in done or len(fixed) >= 5 or c["band"] == 0 or role_of[c["give"]] == "lead_vocal" \
-                or sum(1 for x in fixed if x["give"] == c["give"]) >= 2:
+                or sum(1 for x in fixed if x["give"] == c["give"]) >= 2 or not ok(f"mask:{c['give']}:{c['band']}"):
             continue
         done.add(key)
         cut = -2.0 if c["frac"] < 0.5 else -3.0
         q = 1.4 if c["band"] >= 2 else 1.0
         placed[c["give"]] = dsp.filt(placed[c["give"]], dsp.peaking(c["center"], cut, q, sr))
-        b = dict(kind="bell", freq=round(c["center"], 1), gain=cut, q=q,
+        b = dict(kind="bell", freq=round(c["center"], 1), gain=cut, q=q, mask_band=c["band"],
                  why=f"masking fix: makes room for {c['keep']} in {c['band_name']} (they collided {int(c['frac'] * 100)}% of the time both play)")
         log[c["give"]]["steps"].append(("EQ", b))
         fixed.append(c)
@@ -272,7 +280,7 @@ def automix(folder, name=None, target=-14.0, reference=None, do_master=True, ste
     # drum bus glue
     drum_names = [n for n in placed if role_of[n] in DRUM_ROLES]
     bus_note = None
-    if len(drum_names) >= 2:
+    if len(drum_names) >= 2 and ok("drumbus"):
         bus = sum(placed[n] for n in drum_names)
         th = dsp.threshold_for_gr(bus, sr, 2.0, 2.0, 30, 100)
         bus2, g = dsp.compress(bus, sr, th, 2.0, 30, 100, 6)
@@ -286,7 +294,7 @@ def automix(folder, name=None, target=-14.0, reference=None, do_master=True, ste
     ir = dsp.reverb_ir(sr, decay_s=1.8, predelay_ms=25, damp_hz=7000)
     send_sum = np.zeros((len(next(iter(placed.values()))), 2))
     for n, z in placed.items():
-        s = roles.preset(role_of[n])["reverb"]
+        s = roles.preset(role_of[n])["reverb"] if ok(f"reverb:{n}") else None
         if s is None:
             log[n]["reverb_send_db"] = None
             continue
@@ -319,7 +327,7 @@ def automix(folder, name=None, target=-14.0, reference=None, do_master=True, ste
     notes = mix_notes(name, role_of, how, log, pans, fixed, bus_note, master_info, files, time.time() - t0)
     (od / "MIX NOTES.md").write_text(notes)
     (od / "recipe.json").write_text(json.dumps(recipe(name, sr, role_of, log, bus_note), indent=1))
-    return od, notes
+    return od, notes, dict(log=log, role_of=role_of, bus=bus_note, pans=pans)
 
 
 def mix_notes(name, role_of, how, log, pans, fixed, bus, master_info, files, secs):
@@ -368,6 +376,53 @@ def mix_notes(name, role_of, how, log, pans, fixed, bus, master_info, files, sec
     return "\n".join(md) + "\n"
 
 
+def band_text(b):
+    g = f" {b['gain']:+.1f} dB" if b.get("gain") else ""
+    return f"{b['kind']} {b['freq']:g} Hz{g}"
+
+
+def plan_findings(folder, info):
+    """One finding per move automix made in its trial run, each with the key that re-applies it."""
+    F = []
+    src = str(Path(folder).resolve())
+
+    def add(key, kind, stem, problem, fix, sev="low"):
+        F.append(dict(kind=kind, severity=sev, track=stem, problem=problem, fix=fix,
+                      plan=dict(tool="automix", file=src, key=key)))
+    for n, L in info["log"].items():
+        role = info["role_of"][n].replace("_", " ")
+        eq = [b for k, b in L["steps"] if k == "EQ" and "mask_band" not in b]
+        if eq:
+            add(f"eq:{n}", "eq", n, f"EQ for a {role}: " + "; ".join(band_text(b) for b in eq),
+                "; ".join(dict.fromkeys(b["why"] for b in eq if b.get("why"))) or "tone shaping for this role")
+        for b in (b for k, b in L["steps"] if k == "EQ" and "mask_band" in b):
+            add(f"mask:{n}:{b['mask_band']}", "masking", n, f"cut {band_text(b)} (Q {b['q']})", b.get("why", ""))
+        c = next((x for k, x in L["steps"] if k == "Compressor"), None)
+        if c:
+            add(f"comp:{n}", "compressor", n, f"compressor {c['ratio']}:1, attack {c['attack']} ms, release "
+                f"{c['release']} ms, threshold {c['threshold']} dB: about {c['avg_gr']} dB reduction (max {c['max_gr']})",
+                c.get("why", ""))
+        d = next((x for k, x in L["steps"] if k == "De-esser"), None)
+        if d:
+            add(f"deess:{n}", "de-esser", n, f"de-esser around {d['freq']} Hz, up to {d['max_gr']} dB", d.get("why", ""))
+        if abs(L.get("gain_db", 0)) >= 0.5:
+            lv = L.get("level", {})
+            add(f"level:{n}", "level", n, f"level {L['gain_db']:+.1f} dB (it plays at {lv.get('measured')} LUFS; a {role} "
+                f"sits at about {lv.get('target_lufs_while_playing')} against the lead part)",
+                "a starting balance by role. This is taste: move the fader until it feels right.")
+        if isinstance(L.get("pan"), (int, float)) and abs(L["pan"]) > 0.01:
+            add(f"pan:{n}", "pan", n, f"pan {abs(L['pan']) * 100:.0f}% {'right' if L['pan'] > 0 else 'left'}",
+                "spreads parts that share a register so they stop sitting on top of each other; bass and lead stay centred")
+        if L.get("reverb_send_db") is not None:
+            add(f"reverb:{n}", "reverb", n, f"send to a shared plate reverb (1.8 s) at {L['reverb_send_db']} dB",
+                "one shared room glues the parts into the same space. Taste: skip it for a dry sound.")
+    if info.get("bus"):
+        b = info["bus"]
+        add("drumbus", "drum bus", ", ".join(b["members"]), f"drum bus compression 2:1, attack 30 ms, release 100 ms: "
+            f"about {b['avg_gr']} dB", "makes the kit move as one instrument")
+    return F
+
+
 def recipe(name, sr, role_of, log, bus):
     tracks = []
     for n in role_of:
@@ -399,8 +454,25 @@ def main():
     ap.add_argument("--no-prep", action="store_true", help="skip the prep pass (stems are already edited)")
     ap.add_argument("--stems-out", action="store_true", help="also write each processed stem")
     ap.add_argument("--out")
+    ap.add_argument("--plan", nargs="?", const=True, metavar="SCAN_DIR",
+                    help="change nothing in your files: list every move (EQ, compressor, level, pan, reverb per stem) "
+                         "as a finding for review, with a trial mix to listen to")
+    ap.add_argument("--only", metavar="KEYS.json", help="a JSON list of approved move keys: make only those moves")
     a = ap.parse_args()
-    od, notes = automix(a.folder, a.name, a.target, a.reference, not a.no_master, a.stems_out, a.out, not a.no_prep)
+    if a.plan:
+        from hypnomix.workflow import plan as PL
+        t0 = time.time()
+        sd = PL.scan_dir(a.plan, a.folder)
+        od, notes, info = automix(a.folder, a.name, a.target, a.reference, False, False, str(sd / "raw" / "automix-plan"), False)
+        mixf = next(iter(sorted(od.glob("*(automix).wav"))), None)
+        note = [f"automix plan: a trial mix with EVERY move is at {mixf} (listen to it against the stems)",
+                "prep is not part of this plan: run `hypnomix prep FOLDER --plan` for the clean-up moves",
+                "approved moves are mixed into fixed/automix/ (no master: `hypnomix master --plan` is its own review)"]
+        PL.write(sd, "automix", a.folder, plan_findings(a.folder, info), note, time.time() - t0)
+        return
+    allow = set(json.loads(Path(a.only).read_text())) if a.only else None
+    od, notes, _ = automix(a.folder, a.name, a.target, a.reference, not a.no_master, a.stems_out, a.out, not a.no_prep,
+                           allow)
     print(notes)
     print(f"→ {od}")
 
