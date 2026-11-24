@@ -553,6 +553,36 @@ def write_json(path, src, tempo, tracks, issues, notes, a):
                                       "findings": out}, indent=1))
 
 
+def apply_in_passes(root, src, a, approved, tracks, tempo, notes):
+    """Drums first (against the other drums or the grid), then the bass toward the corrected drums, then everything
+    else toward the band as it now is. Each later pass is measured again on the set as corrected so far: a hit
+    approved in the first listing is applied with its re-measured move, or skipped if it no longer needs one."""
+    drums, bass = set(notes.get("drums", [])), set(notes.get("bass", []))
+    stages = [("drums", lambda tr: tr in drums), ("bass", lambda tr: tr in bass and tr not in drums),
+              ("the rest", lambda tr: tr not in drums and tr not in bass)]
+    done_all, skipped_all = [], []
+    cur_issues, cur_tracks, cur_tempo = approved, tracks, tempo
+    for k, (stage, sel) in enumerate(stages):
+        want = [i for i in approved if sel(i["track"])]
+        if not want:
+            continue
+        if k > 0 and done_all:                    # measure again on the set as corrected so far
+            cur_tempo, cur_tracks, fresh, _ = analyse(root, src.parent, a.track, a.to_grid, a.include_off,
+                                                      set() if a.all_listed else set(a.melodic), a.bass, a.drums)
+            chosen, gone = [], []
+            for w in want:
+                m = [i for i in fresh if i["track"] == w["track"] and abs(i["beat"] - w["beat"]) < 0.03]
+                (chosen.append(m[0]) if m else gone.append(w))
+            skipped_all += [(g, f"no longer out of place once the {'drums' if stage == 'bass' else 'drums and bass'} "
+                                f"were fixed") for g in gone]
+        else:
+            chosen = want
+        d, sk = apply(chosen, cur_tracks, cur_tempo, a.strength, a.warp_unwarped)
+        print(f"pass {k + 1} ({stage}): {len(d)} applied, {len(sk)} left alone")
+        done_all += d; skipped_all += sk
+    return done_all, skipped_all
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix timing", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("als")
@@ -623,7 +653,13 @@ def main():
             issues = [i for i in issues if i["id"] in want]
             if not issues:
                 sys.exit("none of those ids were found (same options as the scan?)")
-        done, skipped = apply(issues, tracks, tempo, a.strength, a.warp_unwarped)
+        if not a.ids and not a.all_listed:         # options (melodic parts, programmed-feel notes) only when asked for
+            held = [i for i in issues if i.get("optional") or i.get("deliberate")]
+            issues = [i for i in issues if not (i.get("optional") or i.get("deliberate"))]
+            if held:
+                print(f"{len(held)} optional item(s) not applied (melodic parts, notes that look deliberate): "
+                      "name them with --ids, or --all-listed")
+        done, skipped = apply_in_passes(root, src, a, issues, tracks, tempo, notes)
         switched = sorted({i["track"] for i in done if i.get("warp_switched_on")})
         if switched:
             print(f"warp switched on (playing as before, same warp mode) for clips on: {', '.join(switched)}; "
