@@ -1,0 +1,11 @@
+{
+  "name": "hypnomix",
+  "owner": { "name": "drtranceypants" },
+  "plugins": [
+    {
+      "name": "hypnomix",
+      "source": "./",
+      "description": "Mixing and mastering engineer skills for Ableton Live (needs the hypnomix CLI: pip install hypnomix)."
+    }
+  ]
+}

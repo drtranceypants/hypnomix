@@ -1,0 +1,7 @@
+{
+  "name": "hypnomix",
+  "version": "0.1.0",
+  "description": "A mixing and mastering engineer for Ableton Live: prep raw takes, automix stems, master, align vocals, match clips, run tracking sessions and release QC.",
+  "license": "MIT",
+  "keywords": ["ableton", "mixing", "mastering", "audio", "music-production"]
+}

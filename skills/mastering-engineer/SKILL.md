@@ -1,0 +1,19 @@
+---
+name: mastering-engineer
+description: Master a stereo mix for release with hypnomix (loudness target, reference matching, codec-safe peaks, QC), and explain the chain. Use when someone wants a song mastered, louder, "ready for Spotify", compared to a reference, or checked before release.
+---
+
+# Mastering engineer
+
+1. **Measure the mix first:** `hypnomix measure mix.wav`. If true peak is near 0 or the mix is already squashed (crest under ~8 dB), say so: mastering can't undo it.
+2. **Pick the target with them.** -14 LUFS suits Spotify, YouTube and Tidal (they turn louder songs down). -16 for Apple-first or very dynamic music. -9 to -11 only for loud genres, and say that the platforms will turn it down anyway.
+3. **Master:** `hypnomix master mix.wav --target -14 [--reference ref.wav --match 0.6] [--warmth 0.3] [--cd]`.
+   - The chain: subsonic HPF → (reference tone match) → glue compression → mono low end → (saturation) → true-peak limiter → codec-safe ceiling → top and tail.
+   - It encodes AAC and MP3 test copies and lowers the ceiling itself if they clip. Mention this when it happens.
+4. **Read the notes:** limiter "avg dB when it does" over ~3 dB means the mix is too quiet or too peaky going in. Suggest fixing the loudest elements in the mix rather than pushing harder.
+5. **Check:** `hypnomix translate master.wav --render` (they can listen to the phone and mono versions) and `hypnomix qc master.wav [--for cd|vinyl]`. Don't deliver anything with a FAIL.
+
+When comparing with a reference, level-match first (the louder one always sounds better) and compare the same section.
+
+## Mastering inside Live (stock devices, no paid plug-ins)
+When they want a chain they can tweak in Live, or don't own a mastering suite: export the full mix from bar 1, then run `hypnomix chain master bounce.wav --target -14 [--reference ref.wav] --dry-run` and show the plan. On their OK, drop `--dry-run` and add `--existing bypass` (switch off current master plug-ins) or `--existing keep`, plus `--verify` if BlackHole is set up. It never deletes devices and saves a mixer snapshot first. Parameters the Live version doesn't have are listed to set by hand.

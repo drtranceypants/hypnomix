@@ -1,0 +1,8 @@
+.venv/
+hypnomix-out/
+__pycache__/
+*.pyc
+.DS_Store
+*.wav
+*.aif
+*.mp3
