@@ -518,6 +518,9 @@ def main():
     if a.output:
         out_path = Path(a.output)
         report_path = Path(str(out_path.with_suffix("")) + ".notes.txt")
+    elif a.json:  # report-only with --json: the note report goes next to the JSON
+        out_path = Path(a.json).with_suffix("")
+        report_path = Path(str(out_path) + ".notes.txt")
     else:  # report-only: never write next to the source take
         Path("reports/tune").mkdir(parents=True, exist_ok=True)
         out_path = Path("reports/tune") / Path(a.input).stem
