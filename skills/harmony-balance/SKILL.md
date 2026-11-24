@@ -59,6 +59,13 @@ person wants something different, every number can be overridden in the note
 (`--note "lead-margin=2 tolerance=1"`), and the stronger options (a part to prioritise, a step in dB, ladder or
 flat) are theirs to ask for.
 
+## 2b. Lower harmonies sitting too low
+
+The scan also proposes `cliplevel-N` items: a clip of a lower harmony more than 4 dB under the rest of its track
+gets an optional clip-gain raise, up to the track's usual level and never closer than 1.5 dB to the lead. Offer
+them; never approve them unasked. A clip whose gain the person already pulled far down (-10 dB or lower) is
+flagged as probably deliberate: ask.
+
 ## 3. Report
 
 What was turned down, where (bars), by how much, and what was only reported (same-level harmonies). Write

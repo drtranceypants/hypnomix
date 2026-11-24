@@ -271,6 +271,17 @@ def g_vocals(als, od, a, role):
             d_f = []
             notes.append(f"doubles: failed ({e})")
         findings += d_f
+    if len(files) > 2:     # a lead and two or more harmonies: clips of lower harmonies sitting far too low
+        j = od / "raw" / "cliplevel.json"
+        args = ["cliplevel", als, "--json", j, "--renders", rd]
+        if (od / "raw" / "names" / "names.json").exists():
+            args += ["--names", od / "raw" / "names" / "names.json"]
+        code, out = hx(*args)
+        save(od / "raw" / "cliplevel.txt", strip_warnings(out))
+        if j.exists():
+            findings += json.loads(j.read_text())["findings"]
+        else:
+            notes.append(f"clip levels of lower harmonies: did NOT run ({out.strip()[-160:]})")
     if len(files) > 1:
         try:
             findings += harmony_question(files, lead, als)
