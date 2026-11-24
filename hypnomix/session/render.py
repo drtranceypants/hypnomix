@@ -19,6 +19,9 @@ Warped clips are stretched WITHOUT changing pitch, like Live's warp modes (Rubbe
 would detune them: a 3% tempo difference is 55 cents. Verified against Live 12 captures: 0 cents, +-0.05 LU.
 Every clip edge gets Live's default ~3 ms fade so cuts don't click.
 
+Clips are played like Live: from the start marker, and looped clips wrap from loop end to loop start
+(missing this put whole phrases in the wrong place on sets that use looped vocal clips).
+
 Limits: warped clips are rendered from their first and last warp markers (a straight-line stretch); clips
 with several warp markers that bend the timing will drift between markers. Unwarped clips are exact.
 Output is 32-bit float, so nothing clips. Write re-renders to a NEW folder: Live caches audio by file
@@ -86,7 +89,10 @@ def render_track(t, als, spb, N, SR, sources, tighten, warn):
     for c in t.findall(".//ArrangerAutomation/Events/AudioClip"):
         if v(c, "./Disabled") == "true":
             continue
-        s, e, ls = float(v(c, "./CurrentStart")), float(v(c, "./CurrentEnd")), float(v(c, "./Loop/LoopStart"))
+        s, e = float(v(c, "./CurrentStart")), float(v(c, "./CurrentEnd"))
+        ls, le = float(v(c, "./Loop/LoopStart")), float(v(c, "./Loop/LoopEnd"))
+        start_rel = float(v(c, "./Loop/StartRelative") or 0)       # start marker, relative to the loop start
+        loop_on = v(c, "./Loop/LoopOn") == "true"
         src = clip_source(c, als, sources)
         if not src.exists():
             warn.append(f"{name}: missing file {src.name}")
@@ -97,16 +103,31 @@ def render_track(t, als, spb, N, SR, sources, tighten, warn):
                 warn.append(f"{name}: a clip has {len(m)} warp markers; rendered as a straight stretch")
             (s0, b0), (s1, b1) = m[0], m[-1]
             slope = (s1 - s0) / (b1 - b0) if b1 != b0 else spb
-            src0 = s0 + (ls - b0) * slope
+            to_sec = lambda b, s0=s0, b0=b0, slope=slope: s0 + (b - b0) * slope   # clip beats -> source seconds
+            per_beat = 1.0                                     # loop/start values are in beats
         else:
-            slope, src0 = spb, ls
+            slope = spb
+            to_sec = lambda x: x
+            per_beat = 1 / spb                                 # unwarped: loop/start values are in seconds
         k = spb / slope                          # how much longer the clip plays than it was recorded
         a = stretched(src, k, SR)                # pitch-preserving stretch of the whole source
-        p0 = src0 * k                            # clip start inside the stretched source (seconds)
         clip_len = int((e - s) * spb * SR)
-        seg = a[max(0, int(round(p0 * SR))): max(0, int(round(p0 * SR))) + clip_len]
-        if p0 < 0:
-            seg = np.concatenate([np.zeros(int(-p0 * SR)), seg])
+        # play it like Live: start at the start marker; a looped clip wraps from loop end back to loop start
+        need = (e - s) * per_beat
+        pos = ls + start_rel
+        parts = []
+        while need > 1e-9 and len(parts) < 10000:
+            stop = le if (loop_on and le > pos) else pos + need
+            take = min(need, stop - pos)
+            i0, i1 = int(round(to_sec(pos) * k * SR)), int(round(to_sec(pos + take) * k * SR))
+            piece = a[max(0, i0):max(0, i1)]
+            if i0 < 0:
+                piece = np.concatenate([np.zeros(min(-i0, i1 - i0)), piece])
+            parts.append(piece)
+            need -= take
+            pos = ls if loop_on else pos + take
+        seg = np.concatenate(parts) if parts else np.zeros(0)
+        seg = np.pad(seg, (0, max(0, clip_len - len(seg))))[:clip_len]
         seg = seg * float(v(c, "./SampleVolume") or 1)
         fi = float(v(c, "./Fades/FadeInLength") or 0) * spb * SR       # Live stores clip fades in beats
         fo = float(v(c, "./Fades/FadeOutLength") or 0) * spb * SR
