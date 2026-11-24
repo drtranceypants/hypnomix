@@ -135,8 +135,22 @@ def g_names(als, od, a):
                      f"best guess {r['new']!r})"),
             fix=(f"rename it {r['new']!r} in the new set" if sure else
                  "ask what it is, then record the name: `fix DIR --decide " + f"name-{n}=approve --note \"<name>\"`")))
-    return out, [f"names: {sum(1 for f in out if f['kind'] == 'track-name')} renames proposed, "
-                 f"{sum(1 for f in out if f['kind'] != 'track-name')} tracks to ask about (findings keep the old names; "
+    notes = []
+    from hypnomix.workflow import prefs as P
+    if str(P.get(P.load(), "cleanup.order", "on")).lower() in ("off", "no", "false", "0"):
+        notes.append("order: skipped (your preference cleanup.order=off)")
+    else:
+        j = od / "raw" / "order.json"
+        code, txt = hx("order", als, "--names", path, "--json", j)
+        save(od / "raw" / "order.txt", strip_warnings(txt))
+        if j.exists():
+            out += json.loads(j.read_text())["findings"]
+            notes.append("order: track order and vocal stacks are ON by default (skip the order items to opt out, or "
+                         "`hypnomix prefs set cleanup.order=off` for every song)")
+        else:
+            notes.append(f"order: did NOT run ({txt.strip()[-200:]})")
+    return out, notes + [f"names: {sum(1 for f in out if f['kind'] == 'track-name')} renames proposed, "
+                 f"{sum(1 for f in out if f['kind'] == 'track-name-question')} tracks to ask about (findings keep the old names; "
                  "REVIEW.md shows the new ones; `fix` renames last)"]
 
 

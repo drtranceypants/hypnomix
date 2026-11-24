@@ -47,7 +47,7 @@ def all_tracks(root):
     return list(ts) if ts is not None else []
 
 
-def check(path, against=None, renamed=None):
+def check(path, against=None, renamed=None, reordered=False):
     """Returns (errors, warnings, facts). Empty errors = structurally sound."""
     err, warn, facts = [], [], {}
     root, problem = load_root(path)
@@ -181,7 +181,7 @@ def check(path, against=None, renamed=None):
             ren = renamed or {}                      # renames the person approved are expected changes
             a = [(t.tag, ren.get(track_name(t), track_name(t))) for t in all_tracks(r0)]
             b = [(t.tag, track_name(t)) for t in all_tracks(root)]
-            if a != b:
+            if (sorted(a) != sorted(b)) if reordered else (a != b):   # an approved reorder: same tracks, new order
                 err.append(f"the track list changed ({len(a)} → {len(b)} tracks, or their order or names)")
             n0 = r0.find(".//NextPointeeId")
             if n0 is not None and next_id is not None and next_id < int(n0.get("Value")):

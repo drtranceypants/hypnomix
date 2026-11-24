@@ -127,6 +127,11 @@ def diff(old, new, show_all=False):
 
     A = {t.get("Id") or aa.tname(t): t for t in aa.tracks(ra) if t is not None}
     B = {t.get("Id") or aa.tname(t): t for t in aa.tracks(rb) if t is not None}
+    oa = [k for k in A if k in B]; ob = [k for k in B if k in A]
+    if oa != ob:
+        moved = [aa.tname(B[k]) for i, k in enumerate(ob) if oa.index(k) != i]
+        add("(song)", "track order changed", f"{len(moved)} tracks in a new place",
+            ", ".join(aa.tname(B[k]) for k in ob)[:600])
     for k in A:
         if k not in B:
             add(aa.tname(A[k]), "track removed")

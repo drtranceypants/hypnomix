@@ -185,7 +185,7 @@ which spots to compare between the old and new set. When the review is finished,
 | Judge a mix | `sections` (give `--bpm`), `match MIX REF`, `translate`, `qc`, `reference`, `punch`, `pitchcheck` | nothing (reports) |
 | Plan many moves for review | `prep --plan`, `automix --plan`, `master --plan` | nothing (findings) |
 | Hear and review | `ab` (before/after clips), `review` (the page; `--serve` saves clicks) | the scan folder only |
-| Fix a set | `fix` (approved findings); or `smooth --apply`, `timing --apply`, `distortion --apply`, `sidechain --apply`, `automation offset/dip` | a new `.als` |
+| Fix a set | `fix` (approved findings); or `order --apply` (track order, vocal stacks), `smooth --apply`, `timing --apply`, `distortion --apply`, `sidechain --apply`, `automation offset/dip` | a new `.als` |
 | Tempo and variety (see `docs/TEMPO.md`) | `tempomap` (free-played take: `--click` check, then `--conform` or `--follow`), `loops`, `tighten`, `breathe`, `variations` | a new `.als`, or preview files |
 | Check what was written | `check NEW.als --against OLD.als`, `diff OLD.als NEW.als` | nothing |
 | Vocals | `tune`, `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |

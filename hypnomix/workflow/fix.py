@@ -37,7 +37,7 @@ in Live are not in the file this reads. Every run appends to SCAN_DIR/fix-log.md
 import argparse, json, re, shutil, subprocess, sys, time
 from pathlib import Path
 
-ORDER = ["distortion", "sidechain", "smooth", "timing"]
+ORDER = ["distortion", "sidechain", "smooth", "timing", "order"]   # track names come last, after all of these
 DECISIONS = ("approve", "skip", "change")
 
 
@@ -97,6 +97,8 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
             args += ["--melodic", t]
     if tool == "distortion" and scan.get("mix"):
         args += ["--mix", scan["mix"]]
+    if tool == "order":
+        args += ["--names", sd / "raw" / "names" / "names.json"]
     hx(*args)
     if not j.exists():
         return None
@@ -201,6 +203,11 @@ def main():
     want = {by_key[w]["id"] for w in want}
     if a.approved:
         want |= {k for k in dec if decision_of(dec, k) == "approve" and k in by_key}
+        # on-by-default clean-up (track order, vocal stacks): included unless the person skipped it
+        dflt = {f["id"] for f in findings if f.get("default") == "approve" and f["id"] not in dec}
+        if dflt:
+            print(f"on by default (skip them to opt out): {', '.join(sorted(dflt))}")
+        want |= dflt
     if not want:
         sys.exit("nothing approved: pass --approve ID,ID,... or record decisions with --decide and use --approved")
     refused = sorted(w for w in want if decision_of(dec, w) in ("skip", "change"))
@@ -308,6 +315,8 @@ def main():
                             args += ["--melodic", t]
                     if tool == "distortion" and scan.get("mix"):
                         args += ["--mix", scan["mix"]]
+                    if tool == "order":
+                        args += ["--names", sd / "raw" / "names" / "names.json"]
                     code, txt = hx(*args)
                     ok = code == 0 and nxt.exists()
                     if not ok:
@@ -331,7 +340,7 @@ def main():
 
         if out:  # structure first: a broken set must never be opened
             from hypnomix.session import check as C, diff as D
-            errs, warns, _ = C.check(out, src)
+            errs, warns, _ = C.check(out, src, reordered="order" in applied_tools)
             if errs:
                 bad = out.with_name(out.stem + " (BROKEN, do not open).als")
                 out.rename(bad)
@@ -384,7 +393,7 @@ def main():
             log += ["### track names", ""] + [f"- {o_} → {n_}" for o_, n_ in done_n] + \
                    [f"- skipped {o_}: {w}" for o_, w in skipped_n] + [""]
             from hypnomix.session import check as C
-            errs, _, _ = C.check(target, src, renamed=dict(done_n))
+            errs, _, _ = C.check(target, src, renamed=dict(done_n), reordered=any(f["tool"] == "order" for f in set_items))
             if errs:
                 bad = Path(target).with_name(Path(target).stem + " (BROKEN, do not open).als")
                 Path(target).rename(bad)

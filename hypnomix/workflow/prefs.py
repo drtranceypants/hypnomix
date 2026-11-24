@@ -46,6 +46,10 @@ QUESTIONS = [
          why="natural keeps vibrato and slides and only moves note centres; off = never propose tuning"),
     dict(key="taste.timing", ask="Timing?", options=["loose", "tight", "off"], default="loose",
          why="loose only fixes hits that stick out from the band's own feel"),
+    dict(key="cleanup.order", ask="In the first clean-up, put tracks in working order (drums, bass, keys/guitar/synth, "
+         "vocals, other melodic; low to high) and vocal-stack parts on the track for their pitch?",
+         options=["on", "off"], default="on",
+         why="one fader per voice in a harmony stack, and every song laid out the same way; sound is unchanged"),
     dict(key="protect.tracks", ask="Any tracks that must never be changed without asking again? (names, commas)",
          options=None, default=[], why="findings on them are marked PROTECTED and `fix` refuses them by default"),
     dict(key="protect.notes", ask="Anything deliberate that might look like a mistake? (long reverb tails, a fade, "

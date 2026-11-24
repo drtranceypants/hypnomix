@@ -7,7 +7,8 @@ it, every approved change lands in **new files** next to the originals, and the 
  hypnomix prefs  (once)      your targets, protected tracks, what is deliberate, how you like to review
         │
         ▼
-             ┌─ names    (name)          default track names → names by sound (asks when unsure)
+             ┌─ names    (name, order)   default track names → names by sound (asks when unsure); track
+             │                           order + vocal-stack parts by pitch (ON by default, opt out)
              ├─ files    (refs)          missing audio
              ├─ clips    (smooth)        clicks, level jumps at cuts, spikes
  Song.als ───┼─ timing   (timing)        hits out of time with the band
@@ -152,7 +153,8 @@ hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).als"
 ```
 
 Order inside the new set: distortion parameter fixes → sidechain settings → clip fades and volume eases →
-warp-marker nudges. To hear each change before the next, apply one id per run and chain them with
+warp-marker nudges → track order and vocal-stack clip moves → track names. Items marked "on by default"
+(track order) are applied by `--approved` unless you recorded skip. To hear each change before the next, apply one id per run and chain them with
 `--from "Song (fixed 1).als" --out "Song (fixed 2).als"`.
 
 What `fix` checks itself, and stops on:

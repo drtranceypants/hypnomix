@@ -28,6 +28,12 @@ until they approve it, originals are never overwritten, and every applied fix is
    this track?"): record the person's answer with `fix DIR --decide name-N=approve --note "<their name>"`. A
    word they added after a default name ("12-Audio CLEAN") is kept. REVIEW.md shows the new names next to the
    old ones, and `fix` renames last, in the same new set.
+   Track order is part of the same clean-up and is **on by default** (`order-1`): drums and percussion, bass,
+   keys / guitar / synth, vocals, then strings and other melodic parts, each from lowest to highest pitch range;
+   groups move as blocks. In a vocal stack (`order-2…`), parts singing together go on the track for their pitch
+   (low harmony on the lowest track), so one fader sets one voice; comped clips and anything unsafe are listed
+   by hand. Tell the person it will happen and that they can opt out (skip the item, or
+   `hypnomix prefs set cleanup.order=off` for every song). `fix --approved` includes these unless skipped.
 
 ## 1. Scan in parallel
 
