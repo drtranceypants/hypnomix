@@ -33,6 +33,16 @@ What it derives (each song counts once):
 - **tolerance** = how much louder than the part below it a higher harmony gets in 9 of 10 readings (the 90th
   percentile). Only a part beyond that is overshadowing by their own standard.
 
+## 1b. Their confirmed spacing (wins over everything learned)
+
+The person can state their spacing; record it with `hypnomix voices --confirm …` and it becomes the `--tame`
+default. Current example of a confirmed spacing: the lowest harmony at each moment is the basis (never turned
+down), the next harmony up sits about 4 dB under it, higher ones about 5.5 dB under it (5-6 on average), the
+lead at least 1.5 dB over every harmony; act only where a part is more than 1 dB over its step (it is drowning
+out the ones below), cut at most 4 dB in any 2-second window, 250 ms ramps. They have set clip gains by hand:
+respect that, the tool only catches the spots they missed.
+`hypnomix voices --confirm lead_margin=1.5 tolerance=1 root_step=4 upper_step=5.5 max_cut=4`
+
 ## 2. Apply it
 
 `hypnomix voices STEMS… --tame` (post-chain stems), or in a first pass approve the `harmony-1` item with no note:

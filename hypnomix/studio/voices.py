@@ -95,6 +95,8 @@ def kweight(x, sr):
 
 def measure(path, win_s):
     """Per window: level as heard (K-weighted, over the sung part only) and median pitch, or NaN if not singing."""
+    import warnings
+    warnings.filterwarnings("ignore", category=RuntimeWarning)       # silent windows give empty slices: expected
     y, sr = sf.read(path, always_2d=True); m = y.mean(1)
     from hypnomix.core import pitch
     pt, f0, _ = pitch.track(path, fmin=70, fmax=1000, sr=AN, hop=512)      # fast, cached, active parts only
@@ -118,7 +120,7 @@ def measure(path, win_s):
 
 
 def plan(levels, pitches, anchor, reduce="above", above_db=1.5, below_db=1.5, spread="ladder", max_cut=6.0, tolerance=0.0,
-         lead=None, lead_margin=0.0, same_db=1.0):
+         lead=None, lead_margin=0.0, same_db=1.0, root_step=None, upper_step=None):
     """Gains in dB per part per window (pure). levels/pitches: {part: array per window (NaN = not singing)}.
     anchor: a part name, 'lowest' or 'highest'. Only turns parts down, never more than max_cut."""
     names = list(levels)
@@ -156,6 +158,15 @@ def plan(levels, pitches, anchor, reduce="above", above_db=1.5, below_db=1.5, sp
                 tgt[n] = max(want, levels[n][w] - abs(max_cut))                  # where it really lands
                 if spread == "ladder":
                     prev = tgt[n]          # the next part steps down from this one
+        if root_step is not None:                      # root-based steps: the lowest harmony is the basis
+            harm_ = [n for n in parts if n != lead]    # (parts are sorted low to high)
+            if len(harm_) >= 2:
+                root = harm_[0]
+                tgt[root] = levels[root][w]            # the root is never turned down
+                for i, n in enumerate(harm_[1:]):
+                    want = levels[root][w] - (root_step if i == 0 else (upper_step if upper_step is not None else root_step))
+                    if levels[n][w] > want + tolerance:  # only where it is clearly over: drowning out the ones below
+                        tgt[n] = min(tgt.get(n, levels[n][w]), max(want, levels[n][w] - abs(max_cut)))
         if lead in parts and lead_margin > 0:          # every harmony sits at least lead_margin under the lead
             top = levels[lead][w] - lead_margin
             for n in parts:
@@ -358,8 +369,12 @@ def balance(a):
         lead = pick_lead([(n, dsp.load(p, 22050)[0]) for n, p in zip(names, a.stems)], 22050)
     print(f"lead: {lead} (never turned down" + (f"; every other part kept at least {a.lead_margin:g} dB under it where "
                                                  f"both sing)" if a.lead_margin > 0 else ")"))
+    if a.root_step is not None:
+        print(f"root-based steps: the lowest harmony is the basis (never turned down); the next one up about "
+              f"{a.root_step:g} dB under it, higher ones about {a.upper_step if a.upper_step is not None else a.root_step:g} dB "
+              f"under it; only where a part is over by more than {a.tolerance:g} dB, at most {a.max_cut:g} dB in any window")
     gains, rows = plan(levels, pitches, anchor, a.reduce, a.above_db, a.below_db, a.spread, a.max_cut, a.tolerance,
-                       lead, a.lead_margin)
+                       lead, a.lead_margin, root_step=a.root_step, upper_step=a.upper_step)
     od = out_at(a.out, "voices", "balance")
     summary = {}
     for (n, _, _, sr, L), path in zip(res, a.stems):
@@ -375,7 +390,8 @@ def balance(a):
         y, _ = sf.read(path, always_2d=True)
         sf.write(str(od / f"{n} (balanced).wav"), (y * env[:len(y), None]).astype(np.float32), sr, subtype="FLOAT")
     settings = dict(anchor=anchor, reduce=a.reduce, above_db=a.above_db, below_db=a.below_db, spread=a.spread,
-                    max_cut=a.max_cut, tolerance=a.tolerance, lead=lead, lead_margin=a.lead_margin, window_s=win_s)
+                    max_cut=a.max_cut, tolerance=a.tolerance, lead=lead, lead_margin=a.lead_margin,
+                    root_step=a.root_step, upper_step=a.upper_step, window_s=win_s)
     json.dump(dict(settings=settings, summary=summary, windows=rows), open(str(od / "balance.json"), "w"), indent=1)
     fixed = sum(1 for r in rows if any(p["cut"] < -0.05 for p in r["parts"]))
     same = sum(1 for r in rows if r.get("harmonies_same_level"))
@@ -399,7 +415,7 @@ def main():
     ap.add_argument("--above-db", type=float, default=0.0, help="dB quieter per step above the anchor (you choose)")
     ap.add_argument("--below-db", type=float, default=0.0, help="dB quieter per step below the anchor (you choose)")
     ap.add_argument("--spread", choices=["ladder", "flat"], default="ladder")
-    ap.add_argument("--max-cut", type=float, default=6.0)
+    ap.add_argument("--max-cut", type=float, default=None, help="never turn a part down more than this in any window (6)")
     ap.add_argument("--tolerance", type=float, default=None,
                     help="only turn a part down where it is louder than its limit by more than this many dB (default 1.5); "
                          "with --tame it comes down to exactly this far above the part below, no further")
@@ -408,6 +424,8 @@ def main():
                     help="raw (pre-fader) renders: the track's fader in dB, so parts compare as heard (repeatable)")
     ap.add_argument("--lead-margin", type=float, default=None,
                     help="keep every other part at least this many dB under the lead where both sing (--tame: 1.5)")
+    ap.add_argument("--root-step", type=float, help="the lowest harmony is the basis; the next one up sits this many dB under it")
+    ap.add_argument("--upper-step", type=float, help="harmonies above that sit this many dB under the lowest one (on average)")
     ap.add_argument("--use-learned", action="store_true", help="with --tame: use the numbers learned from your songs this time")
     ap.add_argument("--confirm", nargs="+", metavar="KEY=VALUE",
                     help="make learned (or your own) numbers the --tame default: lead_margin=3 tolerance=1.5")
@@ -422,6 +440,7 @@ def main():
     ap.add_argument("--overlap", type=float, default=0.3, help="fraction of a phrase two parts must share to count as singing together")
     a = ap.parse_args()
     a.tolerance_given = a.tolerance is not None
+    a.max_cut_given = a.max_cut is not None
     if a.tolerance is None:
         a.tolerance = 1.5
     if a.learn:
@@ -437,7 +456,8 @@ def main():
             return
     if a.confirm:
         st = style_defaults() or {}
-        st["confirmed"] = {k: float(x) for k, _, x in (c.partition("=") for c in a.confirm) if k in ("lead_margin", "tolerance")}
+        st["confirmed"] = {k: float(x) for k, _, x in (c.partition("=") for c in a.confirm)
+                           if k in ("lead_margin", "tolerance", "root_step", "upper_step", "max_cut")}
         STYLE.parent.mkdir(parents=True, exist_ok=True)
         STYLE.write_text(json.dumps(st, indent=1))
         print(f"--tame default now: {st['confirmed']} (saved in {STYLE})")
@@ -456,6 +476,12 @@ def main():
                 a.lead_margin = float(use["lead_margin"]) if use.get("lead_margin") is not None else 1.5
             if not a.tolerance_given and use.get("tolerance") is not None:
                 a.tolerance = float(use["tolerance"])
+            if a.root_step is None and use.get("root_step") is not None:
+                a.root_step = float(use["root_step"])
+            if a.upper_step is None and use.get("upper_step") is not None:
+                a.upper_step = float(use["upper_step"])
+            if not a.max_cut_given and use.get("max_cut") is not None:
+                a.max_cut = float(use["max_cut"])
             src_ = "your confirmed numbers" if conf else ("learned from your songs (--use-learned)" if use else "the stated rule")
             print(f"margins: lead {a.lead_margin:.1f} dB, tolerance {a.tolerance:.1f} dB ({src_})")
             if st and not conf and not a.use_learned:
@@ -464,6 +490,8 @@ def main():
                       f"them with `hypnomix voices --confirm lead_margin=X tolerance=Y`)")
         if a.lead_margin is None:
             a.lead_margin = 0.0
+        if a.max_cut is None:
+            a.max_cut = 6.0
         steps = {"above": [a.above_db], "below": [a.below_db], "both": [a.above_db, a.below_db]}[a.reduce]
         if a.anchor and max(steps) <= 0:
             print(f"only taming overshadowing parts: a part is turned down only where it is louder than the part "

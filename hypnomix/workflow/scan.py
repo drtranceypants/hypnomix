@@ -351,9 +351,10 @@ def harmony_question(files, lead, als=None, block_s=0.5, floor_db=-45.0):
         where=f"{secs:.0f} s where 2+ parts sing together",
         problem=f"{len(files)} vocal parts ({parts}) sing together for about {secs:.0f} s. Where a higher part "
                 "overshadows the one below it, the stack loses its shape.",
-        fix=("suggested (approve with no note): harmonies a little under the lead (at least 1.5 dB) and no part "
-             "overshadowing the one below it (more than 1.5 dB louder: brought to that edge), no further; it also "
-             "reports where the harmonies sit at one level (no space between them). "
+        fix=("suggested (approve with no note): your confirmed spacing (`hypnomix voices --confirm`; e.g. the lowest "
+             "harmony is the basis, the next one up about 4 dB under it, higher ones about 5.5 dB under it), only "
+             "where a part is clearly over and drowning out the ones below, subtly (small cuts, smooth ramps); the "
+             "lead and the root are never turned down; nothing is ever turned up. "
              "For more, ask, one at a time: 1) which part to prioritise (the lead, '" + str(lead) + "', or the lowest, the "
              "highest, or another track); 2) which side to make quieter: above it, below it or both; 3) how much "
              "quieter per step: 0 / 1 / 1.5 / 3 / 4.5 / 6 dB or a custom value; 4) ladder (each further part quieter "

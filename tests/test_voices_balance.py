@@ -103,3 +103,24 @@ class LearnStyle(unittest.TestCase):
         self.assertEqual(st["lead_margin"], 2.5)        # median of the songs' 25th percentiles
         self.assertEqual(st["tolerance"], 1.5)          # median of the songs' 90th percentiles
         self.assertEqual(st["lead_margin_median"], 4.5)
+
+
+class RootSteps(unittest.TestCase):
+    def setUp(self):
+        self.pt = {"lead": np.array([392.0]), "root": np.array([196.0]), "mid": np.array([247.0]), "top": np.array([294.0])}
+
+    def run_plan(self, lv):
+        g, _ = plan(lv, self.pt, "lowest", "above", 0.0, 0.0, "ladder", 4.0, tolerance=1.0, lead="lead",
+                    root_step=4.0, upper_step=5.5)
+        return {k: round(float(x[0]), 2) for k, x in g.items()}
+
+    def test_drowning_higher_harmonies_come_down_to_their_steps(self):
+        g = self.run_plan({"lead": np.array([-10.0]), "root": np.array([-16.0]), "mid": np.array([-15.0]), "top": np.array([-17.0])})
+        self.assertEqual(g["root"], 0.0); self.assertEqual(g["lead"], 0.0)
+        self.assertEqual(g["mid"], -4.0)     # 1 dB over the root: down to 4 dB under it (cut capped at 4)
+        self.assertEqual(g["top"], -4.0)     # wanted -5.5 under the root (-21.5): 4.5 dB, capped at 4
+
+    def test_already_right_or_close_is_left_alone(self):
+        g = self.run_plan({"lead": np.array([-10.0]), "root": np.array([-16.0]), "mid": np.array([-19.5]), "top": np.array([-21.0])})
+        self.assertEqual(g["mid"], 0.0)      # 3.5 under: within 1 dB of the 4 dB step
+        self.assertEqual(g["top"], 0.0)      # 5 under: within 1 dB of 5.5
