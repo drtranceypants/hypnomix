@@ -149,6 +149,39 @@ def midi_info(t):
     return (float(np.median(keys)) if keys else None), len(keys)
 
 
+def rename_set(src, out, mapping, inplace=False):
+    """Write a copy of the set with tracks renamed {old name: new name}. Returns (renamed, skipped[(old, why)]).
+    Only a name that matches exactly one track is changed. The original is never touched."""
+    import shutil
+    if Path(out).resolve() == Path(src).resolve() and not inplace:   # inplace: only for a set a tool just wrote
+        raise SystemExit("refusing to overwrite the set; give a new file name")
+    tree = ET.ElementTree(ET.fromstring(gzip.open(src).read()))
+    tracks = list(tree.getroot().find(".//Tracks"))
+    by = defaultdict(list)
+    for t in tracks:
+        by[v(t, "./Name/EffectiveName")].append(t)
+    done, skipped = [], []
+    taken = {n for n in by if n not in mapping}
+    for old, new in mapping.items():
+        if len(by.get(old, [])) != 1:
+            skipped.append((old, "no track by that name" if not by.get(old) else "several tracks share that name"))
+            continue
+        if new in taken:
+            skipped.append((old, f"another track is already called {new!r}"))
+            continue
+        nm = by[old][0].find("./Name")
+        nm.find("./UserName").set("Value", new)
+        nm.find("./EffectiveName").set("Value", new)
+        taken.add(new)
+        done.append((old, new))
+    tmp = Path(str(out) + ".tmp")
+    data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(tree.getroot(), encoding="utf-8")
+    with gzip.open(tmp, "wb") as f:   # same serialisation as every other tool that writes sets
+        f.write(data)
+    shutil.move(tmp, out)
+    return done, skipped
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix name", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("set"); ap.add_argument("--out")
@@ -170,7 +203,8 @@ def main():
     rows = {}
     for t in tracks:
         tid, n = t.get("Id"), name[t.get("Id")]
-        rec = {"old": n, "kind": t.tag.replace("Track", ""), "group": name.get(parent[tid])}
+        rec = {"old": n, "kind": t.tag.replace("Track", ""), "group": name.get(parent[tid]),
+               "on": v(t, "./DeviceChain/Mixer/Speaker/Manual") != "false"}
         devs = device_names(t)
         files = [os.path.basename(v(c, "./SampleRef/FileRef/Path") or "") for c in t.iter("AudioClip")][:20]
         clipnames = [v(c, "./Name") for c in list(t.iter("AudioClip")) + list(t.iter("MidiClip"))][:20]
@@ -203,13 +237,32 @@ def main():
         plural = {"Vocal": "Vocals", "Lead Vocal": "Vocals", "Harmony": "Vocals", "Kick": "Drums", "Snare": "Drums", "Hats": "Drums",
                   "Guitar": "Guitars", "Strings": "Strings", "Synth": "Synths", "Keys": "Keys", "Pad": "Pads", "Bass": "Bass", "Drums": "Drums"}.get(top, top + "s")
         rows[gid].update(label=plural, confidence=round(cnt / len(ch), 2), reason=f"{cnt}/{len(ch)} children are {top}")
-        if plural == "Vocals":
-            voc = [c for c in ch if rows[c]["label"] in ("Vocal", "Lead Vocal", "Harmony") and rows[c].get("features")]
-            if voc:
-                lead = max(voc, key=lambda c: (round(rows[c]["features"]["vowel_move"]), rows[c]["features"]["active_s"]))  # lead sings the words: vowels move most
-                rows[lead]["label"] = "Lead Vocal"
-                rest = sorted([c for c in voc if c != lead], key=lambda c: rows[c]["features"]["f0"] or 0)
-                for i, c in enumerate(rest): rows[c]["label"] = f"Harmony {i + 1}"
+    # vocals (grouped or not): one Lead Vocal by the shared rule (roles.lead_rank, as scan/tune/automix use),
+    # the others Harmony 1..n from low to high. A track already named as the lead keeps it.
+    # a copy of a track ("12-Audio CLEAN", "12-Audio copy") is what the original is, when its own sound is unclear
+    base_of = lambda n_: re.match(r"^(\d+-(?:audio|midi))\b", n_ or "", re.I)
+    by_old = {r["old"]: r for r in rows.values()}
+    for rec in rows.values():
+        m = base_of(rec["old"])
+        if m and m.group(1) != rec["old"] and rec["confidence"] < 0.5:
+            orig = next((r for o_, r in by_old.items() if o_.lower() == m.group(1).lower()), None)
+            if orig and orig["confidence"] >= 0.5 and orig["label"]:
+                lab = "Vocal" if orig["label"] in ("Lead Vocal", "Harmony") or orig["label"].startswith("Harmony") else orig["label"]
+                rec.update(label=lab, confidence=orig["confidence"],
+                           reason=f"a copy of '{orig['old']}' ({orig['label']}); its own sound: {rec['reason']}")
+    # vocals (grouped or not): one Lead Vocal among the ones that PLAY (switched on), by the shared rule
+    # (roles.choose_lead, as scan/tune/automix use); the other playing vocals Harmony 1..n from low to high.
+    from hypnomix.engineer.roles import choose_lead
+    voc = [c for c, r in rows.items() if r["label"] in ("Vocal", "Lead Vocal", "Harmony") and r.get("features")
+           and r["kind"] == "Audio" and r.get("on", True)]
+    if len(voc) > 1 or (voc and rows[voc[0]]["label"] == "Vocal"):
+        named = [c for c in voc if rows[c].get("text_clue") == "Lead Vocal"]
+        lead = named[0] if named else choose_lead([(c, rows[c]["features"]["vowel_move"], rows[c]["features"]["active_s"])
+                                                   for c in voc])
+        rows[lead]["label"] = "Lead Vocal"
+        rows[lead]["reason"] += "; lead: among the playing vocals, sings longest of those whose vowels move most"
+        rest = sorted([c for c in voc if c != lead], key=lambda c: rows[c]["features"]["f0"] or 0)
+        for i, c in enumerate(rest): rows[c]["label"] = f"Harmony {i + 1}"
     if a.names:
         fix = json.loads(a.names)
         for rec in rows.values():
@@ -225,6 +278,9 @@ def main():
         rename = a.all or DEFAULT_NAME.match(rec["old"].strip()) is not None
         if not rename or rec["kind"] == "Return": rec["new"] = rec["old"]; continue
         lab = rec["final"]
+        m = re.match(r"^\d+-(?:audio|midi|group)\b\s*(.+)$", rec["old"].strip(), re.I)
+        if m and not re.fullmatch(r"[\d\s]+", m.group(1)):
+            lab = f"{lab} {m.group(1).strip()}"          # their own word after the default name ("CLEAN")
         if rec["kind"] != "Group" and seen[(rec["group"], lab)] > 1 and not re.search(r"\d$", lab):
             idx[(rec["group"], lab)] += 1; name_ = f"{lab} {idx[(rec['group'], lab)]}"
         else:

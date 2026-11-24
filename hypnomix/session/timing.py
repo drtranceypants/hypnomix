@@ -50,6 +50,10 @@ SLOTS = {  # name: (minimum tolerance s, multiple of the song's own looseness, s
     "8th": (0.030, 3.0, 0.4),
     "16th": (0.040, 3.5, 0.3),
 }
+# Melodic parts (guitar, keys, strings) carry the feel: only clear outliers, only as an option, and only partway.
+MELODIC_TOL = 1.5      # their tolerance is this many times the usual one
+MELODIC_SHARE = 0.3    # move at most this share of the error (never fully onto the band or grid)
+MELODIC_MAX = 0.015    # and never more than 15 ms
 SEARCH = 0.070        # a hit more than this from a 16th slot isn't assigned to it
 GHOST_PCT = 60        # ignore hits weaker than this percentile of the track's onsets
 SR_O = 22050
@@ -122,7 +126,7 @@ def arr_to_clipbeat(ci, arr_beats):
 
 
 # ---------------------------------------------------------------- analysis
-def analyse(root, als_dir, names, to_grid, include_off=False):
+def analyse(root, als_dir, names, to_grid, include_off=False, melodic=()):
     tempo = float(root.find(".//Tempo/Manual").get("Value"))
     spb = 60.0 / tempo                     # seconds per beat
     tracks, notes = [], {"unfixable": {}, "missing": set(), "off": []}
@@ -176,8 +180,10 @@ def analyse(root, als_dir, names, to_grid, include_off=False):
     for slot, group in by_slot.items():
         kind = slot_kind(slot)
         floor_tol, mult, share = SLOTS[kind]
-        tol = max(floor_tol, mult * looseness)
+        tol0 = max(floor_tol, mult * looseness)
         for h in group:
+            mel = h["track"] in melodic
+            tol = tol0 * (MELODIC_TOL if mel else 1.0)
             others = [o for o in group if o["track"] != h["track"]]
             if len(others) >= 2 and not to_grid:
                 ref_err = float(np.median([o["grid_err"] for o in others]))
@@ -187,8 +193,11 @@ def analyse(root, als_dir, names, to_grid, include_off=False):
             off = h["grid_err"] - ref_err
             if abs(off) <= tol:
                 continue
+            move = -off * share
+            if mel:
+                move = float(np.clip(-off * min(share, MELODIC_SHARE), -MELODIC_MAX, MELODIC_MAX))
             issues.append(dict(track=h["track"], hit=h, slot=slot, kind=kind, ref=ref,
-                               off=off, move=-off * share, beat=h["beat"]))
+                               off=off, move=move, beat=h["beat"], optional=mel))
     issues.sort(key=lambda i: i["beat"])
     return tempo, tracks, issues, notes
 
@@ -248,16 +257,45 @@ def apply(issues, tracks, tempo, strength):
             skipped.append((i, "needs a hand: the hits either side are too close to stretch cleanly"))
             continue
         snapshot = [(w.get("SecTime"), w.get("BeatTime")) for w in ci["el"].find("./WarpMarkers")]
-        cur = arr_to_clipbeat(ci, file_to_arr(ci, [prev_s, h["sec"], next_s], tempo))
-        ok = add_marker(ci, prev_s, float(cur[0]))
+        before = list(ci["markers"])
+        # Live plays audio past the last marker (and before the first) at the speed of the end segment. A
+        # nudge's anchors can become the new first/last marker, and then the rest of the clip would play at
+        # the nudge's stretched speed and drift away. Guard markers one beat further out, on the clip's
+        # current timing, keep the end segments at their old speed.
+        g = spb
+        secs_now = [m_s for _, m_s in ci["markers"]]
+        guard = []
+        if not secs_now or next_s >= max(secs_now) - 1e-6:
+            guard.append(next_s + g)
+        if not secs_now or prev_s <= min(secs_now) + 1e-6:
+            if prev_s - g >= 0:
+                guard.append(prev_s - g)
+        pts = [prev_s, h["sec"], next_s] + guard
+        cur = arr_to_clipbeat(ci, file_to_arr(ci, pts, tempo))
+        ok = True
+        for gs, gb in zip(guard, cur[3:]):
+            ok = ok and add_marker(ci, gs, float(gb))
+        ok = ok and add_marker(ci, prev_s, float(cur[0]))
         ok = ok and add_marker(ci, next_s, float(cur[2]))
         ok = ok and add_marker(ci, h["sec"], float(cur[1]) + move_b)
+        ok = ok and whole_clip_ok(ci, before, prev_s, next_s, tempo)
         if not ok:
             restore(ci, snapshot)
-            skipped.append((i, "would cross an existing warp marker"))
+            skipped.append((i, "would cross an existing warp marker, or would move audio outside the hit"))
             continue
         done.append(i)
     return done, skipped
+
+
+def whole_clip_ok(ci, before, lo_s, hi_s, tempo, tol_ms=0.5):
+    """After a nudge, every moment of the clip outside (lo_s, hi_s) must play exactly when it did before."""
+    end = max(s_ for _, s_ in ci["markers"] + before) + 600.0
+    grid = np.concatenate([np.arange(0.0, lo_s, 0.005), np.arange(hi_s, end, 0.005)])
+    if not len(grid):
+        return True
+    old = dict(ci); old["markers"] = before
+    dev = np.abs(file_to_arr(ci, grid, tempo) - file_to_arr(old, grid, tempo)) * 60.0 / tempo * 1000
+    return float(dev.max()) <= tol_ms
 
 
 def restore(ci, snapshot):
@@ -280,19 +318,24 @@ def write_json(path, src, tempo, tracks, issues, notes, a):
     for i in issues:
         tol = max(SLOTS[i["kind"]][0], SLOTS[i["kind"]][1] * notes["looseness"])
         sev = "high" if abs(i["off"]) > 1.5 * tol or i["kind"] == "downbeat" else "medium"
+        if i.get("optional"):
+            sev = "low"
         ci = i["hit"]["clip"]
         manual = not fixable(ci)
         late = "late" if i["off"] > 0 else "early"
         out.append(dict(id=i["id"], tool="timing", kind=i["kind"], severity=sev, track=i["track"],
                         where=where(i["beat"]),
-                        problem=f"{i['kind']} hit {abs(i['off']) * 1000:.0f} ms {late} against the {i['ref']}",
-                        fix=(f"nudge {i['move'] * a.strength * 1000:+.0f} ms with warp markers" if not manual
-                             else "clip is looped or not warped: nudge it by hand in Live"),
-                        applies="manual" if manual else "set"))
+                        problem=(("OPTIONAL (melodic part: its looseness is part of the feel). " if i.get("optional") else "")
+                                 + f"{i['kind']} hit {abs(i['off']) * 1000:.0f} ms {late} against the {i['ref']}"),
+                        fix=(f"nudge {i['move'] * a.strength * 1000:+.0f} ms with warp markers"
+                             + (" (a gentle partial move, not onto the grid; skip it to keep the feel)" if i.get("optional") else "")
+                             if not manual else "clip is looped or not warped: nudge it by hand in Live"),
+                        applies="manual" if manual else "set", optional=bool(i.get("optional"))))
     feel = {t: {"lag_ms": round(l * 1000, 1), "spread_ms": round(sp * 1000, 1)} for t, (l, sp) in notes["feel"].items()}
     Path(path).write_text(json.dumps({"tool": "timing", "set": str(src), "tempo": tempo,
                                       "looseness_ms": round(notes["looseness"] * 1000, 1), "feel": feel,
-                                      "tracks": [t for t, _, _ in tracks], "findings": out}, indent=1))
+                                      "tracks": [t for t, _, _ in tracks], "melodic": sorted(getattr(a, "melodic", []) or []),
+                                      "findings": out}, indent=1))
 
 
 def main():
@@ -301,6 +344,8 @@ def main():
     ap.add_argument("--track", action="append", default=[], help="instrument tracks to compare (repeatable)")
     ap.add_argument("--to-grid", action="store_true", help="compare every hit with the grid, not the band")
     ap.add_argument("--include-off", action="store_true", help="also use switched-off tracks")
+    ap.add_argument("--melodic", action="append", default=[], help="a melodic track (guitar, keys, strings; repeatable): "
+                    "only clear outliers, offered as optional, moved at most 30%% of the way and 15 ms")
     ap.add_argument("--apply", metavar="OUT.als", help="write warp-marker fixes to this new set")
     ap.add_argument("--strength", type=float, default=1.0, help="scale every move (0-1, default 1)")
     ap.add_argument("--list", type=int, default=40, help="how many problem hits to print (default 40)")
@@ -312,7 +357,7 @@ def main():
         sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent})")
     tree = aa.load(src)
     root = tree.getroot()
-    tempo, tracks, issues, notes = analyse(root, src.parent, a.track, a.to_grid, a.include_off)
+    tempo, tracks, issues, notes = analyse(root, src.parent, a.track, a.to_grid, a.include_off, set(a.melodic))
     spb = 60 / tempo
     for n, i in enumerate(issues, 1):
         i["id"] = f"timing-{n}"

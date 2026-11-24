@@ -7,7 +7,8 @@ it, every approved change lands in **new files** next to the originals, and the 
  hypnomix prefs  (once)      your targets, protected tracks, what is deliberate, how you like to review
         │
         ▼
-             ┌─ files    (refs)          missing audio
+             ┌─ names    (name)          default track names → names by sound (asks when unsure)
+             ├─ files    (refs)          missing audio
              ├─ clips    (smooth)        clicks, level jumps at cuts, spikes
  Song.als ───┼─ timing   (timing)        hits out of time with the band
   (+ mix)    ├─ vocals   (render+tune)   pitch of every vocal, harmonies vs lead
@@ -201,8 +202,14 @@ and the verification. Any agent can follow `AGENTS.md` to do the same. Ask:
 ## What the checks deliberately leave alone
 
 - **Feel.** `timing` measures the band's own looseness and only flags outliers (downbeats held tightest,
-  16ths loosest), comparing each instrument with the others before the grid; `tune` keeps vibrato, scoops and
-  slides and only moves each note's centre.
+  16ths loosest), comparing each instrument with the others before the grid. Melodic parts (guitar, keys,
+  strings: `--melodic`) only get clear outliers, as OPTIONAL low-severity items, moved at most 30% of the way
+  and 15 ms. Each nudge is pinned on both sides, and the whole clip is checked afterwards: outside the nudged
+  hit, nothing may move (a nudge that would shift the rest of the clip is refused). `tune` keeps vibrato,
+  scoops and slides and only moves each note's centre.
+- **Names.** Only default names ("9-Audio", "8-Group") are renamed, and only when approved. The lead vocal is
+  chosen one way everywhere (`roles.choose_lead`): among the vocals that play, the one that sings longest of
+  those whose vowels move most.
 - **Music.** Drum-like tracks aren't checked for spikes; loops that grow louder by design aren't "jumps";
   lasting level changes inside a take are only checked with `smooth --steps`.
 - **Intent.** Automation, effects and levels you set are treated as choices. Things you listed as deliberate

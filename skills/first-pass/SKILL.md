@@ -23,11 +23,16 @@ until they approve it, originals are never overwritten, and every applied fix is
 5. For a set, run `hypnomix name "<SET>" --out "<SCAN_DIR>/raw/names"` once, first: it labels tracks (lead
    vocal, harmonies, drums, guitar…) and the scanners reuse it. If it labels key tracks "Instrument" with low
    confidence, ask what they are, then pass `--vocal-track` / `--timing-track` / `--lead-track`.
+   Renaming is part of every first pass: the `names` group turns each default-named track or group ("9-Audio",
+   "8-Group") into a `name-N` finding. Sure names are renames to approve; unsure ones are questions ("what is
+   this track?"): record the person's answer with `fix DIR --decide name-N=approve --note "<their name>"`. A
+   word they added after a default name ("12-Audio CLEAN") is kept. REVIEW.md shows the new names next to the
+   old ones, and `fix` renames last, in the same new set.
 
 ## 1. Scan in parallel
 
 Start one `hypnomix-scanner` subagent per group, **all in the same message** so they run at once.
-A set: `files`, `clips`, `timing`, `vocals`, `effects`, `noise`, `intent`, and `mix` (only with `--mix`; add
+A set: `names`, `files`, `clips`, `timing`, `vocals`, `effects`, `noise`, `intent`, and `mix` (only with `--mix`; add
 `--like REF.wav` if they named a song to sound like). `stems` only when they want the deep pass (`--deep`: renders every track).
 A folder: `recordings`, `stems`. Give each the path, scan folder, group, and the `--mix/--ref/--key` values.
 They are read-only and return a short summary.
@@ -95,7 +100,10 @@ Then stop and ask what they heard. Don't start another round on your own.
 - Existing automation, effects and levels are the person's choices. Flag what looks odd; never "fix" it unasked.
 - Tools that can't decide (a note halfway between two pitches, crowded hits that would stretch audibly, loop
   seams, a steady quiet sound that might be a pad) say so: hand those to the person rather than guessing.
-- Keep the human feel: timing fixes only touch outliers against the band, pitch fixes keep vibrato and slides.
+- Keep the human soul and imperfection: pitch and timing are a gentle guide. Timing fixes only touch outliers
+  against the band; melodic parts (guitar, keys, strings) are only ever offered as OPTIONAL, partial nudges (at
+  most 30% of the way and 15 ms, clear outliers only): never recommend approving them in bulk. Pitch fixes keep
+  vibrato and slides, and leave notes as sung where the key is unsure.
 - Say plainly what failed or was not checked. "Done" means applied and measured again.
 
 ## Key and scale (before any tuning)

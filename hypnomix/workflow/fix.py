@@ -92,6 +92,9 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
         args += ["--list", "0"]
         for t in timing_tracks:
             args += ["--track", t]
+        tj = sd / "raw" / "timing.json"
+        for t in (json.loads(tj.read_text()).get("melodic", []) if tj.exists() else []):
+            args += ["--melodic", t]
     if tool == "distortion" and scan.get("mix"):
         args += ["--mix", scan["mix"]]
     hx(*args)
@@ -209,7 +212,8 @@ def main():
     if prot and not a.allow_protected:
         sys.exit(f"on protected tracks: {', '.join(prot)}. Ask the person again, then add --allow-protected.")
 
-    set_items = [f for f in chosen if f.get("applies") == "set"]
+    name_items = [f for f in chosen if f.get("tool") == "name"]       # renamed last: every other step finds tracks by name
+    set_items = [f for f in chosen if f.get("applies") == "set" and f.get("tool") != "name"]
     audio_items = [f for f in chosen if f.get("applies") == "audio"]
     manual_items = [f for f in chosen if f.get("applies") in ("manual", "info")]
     folder_mode = scan.get("mode") in ("folder", "file")
@@ -217,7 +221,7 @@ def main():
     src = Path(a.from_set).resolve() if a.from_set else orig
     out = None
 
-    if orig and (set_items or audio_items):
+    if orig and (set_items or audio_items or name_items):
         if not orig.exists():
             sys.exit(f"the scanned set is gone: {orig}")
         if src.resolve().parent != orig.resolve().parent:
@@ -226,7 +230,7 @@ def main():
         if was and not a.from_set and abs(orig.stat().st_mtime - was) > 1 and not a.stale_ok:
             sys.exit("the set was saved again after the scan, so the findings may not match it any more.\n"
                      "Re-scan it (recommended), or pass --stale-ok if the change cannot affect these findings.")
-    if set_items:
+    if set_items or name_items:
         if not orig:
             sys.exit("this scan has no Live set: set changes cannot be applied")
         if not a.out:
@@ -240,7 +244,8 @@ def main():
             sys.exit("refusing to overwrite the original set")
         if out.exists():
             sys.exit(f"{out.name} already exists: choose a new name (nothing is ever overwritten)")
-    if orig and (set_items or audio_items) and live_running():
+    name_out = out
+    if orig and (set_items or audio_items or name_items) and live_running():
         print("NOTE: Live is running. Changes not saved in Live are not in the file being read, and the set "
               "must be closed in Live before the new one is opened.\n")
 
@@ -254,7 +259,8 @@ def main():
 
     if set_items:
         tj = sd / "raw" / "timing.json"
-        timing_tracks = json.loads(tj.read_text())["tracks"] if tj.exists() else []
+        tjd = json.loads(tj.read_text()) if tj.exists() else {}
+        timing_tracks, timing_melodic = tjd.get("tracks", []), tjd.get("melodic", [])
         cur, step, temps, applied_tools = src, 0, [], []
         try:
             for tool in ORDER:
@@ -298,6 +304,8 @@ def main():
                         args += ["--list", "0"]
                         for t in timing_tracks:
                             args += ["--track", t]
+                        for t in timing_melodic:
+                            args += ["--melodic", t]
                     if tool == "distortion" and scan.get("mix"):
                         args += ["--mix", scan["mix"]]
                     code, txt = hx(*args)
@@ -353,6 +361,37 @@ def main():
                 print("verify     " + line[2:])
                 log.append(line)
             log.append("")
+
+    # ---- track names, last (into the new set, or a new set of their own)
+    if name_items:
+        from hypnomix.session.names import rename_set
+        mapping = {}
+        for f in name_items:
+            note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
+            mapping[f["old"]] = note or f["new"]
+            if f.get("kind") == "track-name-question" and not note:
+                print(f"name       {f['old']}: approved without a name from the person; using the guess {f['new']!r}")
+        target = name_out
+        base = out if (set_items and out and Path(out).exists()) else src
+        if base != src or not Path(target).exists():
+            done_n, skipped_n = rename_set(base, target, mapping, inplace=(base != src))
+            for old, new in done_n:
+                print(f"name       {old} → {new}")
+            for old, why in skipped_n:
+                print(f"name       skipped {old}: {why}")
+                skipped_all.append(({"id": next(f['id'] for f in name_items if f['old'] == old), "tool": "name",
+                                     "track": old}, why))
+            log += ["### track names", ""] + [f"- {o_} → {n_}" for o_, n_ in done_n] + \
+                   [f"- skipped {o_}: {w}" for o_, w in skipped_n] + [""]
+            from hypnomix.session import check as C
+            errs, _, _ = C.check(target, src, renamed=dict(done_n))
+            if errs:
+                bad = Path(target).with_name(Path(target).stem + " (BROKEN, do not open).als")
+                Path(target).rename(bad)
+                failed += [f"structure check after renaming: {e}" for e in errs]
+                print(f"check      FAILED after renaming: renamed to {bad.name}; keep using the original.")
+            else:
+                print(f"check      structure OK after renaming; wrote {target}")
 
     # ---- approved moves of a plan (prep / automix / master --plan): run the tool with only those moves
     planned = [f for f in audio_items if f.get("plan")]

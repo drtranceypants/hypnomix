@@ -47,7 +47,7 @@ def all_tracks(root):
     return list(ts) if ts is not None else []
 
 
-def check(path, against=None):
+def check(path, against=None, renamed=None):
     """Returns (errors, warnings, facts). Empty errors = structurally sound."""
     err, warn, facts = [], [], {}
     root, problem = load_root(path)
@@ -178,7 +178,8 @@ def check(path, against=None):
         else:
             if r0.get("MinorVersion") != root.get("MinorVersion") or r0.get("Creator") != root.get("Creator"):
                 err.append(f"version changed: {r0.get('Creator')} → {root.get('Creator')}")
-            a = [(t.tag, track_name(t)) for t in all_tracks(r0)]
+            ren = renamed or {}                      # renames the person approved are expected changes
+            a = [(t.tag, ren.get(track_name(t), track_name(t))) for t in all_tracks(r0)]
             b = [(t.tag, track_name(t)) for t in all_tracks(root)]
             if a != b:
                 err.append(f"the track list changed ({len(a)} → {len(b)} tracks, or their order or names)")

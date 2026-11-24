@@ -101,17 +101,34 @@ def preset(role):
     return dict(prio=prio, level=level, pan=pan, hpf=hpf, reverb=rev, comp=comp)
 
 
+VOWEL_CLEAR = 1.5   # vowel movement only decides when one vocal leads by this much
+
+
+def choose_lead(items):
+    """The one lead rule, for [(name, vowel_move, sung_seconds)]. The lead sings the words, so its vowels move
+    the most (harmonies often hold oohs and long vowels), but only a clear lead counts: vocals within
+    VOWEL_CLEAR of the most moving one are all contenders, and the one that sings longest of them is the lead."""
+    items = [(n, float(v or 0), float(s or 0)) for n, v, s in items]
+    if not items:
+        return None
+    top = max(v for _, v, _ in items)
+    contenders = [it for it in items if it[1] >= top - VOWEL_CLEAR]
+    return max(contenders, key=lambda it: (it[2], it[1]))[0]
+
+
+def lead_rank(vowel_move, sung_s):
+    return (float(vowel_move or 0), float(sung_s or 0))
+
+
 def lead_score(y, sr):
-    """The lead sings the words: its vowels move the most (harmonies often hold oohs and long vowels);
-    singing time breaks ties."""
     b = dsp.block_rms_db(y, sr, 0.05)
     sung = float((b > b.max() - 35).sum()) * 0.05
     try:
         from hypnomix.session.names import audio_features
         m = y.mean(axis=1) if y.ndim > 1 else y
-        return (round(audio_features(m, sr)["vowel_move"], 0), sung)
+        return lead_rank(audio_features(m, sr)["vowel_move"], sung)
     except Exception:
-        return (0, sung)
+        return lead_rank(0, sung)
 
 
 def pick_lead(vocals, sr):
@@ -122,7 +139,7 @@ def pick_lead(vocals, sr):
         return None
     if len(vocals) == 1:
         return vocals[0][0]
-    return max(vocals, key=lambda nv: lead_score(nv[1], sr))[0]
+    return choose_lead([(n, *lead_score(y, sr)) for n, y in vocals])
 
 
 def classify_all(stems, sr):

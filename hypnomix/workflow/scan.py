@@ -51,7 +51,7 @@ from pathlib import Path
 
 from hypnomix.core.paths import out_at
 
-GROUPS = ["files", "clips", "timing", "vocals", "effects", "mix", "noise", "intent", "stems"]
+GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "mix", "noise", "intent", "stems"]
 FOLDER_GROUPS = ["recordings", "stems"]
 AUDIO_EXT = (".wav", ".aif", ".aiff", ".flac")
 PLAN_GROUPS = ["prep", "automix", "master"]         # written by `prep|automix|master --plan`
@@ -100,11 +100,46 @@ def tracks_on(als):
             if t.find("./Name/EffectiveName") is not None and track_on(t)}
 
 
+MELODIC_LABELS = ("Guitar", "Keys", "Piano", "Strings", "Synth", "Pad", "Organ", "Brass", "Lead", "Pluck")
+
+
+def is_melodic(label):
+    return any(label.startswith(m) for m in MELODIC_LABELS)
+
+
 def is_vocal(label):
     return any(label.startswith(v) for v in VOCAL_LABELS)
 
 
 # ---------------------------------------------------------------- groups
+def g_names(als, od, a):
+    """Rename default-named tracks and groups ("9-Audio", "7-Group") by what they sound like (`hypnomix name`).
+    Sure names are proposed as renames; unsure ones are questions ("what is this track?")."""
+    path = od / "raw" / "names" / "names.json"
+    if not path.exists():
+        roles(als, od)
+    if not path.exists():
+        return [], ["names: did NOT run (hypnomix name failed; see raw/names.txt)"]
+    rows = json.loads(path.read_text()).get("tracks", [])
+    out, n = [], 0
+    for r in rows:
+        if r.get("kind") == "Return" or r.get("new") in (None, r.get("old")):
+            continue
+        n += 1
+        sure = float(r.get("confidence") or 0) >= 0.5
+        out.append(dict(
+            id=f"name-{n}", tool="name", kind="track-name" if sure else "track-name-question",
+            severity="low", track=r["old"], where="", old=r["old"], new=r["new"], applies="set",
+            problem=(f"default name '{r['old']}'; it sounds like {r['new']!r} ({r.get('reason')})" if sure else
+                     f"default name '{r['old']}', and what it is isn't clear from its sound ({r.get('reason')}; "
+                     f"best guess {r['new']!r})"),
+            fix=(f"rename it {r['new']!r} in the new set" if sure else
+                 "ask what it is, then record the name: `fix DIR --decide " + f"name-{n}=approve --note \"<name>\"`")))
+    return out, [f"names: {sum(1 for f in out if f['kind'] == 'track-name')} renames proposed, "
+                 f"{sum(1 for f in out if f['kind'] != 'track-name')} tracks to ask about (findings keep the old names; "
+                 "REVIEW.md shows the new ones; `fix` renames last)"]
+
+
 def g_files(als, od, a):
     code, out = hx("refs", als)
     save(od / "raw" / "refs.txt", out)
@@ -140,6 +175,9 @@ def g_timing(als, od, a, role):
     args = ["timing", als, "--json", j, "--list", "0"]
     for t in tracks:
         args += ["--track", t]
+    melodic = [t for t in tracks if is_melodic(role.get(t, {}).get("label", ""))]
+    for t in melodic:
+        args += ["--melodic", t]
     code, out = hx(*args)
     save(od / "raw" / "timing.txt", strip_warnings(out))
     if not j.exists():
@@ -147,6 +185,9 @@ def g_timing(als, od, a, role):
     d = json.loads(j.read_text())
     notes = [f"timing: song looseness {d['looseness_ms']} ms across {len(d['tracks'])} instrument tracks "
              f"(the band's natural feel; only outliers are listed)"]
+    if melodic:
+        notes.append(f"timing: melodic parts ({', '.join(melodic)}) only get OPTIONAL, partial nudges (at most 30% "
+                     "of the way and 15 ms), and only for clear outliers: their looseness is part of the feel")
     return d["findings"], notes
 
 
@@ -761,6 +802,12 @@ def merge(od):
 
 
 def write_review(od, setp, findings, notes, meta, pref_lines=()):
+    nj = Path(od) / "raw" / "names" / "names.json"
+    newname = {}
+    if nj.exists():
+        newname = {r["old"]: r["new"] for r in json.loads(nj.read_text()).get("tracks", [])
+                   if r.get("new") and r.get("new") != r.get("old")}
+    show = lambda t: f"{newname[t]} (now '{t}')" if t in newname else (t or "-")
     counts = {s: sum(1 for f in findings if f.get("severity") == s) for s in SEV}
     L = [f"# First-pass review: {Path(setp).stem if setp else od.name}", "",
          f"Set: `{setp}`  ", "Nothing has been changed. Go through the items one at a time: **approve**, **skip** "
@@ -787,7 +834,7 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
     for f in findings:
         where = f" @ {f['where']}" if f.get("where") else ""
         also = f" (same audio again at {', '.join(f['also_at'][:5])})" if f.get("also_at") else ""
-        L.append(f"### {f['n']}. [{f.get('severity')}] {f['tool']}: {f.get('track') or '-'}{where}{also}")
+        L.append(f"### {f['n']}. [{f.get('severity')}] {f['tool']}: {show(f.get('track')) if f['tool'] != 'name' else f.get('track')}{where}{also}")
         L.append(f"- id: `{f['id']}` · applies: **{f.get('applies')}**"
                  + (" · **PROTECTED track: ask again before changing**" if f.get("protected") else ""))
         if f.get("history"):
@@ -860,14 +907,14 @@ def main():
             info = {k: (v if v is not None else old.get(k)) for k, v in info.items()}
     sj.write_text(json.dumps(info, indent=1))
     print(f"scanning {als.name}: {', '.join(groups)} → {od}")
-    role = roles(als, od) if {"timing", "vocals"} & set(groups) else {}
+    role = roles(als, od) if {"names", "timing", "vocals"} & set(groups) else {}
     if role:
         vox = [t for t, r in role.items() if is_vocal(r["label"])]
         print(f"  track roles from `name`: {len(vox)} vocal, {len(role) - len(vox)} other")
 
     def run(g):
         t0 = time.time()
-        fn = {"files": lambda: g_files(als, od, a), "clips": lambda: g_clips(als, od, a),
+        fn = {"names": lambda: g_names(als, od, a), "files": lambda: g_files(als, od, a), "clips": lambda: g_clips(als, od, a),
               "timing": lambda: g_timing(als, od, a, role), "vocals": lambda: g_vocals(als, od, a, role),
               "effects": lambda: g_effects(als, od, a), "mix": lambda: g_mix(als, od, a),
               "noise": lambda: g_noise(als, od, a), "intent": lambda: g_intent(als, od, a),

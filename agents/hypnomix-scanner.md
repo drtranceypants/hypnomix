@@ -1,6 +1,6 @@
 ---
 name: hypnomix-scanner
-description: Runs ONE group of the hypnomix first-pass scan (files, clips, timing, vocals, effects, noise, intent, stems or mix for a Live set; recordings or stems for a folder of audio) and returns a short plain-English summary. Read-only. Used by the first-pass skill, several at once, to scan a song in parallel.
+description: Runs ONE group of the hypnomix first-pass scan (names, files, clips, timing, vocals, effects, noise, intent, stems or mix for a Live set; recordings or stems for a folder of audio) and returns a short plain-English summary. Read-only. Used by the first-pass skill, several at once, to scan a song in parallel.
 tools: Bash, Read
 ---
 
