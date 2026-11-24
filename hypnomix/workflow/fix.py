@@ -37,7 +37,7 @@ in Live are not in the file this reads. Every run appends to SCAN_DIR/fix-log.md
 import argparse, json, re, shutil, subprocess, sys, time
 from pathlib import Path
 
-ORDER = ["distortion", "sidechain", "smooth", "timing", "motion", "order"]   # track names come last, after all of these
+ORDER = ["distortion", "sidechain", "smooth", "timing", "motion", "borrow", "order"]   # track names come last, after all of these
 DECISIONS = ("approve", "skip", "change")
 
 
@@ -101,6 +101,8 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
         args += ["--names", sd / "raw" / "names" / "names.json"]
     if tool == "motion":
         args += motion_args(sd, scan)
+    if tool == "borrow":
+        args += borrow_args(scan)
     hx(*args)
     if not j.exists():
         return None
@@ -122,6 +124,13 @@ def motion_args(sd, scan):
         out += ["--names", nj]
     if scan.get("motion_style"):
         out += ["--style", scan["motion_style"]]
+    return out
+
+
+def borrow_args(scan):
+    out = ["--mix", scan["mix"]] if scan.get("mix") else []
+    for o in scan.get("borrow_from") or []:
+        out += ["--from", o]
     return out
 
 
@@ -331,8 +340,8 @@ def main():
                         args += ["--mix", scan["mix"]]
                     if tool == "order":
                         args += ["--names", sd / "raw" / "names" / "names.json"]
-                    if tool == "motion":   # the person's fine controls from the review notes
-                        args += motion_args(sd, scan)
+                    if tool in ("motion", "borrow"):   # the person's fine controls from the review notes
+                        args += motion_args(sd, scan) if tool == "motion" else borrow_args(scan)
                         for f in items:
                             note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
                             if note and f["id"] in ids:
@@ -360,7 +369,8 @@ def main():
 
         if out:  # structure first: a broken set must never be opened
             from hypnomix.session import check as C, diff as D
-            errs, warns, _ = C.check(out, src, reordered="order" in applied_tools)
+            added = [f"{f['borrow']['track']} (from original)" for f in set_items if f["tool"] == "borrow"]
+            errs, warns, _ = C.check(out, src, reordered="order" in applied_tools, added=added)
             if errs:
                 bad = out.with_name(out.stem + " (BROKEN, do not open).als")
                 out.rename(bad)
@@ -377,8 +387,9 @@ def main():
             for tool in applied_tools:
                 if tool == "sidechain":
                     continue
-                if tool == "motion":   # options, not problems: report what was written instead of re-measuring
-                    line = "- motion: approved moves written as automation / clip edits (listed above); listen to each"
+                if tool in ("motion", "borrow"):   # options, not problems: report what was written instead of re-measuring
+                    line = (f"- {tool}: approved " + ("moves written as automation / clip edits" if tool == "motion" else
+                            "loops added on new switched-off tracks") + " (listed above); listen to each")
                     print("verify     " + line[2:])
                     log.append(line)
                     continue
@@ -418,7 +429,8 @@ def main():
             log += ["### track names", ""] + [f"- {o_} → {n_}" for o_, n_ in done_n] + \
                    [f"- skipped {o_}: {w}" for o_, w in skipped_n] + [""]
             from hypnomix.session import check as C
-            errs, _, _ = C.check(target, src, renamed=dict(done_n), reordered=any(f["tool"] == "order" for f in set_items))
+            errs, _, _ = C.check(target, src, renamed=dict(done_n), reordered=any(f["tool"] == "order" for f in set_items),
+                                 added=[f"{f['borrow']['track']} (from original)" for f in set_items if f["tool"] == "borrow"])
             if errs:
                 bad = Path(target).with_name(Path(target).stem + " (BROKEN, do not open).als")
                 Path(target).rename(bad)

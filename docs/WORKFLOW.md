@@ -216,6 +216,24 @@ Fine controls in the decision note: `bars=`, `depth=` (share of the control's ra
 It never writes where you already automated that control, and never edits comped clips (stutters on comped tracks
 are listed by hand).
 
+### Borrow loops from the original project
+
+`borrow` looks in the song's original project (a set of the same name elsewhere in your projects folder, or
+`--from`) for clips the new version no longer plays: MIDI clips (Arrangement or Session view, on any track) and
+audio recordings it doesn't use. Each is offered for a section it fits, on a new track that copies the original
+one (instrument and effects), **switched off**:
+
+- MIDI: the 1, 2 or 4-bar window that already sits closest to the song's groove (measured from the mix), only
+  where its notes fit the section's scale. The whole clip is nudged by one small offset so its first note lands
+  where the song's downbeats land; the notes inside are never moved. Loops more than 30 ms off are not offered.
+- Audio: warped clips up to 16 bars, whole.
+
+```bash
+hypnomix borrow "Song (remix).als" --mix "Song mix.wav" --plan
+hypnomix fix "hypnomix-out/scan/Song (remix) (borrow)" --decide borrow-2=approve
+hypnomix fix "hypnomix-out/scan/Song (remix) (borrow)" --approved --out "Song (borrowed).als"
+```
+
 ## Other DAWs
 
 Export every track as a full-length file from the same start point, with processing off, then

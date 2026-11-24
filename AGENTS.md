@@ -186,7 +186,7 @@ which spots to compare between the old and new set. When the review is finished,
 | Plan many moves for review | `prep --plan`, `automix --plan`, `master --plan` | nothing (findings) |
 | Hear and review | `ab` (before/after clips), `review` (the page; `--serve` saves clicks) | the scan folder only |
 | Fix a set | `fix` (approved findings); or `order --apply` (track order, vocal stacks), `smooth --apply`, `timing --apply`, `distortion --apply`, `sidechain --apply`, `automation offset/dip` | a new `.als` |
-| Keep it moving (last step before mixdown; see `docs/WORKFLOW.md` §5) | `motion --learn` (your moves from finished songs), `motion SET --mix MIX --plan` (riser, dip, drift, swell, throw, outro, stutter, gate, drop-out: all options) | a scan folder; `fix` writes a new `.als` |
+| Keep it moving (last step before mixdown; see `docs/WORKFLOW.md` §5) | `motion --learn` (your moves from finished songs), `motion SET --mix MIX --plan` (riser, dip, drift, swell, throw, outro, stutter, gate, drop-out: all options), `borrow SET --mix MIX --plan` (unused loops from the song's original project, on switched-off tracks) | a scan folder; `fix` writes a new `.als` |
 | Tempo and variety (see `docs/TEMPO.md`) | `tempomap` (free-played take: `--click` check, then `--conform` or `--follow`), `loops`, `tighten`, `breathe`, `variations` | a new `.als`, or preview files |
 | Check what was written | `check NEW.als --against OLD.als`, `diff OLD.als NEW.als` | nothing |
 | Vocals | `tune`, `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |

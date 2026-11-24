@@ -47,7 +47,7 @@ def all_tracks(root):
     return list(ts) if ts is not None else []
 
 
-def check(path, against=None, renamed=None, reordered=False):
+def check(path, against=None, renamed=None, reordered=False, added=()):
     """Returns (errors, warnings, facts). Empty errors = structurally sound."""
     err, warn, facts = [], [], {}
     root, problem = load_root(path)
@@ -135,7 +135,7 @@ def check(path, against=None, renamed=None, reordered=False):
             if e <= s:
                 err.append(f"{at}: clip ends before it starts")
             spans.append((s, e))
-            wm = [(float(w.get("SecTime")), float(w.get("BeatTime"))) for w in c.iter("WarpMarker")]
+            wm = [(float(w.get("SecTime")), float(w.get("BeatTime"))) for w in c.findall("./WarpMarkers/WarpMarker")]  # the clip's own markers only
             if g("./IsWarped") == "true":
                 if len(wm) < 2:
                     err.append(f"{at}: warped clip with fewer than two warp markers")
@@ -181,6 +181,7 @@ def check(path, against=None, renamed=None, reordered=False):
             ren = renamed or {}                      # renames the person approved are expected changes
             a = [(t.tag, ren.get(track_name(t), track_name(t))) for t in all_tracks(r0)]
             b = [(t.tag, track_name(t)) for t in all_tracks(root)]
+            b = [x for x in b if x[1] not in set(added)]               # tracks a tool was approved to add
             if (sorted(a) != sorted(b)) if reordered else (a != b):   # an approved reorder: same tracks, new order
                 err.append(f"the track list changed ({len(a)} → {len(b)} tracks, or their order or names)")
             n0 = r0.find(".//NextPointeeId")
