@@ -14,6 +14,15 @@ findings, the "is this deliberate?" inventory, sections, `--like`), `--plan` for
 bands, and previews for timing nudges and device changes. `deess`, `breaths`, `sections` and `match` need real
 songs before they are trusted.
 
+**Tempo and variety (built, see `docs/TEMPO.md`):** `tempomap`, `loops`, `tighten`, `breathe`, `variations`.
+Open: opening their sets in Live; a first-bar-line check that does not rely on the low end; matching spare
+takes to a part by sound, not only by recording name; `variations` findings in the review page.
+
+**Next idea: `colour`.** Propose new timbres for a song that sounds the same throughout: an effect chain from
+stock devices or installed free plug-ins on a copy of a part, or a new instrument doubling a line (from
+`midi`), each on a new switched-off track like `variations`, each with a before / after clip. Needs the
+`plugins` list (item 17) so it only proposes what is installed.
+
 ## 1. Make the review audible and visible
 
 The review is the product. Right now it is text; it should be something you can hear and see.
