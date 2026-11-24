@@ -51,7 +51,7 @@ from pathlib import Path
 
 from hypnomix.core.paths import out_at
 
-GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "mix", "noise", "intent", "stems"]
+GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "devices", "mix", "noise", "intent", "stems"]
 FOLDER_GROUPS = ["recordings", "stems"]
 AUDIO_EXT = (".wav", ".aif", ".aiff", ".flac")
 PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow"]         # written by `prep|automix|master --plan`
@@ -152,6 +152,21 @@ def g_names(als, od, a):
     return out, notes + [f"names: {sum(1 for f in out if f['kind'] == 'track-name')} renames proposed, "
                  f"{sum(1 for f in out if f['kind'] == 'track-name-question')} tracks to ask about (findings keep the old names; "
                  "REVIEW.md shows the new ones; `fix` renames last)"]
+
+
+def g_devices(als, od, a):
+    """Every Live device on every track, judged by what it does to that track's own audio (`hypnomix devices`)."""
+    j = od / "raw" / "devices.json"
+    args = ["devices", als, "--json", j]
+    if (od / "raw" / "names" / "names.json").exists():
+        args += ["--names", od / "raw" / "names" / "names.json"]
+    code, out = hx(*args)
+    save(od / "raw" / "devices.txt", strip_warnings(out))
+    if not j.exists():
+        return [], [f"devices: did NOT run ({out.strip()[-200:]})"]
+    d = json.loads(j.read_text())
+    return d["findings"], [f"devices: {len(d['findings'])} Live device(s) checked; third-party plug-ins are skipped"] + \
+        [f"devices: {n_}" for n_ in d.get("notes", [])[:6]]
 
 
 def g_files(als, od, a):
@@ -1008,14 +1023,14 @@ def main():
             info = {k: (v if v is not None else old.get(k)) for k, v in info.items()}
     sj.write_text(json.dumps(info, indent=1))
     print(f"scanning {als.name}: {', '.join(groups)} → {od}")
-    role = roles(als, od) if {"names", "timing", "vocals"} & set(groups) else {}
+    role = roles(als, od) if {"names", "timing", "vocals", "devices"} & set(groups) else {}
     if role:
         vox = [t for t, r in role.items() if is_vocal(r["label"])]
         print(f"  track roles from `name`: {len(vox)} vocal, {len(role) - len(vox)} other")
 
     def run(g):
         t0 = time.time()
-        fn = {"names": lambda: g_names(als, od, a), "files": lambda: g_files(als, od, a), "clips": lambda: g_clips(als, od, a),
+        fn = {"devices": lambda: g_devices(als, od, a), "names": lambda: g_names(als, od, a), "files": lambda: g_files(als, od, a), "clips": lambda: g_clips(als, od, a),
               "timing": lambda: g_timing(als, od, a, role), "vocals": lambda: g_vocals(als, od, a, role),
               "effects": lambda: g_effects(als, od, a), "mix": lambda: g_mix(als, od, a),
               "noise": lambda: g_noise(als, od, a), "intent": lambda: g_intent(als, od, a),

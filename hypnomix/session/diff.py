@@ -180,6 +180,11 @@ def diff(old, new, show_all=False):
             for prm in pb:
                 if prm == "On" or prm not in pa or pa[prm] == pb[prm]:
                     continue
+                try:
+                    if abs(float(pa[prm]) - float(pb[prm])) < 1e-9:       # 4 and 4.0 are the same value
+                        continue
+                except ValueError:
+                    pass
                 plain = all(x.lstrip("-").replace(".", "", 1).replace("e-", "", 1).isdigit() or x in ("true", "false")
                             for x in (pa[prm], pb[prm]))
                 if plain or show_all:

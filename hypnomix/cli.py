@@ -10,6 +10,7 @@ GROUPS = [
         ("automix", "hypnomix.engineer.automix", "stems folder → balanced mix + master, with notes on every move"),
         ("master", "hypnomix.engineer.master", "stereo mix → release master at a loudness target (or matched to a reference)"),
         ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices: no paid plug-ins"),
+        ("devices", "hypnomix.engineer.devices", "check every Live device by what it does (compressors, gates, limiters, EQ low cut) and suggest settings (writes a new set)"),
         ("duck", "hypnomix.engineer.duck", "duck the vocal reverb and delay: tune the ducking you have, or add a sidechained Compressor fed by the vocals (writes a new set)"),
         ("sidechain", "hypnomix.engineer.sidechain", "sidechain compressors: measure the ducking (depth, recovery, timing) and suggest settings"),
         ("masking", "hypnomix.engineer.masking", "which stems fight over which frequencies, and the cut that fixes it"),

@@ -37,7 +37,7 @@ in Live are not in the file this reads. Every run appends to SCAN_DIR/fix-log.md
 import argparse, json, re, shutil, subprocess, sys, time
 from pathlib import Path
 
-ORDER = ["distortion", "sidechain", "duck", "smooth", "cliplevel", "timing", "motion", "borrow", "order"]   # track names come last, after all of these
+ORDER = ["distortion", "devices", "sidechain", "duck", "smooth", "cliplevel", "timing", "motion", "borrow", "order"]   # track names come last, after all of these
 DECISIONS = ("approve", "skip", "change")
 
 
@@ -102,7 +102,7 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
             args += ["--drums", t]
     if tool == "distortion" and scan.get("mix"):
         args += ["--mix", scan["mix"]]
-    if tool in ("order", "cliplevel", "duck"):
+    if tool in ("order", "cliplevel", "duck", "devices"):
         args += ["--names", sd / "raw" / "names" / "names.json"]
     if tool == "motion":
         args += motion_args(sd, scan)
@@ -349,7 +349,7 @@ def main():
                             args += ["--unroll-loops"]
                     if tool == "distortion" and scan.get("mix"):
                         args += ["--mix", scan["mix"]]
-                    if tool in ("order", "cliplevel", "duck"):
+                    if tool in ("order", "cliplevel", "duck", "devices"):
                         args += ["--names", sd / "raw" / "names" / "names.json"]
                     if tool in ("motion", "borrow"):   # the person's fine controls from the review notes
                         args += motion_args(sd, scan) if tool == "motion" else borrow_args(scan)
