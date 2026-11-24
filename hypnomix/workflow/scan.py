@@ -257,6 +257,11 @@ def g_vocals(als, od, a, role):
             d_f = []
             notes.append(f"doubles: failed ({e})")
         findings += d_f
+    if len(files) > 1:
+        try:
+            findings += harmony_question(files, lead)
+        except Exception as e:
+            notes.append(f"harmony balance check: failed ({e})")
     tuned = any(f.get("tool") == "tune" for f in findings)
     if tuned:
         first = next(f for f in findings if f.get("tool") == "tune")
@@ -297,6 +302,35 @@ def key_map(als, od, a):
     if not qs and not d.get("sure"):
         notes.append(f"key map: whole-song key unsure ({main} vs {d.get('runner_up')}): confirm it with the person")
     return j, {"findings": findings, "notes": notes}
+
+
+def harmony_question(files, lead, block_s=0.5, floor_db=-45.0):
+    """When two or more vocal parts sing together, ask how to balance them. Never a default fix: which part to
+    prioritise, which side to make quieter and by how much are the person's choices (`hypnomix voices`)."""
+    import numpy as np
+    from hypnomix.core import dsp
+    act = {}
+    for t, p in files.items():
+        y, sr = dsp.load(p, 22050)
+        b = dsp.block_rms_db(y, sr, block_s)
+        act[t] = b > max(floor_db, (np.percentile(b, 95) if len(b) else 0) - 30)
+    n = min(len(v) for v in act.values())
+    together = np.sum([v[:n] for v in act.values()], axis=0) >= 2
+    secs = float(together.sum() * block_s)
+    if secs < 8:
+        return []
+    parts = ", ".join(files)
+    return [dict(
+        id="harmony-1", tool="voices", kind="harmony-balance", severity="low", track="(vocal parts)",
+        where=f"{secs:.0f} s where 2+ parts sing together",
+        problem=f"{len(files)} vocal parts ({parts}) sing together for about {secs:.0f} s. How they balance is a "
+                "taste call, so nothing is proposed by default.",
+        fix=("ask, one at a time: 1) which part to prioritise (the lead, '" + str(lead) + "', or the lowest, the "
+             "highest, or another track); 2) which side to make quieter: above it, below it or both; 3) how much "
+             "quieter per step: 0 / 1 / 1.5 / 3 / 4.5 / 6 dB or a custom value; 4) ladder (each further part quieter "
+             "again) or flat (all one step under). Record it: `fix DIR --decide harmony-1=approve --note "
+             "\"anchor=lead reduce=above above=1.5 spread=flat\"` (optional below=…, max-cut=…). Or skip it."),
+        applies="audio", stems=[str(p) for p in files.values()], lead=lead)]
 
 
 def doubles(files, lead):

@@ -1,21 +1,36 @@
 #!/usr/bin/env python3
-"""Harmony split: re-arrange vocal/harmony stems into VOICE tracks ordered by pitch.
+"""Vocal harmonies: balance the parts around one YOU choose, or split them into voice tracks by pitch.
 
-Voice 1 always carries the lowest part singing at that moment, Voice 2 the next one up, and so on, so
-one fader per voice gives granular control over each step of the harmony stack (e.g. keep lower parts
-louder, each higher part progressively quieter).
+Nothing is decided for you. Run it with the vocal stems first: it lists the parts (where each usually sits,
+how loud, how many bars it sings with others) as a QUESTION and changes nothing. Then choose:
 
-The mix does not change: every sample of every input stem goes to exactly one voice (with 5 ms
-complementary crossfades at cut points, which are placed in quiet spots), so the voices add up to the
-inputs exactly. Use POST-CHAIN stems (Live: Export > Rendered Track: All Individual Tracks), then put
-the voice tracks in the same group with no devices, 0 dB faders, centre pan, and the same sends as the
-originals (check first: sends must be equal across the input tracks for the mix to stay identical).
+  --anchor TRACK|lead|lowest|highest   the part to prioritise; it is left exactly as it is ("lead" = the shared
+                                       lead rule: among the parts, the one that sings longest of those whose
+                                       vowels move most)
+  --reduce above|below|both            which side of it to make quieter, in pitch (default above)
+  --above-db DB  --below-db DB         how much quieter than the anchor, per step (0 = leave that side alone);
+                                       e.g. 0, 1, 1.5, 3, 4.5 or 6 dB, or any value
+  --spread ladder|flat                 ladder: each part further away is quieter again by the step;
+                                       flat: every part on that side sits one step under the anchor
+  --max-cut DB                         never turn any part down by more than this in any bar (default 6)
+  --window S | --bpm BPM [--bar-beats 4]   judge it bar by bar (default 2 s windows)
+
+Wherever two or more parts sing together, parts are only ever turned DOWN, and only where they are louder
+than their target; a part already quiet enough, and every bar where the anchor isn't singing, is left alone.
+Writes "<stem> (balanced).wav" per stem (gain moves with 250 ms ramps; pitch, timing and tone untouched) and
+balance.json (per bar: each part's note, level, target, cut). --dry-run reports without writing audio.
+
+  --split   (the other tool) re-arranges the stems into Voice 1 (lowest) ... Voice N (highest): every phrase
+            goes to the voice matching its pitch rank among the parts singing with it, so one fader per voice
+            sets each step of the stack, at whatever balance you want. The voices add up to the inputs exactly
+            (5 ms complementary crossfades in quiet spots). Writes Voice N.wav and voices.json.
+
+Use POST-CHAIN stems (Live: Export > Rendered Track: All Individual Tracks) so levels are judged as heard.
 
 Usage:
-  hypnomix voices STEM.wav [STEM.wav ...] [--out DIR] [--min-gap 0.25] [--overlap 0.3]
-Writes Voice N.wav files and voices.json (every phrase: time, source, note, voice).
-Tested on a 7-part stack: 140 phrases -> 7 voices, 96% of simultaneous pairs in low-to-high order, voices
-sum to the inputs within -200 dBFS, full-mix A/B in Live +-0.0 dB in every band.
+  hypnomix voices STEM.wav [STEM.wav ...]                                  # the question: which part, how much
+  hypnomix voices STEMS... --anchor lead --reduce above --above-db 1.5 --spread flat [--out DIR]
+  hypnomix voices STEMS... --split [--min-gap 0.25] [--overlap 0.3]
 """
 import argparse, json, os
 import numpy as np, soundfile as sf, librosa
@@ -58,12 +73,165 @@ def phrases_of(path, min_gap, min_len):
     return os.path.basename(path)[:-4], out, sr, len(m)
 
 
+# ---------------------------------------------------------------- balance around a chosen part
+STEP_CHOICES = (0, 1, 1.5, 3, 4.5, 6)
+
+
+def kweight(x, sr):
+    """ITU-R BS.1770 K-weighting (the 48 kHz coefficients: close enough to rank parts at 44.1 kHz)."""
+    from scipy.signal import lfilter
+    b1, a1 = [1.53512485958697, -2.69169618940638, 1.19839281085285], [1, -1.69065929318241, 0.73248077421585]
+    b2, a2 = [1.0, -2.0, 1.0], [1, -1.99004745483398, 0.99007225036621]
+    return lfilter(b2, a2, lfilter(b1, a1, x))
+
+
+def measure(path, win_s):
+    """Per window: level as heard (K-weighted, over the sung part only) and median pitch, or NaN if not singing."""
+    y, sr = sf.read(path, always_2d=True); m = y.mean(1)
+    z = librosa.resample(m, orig_sr=sr, target_sr=AN) if sr != AN else m
+    f0, _, _ = librosa.pyin(z, fmin=70, fmax=1000, sr=AN, hop_length=512, frame_length=2048)
+    hop_s = 512 / AN
+    kx = kweight(m, sr); win = int(win_s * sr); nwin = int(np.ceil(len(m) / win))
+    lvl, pit = np.full(nwin, np.nan), np.full(nwin, np.nan)
+    blk = max(1, sr // 100)
+    for w in range(nwin):
+        seg = kx[w * win:(w + 1) * win]
+        if len(seg) < sr // 4:
+            continue
+        fr = np.sqrt(np.convolve(seg ** 2, np.ones(sr // 20) / (sr // 20), "valid")[::blk] + 1e-20)
+        fdb = 20 * np.log10(fr); sung = fdb > -50
+        if not len(fdb) or sung.mean() < 0.15:
+            continue                                                  # not really singing in this window
+        lvl[w] = 10 * np.log10(np.mean(10 ** (fdb[sung] / 10)))
+        fw = f0[int(w * win_s / hop_s): int((w + 1) * win_s / hop_s)]; fw = fw[~np.isnan(fw)]
+        if len(fw) > 5:
+            pit[w] = float(np.median(fw))
+    return os.path.basename(path)[:-4], lvl, pit, sr, len(m)
+
+
+def plan(levels, pitches, anchor, reduce="above", above_db=1.5, below_db=1.5, spread="ladder", max_cut=6.0):
+    """Gains in dB per part per window (pure). levels/pitches: {part: array per window (NaN = not singing)}.
+    anchor: a part name, 'lowest' or 'highest'. Only turns parts down, never more than max_cut."""
+    names = list(levels)
+    nwin = len(next(iter(levels.values())))
+    gains = {n: np.zeros(nwin) for n in names}
+    rows = []
+    for w in range(nwin):
+        parts = [n for n in names if np.isfinite(levels[n][w]) and np.isfinite(pitches[n][w])]
+        if len(parts) < 2:
+            continue
+        parts.sort(key=lambda n: pitches[n][w])
+        if anchor == "lowest":
+            ai = 0
+        elif anchor == "highest":
+            ai = len(parts) - 1
+        elif anchor in parts:
+            ai = parts.index(anchor)
+        else:
+            continue                                                  # the chosen part isn't singing here
+        tgt = {parts[ai]: levels[parts[ai]][w]}
+        for side, idxs, step in (("above", range(ai + 1, len(parts)), above_db),
+                                 ("below", range(ai - 1, -1, -1), below_db)):
+            if reduce not in (side, "both") or step <= 0:
+                continue
+            prev = tgt[parts[ai]]
+            for i in idxs:
+                n = parts[i]
+                tgt[n] = max(min(levels[n][w], prev - step), levels[n][w] - abs(max_cut))   # where it really lands
+                if spread == "ladder":
+                    prev = tgt[n]          # the next part steps down from this one
+        row = []
+        for n in parts:
+            cur = levels[n][w]; t = tgt.get(n, cur)
+            gains[n][w] = max(min(0.0, t - cur), -abs(max_cut))
+            row.append(dict(part=n, note=librosa.hz_to_note(pitches[n][w]), level=round(float(cur), 1),
+                            target=round(float(t), 1), cut=round(float(gains[n][w]), 1), anchor=bool(n == parts[ai])))
+        rows.append(dict(window=w + 1, parts=row))
+    return gains, rows
+
+
+def question(names, levels, pitches, win_s):
+    print("QUESTION: these vocal parts sing together. Which one should be prioritised (--anchor)?")
+    order = sorted(names, key=lambda n: np.nanmedian(pitches[n]) if np.isfinite(pitches[n]).any() else 0)
+    for n in order:
+        together = sum(1 for w in range(len(levels[n])) if np.isfinite(levels[n][w]) and
+                       sum(np.isfinite(levels[m][w]) for m in names if m != n) >= 1)
+        note = librosa.hz_to_note(np.nanmedian(pitches[n])) if np.isfinite(pitches[n]).any() else "?"
+        lv = np.nanmedian(levels[n]) if np.isfinite(levels[n]).any() else float("nan")
+        print(f"  {n:30s} usually {note:5s}  level {lv:6.1f} dB  sings with others in {together} windows of {win_s:g} s")
+    print("  (or lead / lowest / highest). Then: --reduce above|below|both, --above-db/--below-db per step "
+          f"({' / '.join(f'{x:g}' for x in STEP_CHOICES)} dB, or any value), --spread ladder|flat, --max-cut.")
+    print("Nothing was changed.")
+
+
+def balance(a):
+    win_s = a.window or ((60.0 / a.bpm) * a.bar_beats if a.bpm else 2.0)
+    with ProcessPoolExecutor(min(8, len(a.stems))) as ex:
+        res = list(ex.map(measure, a.stems, [win_s] * len(a.stems)))
+    names = [r[0] for r in res]
+    nwin = max(len(r[1]) for r in res)
+    pad = lambda x: np.pad(x, (0, nwin - len(x)), constant_values=np.nan)
+    levels = {r[0]: pad(r[1]) for r in res}; pitches = {r[0]: pad(r[2]) for r in res}
+    if not a.anchor:
+        question(names, levels, pitches, win_s)
+        return
+    anchor = a.anchor
+    if anchor == "lead":
+        from hypnomix.core import dsp
+        from hypnomix.engineer.roles import pick_lead
+        anchor = pick_lead([(n, dsp.load(p, 22050)[0]) for n, p in zip(names, a.stems)], 22050)
+        print(f"lead (shared rule): {anchor}")
+    elif anchor not in ("lowest", "highest") and anchor not in names:
+        raise SystemExit(f"--anchor {anchor!r}: not one of the parts ({', '.join(names)}), lead, lowest or highest")
+    gains, rows = plan(levels, pitches, anchor, a.reduce, a.above_db, a.below_db, a.spread, a.max_cut)
+    od = out_at(a.out, "voices", "balance")
+    summary = {}
+    for (n, _, _, sr, L), path in zip(res, a.stems):
+        g = gains[n]
+        summary[n] = dict(windows_lowered=int((g < -0.05).sum()), max_cut_db=round(float(g.min()), 1) if len(g) else 0.0)
+        if a.dry_run:
+            continue
+        win = int(win_s * sr)
+        env = np.repeat(10 ** (g / 20), win)[:L]
+        env = np.pad(env, (0, max(0, L - len(env))), constant_values=1.0)
+        k = int(0.25 * sr)
+        env = np.convolve(np.pad(env, (k, k), mode="edge"), np.ones(k) / k, "same")[k:k + L]
+        y, _ = sf.read(path, always_2d=True)
+        sf.write(str(od / f"{n} (balanced).wav"), (y * env[:len(y), None]).astype(np.float32), sr, subtype="FLOAT")
+    settings = dict(anchor=anchor, reduce=a.reduce, above_db=a.above_db, below_db=a.below_db, spread=a.spread,
+                    max_cut=a.max_cut, window_s=win_s)
+    json.dump(dict(settings=settings, summary=summary, windows=rows), open(str(od / "balance.json"), "w"), indent=1)
+    fixed = sum(1 for r in rows if any(p["cut"] < -0.05 for p in r["parts"]))
+    print(json.dumps(settings))
+    for n, sm_ in summary.items():
+        print(f"  {n:30s} lowered in {sm_['windows_lowered']} windows, at most {sm_['max_cut_db']:+.1f} dB")
+    print(f"{len(rows)} windows with the anchor singing with others; {fixed} turned something down"
+          + (" (dry run: no audio written)" if a.dry_run else f" → {od}"))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix voices", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("stems", nargs="+"); ap.add_argument("--out")
+    ap.add_argument("--anchor", help="part to prioritise: a stem name, lead, lowest or highest (without it: the question)")
+    ap.add_argument("--reduce", choices=["above", "below", "both"], default="above")
+    ap.add_argument("--above-db", type=float, default=0.0, help="dB quieter per step above the anchor (you choose)")
+    ap.add_argument("--below-db", type=float, default=0.0, help="dB quieter per step below the anchor (you choose)")
+    ap.add_argument("--spread", choices=["ladder", "flat"], default="ladder")
+    ap.add_argument("--max-cut", type=float, default=6.0)
+    ap.add_argument("--window", type=float, help="seconds per judged window (default: one bar with --bpm, else 2 s)")
+    ap.add_argument("--bpm", type=float); ap.add_argument("--bar-beats", type=int, default=4)
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--split", action="store_true", help="split into Voice 1..N by pitch instead (no level changes)")
     ap.add_argument("--min-gap", type=float, default=0.25); ap.add_argument("--min-len", type=float, default=0.2)
     ap.add_argument("--overlap", type=float, default=0.3, help="fraction of a phrase two parts must share to count as singing together")
     a = ap.parse_args()
+    if not a.split:
+        steps = {"above": [a.above_db], "below": [a.below_db], "both": [a.above_db, a.below_db]}[a.reduce]
+        if a.anchor and max(steps) <= 0:
+            flag = {"above": "--above-db", "below": "--below-db", "both": "--above-db and/or --below-db"}[a.reduce]
+            raise SystemExit(f"say how much quieter: {flag} (e.g. 1, 1.5, 3, 4.5 or 6 dB). There is no default.")
+        balance(a)
+        return
     with ProcessPoolExecutor(min(8, len(a.stems))) as ex:
         res = list(ex.map(phrases_of, a.stems, [a.min_gap] * len(a.stems), [a.min_len] * len(a.stems)))
     sr = res[0][2]; L = max(r[3] for r in res)

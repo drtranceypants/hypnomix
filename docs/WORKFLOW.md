@@ -207,6 +207,8 @@ and the verification. Any agent can follow `AGENTS.md` to do the same. Ask:
   and 15 ms. Each nudge is pinned on both sides, and the whole clip is checked afterwards: outside the nudged
   hit, nothing may move (a nudge that would shift the rest of the clip is refused). `tune` keeps vibrato,
   scoops and slides and only moves each note's centre.
+- **Taste.** No fixed rule is applied for you: harmony balance, how far a melodic part moves, how much a tuned
+  note is pulled are choices with fine controls. Harmonies are never turned down by default; the scan asks.
 - **Names.** Only default names ("9-Audio", "8-Group") are renamed, and only when approved. The lead vocal is
   chosen one way everywhere (`roles.choose_lead`): among the vocals that play, the one that sings longest of
   those whose vowels move most.

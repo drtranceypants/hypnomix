@@ -434,6 +434,35 @@ def main():
             failed.append(f"{ids}: {tool} failed on {Path(source).name}")
 
     for f in audio_items:
+        if f.get("tool") == "voices":  # harmony balance: only with the settings the person chose
+            note = ((dec.get(f["id"]) or {}).get("note") or "")
+            kv = dict(x.split("=", 1) for x in note.replace(",", " ").split() if "=" in x)
+            if "anchor" not in kv or not any(float(kv.get(k, 0) or 0) > 0 for k in ("above", "below")):
+                failed.append(f"{f['id']}: harmony balance needs the person's choices in the note, e.g. --decide "
+                              f"{f['id']}=approve --note \"anchor=lead reduce=above above=1.5 spread=flat\"")
+                print(f"voices     REFUSED  no anchor / dB chosen (there is no default)")
+                continue
+            dest = sd / "fixed" / "voices"
+            k = 1
+            while dest.exists():
+                k += 1
+                dest = sd / "fixed" / f"voices {k}"
+            args = ["voices", *f["stems"], "--anchor", kv["anchor"] if kv["anchor"] != "lead" or not f.get("lead") else f["lead"],
+                    "--reduce", kv.get("reduce", "above"), "--above-db", kv.get("above", "0"),
+                    "--below-db", kv.get("below", "0"), "--spread", kv.get("spread", "ladder"),
+                    "--max-cut", kv.get("max-cut", "6"), "--out", dest]
+            if scan.get("tempo"):
+                args += ["--bpm", scan["tempo"]]
+            code, txt = hx(*args)
+            ok = code == 0
+            log += [f"### {f['id']} harmony balance ({note}): {'written to ' + str(dest) if ok else 'FAILED'}", "",
+                    "```", txt.strip()[-1500:], "```", ""]
+            print(f"voices     {'ok' if ok else 'FAILED'}  {note}" + (f"  → {dest}" if ok else ""))
+            if ok:
+                print("           balanced copies of each part: put them on new tracks, mute the originals, A/B")
+            else:
+                failed.append(f"{f['id']}: voices failed")
+            continue
         if f.get("run"):  # folder scan: a repaired copy into SCAN_DIR/fixed
             fixed = sd / "fixed"
             fixed.mkdir(exist_ok=True)

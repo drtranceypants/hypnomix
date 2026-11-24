@@ -144,9 +144,14 @@ which spots to compare between the old and new set. When the review is finished,
    them. Flag what looks odd and ask; never "fix" it on your own. Check `hypnomix automation list Song.als`
    before setting any control (setting an automated control overrides its envelope) and run
    `hypnomix live reenable` after Live edits, or an export loses the automation.
-4. **Know what a track is before touching it.** `hypnomix name` labels tracks by sound; when it says
+4. **Options and fine control, never one fixed answer.** Every tool offers choices with fine controls (which
+   part, which side, how many dB, how far toward the grid) and asks for them when they are a matter of taste.
+   No built-in "rule of thumb" is applied as a default: e.g. vocal harmonies are never automatically turned
+   down above the lead; `hypnomix voices` asks which part to prioritise, which side to make quieter and by how
+   much (0 / 1 / 1.5 / 3 / 4.5 / 6 dB or custom, ladder or flat).
+5. **Know what a track is before touching it.** `hypnomix name` labels tracks by sound; when it says
    "Instrument" or is unsure, ask. Wrong role, wrong fix.
-5. **Find the source before fixing the symptom.** Hiss, distortion or mud heard in the mix: solo or render the
+6. **Find the source before fixing the symptom.** Hiss, distortion or mud heard in the mix: solo or render the
    suspects and measure each. Large clip-gain boosts raise the noise under a take; look there first.
 6. **Doubt odd numbers.** If a measurement looks strange, check the measurement (a second tool, a shorter
    range, the raw file) before proposing a fix. The tool can be wrong.
@@ -181,6 +186,7 @@ which spots to compare between the old and new set. When the review is finished,
 | Plan many moves for review | `prep --plan`, `automix --plan`, `master --plan` | nothing (findings) |
 | Hear and review | `ab` (before/after clips), `review` (the page; `--serve` saves clicks) | the scan folder only |
 | Fix a set | `fix` (approved findings); or `smooth --apply`, `timing --apply`, `distortion --apply`, `sidechain --apply`, `automation offset/dip` | a new `.als` |
+| Tempo and variety (see `docs/TEMPO.md`) | `tempomap` (free-played take: `--click` check, then `--conform` or `--follow`), `loops`, `tighten`, `breathe`, `variations` | a new `.als`, or preview files |
 | Check what was written | `check NEW.als --against OLD.als`, `diff OLD.als NEW.als` | nothing |
 | Vocals | `tune`, `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |
 | Raw takes / stems | `prep`, `cleanup`, `clipmatch`, `render` (set → WAVs, no Live), `separate` (mix → stems) | new audio files |
@@ -195,6 +201,11 @@ if you call the tools directly, re-run the report on the current set and take th
 
 **Not yet verified in Live** (say so if you use them): `chain` (building device chains) and
 `clipmatch --als --apply`. Use `--dry-run` and show the plan first.
+
+**New, not yet opened in Live** (say so): the sets written by `tempomap`, `loops`, `tighten`, `breathe` and
+`variations`. They pass `check` and their offline previews measure as intended. They are taste tools: show
+the report and the preview, and apply only when asked. A tempo map with under half its beats on real hits is
+guesswork: the tools say so and refuse to write from it.
 
 **New and only tested on synthetic audio so far** (say so): `deess`, `breaths`, `sections`, `match`. `sections`
 needs the tempo (`--bpm`; a set scan passes it): without it the bar lines, and so the sections, can be wrong.
