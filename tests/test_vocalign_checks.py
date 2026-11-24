@@ -71,3 +71,22 @@ class SameWords(unittest.TestCase):
         out, frac = V.keep_original_where_still(orig, warped, np.zeros(int(1 / V.FR_S)), sr)
         self.assertEqual(frac, 0.0)
         self.assertTrue(np.array_equal(out, orig))
+
+
+class Words(unittest.TestCase):
+    def test_a_late_word_is_measured_and_only_it_is_fixed(self):
+        n = 600
+        env = np.zeros(n); others = np.zeros(n)
+        starts = [50, 150, 250, 350, 450]
+        for s0 in starts:                                     # each word: a few onset bumps
+            for k in (0, 7, 15):
+                others[s0 + k] = 1.0
+                env[s0 + k + (6 if s0 == 150 else 0)] = 1.0     # the 2nd word is 60 ms late, the rest on time
+        spans = [(s0, s0 + 40) for s0 in starts]
+        errs = V.word_errors(env, others, spans)
+        self.assertAlmostEqual(errs[1], 6.0, delta=1.0)
+        self.assertTrue(all(abs(e) < 1.0 for i, e in enumerate(errs) if i != 1))
+        o, words = V.word_plan(np.zeros(n), spans, np.ones(n), 3.0, 0.8, 0.1, 6.0, errs)
+        moves = {a: mv for a, b, err, mv in words}
+        self.assertAlmostEqual(moves[150], 4.8, delta=0.8)    # fixed: 80% of the way
+        self.assertTrue(all(abs(moves[a]) < 0.2 for a in moves if a != 150))   # the rest: barely touched

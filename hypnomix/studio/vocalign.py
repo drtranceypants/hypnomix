@@ -187,6 +187,26 @@ class RefusedAlign(Exception):
     pass
 
 
+def onset_lag_at(ref, x, sr, centres_s, win_s=1.0, max_ms=150):
+    """Median |lag| (ms) of onset envelopes in short windows centred on given times (the words that were fixed)."""
+    import librosa
+    from scipy.signal import correlate
+    hop = 128
+    mono = lambda y: (y.mean(1) if y.ndim > 1 else y).astype(np.float32)
+    ea = librosa.onset.onset_strength(y=mono(ref), sr=sr, hop_length=hop)
+    eb = librosa.onset.onset_strength(y=mono(x), sr=sr, hop_length=hop)
+    fps = sr / hop; W = int(win_s * fps); M = int(max_ms / 1000 * fps)
+    lags = []
+    for c_ in centres_s:
+        s0 = max(0, int(c_ * fps) - W // 2)
+        a, b = ea[s0:s0 + W], eb[s0:s0 + W]
+        if len(a) < W or a.std() < 1e-3 or b.std() < 1e-3:
+            continue
+        cc = correlate(b - b.mean(), a - a.mean(), mode="full")[W - 1 - M: W + M]
+        lags.append(abs(np.argmax(cc) - M) / fps * 1000)
+    return float(np.median(lags)) if lags else None
+
+
 def onset_lag_ms(lead, x, sr, win_s=2.0, max_ms=150):
     """Independent timing check: median |lag| (ms) of onset-strength envelopes, cross-correlated per window
     where both parts have onsets. Not the DTW the aligner uses, so a wrong plan can't grade itself."""
@@ -329,7 +349,77 @@ def keep_original_where_still(orig, warped, o, sr, still=0.05, fade_s=0.01):
     return orig * (1 - m[:, None]) + warped * m[:, None], float(moving.mean())
 
 
-def stack_align(paths, outdir=None, strength=0.5, grid=0.3, bpm=None, max_ms=60.0, same_words=0.6):
+def words_of(env, sung, min_s=0.12):
+    """[(start, end)] word spans in 10 ms frames: from each onset to the next (or to where the singing stops)."""
+    import librosa
+    on = librosa.onset.onset_detect(onset_envelope=env, sr=16000, hop_length=160, backtrack=True, units="frames")
+    on = [int(x) for x in on if x < len(sung) and sung[min(len(sung) - 1, int(x) + 2)]]
+    spans = []
+    for i, a in enumerate(on):
+        b = on[i + 1] if i + 1 < len(on) else len(sung)
+        e = a
+        while e < b and e < len(sung) and sung[e]:
+            e += 1
+        if e - a >= max(1, int(min_s / FR_S)):
+            spans.append((a, e))
+        elif spans and a - spans[-1][1] < 3:
+            spans[-1] = (spans[-1][0], e)             # a fragment glued to the word before
+    return spans
+
+
+def word_errors(env_p, env_others, spans, max_ms=150.0, pad=5):
+    """Per word: how many 10 ms frames it sits late (+) or early (-) against the other parts singing then, from
+    cross-correlating its onsets with theirs (sub-frame by parabolic peak). NaN where there's nothing to compare."""
+    M = int(max_ms / 1000 / FR_S)
+    out = []
+    for a, b in spans:
+        s0, s1 = max(0, a - pad), min(len(env_p), b + pad)
+        x, y = env_p[s0:s1], env_others[max(0, s0 - M):s1 + M]
+        if len(x) < 4 or x.std() < 1e-6 or y.std() < 1e-6 or len(y) < len(x) + 2 * M:
+            out.append(np.nan); continue
+        c = np.correlate(y - y.mean(), x - x.mean(), mode="valid")       # index k: x placed at y[k], k=M means no lag
+        k = int(np.argmax(c))
+        frac = 0.0
+        if 0 < k < len(c) - 1:
+            d = c[k - 1] - 2 * c[k] + c[k + 1]
+            frac = 0.5 * (c[k - 1] - c[k + 1]) / d if d != 0 else 0.0
+        if k <= 1 or k >= len(c) - 2:                                     # the best match is at the search edge:
+            out.append(np.nan); continue                                  # a false match, not a timing reading
+        out.append(float(M - (k + frac)))                                 # + = this word is late
+    return out
+
+
+def word_plan(rel, spans, share, fix_over, fix_strength, gentle, cap, errs=None):
+    """Per word: its median timing error against the group (frames, + = late), and the move it gets: words
+    further off than `fix_over` move fix_strength of the way, all others only `gentle` of the way. Words not
+    sung together with another part get nothing. Returns (move curve in frames, [(a, b, err, move)])."""
+    n = len(rel)
+    pts, words = [], []
+    for a, b in spans:
+        if share[a:b].mean() < 0.5:
+            continue
+        err = float(np.median(rel[a:b])) if errs is None else errs[spans.index((a, b))]
+        if not np.isfinite(err):
+            continue
+        k = fix_strength if abs(err) > fix_over else gentle
+        mv = float(np.clip(err * k, -cap, cap))
+        words.append((a, b, err, mv))
+        pts += [(a, mv), (b - 1, mv)]
+    if not pts:
+        return np.zeros(n), words
+    o = np.full(n, np.nan)
+    for a, b, _, mv in words:
+        o[a:b] = mv                                   # the whole word moves as one: no stretching inside it
+    idx = np.flatnonzero(np.isfinite(o))
+    o = np.interp(np.arange(n), idx, o[idx])          # the change happens in the gaps between words
+    first, last = words[0][0], words[-1][1]
+    o[:first] = np.interp(np.arange(first), [0, first], [0, o[first]]) if first > 0 else o[:first]
+    o[last:] = np.interp(np.arange(last, n), [last, n - 1], [o[last - 1], 0]) if last < n else o[last:]
+    return o, words
+
+
+def stack_align(paths, outdir=None, strength=0.1, grid=0.3, bpm=None, max_ms=60.0, same_words=0.6,
+                fix_over_ms=30.0, fix_strength=0.8):
     """Gentle group alignment: nobody is forced onto one lead. Each part moves `strength` of the way toward the
     group's average timing (the mean over the parts singing at that moment, 250 ms smoothed; the first part is
     only a ruler and moves too), and with --bpm the whole stack is pulled `grid` of the way toward the 8th-note
@@ -374,9 +464,26 @@ def stack_align(paths, outdir=None, strength=0.5, grid=0.3, bpm=None, max_ms=60.
     t_frames = np.arange(n) * FR_S
     group = lambda skip: np.sum([audio[q].mean(1) for q in paths if q != skip], axis=0)[:, None]
     od = out_at(outdir, "vocalign")
-    rows = []
+    rows, worst = [], []
+    # words further off than the song's own looseness (and at least fix_over_ms) are the ones to fix
+    all_err, plans = [], {}
     for p_ in paths:
-        o = np.clip(uniform_filter1d(strength * (O[paths.index(p_)] - mean) + grid * gshift, 15), -cap, cap) * share[p_]
+        rel = O[paths.index(p_)] - mean
+        spans = words_of(envs[p_], acts[p_][:n])
+        others_env = np.sum([envs[q] / (envs[q].max() + 1e-9) * share[q] for q in paths if q != p_], axis=0)
+        errs = word_errors(envs[p_] / (envs[p_].max() + 1e-9), others_env, spans)
+        plans[p_] = (rel, spans, errs)
+        all_err += [abs(e) for (a, b_), e in zip(spans, errs) if np.isfinite(e) and share[p_][a:b_].mean() >= 0.5]
+    loose = 2.5 * float(np.median(all_err)) if all_err else 0.0
+    fix_over = max(fix_over_ms / 1000 / FR_S, loose)
+    for p_ in paths:
+        rel, spans, errs = plans[p_]
+        o, words = word_plan(rel, spans, share[p_], fix_over, fix_strength, strength, cap, errs)
+        o = np.clip(o + grid * gshift * (np.abs(o) > 0), -cap, cap)
+        for a, b_, err, mv in words:
+            if abs(err) > fix_over:
+                worst.append(dict(part=Path(p_).name, at_s=round(a * FR_S, 2), err_ms=round(err * FR_S * 1000),
+                                  move_ms=round(mv * FR_S * 1000)))
         fn = lambda t, o=o: float(np.interp(t / sr, t_frames, o * FR_S))
         out, moved_frac = keep_original_where_still(audio[p_], wsola_warp(audio[p_], sr, fn)[:len(audio[p_])], o, sr)
         others = group(p_)
@@ -387,17 +494,27 @@ def stack_align(paths, outdir=None, strength=0.5, grid=0.3, bpm=None, max_ms=60.
         row = dict(file=Path(p_).name, before_ms=round(before), after_ms=round(after), shared_pct=shared_pct,
                    median_move_ms=round(float(np.median(np.abs(o[sung])) * FR_S * 1000), 1) if sung.any() else 0.0,
                    max_move_ms=round(float(np.abs(o).max() * FR_S * 1000), 1))
+        fixed_at = [(a + b_) / 2 * FR_S for a, b_, err, mv in words if abs(err) > fix_over]
+        lb = onset_lag_at(others, audio[p_], sr, fixed_at) if fixed_at else None
+        la = onset_lag_at(others, out, sr, fixed_at) if fixed_at else None
+        if lb is not None:
+            row["fixed_words_before_ms"], row["fixed_words_after_ms"] = round(lb), round(la)
+        better_where_fixed = lb is not None and la is not None and la <= lb - 3.0 and after <= before + 2.0
+        worse_where_fixed = lb is not None and la is not None and la > lb + 1.0
         if moved_frac == 0:
             row["kept"] = False
             row["note"] = "never shares words with another part at the same time: left as it was"
-        elif after > before - 1.0:
+        elif worse_where_fixed or (not better_where_fixed and after > before - 1.0):
             row["kept"] = False
-            row["note"] = "not measurably closer to the others: left as it was"
+            row["note"] = ("the words it fixed did not measure closer to the others: left as it was" if lb is not None
+                           else "not measurably closer to the others: left as it was")
         else:
             row["kept"] = True
             row["out"] = str(dsp.save(od / f"{Path(p_).stem} (stack aligned).wav", out, sr, 24))
         rows.append(row)
-    return rows, dict(grid_offset_ms=round(float(np.median(gshift)) * FR_S * 1000, 1), grid=grid, strength=strength)
+    worst.sort(key=lambda w: -abs(w["err_ms"]))
+    return rows, dict(grid_offset_ms=round(float(np.median(gshift)) * FR_S * 1000, 1), grid=grid, strength=strength,
+                      fix_over_ms=round(fix_over * FR_S * 1000), worst=worst)
 
 
 def main():
@@ -411,7 +528,11 @@ def main():
     ap.add_argument("--engine", choices=["auto", "rubberband", "wsola"], default="auto")
     ap.add_argument("--to-lead", action="store_true",
                     help="align every part to the lead (the old way); default with 2+ parts: the gentle stack mode")
-    ap.add_argument("--stack-strength", type=float, default=0.5, help="stack mode: share of the way to the group average")
+    ap.add_argument("--stack-strength", type=float, default=0.1,
+                    help="stack mode: how far every word that is NOT clearly off moves toward the group (very gentle: 0.1)")
+    ap.add_argument("--fix-over-ms", type=float, default=30.0,
+                    help="stack mode: a word further off the group than this (or the song's own looseness, if more) is fixed")
+    ap.add_argument("--fix-strength", type=float, default=0.8, help="stack mode: how far those words move (0.8)")
     ap.add_argument("--grid", type=float, default=0.3, help="stack mode: share of the stack's lag to the 8th-note grid (needs --bpm)")
     ap.add_argument("--bpm", type=float, help="stack mode: the song's tempo, for the grid pull")
     ap.add_argument("--cap-ms", type=float, default=60.0, help="stack mode: never move anything more than this")
@@ -424,9 +545,11 @@ def main():
     od = out_at(a.out, "vocalign")
     if len(a.overdubs) >= 2 and not a.to_lead:
         rows, meta = stack_align([a.lead] + a.overdubs, a.out, a.stack_strength, a.grid if a.bpm else 0.0, a.bpm, a.cap_ms,
-                                 a.same_words)
+                                 a.same_words, a.fix_over_ms, a.fix_strength)
         md = [f"# Gentle stack alignment ({len(rows)} parts)", "",
-              f"Each part moved {a.stack_strength:.0%} of the way toward the group's average timing"
+              f"Word by word: a word more than {meta['fix_over_ms']} ms off the group (the song's own looseness or "
+              f"{a.fix_over_ms:g} ms, whichever is more) moved {a.fix_strength:.0%} of the way; every other word only "
+              f"{a.stack_strength:.0%}"
               + (f"; the whole stack {a.grid:.0%} of the way toward the 8th-note grid at {a.bpm:g} BPM (it sat "
                  f"{meta['grid_offset_ms']:+.0f} ms off it)" if a.bpm else " (no --bpm: no grid pull)")
               + f"; never more than {a.cap_ms:g} ms. Checked independently: distance from the other parts.", "",
@@ -435,8 +558,33 @@ def main():
               "| part | sings shared words | before | after | median move | biggest move | result |",
               "|---|---|---|---|---|---|---|"]
         for r in rows:
+            fw = (f" (its fixed words {r['fixed_words_before_ms']} → {r['fixed_words_after_ms']} ms)"
+                  if r.get("fixed_words_before_ms") is not None else "")
             md.append(f"| {r['file']} | {r['shared_pct']}% | {r['before_ms']} ms | {r['after_ms']} ms | {r['median_move_ms']} ms | "
-                      f"{r['max_move_ms']} ms | {'written' if r['kept'] else r['note']} |")
+                      f"{r['max_move_ms']} ms | {('written' if r['kept'] else r['note']) + fw} |")
+        if meta["worst"]:
+            ws = sorted(meta["worst"], key=lambda w: w["at_s"])
+            areas, cur = [], [ws[0]]
+            for w in ws[1:]:
+                if w["at_s"] - cur[-1]["at_s"] <= 2.0:
+                    cur.append(w)
+                else:
+                    areas.append(cur); cur = [w]
+            areas.append(cur)
+            mmss = lambda t: f"{int(t // 60)}:{t % 60:04.1f}"
+            md += ["", "Problem areas (words out of time with each other):", ""]
+            for ar in sorted(areas, key=lambda g: -max(abs(w["err_ms"]) for w in g)):
+                who = {}
+                for w in ar:
+                    who.setdefault(w["part"], []).append(w["err_ms"])
+                desc = ", ".join(f"{k} {'late' if np.median(v) > 0 else 'early'} ({abs(int(np.median(v)))} ms)" for k, v in who.items())
+                md.append(f"- {mmss(ar[0]['at_s'])}–{mmss(ar[-1]['at_s'] + 0.3)}: {len(ar)} word(s): {desc}")
+            md += ["", "Worst words (the ones fixed), most off first:", "",
+                   "| part | at | off the group | moved |", "|---|---|---|---|"]
+            md += [f"| {w['part']} | {int(w['at_s'] // 60)}:{w['at_s'] % 60:05.2f} | {w['err_ms']:+d} ms | {-w['move_ms']:+d} ms |"
+                   for w in meta["worst"][:20]]
+        else:
+            md += ["", "No word was clearly off the group: only the gentle nudge was applied."]
         md += ["", *[f"- `{r['out']}`" for r in rows if r.get("out")]]
         (od / "VOCALIGN.md").write_text("\n".join(md) + "\n")
         print("\n".join(md))
