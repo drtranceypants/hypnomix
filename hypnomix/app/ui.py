@@ -47,7 +47,8 @@ pre.fix{max-height:220px;background:var(--bg)}
 .meter{display:inline-block;height:8px;background:var(--line);width:120px;border-radius:4px;overflow:hidden;vertical-align:middle}
 .meter i{display:block;height:100%;background:var(--ok,#5a9)}.bands{display:inline-flex;gap:2px;align-items:flex-end;height:22px;vertical-align:middle}
 .bands i{display:block;width:7px;background:var(--mute)}.num{font-variant-numeric:tabular-nums;white-space:nowrap}
-table{border-collapse:collapse;width:100%}td{padding:6px 8px;border-top:1px solid var(--line);vertical-align:top}
+table{border-collapse:collapse;width:100%}
+__OVCSS__td{padding:6px 8px;border-top:1px solid var(--line);vertical-align:top}
 td code{font:13px ui-monospace,monospace}tr.cmd{cursor:pointer}tr.cmd:hover td{background:var(--bg)}
 .grp td{font-weight:700;border-top:2px solid var(--line);padding-top:14px}
 .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;
@@ -69,6 +70,7 @@ const post = (u, body) => fetch(u, {method:'POST', headers:{'Content-Type':'appl
   body: JSON.stringify(body || {})}).then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
 let S = {view:'home', state:null, form:{source:'', mix:'', key:'', like:'', deep:false}, review:null, logAt:0, logLines:[], tool:null};
 
+__OVJS__
 function go(view, extra) { Object.assign(S, extra || {}); S.view = view; render(); window.scrollTo(0, 0); }
 document.addEventListener('click', e => { const t = e.target.closest('button[data-view]'); if (t) go(t.dataset.view); });
 
@@ -137,7 +139,9 @@ function reviewView() {
   const left = actionable.length - n.approve - n.skip - n.change;
   const top = (R.broken.length ? '<div class="warn"><b>Checks that did NOT run</b> (no findings there means nothing):<br>' + R.broken.map(esc).join('<br>') + '</div>' : '')
     + (R.prefs.length ? '<div class="prefs">' + R.prefs.map(esc).join('<br>') + '</div>' : '');
-  const items = R.findings.map(f => {
+  const ovc = R.oversight && !R.oversight.error ? {ov: R.oversight, dec, notes: R.oversight.notes || {}, esc, findings: R.findings} : null;
+  const inBatch = new Set(ovc && ovc.ov.budget ? ovc.ov.budget.batch : []);
+  const card = f => {
     const d = dec[f.id] && dec[f.id].decision, ab = R.ab[f.id] || {}, fix = String(f.fix || '');
     const src = x => '/audio?dir=' + encodeURIComponent(R.dir) + '&f=' + encodeURIComponent(x);
     const players = ab.a ? `<div class="ab"><div><label>A · now</label><audio controls preload="none" src="${src(ab.a)}"></audio></div>
@@ -155,8 +159,10 @@ function reviewView() {
       ${R.ab_live && R.ab_live.items[f.id] && R.ab_live.items[f.id].parts.length ? '<span class="tag">A/B in Live</span>' : ''}</div>
       <div>${esc(f.problem)}</div>
       ${fix.includes('\n') ? `<pre class="fix">${esc(fix)}</pre>` : `<p class="fix">Proposed: ${esc(fix)}</p>`}
-      ${f.history ? `<p class="note">${esc(f.history)}</p>` : ''}${players}${note}${blindNote(R, f.id)}${act}</div>`;
-  }).join('');
+      ${f.history ? `<p class="note">${esc(f.history)}</p>` : ''}${players}${note}${blindNote(R, f.id)}${act}
+      ${ovc ? ovItemHTML(f, ovc) : ''}</div>`;
+  };
+  const items = R.findings.filter(f => !inBatch.has(f.id)).map(card).join('') + (ovc ? ovBatchHTML(ovc, card) : '');
   const prot = actionable.some(f => f.protected && dec[f.id] && dec[f.id].decision === 'approve');
   const tune = actionable.some(f => f.tool === 'tune' && dec[f.id] && dec[f.id].decision === 'approve');
   const apply = `<h2>Apply</h2><div class="card">
@@ -301,6 +307,14 @@ document.addEventListener('click', async e => {
     else if (b.id === 'runtool') { S.toolArgs = $('#args').value; await post('/api/tool', {cmd: S.tool, args: S.toolArgs}); S.logLines = []; S.logAt = 0; S.lastStatus = 'running'; await refresh(); go('job'); }
   } catch (err) { alert(err.message); }
 });
+async function reloadReview() { const y = window.scrollY; S.review = await get('/api/review?dir=' + encodeURIComponent(S.review.dir)); $('#main').innerHTML = reviewView(); window.scrollTo(0, y); }
+ovBind({
+  amount: async (id, v) => { const d = (S.review.decisions[id] || {}).decision || 'approve';
+    await post('/api/decide', {dir: S.review.dir, id, decision: d, amount: v, note: (S.review.decisions[id] || {}).note || ''}); reloadReview(); },
+  decideLike: async (id, d) => { const r = await post('/api/decide-like', {dir: S.review.dir, id, decision: d}); reloadReview(); },
+  batch: async (ids, d, note) => { for (const id of ids) await post('/api/decide', {dir: S.review.dir, id, decision: d, note}); reloadReview(); },
+  note: async (id, text, at) => { await post('/api/note', {dir: S.review.dir, id, text, at}); reloadReview(); },
+});
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('tr.cmd')) e.target.click(); });
 document.addEventListener('change', e => {
   const i = e.target.closest('input[data-note]');
@@ -311,3 +325,6 @@ render();
 setInterval(() => { refresh(); pollJob(); pollProbe(); }, 1000);
 </script></body></html>
 """
+
+from hypnomix.workflow.review import OVERSIGHT_CSS as _OC, OVERSIGHT_JS as _OJ   # noqa: E402
+PAGE = PAGE.replace("__OVCSS__", _OC).replace("__OVJS__", _OJ)

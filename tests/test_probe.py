@@ -217,3 +217,30 @@ class Cards(unittest.TestCase):
             out = subprocess.run(["/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc", str(f)],
                                  capture_output=True, text=True).stdout.strip()
         self.assertEqual(out, P.signature(names))
+
+
+class ScanReadsCards(unittest.TestCase):
+    def test_key_lead_and_protect_from_live_win_over_guessing(self):
+        import types
+        from hypnomix.workflow import scan as S
+        orig = P.read_cards
+        P.read_cards = lambda als: {"song": {"key_name": "G major", "target": -10.0, "genre": "not set"},
+                                    "tracks": {"Vox 1": {"role": "lead vocal", "protect": "on: ask"}, "Gtr": {"role": "auto"},
+                                               "Pad": {"role": "pad", "priority": "background: gives way"}}}
+        try:
+            a = types.SimpleNamespace(key=None, lead_track=None)
+            told = S.told_in_live("x.als", a)
+        finally:
+            P.read_cards = orig
+        self.assertEqual((a.key, a.lead_track), ("G major", "Vox 1"))
+        self.assertEqual(told["protect"], ["Vox 1"])
+        self.assertEqual(told["priority"], {"Pad": "background"})
+        self.assertEqual(told["roles"], {"Vox 1": "lead vocal", "Pad": "pad"})
+        self.assertNotIn("genre", told)
+        a = types.SimpleNamespace(key="A minor", lead_track="Lead")       # what was typed on the command line wins
+        P.read_cards = lambda als: {"song": {"key_name": "G major"}, "tracks": {"Vox 1": {"role": "lead vocal"}}}
+        try:
+            S.told_in_live("x.als", a)
+        finally:
+            P.read_cards = orig
+        self.assertEqual((a.key, a.lead_track), ("A minor", "Lead"))

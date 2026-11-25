@@ -927,6 +927,42 @@ def g_intent(als, od, a):
     return out, notes
 
 
+# ---------------------------------------------------------------- what the person told hypnomix in Live
+def told_in_live(als, a):
+    """The probe menus and HypnomixMain's song card, read from the saved set: they win over guessing.
+    A key typed in Live counts as confirmed by the person; a track marked lead vocal is the lead; protected
+    tracks are protected for this song; the card's loudness target and ceiling are the targets."""
+    try:
+        from hypnomix.app.probe import read_cards
+        c = read_cards(als)
+    except Exception:
+        return {}
+    song, tracks = c.get("song", {}), c.get("tracks", {})
+    out = {}
+    if song.get("key_name"):
+        out["key"] = song["key_name"]
+        if not a.key:
+            a.key = song["key_name"]
+    lead = [t for t, v in tracks.items() if v.get("role") == "lead vocal"]
+    if lead:
+        out["lead"] = lead[0]
+        if not a.lead_track:
+            a.lead_track = lead[0]
+    roles = {t: v["role"] for t, v in tracks.items() if v.get("role") not in (None, "auto")}
+    if roles:
+        out["roles"] = roles
+    prot = [t for t, v in tracks.items() if str(v.get("protect", "off")).startswith("on")]
+    if prot:
+        out["protect"] = prot
+    pri = {t: v["priority"].split(":")[0] for t, v in tracks.items() if str(v.get("priority", "normal")) != "normal"}
+    if pri:
+        out["priority"] = pri
+    for k in ("genre", "target", "ceiling", "mode", "amount", "chords"):
+        if song.get(k) not in (None, "", "not set"):
+            out[k] = song[k]
+    return out
+
+
 # ---------------------------------------------------------------- merge + review
 def merge(od):
     from hypnomix.workflow import prefs as P
@@ -934,6 +970,13 @@ def merge(od):
     prefs = P.load()
     protected = {t.lower() for t in (prefs.get("protect", {}).get("tracks") or [])}
     findings, notes, meta = [], [], {}
+    sjp = od / "scan.json"
+    told = (json.loads(sjp.read_text()).get("told") or {}) if sjp.exists() else {}
+    protected |= {t.lower() for t in told.get("protect", [])}
+    if told:
+        notes.append("Told in Live (probe menus and the song card): " + "; ".join(
+            f"{k} {v if not isinstance(v, (dict, list)) else ', '.join(f'{a}={b}' for a, b in v.items()) if isinstance(v, dict) else ', '.join(v)}"
+            for k, v in told.items()))
     for g in ALL_GROUPS:
         p = od / f"{g}.json"
         if p.exists():
@@ -1252,8 +1295,11 @@ def main():
     wrong = [g for g in groups if g not in mine]
     if wrong:
         sys.exit(f"{', '.join(wrong)}: not a group for a {'folder' if folder else PJ.NAMES[daw] + ' project' if reaper else 'Live set'} (use {', '.join(mine)})")
+    told = told_in_live(als, a) if not folder and not reaper else {}
     info = {"set": str(als), "mode": "folder" if folder else daw if reaper else "set", "mix": a.mix, "ref": a.ref, "backing": a.backing, "key": a.key, "lead": None,
             "set_mtime": als.stat().st_mtime}
+    if told:
+        info["told"] = told
     (od / "raw").mkdir(exist_ok=True)
     sj = od / "scan.json"
     if sj.exists():  # parallel --only runs share this file: keep what another run already recorded

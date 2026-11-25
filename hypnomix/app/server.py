@@ -162,7 +162,16 @@ def review_payload(d):
                 findings=data["findings"], decisions=dec, ab=ab, prefs=P.summary(P.load()),
                 broken=[n for n in notes if "failed" in n or n.startswith("WARNING") or "did NOT run" in n],
                 fix_log=log[-6000:], suggested_out=(Path(source).stem + " (fixed).als") if is_set else "",
+                oversight=ov_payload(d, data["findings"]),
                 ab_live=ab_spec(d), blind=json.loads((d / "blind.json").read_text()) if (d / "blind.json").exists() else [])
+
+
+def ov_payload(d, findings):
+    try:
+        from hypnomix.workflow import review as R
+        return R.oversight_payload(d, findings)
+    except Exception as e:                     # the review still works without the extras
+        return {"error": str(e)}
 
 
 def actionable(d):
@@ -494,7 +503,18 @@ def make_handler(port):
                     return self.send(200, {"path": pick(body["kind"])})
                 if u.path == "/api/decide":
                     from hypnomix.workflow import review as R
-                    R.record(scan_dir(body["dir"]), body["id"], body["decision"], body.get("note", ""))
+                    amt = body.get("amount")
+                    R.record(scan_dir(body["dir"]), body["id"], body["decision"], body.get("note", ""),
+                             amount=None if amt is None else int(amt), by=body.get("by") or None)
+                    return self.send(200, {})
+                if u.path == "/api/decide-like":
+                    from hypnomix.workflow import review as R
+                    ids = R.record_like(scan_dir(body["dir"]), body["id"], body["decision"], amount=body.get("amount"),
+                                        by=body.get("by") or None)
+                    return self.send(200, {"ids": ids})
+                if u.path == "/api/note":
+                    from hypnomix.workflow import oversight as O
+                    O.add_note(scan_dir(body["dir"]), body["id"], body["text"], body.get("at") or None, body.get("by") or None)
                     return self.send(200, {})
                 if u.path == "/api/prefs":
                     from hypnomix.workflow import prefs as P
