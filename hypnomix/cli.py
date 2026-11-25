@@ -8,14 +8,15 @@ import sys
 GROUPS = [
     ("Engineer: stems in, song out", [
         ("automix", "hypnomix.engineer.automix", "stems folder → balanced mix + master, with notes on every move"),
-        ("master", "hypnomix.engineer.master", "stereo mix → release master at a loudness target (or matched to a reference)"),
+        ("master", "hypnomix.engineer.master", "stereo mix → release master at a loudness target (or a reference); options: tonal stabilizer, dynamic EQ, band width, limiter character, harshness, dither, amount"),
+        ("rebalance", "hypnomix.engineer.rebalance", "turn vocals / drums / bass / other up or down in a finished stereo mix (separation + residual, true-peak safe)  [extra: ml, or --stems]"),
         ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices: no paid plug-ins"),
         ("devices", "hypnomix.engineer.devices", "check every Live device by what it does (compressors, gates, limiters, EQ low cut) and suggest settings (writes a new set)"),
         ("duck", "hypnomix.engineer.duck", "duck the vocal reverb and delay: tune the ducking you have, or add a sidechained Compressor fed by the vocals (writes a new set)"),
         ("sidechain", "hypnomix.engineer.sidechain", "sidechain compressors: measure the ducking (depth, recovery, timing) and suggest settings"),
         ("masking", "hypnomix.engineer.masking", "which stems fight over which frequencies, and the cut that fixes it"),
         ("align", "hypnomix.engineer.align", "phase/polarity/time offset between mics on one source"),
-        ("translate", "hypnomix.engineer.translate", "mono, phone, earbuds, car, streaming normalisation, codec clipping"),
+        ("translate", "hypnomix.engineer.translate", "mono, phone, earbuds, car, streaming normalisation, codec clipping; --preview to hear MP3 / AAC / as streaming plays it"),
         ("qc", "hypnomix.engineer.qc", "release checks: format, silence, true peak, loudness, phase (exit 1 on fail)"),
     ]),
     ("Studio: recording real instruments", [
@@ -42,6 +43,8 @@ GROUPS = [
         ("stems", "hypnomix.ears.stems", "who owns which band (and a resonance) in a folder of stems"),
         ("reference", "hypnomix.ears.reference", "what it would take to sound like a reference  [extra: reference]"),
         ("match", "hypnomix.ears.match", "mix vs a reference as a list of proposals: tone by band, dynamics, width, loudness"),
+        ("tonal", "hypnomix.ears.tonal", "tonal-balance targets from your own masters or chosen references; where a mix sits outside the range, with EQ proposals and a plot"),
+        ("harsh", "hypnomix.ears.harsh", "harshness report: sustained 2-6 kHz build-ups with timestamps (master --harsh tames only those)"),
         ("sections", "hypnomix.ears.sections", "find the song's sections; loudness and vocal balance per section (give --bpm)"),
         ("separate", "hypnomix.ears.separate", "split a mixed song into stems  [extra: ml]"),
         ("midi", "hypnomix.ears.midi", "audio → MIDI (+ into a Live clip)  [extra: ml]"),

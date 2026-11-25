@@ -22,6 +22,30 @@ MODELS = {
 MODEL_DIR = Path.home() / ".cache" / "audio-separator-models"
 
 
+def separate_to(src, dest, model="4stem"):
+    """Split one file into stems in `dest` (Vocals.wav, Drums.wav, …). Returns {name: path}. Needs the ml extra
+    (`pip install -e '.[ml]'`); raises ImportError with that hint when it is missing."""
+    import logging
+    try:
+        from audio_separator.separator import Separator
+    except ImportError as e:
+        raise ImportError("stem separation needs the ml extra: pip install -e '.[ml]' (or give stems you already "
+                          "have with --stems DIR)") from e
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    sep = Separator(model_file_dir=str(MODEL_DIR), output_dir=str(dest), output_format="WAV", log_level=logging.WARNING)
+    sep.load_model(model_filename=MODELS[model])
+    out = {}
+    for o in sep.separate(str(src)):
+        p = Path(o) if Path(o).is_absolute() else dest / o
+        m = re.search(r"_\(([^)]+)\)_", p.name) or re.search(r"\(([^)]+)\)", p.name)
+        new = dest / f"{(m.group(1) if m else p.stem).capitalize()}.wav"
+        p.replace(new)
+        out[new.stem] = new
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("files", nargs="+")

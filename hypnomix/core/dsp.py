@@ -36,7 +36,9 @@ def load(path, sr=None):
     return y, int(file_sr)
 
 
-def save(path, y, sr, bits=24):
+def save(path, y, sr, bits=24, dither=None):
+    """Write audio. dither: None keeps the long-standing behaviour (TPDF on 16-bit, none on 24-bit);
+    'tpdf', 'shaped' or 'off' choose it explicitly for any fixed-point export (16 or 24 bit)."""
     path = Path(path)
     if not np.all(np.isfinite(y)):
         bad = int(np.sum(~np.isfinite(y)))
@@ -45,7 +47,9 @@ def save(path, y, sr, bits=24):
         y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
     path.parent.mkdir(parents=True, exist_ok=True)
     sub = {16: "PCM_16", 24: "PCM_24", 32: "FLOAT"}[bits]
-    if bits == 16:
+    if dither is not None and bits in (16, 24):
+        y = quantise(y, bits, dither)
+    elif bits == 16:
         y = dither_tpdf(y, 16)
     sf.write(str(path), np.clip(y, -1, 1) if bits != 32 else y, sr, subtype=sub)
     return path
@@ -55,6 +59,34 @@ def dither_tpdf(y, bits):
     lsb = 1.0 / (2 ** (bits - 1))
     rng = np.random.default_rng(0)
     return y + (rng.random(y.shape) - rng.random(y.shape)) * lsb
+
+
+def quantise(y, bits, kind="tpdf", seed=None):
+    """Round to `bits` (16 or 24) with dither, so the rounding error becomes a steady, signal-free hiss instead of
+    distortion on quiet fades and reverb tails.
+
+    kind: 'tpdf'   triangular dither of ±1 LSB, flat spectrum (the standard choice);
+          'shaped' the same dither inside a first-order error-feedback loop: the noise is pushed up toward the top
+                   octave, where hearing is least sensitive (about 3 dB less noise below 5 kHz at 44.1 kHz, more above);
+          'off'    plain rounding (only for files that will be processed again at higher resolution).
+    Returns floats sitting exactly on the target grid; the change is a few LSBs at most."""
+    lsb = 1.0 / (2 ** (bits - 1))
+    rng = np.random.default_rng(seed)
+    x = np.asarray(y, float) / lsb
+    if kind == "off":
+        q = np.round(x)
+    elif kind == "tpdf":
+        q = np.round(x + rng.random(x.shape) - rng.random(x.shape))
+    elif kind == "shaped":
+        # error feedback with E(z) = 1 - z^-1, computed in closed form: the running sum of the output is the
+        # dithered rounding of the running sum of the input, so q = diff(round(cumsum(x) + d)).
+        dc = np.round(x.mean(axis=0, keepdims=True))          # keep the running sum small (precision)
+        d = rng.random(x.shape) - rng.random(x.shape)
+        S = np.round(np.cumsum(x - dc, axis=0) + d)
+        q = np.diff(S, axis=0, prepend=np.zeros((1,) + x.shape[1:])) + dc
+    else:
+        raise ValueError(f"unknown dither {kind!r} (tpdf, shaped, off)")
+    return np.clip(q, -(2 ** (bits - 1)), 2 ** (bits - 1) - 1) * lsb
 
 
 def stereo(y):

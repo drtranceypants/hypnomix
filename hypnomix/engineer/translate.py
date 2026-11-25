@@ -9,8 +9,12 @@
   codecs      MP3 320 and AAC 256 encode/decode: does it clip after encoding?
 
 Usage:
-    hypnomix translate song.wav [--render] [--out DIR]
+    hypnomix translate song.wav [--render] [--preview] [--out DIR]
     --render writes the phone/earbud/car/mono versions so you can listen to them yourself.
+    --preview writes what the streaming encoders hand back, decoded to WAV so any player (and the review page)
+              can play them: MP3 320, AAC 256, and "as Spotify plays it" (AAC 256 turned to -14 LUFS the way
+              its default normalisation does: louder songs down, quieter songs up only as far as -1 dBTP allows).
+              Same length and start as the original, for A/B.
 """
 from hypnomix.core.paths import out_at
 import argparse, subprocess, sys, tempfile
@@ -51,6 +55,50 @@ def codec_peak(path, codec):
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(enc), "-c:a", "pcm_f32le", str(dec)], check=True)
         y, sr = dsp.load(dec)
         return dsp.true_peak(y, sr)
+
+
+def _decode(path, codec, td):
+    """Encode with ffmpeg and decode back to float audio (None if the encoder is missing)."""
+    enc = Path(td) / ("x.mp3" if codec == "mp3" else "x.m4a")
+    args = ["-b:a", "320k", "-c:a", "libmp3lame"] if codec == "mp3" else ["-b:a", "256k", "-c:a", "aac"]
+    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), *args, str(enc)], capture_output=True)
+    if r.returncode:
+        return None
+    dec = Path(td) / f"{codec}.wav"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(enc), "-c:a", "pcm_f32le", str(dec)], check=True)
+    return dsp.load(dec)[0]
+
+
+def codec_preview(path, outdir, normalise_to=-14.0):
+    """Write decoded MP3 320 / AAC 256 WAVs and an 'as Spotify plays it' WAV next to each other in outdir.
+    Returns {kind: {path, true_peak, lufs}}; a kind whose encoder is missing is left out (key 'skipped')."""
+    y, sr = dsp.load(path)
+    n = len(y)
+    od = Path(outdir)
+    od.mkdir(parents=True, exist_ok=True)
+    stem = Path(path).stem
+    res, skipped = {}, []
+    with tempfile.TemporaryDirectory() as td:
+        for codec, label in (("mp3", "mp3 320"), ("aac", "aac 256")):
+            z = _decode(path, codec, td)
+            if z is None:
+                skipped.append(label)
+                continue
+            z = np.pad(z, ((0, max(0, n - len(z))), (0, 0)))[:n]      # same length as the original, for A/B
+            p = dsp.save(od / f"{stem} ({label}).wav", z, sr, 32)       # float: overshoots kept as decoded
+            res[label] = dict(path=str(p), true_peak=dsp.true_peak(z, sr), lufs=dsp.lufs(z, sr))
+            if codec == "aac":
+                L, tp = dsp.lufs(z, sr), dsp.true_peak(z, sr)
+                gain = normalise_to - L
+                if gain > 0:
+                    gain = min(gain, -1.0 - tp)                       # quiet songs go up only to -1 dBTP
+                s = z * dsp.undb(gain)
+                q = dsp.save(od / f"{stem} (as Spotify plays it).wav", s, sr, 32)
+                res["as Spotify plays it"] = dict(path=str(q), gain_db=round(float(gain), 2),
+                                                  true_peak=dsp.true_peak(s, sr), lufs=dsp.lufs(s, sr))
+    if skipped:
+        res["skipped"] = skipped
+    return res
 
 
 def analyse(path, render=False, outdir=None):
@@ -131,8 +179,18 @@ def analyse(path, render=False, outdir=None):
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix translate", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("file"); ap.add_argument("--render", action="store_true"); ap.add_argument("--out")
+    ap.add_argument("--preview", action="store_true", help="write decoded MP3 / AAC / as-Spotify-plays-it WAVs")
     a = ap.parse_args()
     r = analyse(a.file, a.render, a.out)
+    if a.preview:
+        pv = codec_preview(a.file, out_at(a.out, "translate", Path(a.file).stem))
+        for k, v in pv.items():
+            if k == "skipped":
+                r["rows"].append(("Preview", f"encoder missing: {', '.join(v)}", "SKIP"))
+                continue
+            extra = f", turned {v['gain_db']:+.1f} dB" if "gain_db" in v else ""
+            r["rows"].append((f"Preview: {k}", f"{v['lufs']:.1f} LUFS, {v['true_peak']:+.2f} dBTP{extra} → "
+                                               f"`{Path(v['path']).name}`", "INFO"))
     md = [f"# Translation check: {Path(a.file).name}", "", f"{r['lufs']:.1f} LUFS, {r['tp']:+.1f} dBTP", "",
           "| check | result | |", "|---|---|---|", *[f"| {a_} | {b} | {c} |" for a_, b, c in r["rows"]], ""]
     md += ["## What to listen for", *[f"- {n}" for n in r["notes"]]] if r["notes"] else ["Nothing worrying. Still: listen on a phone."]

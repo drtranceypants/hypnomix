@@ -40,3 +40,16 @@ def write(od, group, source, findings, notes, seconds=0.0):
     print(f"{len(findings)} proposed move(s) from {group}; nothing was changed.\nreview: {od / 'REVIEW.md'}")
     print(f'next: hypnomix ab "{od}"  ·  hypnomix review "{od}"  ·  hypnomix fix "{od}" --approved')
     return od
+
+
+def stage_findings(log, keys, tool, source, settings, medium=()):
+    """One finding per logged stage of a chain tool (master): what it would do, why, and a `plan` dict carrying
+    the stage key and every setting, so `fix --approved` can run exactly the approved stages."""
+    out = []
+    for what, setting, why in log:
+        k = keys.get(what, "stage")
+        out.append(dict(kind=k, severity="medium" if k in medium else "low", track=Path(source).name,
+                        problem=f"{what}: {setting}", fix=why,
+                        plan=dict(tool=tool, file=str(Path(source).resolve()), key=k, **settings)))
+    return out
+
