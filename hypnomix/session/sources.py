@@ -64,7 +64,7 @@ def song_spans(clip, tempo, step_s=0.25):
     if v(clip, "./IsWarped") != "true":
         r0 = ls + sr_
         return [(cs / bps, ce / bps, r0, r0 + (ce - cs) / bps)]
-    wm = sorted((float(m.get("BeatTime")), float(m.get("SecTime"))) for m in clip.iter("WarpMarker"))
+    wm = sorted((float(m.get("BeatTime")), float(m.get("SecTime"))) for m in clip.findall("./WarpMarkers/WarpMarker"))
     if len(wm) < 2:
         r0 = (ls + sr_) / bps
         return [(cs / bps, ce / bps, r0, r0 + (ce - cs) / bps)]

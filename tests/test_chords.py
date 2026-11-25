@@ -122,6 +122,16 @@ class TakeTime(unittest.TestCase):
         self.assertAlmostEqual(sp[-1][1], 2.0)
         self.assertAlmostEqual(sp[-1][3], 4.0)
 
+    def test_saved_marker_list_is_ignored(self):
+        x = ('<AudioClip Time="0"><CurrentStart Value="0" /><CurrentEnd Value="4" /><IsWarped Value="true" />'
+             '<Loop><LoopStart Value="0" /><StartRelative Value="0" /></Loop><WarpMarkers>'
+             '<WarpMarker Id="0" SecTime="0" BeatTime="0" /><WarpMarker Id="1" SecTime="4" BeatTime="4" />'
+             '</WarpMarkers><SavedWarpMarkersForStretched>'
+             '<WarpMarker Id="0" SecTime="0" BeatTime="0" /><WarpMarker Id="1" SecTime="9" BeatTime="2" />'
+             '</SavedWarpMarkersForStretched></AudioClip>')
+        sp = SRC.song_spans(ET.fromstring(x), 120.0)
+        self.assertAlmostEqual(sp[-1][3], 4.0)                              # the clip's own markers, not the saved list
+
 
 if __name__ == "__main__":
     unittest.main()
