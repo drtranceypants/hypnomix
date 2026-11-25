@@ -1,15 +1,17 @@
 # The app and the Live device
 
-Two ways to do the whole first pass without a terminal and without an AI: a window on your Mac, and a
-device inside Ableton Live. Both drive the same commands the rest of this guide describes, and the same
+Two ways to do the whole first pass by clicking, without an AI: a web app on your own computer (which you
+can optionally build into a Mac app), and a device inside Ableton Live. Both drive the same commands the rest of this guide describes, and the same
 rules hold: the scan changes nothing, you decide each item, approved fixes go into a new set.
 
-## The app
+## The web app
 
 ```bash
 hypnomix app            # opens http://127.0.0.1:8791 in your browser
-macapp/build.sh         # or build Hypnomix.app (a window around the same thing); needs xcode-select --install
 ```
+
+That is all it takes: the app is a page served from your own computer. Leave the terminal window open while
+you use it; Ctrl-C stops it.
 
 | screen | what you do there |
 |---|---|
@@ -23,8 +25,27 @@ macapp/build.sh         # or build Hypnomix.app (a window around the same thing)
 It is a web server on this computer only. It refuses requests from other sites, only reads and writes scans
 inside its own folder (`~/Documents/Hypnomix`; change with `--home`), and never overwrites a set.
 
-`macapp/build.sh` builds the app for the Mac it runs on and signs it ad hoc. To give the app to someone
-else, they build it themselves, or it has to be signed and notarised with an Apple developer account.
+## Optional: your own Mac app
+
+If you would rather have an icon in the Dock than a browser tab, build `Hypnomix.app`: a small window around
+the same web app that starts it when you open the app and stops it when you quit.
+
+```bash
+xcode-select --install      # once: Apple's command line tools (the Swift compiler)
+macapp/build.sh             # from the hypnomix folder; about a minute
+open macapp/dist/Hypnomix.app
+```
+
+Drag `macapp/dist/Hypnomix.app` into Applications if you want to keep it. Things to know:
+
+- You build it yourself, so it is made for your Mac and macOS trusts it. A copy sent to someone else will be
+  blocked by macOS unless it is signed and notarised with an Apple developer account: tell them to build
+  their own with the three lines above.
+- The app remembers where hypnomix is installed. If you move or reinstall that folder, build again (or the
+  app asks you to point at the folder).
+- It is the same page as `hypnomix app`. Nothing is lost by using the browser instead, and on Windows or
+  Linux the browser is the way.
+- To remove it, delete the app. Your songs' scans stay in `~/Documents/Hypnomix`.
 
 ## The Live device (Max for Live)
 

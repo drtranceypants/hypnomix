@@ -52,9 +52,9 @@ approve and skip (`prefs`), so proposals start from your standards.
 ## No terminal, no AI: the app and the Live device
 
 ```
-hypnomix app        # the first pass in a window: choose a song, hear each fix, approve, apply
-macapp/build.sh     # the same thing as Hypnomix.app
-hypnomix device     # a Max for Live device: step through the findings inside Live; Live jumps to each one
+hypnomix app        # a web app on your own computer: choose a song, hear each fix, approve, apply
+hypnomix device     # optional: a Max for Live device to step through the findings inside Live
+macapp/build.sh     # optional: build your own Hypnomix.app (a Dock icon around the same web app)
 ```
 
 The app runs the scan, builds the before / after clips, shows the review with play buttons, and writes only
