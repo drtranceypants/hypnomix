@@ -85,6 +85,10 @@ GROUPS = [
         ("ab", "hypnomix.workflow.ab", "before/after clips for each proposed fix, level-matched, so you hear it before approving"),
         ("review", "hypnomix.workflow.review", "the review as one page: play each A/B, tick approve / skip / change"),
     ]),
+    ("App: no terminal, no AI needed", [
+        ("app", "hypnomix.app.server", "the first pass in a window: choose a song, hear each fix, approve, apply (this computer only)"),
+        ("device", "hypnomix.app.device", "make the Max for Live device: review from inside Live, and jump Live to each finding"),
+    ]),
     ("Setup", [
         ("install", "hypnomix.install", "install the Live remote script, write Claude Code config"),
         ("doctor", "hypnomix.install", "check Live, AbletonOSC, BlackHole, ffmpeg, plug-in parameter access"),

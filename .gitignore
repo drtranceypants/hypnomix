@@ -6,3 +6,5 @@ __pycache__/
 *.wav
 *.aif
 *.mp3
+
+macapp/dist/

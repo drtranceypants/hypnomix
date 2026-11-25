@@ -49,6 +49,19 @@ What stays yours: the playing, the sounds, the effects, the arrangement and ever
 habits from your own finished songs (`taste`, `voices --learn`, `motion --learn`, `profile`) and from what you
 approve and skip (`prefs`), so proposals start from your standards.
 
+## No terminal, no AI: the app and the Live device
+
+```
+hypnomix app        # the first pass in a window: choose a song, hear each fix, approve, apply
+macapp/build.sh     # the same thing as Hypnomix.app
+hypnomix device     # a Max for Live device: step through the findings inside Live; Live jumps to each one
+```
+
+The app runs the scan, builds the before / after clips, shows the review with play buttons, and writes only
+what you approved into a new set. Every other command is on its Tools screen with a form. The device sits on
+any track in your Live set, shows the finding you are on, and moves Live to it: track selected, playhead and
+loop brace on the spot, clip open. See [docs/APP.md](docs/APP.md).
+
 ## First pass on a new song
 
 ```
