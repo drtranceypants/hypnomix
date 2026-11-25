@@ -22,7 +22,8 @@ GROUPS = [
         ("prep", "hypnomix.studio.prep", "raw takes → mix-ready stems: clicks, clipping, plosives, breaths, hiss, silence, fades"),
         ("soundcheck", "hypnomix.studio.soundcheck", "set your input gain before recording; live meter"),
         ("takes", "hypnomix.studio.takes", "rank takes by clipping, noise, pitch, timing; comp list per section"),
-        ("vocalign", "hypnomix.studio.vocalign", "time-align doubles and harmonies to the lead, pitch untouched"),
+        ("vocalign", "hypnomix.studio.vocalign", "align doubles and harmonies to the lead: timing, optional pitch match, formant"),
+        ("alignset", "hypnomix.studio.alignset", "align vocal parts inside a Live set: warp markers on your own clips"),
         ("tune", "hypnomix.studio.tune", "natural pitch correction: each note's centre to the song's tuning, vibrato and slides kept"),
         ("clipmatch", "hypnomix.studio.clipmatch", "even out clips recorded at different gain / mic positions (files or a Live track)"),
         ("dehiss", "hypnomix.studio.dehiss", "spectral de-hiss + smart gate for one track (free stand-in for a spectral de-noiser)"),
@@ -91,6 +92,7 @@ GROUPS = [
     ("App: no terminal, no AI needed", [
         ("app", "hypnomix.app.server", "the first pass in a window: choose a song, hear each fix, approve, apply (this computer only)"),
         ("device", "hypnomix.app.device", "make the Max for Live device: review from inside Live, and jump Live to each finding"),
+        ("aligndevice", "hypnomix.app.aligndevice", "make the Hypnomix Align device: align a vocal stack from inside Live"),
     ]),
     ("Setup", [
         ("install", "hypnomix.install", "install the Live remote script, write Claude Code config"),

@@ -18,6 +18,15 @@ Usage:
 
 All files must start at the same point in the song (export them from the same bar).
 Writes "<name> (aligned).wav" for each overdub and a VOCALIGN.md with before/after timing.
+
+Also (docs/ALIGN.md):
+  --preset NAME        gentle-stack, natural-double, tight-pop, loose-folk, rap-doubles (--list-presets)
+  --protect A-B        never move anything here (sample for sample); --sync T or G=P: line up exactly here
+  --pitch 0.35         pitch matching: doubles toward the guide's notes, harmonies keep their interval; the chord
+                       under every note is checked first (--chords INSTRUMENTAL.wav or --ref MIX.wav); --vibrato
+  --formant / --transpose SEMIS (or "PART.wav=SEMIS")   wider stacks, other characters; --formant-at A-B
+  --no-timing          pitch / formant only
+In a Live set, `hypnomix alignset` does the same and writes the timing as warp markers on the clips.
 """
 from hypnomix.core.paths import out_at
 import argparse, sys
@@ -26,6 +35,7 @@ from pathlib import Path
 import numpy as np
 
 from hypnomix.core import dsp
+from hypnomix.studio import alignopts as AO
 from hypnomix.core.paths import out as out_dir
 
 FR_S = 0.01                      # feature frame: 10 ms
@@ -187,6 +197,16 @@ class RefusedAlign(Exception):
     pass
 
 
+def only_open(y, sr, protect):
+    """y with the protected ranges silenced: the before/after checks then measure only where moves were allowed."""
+    if not protect:
+        return y
+    y = y.copy()
+    for a_, b_ in protect:
+        y[max(0, int(a_ * sr)):max(0, int(b_ * sr))] = 0
+    return y
+
+
 def onset_lag_at(ref, x, sr, centres_s, win_s=1.0, max_ms=150):
     """Median |lag| (ms) of onset envelopes in short windows centred on given times (the words that were fixed)."""
     import librosa
@@ -227,7 +247,18 @@ def onset_lag_ms(lead, x, sr, win_s=2.0, max_ms=150):
     return float(np.median(lags)) if lags else 0.0
 
 
-def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None, outdir=None, engine="auto", mode="tight"):
+def onset_env(y, sr, n=None):
+    """Onset strength in 10 ms frames (16 kHz, hop 160), as the stack mode and sync points use it."""
+    import librosa
+    o = librosa.onset.onset_strength(y=librosa.resample((y.mean(1) if y.ndim > 1 else y).astype(np.float32),
+                                                        orig_sr=sr, target_sr=16000), sr=16000, hop_length=160)
+    if n is not None:
+        o = np.pad(o[:n], (0, max(0, n - len(o))))
+    return o / (o.max() + 1e-9)
+
+
+def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None, outdir=None, engine="auto", mode="tight",
+          protect=(), sync=(), plan_only=False):
     lead, sr = dsp.load(lead_path)
     over, _ = dsp.load(over_path, sr)
     n = max(len(lead), len(over))
@@ -238,6 +269,15 @@ def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None
     notes = []
     # one plan for both engines: the offset curve on the lead's timeline (y[t] = x[t + off(t)])
     off, both, raw = offset_curve(lead, over, sr, max_ms, strength)
+    from hypnomix.studio import alignopts as AO
+    synced, pmask = [], np.zeros(len(off), bool)
+    if sync:
+        off, synced = AO.sync_plan(off, sync, lead, over, sr, max_ms / 1000 / FR_S)
+        notes.append("sync points: " + ", ".join(f"{g:.2f} s " + (f"({ms:+d} ms)" if ms is not None else "(nothing to match there)")
+                                                 for g, ms in synced))
+    if protect:
+        off, pmask = AO.protect_plan(off, protect)
+        notes.append(f"{len(protect)} protected area(s) left exactly as sung")
     t_frames = np.arange(len(off)) * FR_S
     candidates = []
     if engine in ("rubberband", "auto") and shutil.which("rubberband"):
@@ -255,8 +295,9 @@ def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None
         fn = lambda t: float(np.interp(t / sr, t_frames, off * FR_S))
         candidates.append(("WSOLA engine", wsola_warp(over, sr, fn)))
     # check every result with an independent measure, keep the best, refuse anything not tighter than the input
-    ref = onset_lag_ms(lead, over, sr)
-    scored = [(onset_lag_ms(lead, c, sr), name, c) for name, c in candidates]
+    L_, O_ = only_open(lead, sr, protect), only_open(over, sr, protect)
+    ref = onset_lag_ms(L_, O_, sr)
+    scored = [(onset_lag_ms(L_, only_open(c, sr, protect), sr), name, c) for name, c in candidates]
     best = min(scored, key=lambda x: x[0])
     for sc, name, _ in scored:
         notes.append(f"{name}: independent check {ref:.0f} → {sc:.0f} ms")
@@ -265,6 +306,8 @@ def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None
                            f"best {best[0]:.0f} ms after); nothing written")
     out = best[2]
     notes.append(f"kept: {best[1]}")
+    if pmask.any():
+        out = AO.splice_protected(over, out, pmask, sr)
     if trim:
         out, frac = trim_tails(lead, out, sr)
         notes.append(f"tails trimmed on {frac * 100:.0f}% of its sung time")
@@ -278,7 +321,7 @@ def align(lead_path, over_path, strength=1.0, max_ms=150, trim=False, level=None
     path = dsp.save(od / f"{Path(over_path).stem} (aligned).wav", out, sr, 24)
     moved = float(np.mean(np.abs(off[both]) * FR_S * 1000 > 5)) if both.any() else 0
     return dict(file=Path(over_path).name, before=before, after=after, moved=moved, notes=notes, out=path,
-                max_shift=float(np.max(np.abs(off)) * FR_S * 1000))
+                max_shift=float(np.max(np.abs(off)) * FR_S * 1000), plan=off, src=str(over_path))
 
 
 def grid_lag(env, n, bpm, max_ms=60.0, grid=None):
@@ -427,7 +470,7 @@ def word_plan(rel, spans, share, fix_over, fix_strength, gentle, cap, errs=None)
 
 
 def stack_align(paths, outdir=None, strength=0.1, grid=0.3, bpm=None, max_ms=60.0, same_words=0.6,
-                fix_over_ms=30.0, fix_strength=0.8):
+                fix_over_ms=30.0, fix_strength=0.8, protect=(), sync=()):
     """Gentle group alignment: nobody is forced onto one lead. Each part moves `strength` of the way toward the
     group's average timing (the mean over the parts singing at that moment, 250 ms smoothed; the first part is
     only a ruler and moves too), and with --bpm the whole stack is pulled `grid` of the way toward the 8th-note
@@ -484,25 +527,37 @@ def stack_align(paths, outdir=None, strength=0.1, grid=0.3, bpm=None, max_ms=60.
         all_err += [abs(e) for (a, b_), e in zip(spans, errs) if np.isfinite(e) and share[p_][a:b_].mean() >= 0.5]
     loose = 2.5 * float(np.median(all_err)) if all_err else 0.0
     fix_over = max(fix_over_ms / 1000 / FR_S, loose)
+    plans_out = {}
     for p_ in paths:
         rel, spans, errs = plans[p_]
         o, words = word_plan(rel, spans, share[p_], fix_over, fix_strength, strength, cap, errs)
         o = np.clip(o + grid * gshift * (np.abs(o) > 0), -cap, cap)
+        from hypnomix.studio import alignopts as AO
+        pmask = np.zeros(n, bool)
+        if sync:     # the first part is the guide: it holds still there, the others land exactly on it
+            pts = [(g, g) for g, _ in sync] if p_ == ref else sync
+            o, _ = AO.sync_plan(o, pts, audio[ref], audio[p_], sr, cap)
+        if protect:
+            o, pmask = AO.protect_plan(o, protect)
+        plans_out[p_] = o
         for a, b_, err, mv in words:
-            if abs(err) > fix_over:
+            if abs(err) > fix_over and not any(x0 <= a * FR_S < x1 for x0, x1 in protect):
                 worst.append(dict(part=Path(p_).name, at_s=round(a * FR_S, 2), err_ms=round(err * FR_S * 1000),
                                   move_ms=round(mv * FR_S * 1000)))
         fn = lambda t, o=o: float(np.interp(t / sr, t_frames, o * FR_S))
         out, moved_frac = keep_original_where_still(audio[p_], wsola_warp(audio[p_], sr, fn)[:len(audio[p_])], o, sr)
+        out = AO.splice_protected(audio[p_], out, pmask, sr)
         others = group(p_)
-        before, after = onset_lag_ms(others, audio[p_], sr), onset_lag_ms(others, out, sr)
+        others_o = only_open(others, sr, protect)
+        before, after = onset_lag_ms(others_o, only_open(audio[p_], sr, protect), sr), onset_lag_ms(others_o, only_open(out, sr, protect), sr)
         sung = acts[p_][:n]
         sung_ = acts[p_][:n]
         shared_pct = round(100 * float((share[p_][sung_] > 0.5).mean())) if sung_.any() else 0
         row = dict(file=Path(p_).name, before_ms=round(before), after_ms=round(after), shared_pct=shared_pct,
                    median_move_ms=round(float(np.median(np.abs(o[sung])) * FR_S * 1000), 1) if sung.any() else 0.0,
                    max_move_ms=round(float(np.abs(o).max() * FR_S * 1000), 1))
-        fixed_at = [(a + b_) / 2 * FR_S for a, b_, err, mv in words if abs(err) > fix_over]
+        fixed_at = [(a + b_) / 2 * FR_S for a, b_, err, mv in words if abs(err) > fix_over
+                    and not any(x0 <= (a + b_) / 2 * FR_S < x1 for x0, x1 in protect)]
         lb = onset_lag_at(others, audio[p_], sr, fixed_at) if fixed_at else None
         la = onset_lag_at(others, out, sr, fixed_at) if fixed_at else None
         if lb is not None:
@@ -521,11 +576,13 @@ def stack_align(paths, outdir=None, strength=0.1, grid=0.3, bpm=None, max_ms=60.
             row["out"] = str(dsp.save(od / f"{Path(p_).stem} (stack aligned).wav", out, sr, 24))
         rows.append(row)
     worst.sort(key=lambda w: -abs(w["err_ms"]))
+    for r, p_ in zip(rows, paths):
+        r["src"], r["plan"] = str(p_), plans_out.get(p_)
     return rows, dict(grid_offset_ms=round(float(np.median(gshift)) * FR_S * 1000, 1), grid=grid, strength=strength,
                       fix_over_ms=round(fix_over * FR_S * 1000), worst=worst)
 
 
-def main():
+def build_parser():
     ap = argparse.ArgumentParser(prog="hypnomix vocalign", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("lead"); ap.add_argument("overdubs", nargs="+")
     ap.add_argument("--strength", type=float, default=1.0)
@@ -549,11 +606,64 @@ def main():
                          "threshold, 0-1; 0 = every part)")
     ap.add_argument("--mode", choices=["tight", "gentle"], default="tight",
                     help="Rubber Band engine: tight (closest timing) or gentle (smoother speed changes, less warble)")
-    a = ap.parse_args()
-    od = out_at(a.out, "vocalign")
+    g = ap.add_argument_group("presets, protected areas and sync points")
+    g.add_argument("--preset", help="a starting point: " + ", ".join(AO.PRESETS) + " (options you give still win; "
+                   "--list-presets says what each sets)")
+    g.add_argument("--list-presets", action="store_true", help="show the presets and exit")
+    g.add_argument("--protect", action="append", metavar="START-END",
+                   help="never move anything here (seconds or m:ss, e.g. 62-70.5 or 1:02-1:10.5; repeat or comma-separate)")
+    g.add_argument("--sync", action="append", metavar="T or G=P",
+                   help="line up exactly here: T = the onsets of guide and part near T seconds; G=P = the guide's "
+                        "moment G is the part's moment P (repeat or comma-separate)")
+    g.add_argument("--no-timing", action="store_true", help="skip the timing step (pitch / formant only)")
+    g = ap.add_argument_group("pitch matching (off unless --pitch is given)")
+    g.add_argument("--pitch", type=float, default=0.0,
+                   help="0-1: how far each note moves toward the guide's (doubles) or toward its interval to the guide "
+                        "(harmonies). 0.35 is gentle; 0 = off")
+    g.add_argument("--vibrato", type=float, default=0.0, help="0-1: doubles also take on this share of the guide's vibrato and inflection")
+    g.add_argument("--pitch-tolerance", type=float, default=20.0, help="cents: notes closer than this are left alone (20)")
+    g.add_argument("--pitch-max", type=float, default=25.0, help="cents: never move a note more than this (25)")
+    g.add_argument("--pitch-only", choices=["all", "doubles", "harmonies"], default="all", help="which parts' notes to match")
+    g.add_argument("--chords", metavar="INSTRUMENTAL.wav", help="the song without vocals, from the same start: the chord under "
+                   "every note is checked before it moves")
+    g.add_argument("--ref", metavar="MIX.wav", help="the mix, for the chord check when there's no --chords")
+    g.add_argument("--no-chord-check", action="store_true", help="match pitch without checking the chord (not recommended)")
+    g = ap.add_argument_group("formant and transpose")
+    g.add_argument("--formant", action="append", metavar="SEMIS or PART=SEMIS",
+                   help="formant shift in semitones, pitch unchanged (+0.3: a slightly smaller, brighter voice); "
+                        "for every part, or one part by file name: \"Double L.wav=0.4\"")
+    g.add_argument("--transpose", action="append", metavar="SEMIS or PART=SEMIS", help="move the pitch, formants kept")
+    g.add_argument("--formant-at", action="append", metavar="START-END", help="only shift formant / transpose inside these ranges")
+    return ap
+
+
+def per_part(items, name):
+    """--formant 0.3 --formant "Double L.wav=0.5" -> the value for one part (by file name or stem), else the global one."""
+    val, glob = None, 0.0
+    for it in items or ():
+        if "=" in it:
+            k, v = it.rsplit("=", 1)
+            if k.strip() in (name, Path(name).stem):
+                val = float(v)
+        else:
+            glob = float(it)
+    return glob if val is None else val
+
+
+_last_plans = {}      # part path -> the move it got (10 ms frames, + = pulled earlier), for alignset's warp markers
+
+
+def timing_stage(a, od):
+    """The timing step. Returns (report lines, {part path: written path or None})."""
+    outs = {}
+    _last_plans.clear()
     if len(a.overdubs) >= 2 and not a.to_lead:
         rows, meta = stack_align([a.lead] + a.overdubs, a.out, a.stack_strength, a.grid if a.bpm else 0.0, a.bpm, a.cap_ms,
-                                 a.same_words, a.fix_over_ms, a.fix_strength)
+                                 a.same_words, a.fix_over_ms, a.fix_strength, a._protect, a._sync)
+        for r in rows:
+            outs[r["src"]] = r.get("out")
+            if r.get("out"):
+                _last_plans[r["src"]] = r["plan"]
         md = [f"# Gentle stack alignment ({len(rows)} parts)", "",
               f"Word by word: a word more than {meta['fix_over_ms']} ms off the group (the song's own looseness or "
               f"{a.fix_over_ms:g} ms, whichever is more) moved {a.fix_strength:.0%} of the way; every other word only "
@@ -594,16 +704,18 @@ def main():
         else:
             md += ["", "No word was clearly off the group: only the gentle nudge was applied."]
         md += ["", *[f"- `{r['out']}`" for r in rows if r.get("out")]]
-        (od / "VOCALIGN.md").write_text("\n".join(md) + "\n")
-        print("\n".join(md))
-        return
+        return md, outs
     rows, refused = [], []
     for o in a.overdubs:
         print(f"aligning {Path(o).name} to {Path(a.lead).name} …", file=sys.stderr)
         try:
-            rows.append(align(a.lead, o, a.strength, a.max_ms, a.trim_tails, a.level, od, a.engine, a.mode))
+            rows.append(align(a.lead, o, a.strength, a.max_ms, a.trim_tails, a.level, od, a.engine, a.mode,
+                              a._protect, a._sync))
+            outs[o] = str(rows[-1]["out"])
+            _last_plans[o] = rows[-1]["plan"]
         except RefusedAlign as e:
             refused.append(str(e))
+            outs[o] = None
             print(f"REFUSED {e}", file=sys.stderr)
     md = [f"# Vocal alignment to {Path(a.lead).name}", "",
           "Timing difference from the lead while both sing (median / worst 5%):", "",
@@ -616,6 +728,105 @@ def main():
     if refused:
         md += ["", "Refused (the result would not have been tighter than the take; the take is fine as it is, or "
                    "needs a hand):", "", *[f"- {x}" for x in refused]]
+    return md, outs
+
+
+def pitch_and_formant(a, od, outs):
+    """After timing: pitch matching against the guide, then formant / transpose. Writes one final file per part."""
+    import soundfile as sf
+    from hypnomix.studio import pitchmatch as PM, formant as FM, chords as CH
+    want_pitch = a.pitch > 0 or a.vibrato > 0
+    if not (want_pitch or a.formant or a.transpose):
+        return []
+    md = ["", "## Pitch and formant", ""]
+    chords = None
+    if want_pitch and not a.no_chord_check:
+        if a.chords:
+            chords = CH.load(a.chords); md.append(f"Chord check: {Path(a.chords).name}.")
+        elif a.ref:
+            chords = CH.chroma(a.ref); md.append(f"Chord check: the mix {Path(a.ref).name} (an instrumental is surer).")
+        else:
+            sys.exit("refusing to match pitch without checking the chord under each note: pass --chords INSTRUMENTAL.wav "
+                     "(the song without vocals) or --ref MIX.wav, or --no-chord-check")
+    franges = AO.ranges(a.formant_at)
+    guide, gsr = dsp.load(outs.get(a.lead) or a.lead)     # in stack mode the guide may have been nudged too
+    if want_pitch:
+        md += [f"Pitch: notes more than {a.pitch_tolerance:g} cents off the guide (or off their interval to it) moved "
+               f"{a.pitch:.0%} of the way, never more than {a.pitch_max:g} cents"
+               + (f"; doubles also take {a.vibrato:.0%} of the guide's vibrato" if a.vibrato else "") + ".", "",
+               "| part | notes matched | median off before | left alone | flagged (halfway to another note) | asked (chord) | file |",
+               "|---|---|---|---|---|---|---|"]
+    rows = []
+    for part in a.overdubs:
+        src = outs.get(part) or part
+        y, sr = dsp.load(src, gsr)
+        stage = []
+        if want_pitch:
+            g = guide
+            if len(g) < len(y):
+                g = np.pad(g, ((0, len(y) - len(g)), (0, 0)))
+            curve, notes = PM.plan(g[:len(y)], y, sr, a.pitch, a.vibrato, a.pitch_tolerance, a.pitch_max, chords,
+                                   a._protect, a.pitch_only)
+            by, med = PM.summary(notes)
+            tmp = od / f".{Path(part).stem}.pitch.wav"
+            inp = tmp.with_suffix(".in.wav")
+            sf.write(str(inp), y, sr, subtype="FLOAT")        # exactly the audio that was analysed
+            res = PM.apply(inp, tmp, curve, notes, sr, len(y), y.shape[1])
+            if res is not None:
+                y = res if res.ndim > 1 else res[:, None]
+                stage.append(f"pitch {a.pitch:g}")
+            asks = [r for r in notes if r["action"] == "ask"]
+            rows.append((Path(part).name, by, med, asks))
+            for t in (tmp, tmp.with_suffix(".in.wav")):
+                if t.exists():
+                    t.unlink()
+        f, tr = per_part(a.formant, Path(part).name), per_part(a.transpose, Path(part).name)
+        if abs(f) > 1e-4 or abs(tr) > 1e-4:
+            before = y
+            y = FM.shift(y, sr, f, tr, franges)
+            if a._protect:                                     # protected areas stay exactly as sung here too
+                pm = np.zeros(int(len(y) / sr / FR_S) + 1, bool)
+                for x0, x1 in a._protect:
+                    pm[int(x0 / FR_S):int(np.ceil(x1 / FR_S))] = True
+                y = AO.splice_protected(before, y, pm, sr)      # `before` is already the take there, untouched
+            if abs(f) > 1e-4:
+                stage.append(f"formant {f:+g}")
+            if abs(tr) > 1e-4:
+                stage.append(f"transpose {tr:+g}")
+        if stage:
+            timing = "aligned, " if outs.get(part) else ""
+            path = dsp.save(od / f"{Path(part).stem} ({timing}{', '.join(stage)}).wav", y, sr, 24)
+            outs[part] = str(path)
+    for name, by, med, asks in rows:
+        fixed = by.get("fix", 0)
+        md.append(f"| {name} | {fixed} | {med:.0f} c | {by.get('ok', 0)} | {by.get('flag', 0)} | {len(asks)} | |")
+    for name, by, med, asks in rows:
+        for r in asks:
+            md.append(f"- ASK {name} at {int(r['t0'] // 60)}:{r['t0'] % 60:05.2f}: matching it would clash with the chord "
+                      f"({r.get('chord', '?')}); the chord suggests {r.get('suggest')}. Left as sung.")
+    md += ["", "Final files (timing, then pitch, then formant):", ""] + [f"- `{v}`" for v in outs.values() if v]
+    return md
+
+
+def main():
+    if "--list-presets" in sys.argv:
+        print("\n".join(AO.describe(k) for k in AO.PRESETS))
+        return
+    ap = build_parser()
+    defaults = {k: ap.get_default(k) for k in vars(ap.parse_args(["x", "y"]))}
+    a = ap.parse_args()
+    if a.list_presets:
+        print("\n".join(AO.describe(k) for k in AO.PRESETS))
+        return
+    AO.apply_preset(a, a.preset, defaults)
+    a._protect, a._sync = AO.ranges(a.protect), AO.syncs(a.sync)
+    od = out_at(a.out, "vocalign")
+    md, outs = (["# Vocal alignment", "", "Timing step skipped (--no-timing)."], {}) if a.no_timing else timing_stage(a, od)
+    if a.preset:
+        md[1:1] = ["", f"Preset: {AO.describe(a.preset)}"]
+    if a._protect:
+        md += ["", "Protected (left exactly as sung): " + ", ".join(f"{x:.2f}-{y:.2f} s" for x, y in a._protect)]
+    md += pitch_and_formant(a, od, outs)
     (od / "VOCALIGN.md").write_text("\n".join(md) + "\n")
     print("\n".join(md))
 

@@ -197,6 +197,7 @@ which spots to compare between the old and new set. When the review is finished,
 | Clicking, not typing (see `docs/APP.md`) | `app` (the first pass in a window; decisions land in the same `decisions.json`), `device` (Max for Live: step through findings in Live, jump to each) | scans in `~/Documents/Hypnomix`; a new `.als` on Apply |
 | Check what was written | `check NEW.als --against OLD.als`, `diff OLD.als NEW.als` | nothing |
 | Vocals | `tune`, `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |
+| Vocal alignment in a set | `alignset` (timing as warp markers on the parts' own clips; pitch/formant as files from bar 1), the `aligndevice` for Live; see docs/ALIGN.md. Pitch matching is off unless the person asks | a new set |
 | Device settings and tidy-up in a set | `devices` (stock compressors, gates, limiters, EQ low cut judged on the signal they get), `tidy` (retire switched-off tracks after an archive copy; consolidate), `unroll` (a looped clip into one copy per pass) | a new `.als` |
 | Vocals inside a set (options from the vocals scan) | `duck` (vocal reverb / delay ducking: tune or add), `cliplevel` (lower-harmony clips far under their track) | a new `.als` |
 | Raw takes / stems | `prep`, `cleanup`, `clipmatch`, `render` (set → WAVs, no Live), `separate` (mix → stems) | new audio files |

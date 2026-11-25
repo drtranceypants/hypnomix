@@ -1,0 +1,127 @@
+"""The app's side of the Hypnomix Align device (`hypnomix aligndevice`): runs `hypnomix alignset` for it.
+
+The device (inside Live) chooses the guide and the parts from the tracks you select, the bars from the loop brace,
+protected areas and sync points from the brace and the playhead, and the amounts from its dials. It sends them here;
+this runs alignset on the saved set and hands back the result: the report, the parts' loudness shapes before and
+after (the device draws them), the previews, the new set, and any rendered pitch / formant files.
+
+  GET  /api/align/state         the chosen set, the job, the last result
+  POST /api/align/choose        {path?}: the Live set to work on (no path: a file dialog)
+  POST /api/align/run           {guide, parts, start_s?, end_s?, protect:[[a,b]], sync:[t], preset?, tightness?,
+                                 pitch?, vibrato?, formant?, apply?}
+  POST /api/align/open          open the new set in Live (macOS: `open`; Live asks to save the current one first)
+
+Local only, like the rest of the app. Nothing is overwritten: alignset always writes a NEW set.
+"""
+import json, subprocess, sys
+from pathlib import Path
+
+ALIGN = {"set": "", "result": None, "job": 0, "error": ""}
+
+
+def _work():
+    from hypnomix.app import server as S
+    d = S.work() / "align"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def state():
+    from hypnomix.app import server as S
+    res = ALIGN["result"]
+    rp = _work() / "result.json"
+    running = S.JOB["status"] == "running" and S.JOB.get("kind") == "align"
+    if ALIGN["job"] and S.JOB["id"] == ALIGN["job"] and S.JOB["status"] in ("done", "failed") and rp.exists():
+        try:
+            res = ALIGN["result"] = json.loads(rp.read_text())
+        except ValueError:
+            pass
+    st = S.JOB["status"] if S.JOB["id"] == ALIGN["job"] else "idle"
+    return dict(set=ALIGN["set"], set_name=Path(ALIGN["set"]).name if ALIGN["set"] else "", status=st,
+                running=running, step=S.JOB.get("step", "") if running else "",
+                log_tail=S.JOB["log"][-6:] if S.JOB["id"] == ALIGN["job"] else [], result=res)
+
+
+def _num(body, k, lo, hi):
+    if body.get(k) is None or body.get(k) == "":
+        return None
+    v = float(body[k])
+    if not lo <= v <= hi:
+        raise ValueError(f"{k} must be between {lo} and {hi}")
+    return v
+
+
+def argv_for(body, set_path, out_dir):
+    """The alignset command line for a device request (also used by the tests)."""
+    guide = str(body["guide"]).strip()
+    parts = [str(p).strip() for p in body.get("parts") or [] if str(p).strip() and str(p).strip() != guide]
+    if not guide or not parts:
+        raise ValueError("choose a guide track and at least one part")
+    argv = ["alignset", str(set_path), "--guide", guide, "--parts", *parts, "--out", str(out_dir),
+            "--json", str(Path(out_dir) / "result.json")]
+    s0, s1 = _num(body, "start_s", 0, 36000), _num(body, "end_s", 0, 36000)
+    if s0 is not None and s1 is not None and s1 > s0 + 0.5:
+        argv += ["--range", f"{s0:.3f}-{s1:.3f}"]
+    for a, b in body.get("protect") or []:
+        if float(b) > float(a):
+            argv += ["--protect", f"{float(a):.3f}-{float(b):.3f}"]
+    for t in body.get("sync") or []:
+        argv += ["--sync", f"{float(t):.3f}"]
+    from hypnomix.studio import alignopts as AO
+    if body.get("preset"):
+        if body["preset"] not in AO.PRESETS:
+            raise ValueError("unknown preset")
+        argv += ["--preset", body["preset"]]
+    t = _num(body, "tightness", 0, 1)
+    if t is not None:                       # one dial for both modes: the guide mode's strength, the stack's nudge
+        argv += ["--strength", f"{t:.2f}", "--stack-strength", f"{0.3 * t:.2f}", "--fix-strength", f"{min(1.0, 0.3 + 0.7 * t):.2f}"]
+    for k, flag, lo, hi in (("pitch", "--pitch", 0, 1), ("vibrato", "--vibrato", 0, 1), ("formant", "--formant", -3, 3),
+                            ("bpm", "--bpm", 20, 999)):
+        v = _num(body, k, lo, hi)
+        if v:
+            argv += [flag, f"{v:g}"]
+    if body.get("no_chord_check"):          # only when the person asked; otherwise alignset checks the chords
+        argv.append("--no-chord-check")     # against the set's own instrument tracks
+    if body.get("chords"):
+        argv += ["--chords", str(body["chords"])]
+    if body.get("apply"):
+        argv.append("--apply")
+    return argv
+
+
+def handle_get(path, q):
+    if path == "/api/align/state":
+        return 200, state()
+    return None
+
+
+def handle_post(path, body):
+    from hypnomix.app import server as S
+    if path == "/api/align/choose":
+        p = body.get("path") or S.pick("set")
+        if p:
+            if not Path(p).expanduser().is_file() or not str(p).endswith(".als"):
+                return 400, {"error": f"not a Live set: {p}"}
+            ALIGN["set"] = str(Path(p).expanduser())
+        return 200, state()
+    if path == "/api/align/run":
+        sp = body.get("set") or ALIGN["set"]
+        if not sp:
+            return 400, {"error": "choose the Live set first (save it in Live, then Choose set)"}
+        ALIGN["set"] = sp
+        out = _work()
+        (out / "result.json").unlink(missing_ok=True)
+        argv = argv_for(body, sp, out)
+        ALIGN["job"] = S.run_job("align", f"Align: {', '.join(body.get('parts') or [])} to {body.get('guide')}",
+                                 [("Aligning (writes a new set, changes nothing in yours)", argv, True)], out)
+        ALIGN["result"] = None
+        return 200, {"job": ALIGN["job"], "argv": argv}
+    if path == "/api/align/open":
+        res = ALIGN["result"] or {}
+        target = res.get("out_set")
+        if not target or not Path(target).exists():
+            return 400, {"error": "no aligned set yet: run Align with Write set on"}
+        if sys.platform == "darwin":
+            subprocess.run(["open", target])
+        return 200, {"opened": target}
+    return None

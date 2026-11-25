@@ -286,6 +286,11 @@ def make_handler(port):
                         return self.send(404, {"error": "unknown command"})
                     r = subprocess.run([sys.executable, "-m", "hypnomix.cli", q["cmd"], "-h"], capture_output=True, text=True)
                     return self.send(200, {"help": (r.stdout + r.stderr)[-12000:]})
+                if u.path.startswith("/api/align/"):       # the Align device (hypnomix aligndevice)
+                    from hypnomix.app import align as AL
+                    r = AL.handle_get(u.path, q)
+                    if r:
+                        return self.send(*r)
                 if u.path == "/api/live/poll":            # the Max for Live device asks a few times a second
                     LIVE["seen"] = time.time()
                     since = int(q.get("since", -1))
@@ -327,6 +332,11 @@ def make_handler(port):
                     if cur.get("id"):
                         R.record(scan_dir(LIVE["dir"]), cur["id"], body["decision"], "from the Live device")
                     return self.send(200, live_current())
+                if u.path.startswith("/api/align/"):       # the Align device: always writes a NEW set, never overwrites
+                    from hypnomix.app import align as AL
+                    r = AL.handle_post(u.path, body)
+                    if r:
+                        return self.send(*r)
                 if self.headers.get("X-Hypnomix") != TOKEN:
                     return self.send(403, {"error": "open the app's own page to do this"})
                 if u.path == "/api/pick":
