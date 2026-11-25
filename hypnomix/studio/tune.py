@@ -612,10 +612,10 @@ def main():
     ap.add_argument("--guide", help="lead vocal file: settles ambiguous harmony notes toward a consonant interval")
     ap.add_argument("--amount", type=float, default=0.35,
                     help="how far to pull each note, 0-1 (default 0.35: extremely gentle, a nudge not a fix)")
-    ap.add_argument("--tolerance", type=float, default=15.0, help="leave notes within this many cents (15)")
+    ap.add_argument("--tolerance", type=float, default=20.0, help="leave notes within this many cents (20)")
     ap.add_argument("--whole-phrases", action="store_true",
                     help="send whole phrases through the shifter (old behaviour); default replaces only moved notes")
-    ap.add_argument("--max", type=float, default=60.0, help="never move a note more than this many cents (60)")
+    ap.add_argument("--max", type=float, default=25.0, help="never move a note more than this many cents (25: no note becomes another)")
     ap.add_argument("--drift", type=float, default=0.0, help="also flatten slow drift inside notes, 0-1 (0)")
     ap.add_argument("--tuning", type=float, help="song tuning in cents from A=440 (default: measured)")
     ap.add_argument("--ref", help="the song's mix or instrumental: measure tuning and key from it (recommended)")
