@@ -23,6 +23,19 @@ takes to a part by sound, not only by recording name; `variations` findings in t
 `tidy`, `unroll`, and in `timing`: grid detection (straight, triplets, mixed), MIDI, and passes (drums, then
 bass toward the drums, then the rest). Open for all of them: more real songs, and opening every written set in Live.
 
+**Inside Live, faster reviews, mastering (built, see `docs/LIVE.md`, `docs/MASTERING.md`, `docs/PLUGINS.md`,
+`docs/LIBRARY.md`, `docs/WORKFLOW.md` 4b):** `probe` (Max for Live meters on every track, after their plug-ins; one
+play of the song is a deep scan), the probe menus and HypnomixMain's song card (read by `scan` from the set),
+Record and review before export, `abset` (every fix as a switched-off B inside Live; A / B / Blind with loudness
+matching), `plugrender` (offline renders through real VST3/AU chains; `ab --plugins`), `taste --library`
+(style and where to improve, from every set on the computer), mastering stages (`tonal`, `--stabilize`, `--dyneq`,
+`--width-bands`, `--limiter-mode`, `--harsh`, dither, `rebalance`, `translate --preview`), amounts per decision,
+grouped decisions, a question budget, teach, collaborator export/merge, `history` and undo, `scan --quick` and
+`--since`, `watch`, the render cache. Open: loading the three devices in Live on a real set (tested against a
+simulated Live API only); `sfrecord~` settings in Live; take lanes as the A/B switch for clip fixes (the LOM
+support needs checking); an EQ Eight model for `plugrender`; Audio Units that crash in the offline host; the
+probe's numbers next to a full-file meter on the same song.
+
 **Next idea: `colour`.** Propose new timbres for a song that sounds the same throughout: an effect chain from
 stock devices or installed free plug-ins on a copy of a part, or a new instrument doubling a line (from
 `midi`), each on a new switched-off track like `variations`, each with a before / after clip. Needs the
