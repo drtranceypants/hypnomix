@@ -303,6 +303,8 @@ def g_vocals(als, od, a, role):
             args += ["--scales", kf]
         if lead and t != lead and lead in files:
             args += ["--guide", files[lead]]
+        if getattr(a, "backing", None):
+            args += ["--chords", a.backing]
         code, out = hx(*args)
         save(od / "raw" / f"tune-{p.stem}.txt", strip_warnings(out))
         return t, j, out
@@ -317,6 +319,7 @@ def g_vocals(als, od, a, role):
                 f["track"] = t
                 f["key"], f["tuning_cents"] = d["key"], d["tuning_cents"]
                 f["flagged_notes"] = d["flagged"]
+                f["asked_notes"] = d.get("asked", [])
                 findings.append(f)
             if not a.ref and not any("tuning measured from the singer" in n for n in notes):
                 notes.append("vocals: tuning measured from the singers themselves; give --ref MIX.wav for a "
@@ -1011,6 +1014,8 @@ def main():
     ap.add_argument("als", nargs="?", metavar="SET.als|FOLDER")
     ap.add_argument("--mix", help="a bounce of the full mix (loudness, true peak, release checks)")
     ap.add_argument("--ref", help="mix or instrumental for tuning and key (vocals); defaults to --mix")
+    ap.add_argument("--backing", metavar="INSTRUMENTAL.wav", help="the song without vocals (sample-aligned): the chord "
+                    "under every sung note is read from it before any pitch correction is suggested (default: --ref)")
     ap.add_argument("--key", help='song key for the vocal check, e.g. "F# major"')
     ap.add_argument("--like", metavar="REFERENCE.wav", help="a finished song you want this mix to sit next to: "
                     "tone, dynamics and width differences become proposals (needs --mix)")
@@ -1043,7 +1048,7 @@ def main():
     wrong = [g for g in groups if g not in mine]
     if wrong:
         sys.exit(f"{', '.join(wrong)}: not a group for a {'folder' if folder else 'Live set'} (use {', '.join(mine)})")
-    info = {"set": str(als), "mode": "folder" if folder else "set", "mix": a.mix, "ref": a.ref, "key": a.key, "lead": None,
+    info = {"set": str(als), "mode": "folder" if folder else "set", "mix": a.mix, "ref": a.ref, "backing": a.backing, "key": a.key, "lead": None,
             "set_mtime": als.stat().st_mtime}
     (od / "raw").mkdir(exist_ok=True)
     sj = od / "scan.json"

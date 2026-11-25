@@ -12,13 +12,18 @@ pitch while leaving everything inside the note (vibrato, scoops, slides, breath)
   leave    notes already within --tolerance cents are untouched; a note sung halfway between two
            notes that neither the key nor the guide can settle is flagged, not changed
   drift    optional (--drift 0.5): also flatten slow pitch drift inside long notes; vibrato stays
+  chord    every correction is checked against the chord the instruments play under the note (--chords
+           INSTRUMENTAL.wav, else the --ref mix). A target that clashes with the chord while the other neighbour
+           fits it is NOT moved: it is asked about (ASK in the report). Answer with --note-answer 0:15.32=C.
+           Applying corrections without a chord source is refused (--no-chord-check to override).
 
 The shift is done by Rubber Band (R3 engine, formants preserved so the voice keeps its character),
 then the output is aligned back to the input sample-for-sample so it drops straight into Live. Only the
 notes that move are replaced (each +-20 ms, 10 ms crossfades): every other sample is the original take.
 
 Usage:
-  hypnomix tune IN.wav OUT.wav --ref MIX.wav [--key "A minor"] [--amount 0.35] [--guide LEAD.wav]
+  hypnomix tune IN.wav OUT.wav --ref MIX.wav [--chords INSTRUMENTAL.wav] [--key "A minor"] [--amount 0.35] [--guide LEAD.wav]
+  hypnomix tune IN.wav OUT.wav --ref MIX.wav --chords INSTRUMENTAL.wav --note-answer 0:15.32=C   (your call on an ASK)
   hypnomix tune IN.wav --report-only --ref MIX.wav     (just measure; the report goes to ./reports/tune)
   hypnomix tune IN.wav OUT.wav --ref MIX.wav --scales KEY.json [--answer F#] [--answer "17-24=both"]
            per-section scales from `hypnomix key --sections --json KEY.json` (songs that change key or borrow
@@ -33,6 +38,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import librosa
+
+from hypnomix.studio import chords as CH
 
 SR_A = 22050          # analysis sample rate
 HOP = 220             # ~10 ms analysis hop at 22.05 kHz
@@ -339,8 +346,43 @@ def choose_targets(notes, tuning_c, key, guide_midi, a):
             n["action"] = "flag"   # halfway between two notes and nothing says which was meant
         else:
             n["action"] = "fix"
+        # the chord under the note: a target that clashes with it while the other neighbour fits is asked about
+        ch = getattr(a, "_chords", None)
+        n["chord"], n["suggest"] = [], None
+        if ch is not None and n["action"] in ("fix", "flag"):
+            other = pick + (1 if c > pick else -1) if abs(c - pick) > 1e-6 else None
+            v, pcs, sug = CH.verdict(pick, other, ch, n["t0"], n["t1"])
+            n["chord"] = pcs
+            if n["action"] == "fix" and v == "ask":
+                n["action"], n["suggest"] = "ask", sug + off
+            elif n["action"] == "fix" and v == "colour":
+                n["colour"] = True
+            elif n["action"] == "flag" and pcs:
+                fits = [x for x in (math.floor(c), math.ceil(c)) if x % 12 in pcs]
+                if len(set(fits)) == 1:
+                    n["suggest"] = fits[0] + off
+        # the person's answer for this note wins (it may be further than --max: they decided)
+        ans = next((pc for t, pc in getattr(a, "_note_answers", []) if abs(t - n["t0"]) <= 0.06), None)
+        if ans is not None:
+            best = min((m for m in range(int(c) - 2, int(c) + 3) if m % 12 == ans), key=lambda m: abs(m - c))
+            n["target"], n["why"] = best + off, "your answer"
+            n["cents"] = (n["centre"] - n["target"]) * 100
+            n["action"] = "fix" if abs(n["cents"]) >= 1 else "ok"
         n["shift"] = -n["cents"] / 100 * a.amount if n["action"] == "fix" else 0.0
     return notes
+
+
+def parse_note_answers(items):
+    """["0:15.32=C", "75.3=F#"] -> [(seconds, pitch class)]"""
+    out = []
+    for it in items:
+        t, _, nm = it.partition("=")
+        nm = nm.strip().replace("Db", "C#").replace("Eb", "D#").replace("Gb", "F#").replace("Ab", "G#").replace("Bb", "A#")
+        if nm not in NOTE_NAMES:
+            sys.exit(f"--note-answer {it}: the note must be a name like C or F#")
+        mm, _, ss = t.strip().rpartition(":")
+        out.append(((int(mm) * 60 if mm else 0) + float(ss), NOTE_NAMES.index(nm)))
+    return out
 
 
 # ---------------------------------------------------------------- shift curve + render
@@ -523,9 +565,17 @@ def write_report(path, notes, tuning_c, key, keysrc, a, lag=None):
         why = "" if n["why"] == "nearest" else f" ({n['why']})"
         act = {"ok": "ok", "fix": f"moved {n['shift'] * 100:+.0f}",
                "flag": "FLAG: between two notes, left alone",
-               "hold": "HOLD: disputed note, key unsure here, left as sung"}[n["action"]]
+               "hold": "HOLD: disputed note, key unsure here, left as sung",
+               "ask": "ASK: target clashes with the chord, left as sung"}[n["action"]]
         if n.get("out_of_key") and n["action"] != "hold":
             act += " [out of key]"
+        if n.get("chord"):
+            act += f" [chord {CH.name(n['chord'])}]"
+        if n.get("colour"):
+            act += " [not a chord tone: passing note?]"
+        if n.get("suggest") is not None:
+            act += f" -> chord suggests {NOTE_NAMES[int(round(n['suggest'])) % 12]}: --note-answer {_mmss(n['t0'])}=" \
+                   f"{NOTE_NAMES[int(round(n['suggest'])) % 12]}"
         lines.append(f"{_mmss(n['t0']):>8}  {n['t1'] - n['t0']:5.2f}  {note_name(n['centre']):>5} -> "
                      f"{note_name(n['target']):<6} {n['cents']:+6.0f}  {aft}  {act}{why}")
     Path(path).write_text("\n".join(lines) + "\n")
@@ -539,19 +589,27 @@ def write_json(path, a, notes, tuning_c, key, keysrc):
     within = float((cents <= 15).mean() * 100) if len(cents) else 100.0
     nfix = sum(n["action"] == "fix" for n in notes)
     flags = [n for n in notes if n["action"] == "flag"]
+    asks = [n for n in notes if n["action"] == "ask"]
     sev = "high" if med >= 25 else "medium" if med >= 15 else "low"
     summary = dict(
         id="tune-" + Path(a.input).stem, tool="tune", kind="pitch", severity=sev, track=Path(a.input).stem,
         where="whole take", problem=f"median {med:.0f} cents off, {within:.0f}% of notes within ±15 cents",
         fix=f"tune {nfix} notes ({a.amount:.0%} of the way), {len(flags)} ambiguous notes flagged for your ear"
             + (f", {sum(n['action'] == 'hold' for n in notes)} left as sung where the key is unsure (answer the key "
-               "question to tune them)" if any(n["action"] == "hold" for n in notes) else ""),
+               "question to tune them)" if any(n["action"] == "hold" for n in notes) else "")
+            + (f", {len(asks)} notes ASKED: the nearest note clashes with the chord underneath (your call)" if asks else ""),
         applies="audio", input=str(a.input))
     Path(path).write_text(json.dumps({
         "tool": "tune", "input": str(a.input), "tuning_cents": round(tuning_c, 1),
         "key": f"{NOTE_NAMES[key[0]]} {key[1]}", "key_source": keysrc, "findings": [summary],
         "scales": [lab for _, _, _, lab, _ in (getattr(a, "_scales", None) or [])], "open_questions": getattr(a, "_open", []),
-        "flagged": [dict(time=_mmss(n["t0"]), sung=note_name(n["centre"]), cents=round(n["cents"])) for n in flags],
+        "flagged": [dict(time=_mmss(n["t0"]), sung=note_name(n["centre"]), cents=round(n["cents"]),
+                         chord=CH.name(n.get("chord")), suggest=NOTE_NAMES[int(round(n["suggest"])) % 12] if n.get("suggest") is not None else None)
+                    for n in flags],
+        "asked": [dict(time=_mmss(n["t0"]), sung=note_name(n["centre"]), cents=round(n["cents"]),
+                       nearest=note_name(n["target"]), chord=CH.name(n["chord"]),
+                       suggest=NOTE_NAMES[int(round(n["suggest"])) % 12]) for n in asks],
+        "chord_check": getattr(a, "_chord_src", "off"),
     }, indent=1))
 
 
@@ -620,6 +678,11 @@ def main():
     ap.add_argument("--tuning", type=float, help="song tuning in cents from A=440 (default: measured)")
     ap.add_argument("--ref", help="the song's mix or instrumental: measure tuning and key from it (recommended)")
     ap.add_argument("--json", metavar="OUT.json", help="also write a summary + the notes as JSON")
+    ap.add_argument("--chords", metavar="INSTRUMENTAL.wav", help="the song without vocals, sample-aligned with the input "
+                    "(or a .npz from `fix`): every correction is checked against the chord under the note (default: the --ref mix)")
+    ap.add_argument("--no-chord-check", action="store_true", help="skip the chord check (not recommended)")
+    ap.add_argument("--note-answer", action="append", default=[], metavar="TIME=NOTE",
+                    help='your call on an ASK or FLAG note, e.g. "0:15.32=C" (repeatable)')
     a = ap.parse_args()
     if not a.report_only and not a.output:
         sys.exit("give an OUT.wav, or --report-only")
@@ -667,6 +730,20 @@ def main():
             sys.exit("the guide must have the same sample rate as the input")
         print("tracking the guide…")
         guide = track_pitch(g.mean(1), gsr)
+    a._note_answers = parse_note_answers(a.note_answer)
+    a._chords, a._chord_src = None, "off"
+    if not a.no_chord_check:
+        if a.chords:
+            a._chords, a._chord_src = CH.load(a.chords), f"instrumental {Path(a.chords).name}"
+        elif a.ref:
+            a._chords, a._chord_src = CH.chroma(a.ref), "the --ref mix (vocals included; --chords INSTRUMENTAL.wav is surer)"
+        elif a.output:
+            sys.exit("refusing to correct notes without checking the chord under them: pass --chords INSTRUMENTAL.wav "
+                     "(the song without vocals) or --ref MIX.wav, or --no-chord-check")
+        else:
+            print("note: no --chords or --ref, so the chord under each note is not checked")
+    if a._chords is not None:
+        print(f"chord check: {a._chord_src}")
     choose_targets(notes, tuning_c, key, guide, a)
 
     if a.output:
@@ -687,13 +764,15 @@ def main():
         nfix = sum(n["action"] == "fix" for n in notes)
         nflag = sum(n["action"] == "flag" for n in notes)
         nhold = sum(n["action"] == "hold" for n in notes)
+        nask = sum(n["action"] == "ask" for n in notes)
         print(f"{len(notes)} notes: {nfix} would move, {nflag} flagged" + (f", {nhold} held (disputed note, key unsure)" if nhold else "")
+              + (f", {nask} ASKED (nearest note clashes with the chord)" if nask else "")
               + f". Report: {report_path}")
         return
 
     curve = shift_curve(midi, notes, a)
     print("shifting with Rubber Band…")
-    keep = [(nt["t0"] - 0.01, nt["t1"] + 0.01) for nt in notes if nt["action"] == "hold"]
+    keep = [(nt["t0"] - 0.01, nt["t1"] + 0.01) for nt in notes if nt["action"] in ("hold", "ask")]
     moved = [(nt["t0"], nt["t1"]) for nt in notes if nt["action"] == "fix" and abs(nt["shift"]) > 1e-4]
     lags, out = render(a.input, out_path, curve, sr, len(y), y2.shape[1], keep,
                        moved=None if a.whole_phrases else moved)
@@ -708,8 +787,10 @@ def main():
     nfix = sum(n["action"] == "fix" for n in notes)
     nflag = sum(n["action"] == "flag" for n in notes)
     nhold = sum(n["action"] == "hold" for n in notes)
+    nask = sum(n["action"] == "ask" for n in notes)
     print(f"{len(notes)} notes: {nfix} moved, {nflag} flagged (left alone)"
-          + (f", {nhold} held as sung (disputed note where the key is unsure)" if nhold else "") + ".")
+          + (f", {nhold} held as sung (disputed note where the key is unsure)" if nhold else "")
+          + (f", {nask} ASKED and left as sung (the nearest note clashes with the chord; answer with --note-answer)" if nask else "") + ".")
     print(f"{untouched:.0%} of the take is the original audio, bit for bit"
           + (" (--whole-phrases: every phrase with a moved note went through the shifter)" if a.whole_phrases
              else " (only moved notes are replaced)"))

@@ -641,6 +641,19 @@ def main():
         tdir = src.parent / "Samples" / "Tuned"
         tdir.mkdir(parents=True, exist_ok=True)
         done_files = 0
+        # the chord check: the chord under every note, read in song time from the instrumental (else the mix) and
+        # laid out in each take's own time through the comp clips, so tune can ask instead of moving a note
+        # toward a pitch that clashes with the chord underneath
+        from hypnomix.studio import chords as CHD
+        chord_src = scan.get("backing") or scan.get("ref")
+        song_ch = CHD.chroma(chord_src) if chord_src and Path(chord_src).exists() else None
+        tempo_el = root_t.find(".//Tempo/Manual")
+        tempo = float(tempo_el.get("Value")) if tempo_el is not None else 120.0
+        if song_ch is None:
+            failed.append(f"{f['id']}: not tuned: no instrumental or mix in the scan to read the chords from "
+                          "(re-scan with --backing INSTRUMENTAL.wav)")
+            print(f"tune       REFUSED  {f['track']}: no chord source (scan --backing INSTRUMENTAL.wav)")
+            continue
         for take, clips in takes.items():
             if not take.exists():
                 failed.append(f"{f['id']}: take file not found: {take.name}")
@@ -649,7 +662,12 @@ def main():
             while dest.exists():
                 k += 1
                 dest = tdir / f"{safe_name(take.stem)} (tuned {k}).wav"
-            args = ["tune", take, dest, *tune_key] + (["--ref", scan["ref"]] if scan.get("ref") else [])
+            import soundfile as _sf
+            spans = [sp for c_ in clips for sp in SRC.song_spans(c_, tempo)]
+            take_ch = CHD.take_time(song_ch, spans, int(_sf.info(str(take)).duration / CHD.HOP_S) + 1)
+            chord_npz = tdir / f"{safe_name(take.stem)} (chords).npz"
+            CHD.save(chord_npz, take_ch)
+            args = ["tune", take, dest, *tune_key, "--chords", chord_npz] + (["--ref", scan["ref"]] if scan.get("ref") else [])
             code, txt = hx(*args)
             ok = code == 0 and dest.exists()
             log += [f"### tune {f['track']}, take {take.name}: {'written ' + dest.name if ok else 'FAILED'}", "",
