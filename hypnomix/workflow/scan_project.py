@@ -1,8 +1,10 @@
-"""First-pass scan of a REAPER project (.rpp): the same review list as a Live set, from the shared project model.
+"""First-pass scan of a REAPER project (.rpp) or an Ardour session (.ardour): the same review list as a Live set,
+from the shared project model.
 
     hypnomix scan SONG.rpp [--mix MIX.wav] [--ref MIX.wav] [--deep] [--only GROUP ...]
+    hypnomix scan SONG.ardour (or the session folder) [same options]
 
-REAPER can stay open (nothing is written next to the project; everything goes to the output folder). Every audio
+The DAW can stay open (nothing is written next to the project; everything goes to the output folder). Every audio
 track that is heard is rendered once from the project (item and take volume, fades, loops, sections, playrate; no
 FX, no faders) into raw/renders/, and the groups work from those renders and the model:
 
@@ -18,8 +20,8 @@ FX, no faders) into raw/renders/, and the groups work from those renders and the
   stems       with --deep: frequency fights and mic phase between tracks
 
 Without --ref, the key and tuning are measured from a rough mix of the project's renders (faders and pans, no FX).
-Findings that change the project are listed as *manual* (what to do in REAPER) until `hypnomix fix` can write
-.rpp files; findings that make new audio (tune, dehiss, deess) work the same as for a Live set.
+Findings that change the project are listed as *manual* (what to do in the DAW) until `hypnomix fix` can write
+project files; findings that make new audio (tune, dehiss, deess) work the same as for a Live set.
 """
 import json
 import math
@@ -33,6 +35,15 @@ import soundfile as sf
 from hypnomix import project as PJ
 from hypnomix.project.model import render_clip
 from hypnomix.workflow import scan as SC
+
+# how each DAW names things, for the fix text
+WORDS = {
+    "reaper": dict(daw="REAPER", item="item", relink="REAPER offers to search for missing media when the project "
+                   "opens, or re-link it in the item's properties (Choose new file)"),
+    "ardour": dict(daw="Ardour", item="region", relink="Ardour asks for missing files when the session opens "
+                   "(Session > Properties > Misc lists the search paths), or import it again"),
+}
+W = dict(WORDS["reaper"])
 
 GROUPS = ["files", "clips", "vocals", "effects", "recordings", "noise", "intent", "mix", "stems"]
 SR = 44100
@@ -132,9 +143,8 @@ def g_files(p, R, od, a):
     out = []
     for n, (t, c, path) in enumerate(p.missing(), 1):
         out.append(_f("files", n, tool="files", kind="missing-audio", severity="high", track=t.name,
-                      where=_where(p, c.start), problem=f"item '{c.name}' plays {path}, which is not there",
-                      fix="find the file before anything else: REAPER offers to search for missing media when the "
-                          "project opens, or re-link it in the item's properties (Choose new file)"))
+                      where=_where(p, c.start), problem=f"{W['item']} '{c.name}' plays {path}, which is not there",
+                      fix="find the file before anything else: " + W["relink"]))
     return out, [f"files: {sum(len(t.clips) for t in p.tracks)} items checked, {len(out)} missing"]
 
 
@@ -154,9 +164,9 @@ def g_clips(p, R, od, a):
                     n += 1
                     out.append(_f("clips", n, tool="clips", kind="click", severity="medium" if lvl > 0.05 else "low",
                                   track=t.name, where=_where(p, at),
-                                  problem=f"item '{c.name}' {edge}s on a loud sample ({20 * math.log10(lvl):.0f} dBFS) "
+                                  problem=f"{W['item']} '{c.name}' {edge}s on a loud sample ({20 * math.log10(lvl):.0f} dBFS) "
                                           f"with no fade: an audible tick",
-                                  fix=f"give the item a short fade {'in' if edge == 'start' else 'out'} (5 ms) in REAPER"))
+                                  fix=f"give the {W['item']} a short fade {'in' if edge == 'start' else 'out'} (5 ms) in {W['daw']}"))
         if t.name not in R.files:
             continue
         y, _ = sf.read(str(R.files[t.name]), dtype="float32")
@@ -173,9 +183,9 @@ def g_clips(p, R, od, a):
                           track=t.name, where=_where(p, c1.start),
                           problem=f"level jumps {f - b:+.1f} dB where '{c0.name}' meets '{c1.name}' (a comp cut "
                                   "recorded at a different level)",
-                          fix=f"listen first; if it is not the performance, set item '{c1.name}' volume "
+                          fix=f"listen first; if it is not the performance, set {W['item']} '{c1.name}' volume "
                               f"{-(f - b) / 2:+.1f} dB (half the jump) or lengthen the crossfade"))
-    return out, [f"clips: item edges and cuts checked on {len(p.audio_tracks())} tracks"]
+    return out, [f"clips: {W['item']} edges and cuts checked on {len(p.audio_tracks())} tracks"]
 
 
 def g_vocals(p, R, od, a, role):
@@ -237,7 +247,7 @@ def g_vocals(p, R, od, a, role):
         try:
             d_f, d_n = SC.doubles(files, lead)
             for f in d_f:
-                f["fix"] = f["fix"].replace("comp clips in Live", "items in REAPER")
+                f["fix"] = f["fix"].replace("comp clips in Live", f"{W['item']}s in {W['daw']}")
             findings += d_f
             notes += d_n
         except Exception as e:
@@ -327,7 +337,7 @@ def g_noise(p, R, od, a):
             n += 1
             out.append(_f("noise", n, tool="noise", kind="boosted-noise", severity="medium" if floor > -50 else "low",
                           track=t.name, where=_where(p, c.start),
-                          problem=f"item '{c.name}' is turned up {20 * math.log10(g):+.1f} dB, which lifts its noise "
+                          problem=f"{W['item']} '{c.name}' is turned up {20 * math.log10(g):+.1f} dB, which lifts its noise "
                                   f"floor to about {floor:.0f} dBFS in the mix",
                           fix="de-hiss the source first (`hypnomix dehiss FILE OUT.wav`, a new file), or record the "
                               "part hotter next time"))
@@ -366,11 +376,11 @@ def g_intent(p, R, od, a):
             if c.muted or not t.on:
                 continue
             if c.level < 0:
-                add(t.name, f"item '{c.name}' plays with its polarity flipped", _where(p, c.start))
+                add(t.name, f"{W['item']} '{c.name}' plays with its polarity flipped", _where(p, c.start))
             elif c.level > 10 ** (9 / 20):
-                add(t.name, f"item '{c.name}' is turned up {20 * math.log10(c.level):+.1f} dB", _where(p, c.start))
+                add(t.name, f"{W['item']} '{c.name}' is turned up {20 * math.log10(c.level):+.1f} dB", _where(p, c.start))
             if c.stretch_markers:
-                add(t.name, f"item '{c.name}' has {c.stretch_markers} stretch marker(s) (checks play it straight)",
+                add(t.name, f"{W['item']} '{c.name}' has {c.stretch_markers} stretch marker(s) (checks play it straight)",
                     _where(p, c.start))
     return out, [f"intent: {n} thing(s) that look deliberate, listed as questions"]
 
@@ -394,7 +404,9 @@ def g_stems(p, R, od, a):
 # ---------------------------------------------------------------- run
 def run(a, path, od, groups):
     p = PJ.load(path)
-    print(f"  REAPER project: {len(p.tracks)} tracks, {p.tempo:g} BPM, {p.end():.0f} s")
+    W.clear()
+    W.update(WORDS.get(p.daw, WORDS["reaper"]))
+    print(f"  {W['daw']} project: {len(p.tracks)} tracks, {p.tempo:g} BPM, {p.end():.0f} s")
     R = Renders(p, od)
     if {"clips", "vocals", "stems"} & set(groups):
         R.build(a.jobs)

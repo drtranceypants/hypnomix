@@ -32,6 +32,7 @@ class Take:
     preserve_pitch: bool = True
     section: tuple = None          # (start, length) in the source when the take plays a section of a file
     kind: str = "audio"
+    extra_paths: list = field(default_factory=list)   # more channels of one clip, one file each (Ardour)
     native: object = None
 
 
@@ -50,6 +51,11 @@ class Clip:
     fade_out_shape: int = 0
     muted: bool = False
     stretch_markers: int = 0       # REAPER stretch markers / Live warp markers bending the timing
+    fade_in_curve: list = None     # [(fraction 0..1 of the fade, gain)] when the DAW stores the curve itself
+    fade_out_curve: list = None
+    envelope: list = None          # clip gain envelope [(seconds from the clip start, gain)]
+    opaque: bool = False           # covers the clips under it (Ardour layers) instead of mixing with them
+    layer: int = 0                 # stacking order when clips overlap: higher plays on top
     native: object = None
 
     @property
@@ -112,7 +118,7 @@ class Track:
 @dataclass
 class Project:
     path: Path
-    daw: str                       # "live" | "reaper"
+    daw: str                       # "live" | "reaper" | "ardour"
     tempo: float = 120.0
     beats_per_bar: int = 4
     sample_rate: int = 44100
@@ -213,29 +219,37 @@ def fade_curve(n, shape, rising=True):
     return y if rising else y[::-1]
 
 
-def render_clip(c, sr, warn, name=""):
-    """One clip (its active take) as mono samples, clip-length long, gain and fades applied."""
-    tk = c.take
-    n = int(round(c.length * sr))
-    if tk is None or tk.kind != "audio" or tk.path is None or c.muted or n <= 0:
-        return None
-    if not Path(tk.path).exists():
-        warn.append(f"{name}: missing file {Path(tk.path).name}")
-        return None
-    try:
-        if abs(tk.rate - 1.0) > 1e-6 and tk.preserve_pitch:
-            src = _stretched(tk.path, tk.rate, sr)
-            k = 1.0 / tk.rate                 # source seconds -> seconds in the stretched copy
-        else:
-            src = _source(tk.path, sr)
-            k = 1.0
-    except Exception as e:
-        warn.append(f"{name}: could not read {Path(tk.path).name} ({type(e).__name__}): clip left out")
-        return None
+def _curve(n, pts, rising):
+    """A stored fade curve [(fraction, gain)] resampled to n samples (sample i of n is at i/n, as fade_curve)."""
+    x = np.arange(n) / n
+    f, g = np.array([p[0] for p in pts]), np.array([p[1] for p in pts])
+    return np.interp(x, f, g)
+
+
+def fade_window(c, n, sr):
+    """The clip's fade-in / fade-out gain over its n samples (1 in between)."""
+    w = np.ones(n)
+    fi, fo = min(n, int(c.fade_in * sr)), min(n, int(c.fade_out * sr))
+    if fi:
+        w[:fi] *= _curve(fi, c.fade_in_curve, True) if c.fade_in_curve else fade_curve(fi, c.fade_in_shape, True)
+    if fo:
+        w[n - fo:] *= _curve(fo, c.fade_out_curve, False) if c.fade_out_curve else \
+            fade_curve(fo, c.fade_out_shape, False)
+    return w
+
+
+def _read_take(tk, path, n, sr, loop):
+    """n samples of one source file as the take plays it."""
+    if abs(tk.rate - 1.0) > 1e-6 and tk.preserve_pitch:
+        src = _stretched(path, tk.rate, sr)
+        k = 1.0 / tk.rate                 # source seconds -> seconds in the stretched copy
+    else:
+        src = _source(path, sr)
+        k = 1.0
     t = np.arange(n) / sr                             # seconds since the clip starts
     pos = tk.offset + t * tk.rate                     # source seconds
     s0, slen = (tk.section if tk.section else (0.0, len(src) / sr / k))
-    if c.loop and slen > 0:
+    if loop and slen > 0:
         pos = s0 + np.mod(pos, slen)
     else:
         pos = s0 + pos
@@ -245,28 +259,50 @@ def render_clip(c, sr, warn, name=""):
         ok = (i >= 0) & (i < len(src))
         seg = np.zeros(n)
         seg[ok] = src[i[ok]]
-    else:                                             # varispeed: pitch follows the rate, like tape
-        seg = np.interp(idx, np.arange(len(src)), src, left=0.0, right=0.0)
+        return seg
+    return np.interp(idx, np.arange(len(src)), src, left=0.0, right=0.0)   # varispeed: pitch follows the rate
+
+
+def render_clip(c, sr, warn, name=""):
+    """One clip (its active take) as mono samples, clip-length long, gain, envelope and fades applied."""
+    tk = c.take
+    n = int(round(c.length * sr))
+    if tk is None or tk.kind != "audio" or tk.path is None or c.muted or n <= 0:
+        return None
+    paths = [tk.path] + list(tk.extra_paths or [])
+    gone = [p for p in paths if not Path(p).exists()]
+    if gone:
+        warn.append(f"{name}: missing file {Path(gone[0]).name}")
+        return None
+    try:
+        seg = sum(_read_take(tk, p, n, sr, c.loop) for p in paths) / len(paths)
+    except Exception as e:
+        warn.append(f"{name}: could not read {Path(tk.path).name} ({type(e).__name__}): clip left out")
+        return None
     seg *= c.level
-    fi, fo = min(n, int(c.fade_in * sr)), min(n, int(c.fade_out * sr))
-    if fi:
-        seg[:fi] *= fade_curve(fi, c.fade_in_shape, True)
-    if fo:
-        seg[n - fo:] *= fade_curve(fo, c.fade_out_shape, False)
-    return seg
+    if c.envelope:
+        t = np.arange(n) / sr
+        seg *= np.interp(t, [p[0] for p in c.envelope], [p[1] for p in c.envelope])
+    return seg * fade_window(c, n, sr)
 
 
 def render_clips(track, N, sr, warn):
+    """Clips summed onto the timeline. An opaque clip (Ardour) covers what is under it, crossfading through
+    its own fades, so clips are laid down from the lowest layer up."""
     y = np.zeros(N)
-    for c in track.clips:
+    for c in sorted(track.clips, key=lambda c: (c.layer, c.start)):
         seg = render_clip(c, sr, warn, track.name)
         if seg is None:
             continue
         i = int(round(c.start * sr))
+        cover = fade_window(c, len(seg), sr) if c.opaque else None
         if i < 0:
             seg, i = seg[-i:], 0
+            cover = cover[-len(seg):] if cover is not None else None
         L = min(len(seg), N - i)
         if L > 0:
+            if cover is not None:
+                y[i:i + L] *= 1.0 - cover[:L]
             y[i:i + L] += seg[:L]
     return y
 

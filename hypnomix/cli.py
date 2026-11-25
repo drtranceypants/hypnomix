@@ -52,8 +52,8 @@ GROUPS = [
         ("loop", "hypnomix.live.loop", "play bars → record → measure → compare; one-change A/Bs"),
         ("diagnose", "hypnomix.session.doctor", "solo every group in the loudest section: who owns the sub, bass, vocal band"),
     ]),
-    ("Projects: REAPER (.rpp) and Live (.als)", [
-        ("project", "hypnomix.project.show", "look inside a REAPER or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
+    ("Projects: REAPER (.rpp), Ardour (.ardour) and Live (.als)", [
+        ("project", "hypnomix.project.show", "look inside a REAPER, Ardour or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
     ]),
     ("Session files (.als, Live closed or open)", [
         ("render", "hypnomix.session.render", "render tracks from a .als to stems without opening Live (clip gain, fades, warps)"),

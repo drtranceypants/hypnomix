@@ -83,7 +83,8 @@ and the review loop is identical in every tier: the same findings, the same deci
 ```
             tier 0: audio          tier 1: read project        tier 2: drive the app
 Ableton     yes (scan FOLDER)      yes (.als)                  yes (write new .als; OSC)
-REAPER      yes                    planned (.rpp is text)      planned (write new .rpp)
+REAPER      yes                    yes (.rpp is text)          planned (write new .rpp)
+Ardour      yes                    yes (.ardour is XML)        planned (write new .ardour; Lua, OSC)
 Pro Tools   yes                    planned (session text)      planned (scripting SDK)
 Logic Pro   yes                    experimental                control surface only
 ```
@@ -100,6 +101,14 @@ with positions and gains, device names, tempo, markers) that every reader fills 
 **REAPER (do this second).** Its project file is plain text and its scripting API covers effects, envelopes
 and rendering, so it can reach the same level as Live: read the project, write a **new** project with approved
 changes. It also hosts free plug-ins on every platform. Roughly a week once the session model exists.
+
+**Ardour (free and open source, Mac, Windows, Linux).** Reading works: `hypnomix/project/ardour.py` reads
+sessions from Ardour 3 to 9 (sample times before Ardour 7; superclock and beat times after), with region
+layering, fade curves, gain envelopes, multi-channel regions, buses and aux returns. Next, as for REAPER: write a
+**new** `.ardour` with approved changes (region gain, fades, fader and pan, mute), then drive the open session
+through its Lua scripting and OSC for `chain` with Ardour's own ACE plug-ins (EQ, compressor, expander, delay,
+reverb). Not yet checked against Ardour itself: open a session saved by Ardour 8 or 9, compare our renders with
+its own export, and confirm pan direction and the trim gain.
 
 **Pro Tools.**
 - *Read:* the "session info as text" export (tracks, clips, markers) parsed into the session model: no app
@@ -119,7 +128,7 @@ mutes over a virtual MIDI port), with interface scripting only for bounce and ex
 have no programmatic access: where they help, the review says "run this, bounce, and I'll measure the result".
 Expect anything beyond tier 0 to need upkeep with each Logic release.
 
-**Order:** tier 0 polish (14, 19) → session model → REAPER → Pro Tools read → Pro Tools drive → Logic read →
+**Order:** tier 0 polish (14, 19) → session model → REAPER → Ardour → Pro Tools read → Pro Tools drive → Logic read →
 Logic control surface.
 
 ## Not planned

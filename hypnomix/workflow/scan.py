@@ -3,6 +3,7 @@
 
   hypnomix scan SET.als [--mix MIX.wav] [--ref INSTRUMENTAL.wav] [--out DIR] [--only GROUP ...]
   hypnomix scan SONG.rpp             (a REAPER project: see `hypnomix.workflow.scan_project` for its groups)
+  hypnomix scan SONG.ardour          (an Ardour session, or its session folder: the same groups as REAPER)
   hypnomix scan FOLDER               (raw recordings or exported stems, any DAW: no Live set needed)
   hypnomix scan --merge DIR          (rebuild REVIEW.md from group results, e.g. after parallel agents)
 
@@ -960,7 +961,9 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
                    if r.get("new") and r.get("new") != r.get("old")}
     show = lambda t: f"{newname[t]} (now '{t}')" if t in newname else (t or "-")
     counts = {s: sum(1 for f in findings if f.get("severity") == s) for s in SEV}
-    rpp_ = str(setp).lower().endswith(".rpp")
+    from hypnomix import project as PJ
+    daw = PJ.daw_of(setp) if setp else None
+    rpp_ = daw in ("reaper", "ardour")
     L = [f"# First-pass review: {Path(setp).stem if setp else od.name}", "",
          f"{'Project' if rpp_ else 'Set'}: `{setp}`  ", "Nothing has been changed. Go through the items one at a time: "
          "**approve**, **skip** or **change** each" + (", then make the approved changes (see Apply)." if rpp_ else
@@ -1003,11 +1006,13 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
         else:
             L.append("- decision: [ ] approve  [ ] skip  [ ] change: ")
         L.append("")
-    if str(setp).lower().endswith(".rpp"):
+    if rpp_:
+        name, ext, swap = {"reaper": ("REAPER", ".rpp", "as new takes"),
+                           "ardour": ("Ardour", ".ardour", "as new regions")}[daw]
         L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision', "```",
-              "REAPER project: *manual* items say what to change in REAPER; *audio* items (tune, dehiss, deess, "
-              "breaths) become new files with `hypnomix fix` as for any project, and you swap them in as new takes. "
-              "Writing approved project changes into a new .rpp comes with the next hypnomix release."]
+              f"{name} project: *manual* items say what to change in {name}; *audio* items (tune, dehiss, deess, "
+              f"breaths) become new files with `hypnomix fix` as for any project, and you swap them in {swap}. "
+              f"Writing approved project changes into a new {ext} comes with a later hypnomix release."]
         (od / "REVIEW.md").write_text("\n".join(L) + "\n")
         return
     L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision',
@@ -1022,7 +1027,7 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix scan", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("als", nargs="?", metavar="SET.als|SONG.rpp|FOLDER")
+    ap.add_argument("als", nargs="?", metavar="SET.als|SONG.rpp|SONG.ardour|FOLDER")
     ap.add_argument("--mix", help="a bounce of the full mix (loudness, true peak, release checks)")
     ap.add_argument("--ref", help="mix or instrumental for tuning and key (vocals); defaults to --mix")
     ap.add_argument("--backing", metavar="INSTRUMENTAL.wav", help="the song without vocals (sample-aligned): the chord "
@@ -1050,11 +1055,13 @@ def main():
     als = Path(a.als).expanduser().resolve()
     if not als.exists():
         sys.exit(f"not found: {als}")
-    folder = als.is_dir()
+    from hypnomix import project as PJ
+    daw = PJ.daw_of(als)
+    reaper = daw in ("reaper", "ardour")      # a project read through the shared model (an Ardour folder too)
+    folder = als.is_dir() and not reaper
     if folder and not audio_files(als):
         sys.exit(f"no audio files (wav, aif, flac) in {als}")
-    reaper = not folder and als.suffix.lower() == ".rpp"
-    od = out_at(a.out, "scan", als.stem if not folder else als.name)
+    od = out_at(a.out, "scan", als.stem if not als.is_dir() else als.name)
     if reaper:
         from hypnomix.workflow import scan_project as SP
         mine = SP.GROUPS
@@ -1063,8 +1070,8 @@ def main():
     groups = a.only or mine
     wrong = [g for g in groups if g not in mine]
     if wrong:
-        sys.exit(f"{', '.join(wrong)}: not a group for a {'folder' if folder else 'REAPER project' if reaper else 'Live set'} (use {', '.join(mine)})")
-    info = {"set": str(als), "mode": "folder" if folder else "reaper" if reaper else "set", "mix": a.mix, "ref": a.ref, "backing": a.backing, "key": a.key, "lead": None,
+        sys.exit(f"{', '.join(wrong)}: not a group for a {'folder' if folder else PJ.NAMES[daw] + ' project' if reaper else 'Live set'} (use {', '.join(mine)})")
+    info = {"set": str(als), "mode": "folder" if folder else daw if reaper else "set", "mix": a.mix, "ref": a.ref, "backing": a.backing, "key": a.key, "lead": None,
             "set_mtime": als.stat().st_mtime}
     (od / "raw").mkdir(exist_ok=True)
     sj = od / "scan.json"

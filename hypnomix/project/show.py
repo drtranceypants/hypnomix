@@ -1,4 +1,5 @@
-"""Look inside a song project (REAPER .rpp or Live .als) and render its tracks, without opening the DAW.
+"""Look inside a song project (REAPER .rpp, Ardour .ardour or its session folder, Live .als) and render its tracks,
+without opening the DAW.
 
   hypnomix project SONG.rpp                    tracks (folders, fader, pan, mute), items, plug-ins, automation
   hypnomix project SONG.rpp --items            also every item: position, length, take, file, volume, fades
@@ -6,7 +7,8 @@
                     [--tracks NAME ...] [--sr 44100]
 
 Renders include item and take volume, fades, loops, sections and playrate (pitch kept when the take keeps it);
-not faders, plug-ins or automation. Output is 32-bit float, so nothing clips.
+for Ardour also region gain envelopes, stored fade curves and layering (an upper opaque region covers the ones
+under it); not faders, plug-ins or automation. Output is 32-bit float, so nothing clips.
 """
 import argparse
 import sys
