@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
 """Probe: measure every track while Live plays, with every plug-in on it, and nothing rendered or exported.
 
-  hypnomix probe device                write HypnomixProbe.amxd + hypnomix_probe.js into your Live User Library
+  hypnomix probe device                write HypnomixProbe.amxd, HypnomixMain.amxd + hypnomix_probe.js into your Live
+                                       User Library
+  hypnomix probe cards SET.als         what you told hypnomix in Live (track roles, the song card), read from the set
   hypnomix probe insert SET.als        a NEW set with the probe at the end of every track, return and Main
   hypnomix probe status                which tracks are sending, with their loudness right now
   hypnomix probe listen [--secs 60]    record what the probes measure while you play (or --bars 33-48 --play)
   hypnomix probe report CAPTURE.json   turn a capture into a review: findings.json + REVIEW.md
+
+Telling hypnomix what things are. Each track's probe has three menus: what it is (lead vocal, harmony, kick, bass,
+guitar …, or "auto" to let the scan work it out by sound), its priority (focus: others give way to it; background:
+it gives way) and Protect (ask before any change). HypnomixMain, on Main, is the song card: genre, key and scale
+(the tuning and harmony tools use it instead of guessing; a mode becomes the major key with the same notes),
+chords (typed; kept by the app), loudness target, true-peak ceiling, limiter character and amount. The menus are
+Live parameters, so they are saved in the set, and `scan` reads them from the .als; the app also sees them live.
+
+Record and review before export (HypnomixMain). Press it and Live plays; the device records Main exactly as you
+hear it (a real-time bounce, 32-bit float) while every probe listens. When Live stops, the app reviews it:
+loudness and true peak against the song card, the live findings, release checks (`qc`), translation (`translate`)
+and the mastering moves as proposals (`master --plan`, with the card's target, ceiling, character and amount).
+Live's own Export is still how you make the final file: no Live API can start an export.
 
 How it works. The probe is a small Max for Live audio effect. Put it LAST on a track: it hears the track after
 all of its devices and plug-ins (before the fader; the fader and pan are read and added). Ten times a second it
@@ -45,8 +60,27 @@ FIELDS = ["kL", "kR", "pL", "pR", "rL", "rR", "mid", "side", "lr", "lowL", "lowR
 BANDS = [("sub", 20, 60), ("bass", 60, 120), ("upper bass", 120, 250), ("low-mid", 250, 500),
          ("mid", 500, 2000), ("upper-mid", 2000, 4000), ("presence", 4000, 8000), ("air", 8000, 20000)]
 SPLITS = [60, 120, 250, 500, 2000, 4000, 8000]
-W, H = 300, 60
-WIN = 4800                                # averaging window in samples (100 ms at 48 kHz)
+JW, H = 300, 169                          # the drawn part of the device; controls sit to its right
+W = {"track": 470, "main": 640}
+WIN = 4800
+ROLES = ["auto", "lead vocal", "harmony", "double", "backing vocals", "kick", "snare", "drums", "percussion", "bass",
+         "guitar", "acoustic guitar", "piano", "keys", "synth", "strings", "pad", "brass", "fx", "other"]
+GENRES = ["not set", "pop", "rock", "indie", "folk", "country", "singer-songwriter", "r&b / soul", "hip-hop", "electronic",
+          "dance", "ambient", "jazz", "blues", "metal", "orchestral", "world", "psychedelic", "other"]
+KEYS = ["not set", "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
+SCALES = ["major", "minor", "dorian", "phrygian", "lydian", "mixolydian", "locrian"]
+CONTROLS = {   # name: (label, kind, items or (min, max, default, unitstyle), x, y)
+    "track": [("hm_role", "What it is", "menu", ROLES, 312, 22),
+              ("hm_priority", "Priority", "menu", ["normal", "focus: others give way", "background: gives way"], 312, 62),
+              ("hm_protect", "Protect", "menu", ["off", "on: ask before any change"], 312, 102)],
+    "main": [("hm_genre", "Genre", "menu", GENRES, 312, 22),
+             ("hm_key", "Key", "menu", KEYS, 312, 62),
+             ("hm_scale", "Scale", "menu", SCALES, 392, 62),
+             ("hm_mode", "Limiter", "menu", ["clean", "punch", "loud"], 312, 102),
+             ("hm_target", "Target LUFS", "num", (-24.0, -6.0, -14.0, 1), 482, 22),
+             ("hm_ceiling", "Ceiling dBTP", "num", (-3.0, 0.0, -1.0, 1), 562, 22),
+             ("hm_amount", "Amount %", "num", (0.0, 100.0, 100.0, 1), 482, 62)],
+}                                # averaging window in samples (100 ms at 48 kHz)
 
 
 # ---------------------------------------------------------------- the device's script
@@ -60,9 +94,12 @@ mgraphics.autofill = 0;
 
 var BASE = "http://127.0.0.1:__APP__";
 var W = __W__, H = __H__, NV = __NV__;
+var MODE = (jsarguments.length > 1 && jsarguments[1] == "main") ? "main" : "track";
+var MENUS = __MENUS__;                    // control name -> labels (menus), so values are sent as words
 var v = [];
 var st = {ready: false, id: 0, name: "", main: false, fader: 0, pan: 0, sr: 0, gain: 0, lastSend: 0, lk: -120, pk: -120,
-          playing: 0, beat: 0, sent: 0, ok: 0, busy: false};
+          playing: 0, beat: 0, sent: 0, ok: 0, busy: false, params: {}, chords: "", sig: "", sigAt: 0, card: false,
+          rec: false, recPath: "", stopAt: 0, flash: "", flashUntil: 0};
 var slow = new Task(refresh, this);
 var cmdTask = new Task(askCmd, this);
 for (var i = 0; i < NV; i++) v.push(0);
@@ -90,9 +127,79 @@ function refresh() {
         st.fader = (s.indexOf("inf") >= 0) ? -120 : parseFloat(s);
         var pan = new LiveAPI(t.unquotedpath + " mixer_device panning");
         st.pan = parseFloat(pan.get("value"));
+        if (MODE == "main" && now() - st.sigAt > 5000) { st.sigAt = now(); st.sig = signature(); loadCard(); }
     } catch (e) { }
+    sendMeta();
     mgraphics.redraw();
 }
+
+function signature() {                    // the song, recognised by its track names (the same rule as hypnomix's own)
+    var song = new LiveAPI("live_set"), n = song.getcount("tracks"), names = [];
+    for (var i = 0; i < n; i++) names.push(str(new LiveAPI("live_set tracks " + i).get("name")));
+    names.sort();
+    var h = 0x811c9dc5, t = names.join("\n");
+    for (i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return ("00000000" + h.toString(16)).slice(-8);
+}
+function word(name, v) { var m = MENUS[name]; return m ? m[Math.max(0, Math.min(m.length - 1, Math.round(v)))] : v; }
+function param(name, v) { st.params[name] = word(name, v); sendMeta(); mgraphics.redraw(); }
+function chords() { st.chords = arrayfromargs(arguments).join(" "); sendMeta(); saveCard(); }
+function sendMeta() {
+    if (!st.ready) return;
+    outlet(0, ["/hm/meta", st.id, st.name, MODE == "main" ? 1 : 0, st.sig, JSON.stringify(st.params), st.chords]);
+}
+function post(path, body, done) {
+    var r = new XMLHttpRequest();
+    r.open("POST", BASE + path);
+    r.onreadystatechange = function () {
+        if (this.readyState != 4) return;
+        var d = null;
+        try { d = JSON.parse(this.responseText); } catch (e) { d = null; }
+        if (done) done(d);
+    };
+    r.send(JSON.stringify(body));
+}
+function loadCard() {                     // chords typed earlier are kept by the app, not in the set
+    if (st.card || !st.sig) return;
+    var r = new XMLHttpRequest();
+    r.open("GET", BASE + "/api/probe/card?sig=" + st.sig);
+    r.onreadystatechange = function () {
+        if (this.readyState != 4) return;
+        var d = null;
+        try { d = JSON.parse(this.responseText); } catch (e) { d = null; }
+        if (!d) return;
+        st.card = true;
+        if (d.chords && !st.chords) { st.chords = d.chords; outlet(1, "chords", "set", d.chords); }
+    };
+    r.send();
+}
+function saveCard() { if (st.sig) post("/api/probe/card", {sig: st.sig, chords: st.chords, params: st.params}); }
+function flash(t) { st.flash = t; st.flashUntil = now() + 4000; mgraphics.redraw(); }
+
+function record() {                       // Main: record the master as it plays, then the app reviews it before export
+    if (MODE != "main" || !st.ready) return;
+    if (!st.rec) {
+        post("/api/master/record", {state: "start", sig: st.sig, params: st.params, chords: st.chords}, function (d) {
+            if (!d || !d.path) { flash(d && d.error ? d.error : "Start the hypnomix app first"); return; }
+            st.recPath = d.path;
+            outlet(1, "rec", "samptype", "float32");
+            outlet(1, "rec", "open", d.path);
+            outlet(1, "rec", 1);
+            st.rec = true; st.stopAt = 0;
+            if (!st.song) st.song = new LiveAPI("live_set");
+            if (!parseInt(st.song.get("is_playing"))) st.song.call("start_playing");
+            flash("Recording Main: play to the end, or press Stop");
+        });
+    } else {
+        outlet(1, "rec", 0);
+        st.rec = false;
+        post("/api/master/record", {state: "stop", path: st.recPath, sig: st.sig, params: st.params, chords: st.chords}, function (d) {
+            flash(d && d.job ? "Reviewing in the hypnomix app…" : "Stopped (the app did not answer)");
+        });
+    }
+    mgraphics.redraw();
+}
+function onclick(x, y) { if (MODE == "main" && y > H - 34 && x < 200) record(); }
 
 function sr(x) {                          // dspstate~: Live's sample rate; set the K-weighting filters for it
     if (!x || x == st.sr) return;
@@ -115,6 +222,8 @@ function blk() {                          // after every 100 ms block: send it
     var song = st.song;
     st.playing = parseInt(song.get("is_playing"));
     st.beat = parseFloat(song.get("current_song_time"));
+    if (st.rec && !st.playing) { if (!st.stopAt) st.stopAt = now(); else if (now() - st.stopAt > 1500) record(); }
+    else st.stopAt = 0;
     var msg = ["/hm/probe", st.id, st.name, st.main ? 1 : 0, st.beat, st.playing, st.fader, st.pan, st.sr];
     for (var i = 0; i < NV; i++) msg.push(v[i]);
     outlet(0, msg);
@@ -149,7 +258,7 @@ function paint() {
     mgraphics.rectangle(0, 0, W, H); mgraphics.fill();
     mgraphics.select_font_face("Arial Bold"); mgraphics.set_font_size(10);
     mgraphics.set_source_rgba(0.93, 0.91, 0.87, 1);
-    mgraphics.move_to(6, 14); mgraphics.show_text("HYPNOMIX PROBE");
+    mgraphics.move_to(6, 14); mgraphics.show_text(MODE == "main" ? "HYPNOMIX MAIN" : "HYPNOMIX PROBE");
     mgraphics.select_font_face("Arial"); mgraphics.set_font_size(10);
     var on = now() - st.ok < 2500;
     mgraphics.set_source_rgba(on ? 0.5 : 0.63, on ? 0.82 : 0.6, on ? 0.64 : 0.56, 1);
@@ -161,6 +270,23 @@ function paint() {
     var x = Math.max(0, Math.min(1, (st.lk + 60) / 60));
     mgraphics.set_source_rgba(0.24, 0.24, 0.25, 1); mgraphics.rectangle(6, 40, W - 12, 8); mgraphics.fill();
     mgraphics.set_source_rgba(0.56, 0.78, 0.64, 1); mgraphics.rectangle(6, 40, (W - 12) * x, 8); mgraphics.fill();
+    mgraphics.set_source_rgba(0.63, 0.6, 0.56, 1);
+    mgraphics.move_to(6, 66);
+    if (MODE == "track") {
+        mgraphics.show_text("Tell hypnomix what this is (right). Saved in the set;");
+        mgraphics.move_to(6, 80); mgraphics.show_text("'auto' lets the scan work it out by sound.");
+    } else {
+        mgraphics.show_text("Song card: genre, key, chords and loudness for every tool.");
+        mgraphics.move_to(6, 80); mgraphics.show_text("Chords (type, then Enter) are kept by the app.");
+        var bx = 6, by = H - 30;
+        mgraphics.set_source_rgba(st.rec ? 0.75 : 0.56, st.rec ? 0.2 : 0.25, 0.25, 1);
+        mgraphics.rectangle_rounded(bx, by, 190, 22, 6, 6); mgraphics.fill();
+        mgraphics.set_source_rgba(0.95, 0.93, 0.89, 1); mgraphics.select_font_face("Arial Bold");
+        mgraphics.move_to(bx + 12, by + 15);
+        mgraphics.show_text(st.rec ? "Stop and review" : "Record and review before export");
+        mgraphics.select_font_face("Arial");
+    }
+    if (now() < st.flashUntil) { mgraphics.set_source_rgba(0.5, 0.82, 0.64, 1); mgraphics.move_to(6, 100); mgraphics.show_text(st.flash); }
 }
 """
 
@@ -184,8 +310,41 @@ class Patch:
         self.lines.append({"patchline": {"destination": [b, bi], "source": [a, ao]}})
 
 
-def build_patch(patch):
-    """The probe patch on top of Live's blank Max Audio Effect: pass-through with a smoothed gain, plus meters."""
+def control(P, thisdev, js, name, label, kind, spec, x, y):
+    """A Live parameter (saved with the set, automatable) whose value goes to the script as `param NAME value`."""
+    P.n += 1
+    bid = f"obj-{P.n}"
+    if kind == "menu":
+        b = {"id": bid, "maxclass": "live.menu", "numinlets": 1, "numoutlets": 3, "outlettype": ["", "", "float"],
+             "parameter_enable": 1, "varname": name, "patching_rect": [float(x + 600), float(y + 400), 100.0, 15.0],
+             "presentation": 1, "presentation_rect": [float(x), float(y), 150.0 if len(spec) > 8 else 75.0, 15.0],
+             "saved_attribute_attributes": {"valueof": {"parameter_enum": list(spec), "parameter_longname": name,
+                                                        "parameter_mmax": len(spec) - 1, "parameter_shortname": label,
+                                                        "parameter_type": 2, "parameter_initial_enable": 1,
+                                                        "parameter_initial": [0]}}}
+    else:
+        lo, hi, default, unit = spec
+        b = {"id": bid, "maxclass": "live.numbox", "numinlets": 1, "numoutlets": 2, "outlettype": ["", "float"],
+             "parameter_enable": 1, "varname": name, "patching_rect": [float(x + 600), float(y + 400), 44.0, 15.0],
+             "presentation": 1, "presentation_rect": [float(x), float(y), 70.0, 15.0],
+             "saved_attribute_attributes": {"valueof": {"parameter_longname": name, "parameter_shortname": label,
+                                                        "parameter_type": 0, "parameter_mmin": lo, "parameter_mmax": hi,
+                                                        "parameter_unitstyle": unit, "parameter_initial_enable": 1,
+                                                        "parameter_initial": [default]}}}
+    P.boxes.append({"box": b})
+    P.n += 1
+    P.boxes.append({"box": {"id": f"obj-{P.n}", "maxclass": "live.comment", "numinlets": 1, "numoutlets": 0,
+                            "patching_rect": [float(x + 600), float(y + 380), 90.0, 18.0], "presentation": 1,
+                            "presentation_rect": [float(x), float(y - 14), 90.0, 14.0], "text": label}})
+    pre = P.add(f"prepend param {name}", 1, 1, [""], x=x + 600, y=y + 430)
+    P.wire(bid, 0, pre, 0)
+    P.wire(pre, 0, js, 0)
+    P.wire(thisdev, 0, bid, 0)            # report the saved value once Live is ready
+
+
+def build_patch(patch, mode="track"):
+    """The probe patch on top of Live's blank Max Audio Effect: pass-through with a smoothed gain, plus meters.
+    mode "track": what the track is (role, priority, protect). mode "main": the song card and Record and review."""
     p = patch["patcher"]
     keep = [b for b in p["boxes"] if b["box"].get("text") in ("plugin~", "plugout~", "Device vertical limit")]
     pin = next(b["box"]["id"] for b in keep if b["box"].get("text") == "plugin~")
@@ -205,13 +364,13 @@ def build_patch(patch):
     js = P.add("", 1, 2, ["", ""], x=400, y=60)
     jsbox = P.boxes[-1]["box"]
     jsbox.update({"maxclass": "jsui", "filename": "hypnomix_probe.js", "border": 0, "parameter_enable": 0,
-                  "presentation": 1, "presentation_rect": [0.0, 0.0, float(W), float(H)]})
-    jsbox["patching_rect"] = [400.0, 60.0, float(W), float(H)]
+                  "jsarguments": [mode], "presentation": 1, "presentation_rect": [0.0, 0.0, float(JW), float(H)]})
+    jsbox["patching_rect"] = [400.0, 60.0, float(JW), float(H)]
     del jsbox["text"]
     P.wire(thisdev, 0, js, 0)
     udp = P.add(f"udpsend 127.0.0.1 {PORT_UDP}", 1, 0, [], x=400, y=140)
     P.wire(js, 0, udp, 0)
-    route = P.add("route k1 k2 g", 1, 4, ["", "", "", ""], x=600, y=140)
+    route = P.add("route k1 k2 g chords rec", 1, 6, ["", "", "", "", "", ""], x=600, y=140)
     P.wire(js, 1, route, 0)
     P.wire(route, 2, pk, 0)
     dsp = P.add("dspstate~", 1, 4, ["int", "float", "int", "int"], x=600, y=20)
@@ -298,11 +457,40 @@ def build_patch(patch):
         src, so = c, 1
     meter(src, so, 19, "rms", 840 + 60 * 7)
 
+    for name, label, kind, spec, x, y in CONTROLS[mode]:
+        control(P, thisdev, js, name, label, kind, spec, x, y)
+    if mode == "main":
+        # chords: typed in the device, kept by the app
+        P.n += 1
+        te = f"obj-{P.n}"
+        P.boxes.append({"box": {"id": te, "maxclass": "textedit", "numinlets": 1, "numoutlets": 4,
+                                "outlettype": ["", "int", "", ""], "parameter_enable": 0, "keymode": 1,
+                                "patching_rect": [900.0, 520.0, 200.0, 22.0], "presentation": 1,
+                                "presentation_rect": [312.0, 132.0, 318.0, 22.0], "fontsize": 10.0,
+                                "text": "", "hint": "chords, e.g. | Am | F | C | G |  (Enter)"}})
+        P.n += 1
+        P.boxes.append({"box": {"id": f"obj-{P.n}", "maxclass": "live.comment", "numinlets": 1, "numoutlets": 0,
+                                "patching_rect": [900.0, 500.0, 90.0, 18.0], "presentation": 1,
+                                "presentation_rect": [312.0, 118.0, 200.0, 14.0], "text": "Chords (Enter to save)"}})
+        rt = P.add("route text", 1, 2, ["", ""], x=900, y=560)
+        pc = P.add("prepend chords", 1, 1, [""], x=900, y=590)
+        P.wire(te, 0, rt, 0)
+        P.wire(rt, 0, pc, 0)
+        P.wire(rt, 1, pc, 0)
+        P.wire(pc, 0, js, 0)
+        P.wire(route, 3, te, 0)            # chords saved earlier come back as "set ..."
+        rec = P.add("sfrecord~ 2", 2, 1, ["signal"], x=1000, y=620)
+        P.wire(pin, 0, rec, 0)
+        P.wire(pin, 1, rec, 1)
+        P.wire(route, 4, rec, 0)
+
     p["boxes"] = keep + P.boxes
     p["lines"] = P.lines                   # plugin~ → gain → plugout~ replaces the direct wires
     p["openinpresentation"] = 1
-    p["devicewidth"] = float(W)
-    p["description"] = "hypnomix probe: measures this track (after its devices) for the hypnomix app; audio passes through"
+    p["devicewidth"] = float(W[mode])
+    p["description"] = ("hypnomix main: the song card (genre, key, chords, loudness) and record-and-review before export; "
+                        "audio passes through" if mode == "main" else
+                        "hypnomix probe: measures this track (after its devices) and says what it is; audio passes through")
     return patch
 
 
@@ -315,10 +503,87 @@ def build(out, tpl=None):
     head, patch = read_amxd(tpl)
     out = Path(out).expanduser()
     out.mkdir(parents=True, exist_ok=True)
-    write_amxd(out / "HypnomixProbe.amxd", head, build_patch(patch))
-    (out / "hypnomix_probe.js").write_text(JS.replace("__APP__", str(PORT_APP)).replace("__W__", str(W))
-                                           .replace("__H__", str(H)).replace("__NV__", str(NV)))
+    import copy as _copy
+    write_amxd(out / "HypnomixProbe.amxd", head, build_patch(_copy.deepcopy(patch), "track"))
+    write_amxd(out / "HypnomixMain.amxd", head, build_patch(_copy.deepcopy(patch), "main"))
+    (out / "hypnomix_probe.js").write_text(script())
     return out
+
+
+def script():
+    menus = {n: list(spec) for m in CONTROLS.values() for n, _, k, spec, _, _ in m if k == "menu"}
+    return (JS.replace("__APP__", str(PORT_APP)).replace("__W__", str(JW)).replace("__H__", str(H))
+            .replace("__NV__", str(NV)).replace("__MENUS__", json.dumps(menus)))
+
+
+def signature(names):
+    """The song, recognised by its track names: FNV-1a of the sorted names (the device computes the same)."""
+    h = 0x811c9dc5
+    for ch in "\n".join(sorted(names)):
+        for b in [ord(ch)] if ord(ch) < 0x10000 else [0xD800 + ((ord(ch) - 0x10000) >> 10), 0xDC00 + ((ord(ch) - 0x10000) & 0x3FF)]:
+            h ^= b
+            h = (h * 0x01000193) & 0xFFFFFFFF
+    return f"{h:08x}"
+
+
+def read_cards(set_path, cards_file=None):
+    """What the person told hypnomix in Live, read from the saved set: per track (role, priority, protect) and the
+    song card on Main (genre, key, scale, limiter, target, ceiling, amount), plus chords kept by the app."""
+    import gzip
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(gzip.open(set_path).read())
+    out = {"tracks": {}, "song": {}}
+    names = []
+    for t in root.iter():
+        if t.tag not in ("AudioTrack", "MidiTrack", "GroupTrack", "ReturnTrack", "MainTrack", "MasterTrack"):
+            continue
+        nm = "Main" if t.tag in ("MainTrack", "MasterTrack") else (
+            (t.find("./Name/UserName").get("Value") if t.find("./Name/UserName") is not None else "")
+            or (t.find("./Name/EffectiveName").get("Value") if t.find("./Name/EffectiveName") is not None else t.tag))
+        if t.tag in ("AudioTrack", "MidiTrack", "GroupTrack"):
+            names.append(nm)
+        vals = {}
+        for d in t.iter():
+            if not d.tag.startswith("MxDevice"):
+                continue
+            for e in d.iter():
+                if e.tag not in ("MxDEnumParameter", "MxDFloatParameter", "MxDIntParameter"):
+                    continue
+                n = e.find("./Name")
+                if n is None or not (n.get("Value") or "").startswith("hm_"):
+                    continue
+                m = e.find("./Timeable/Manual")
+                if m is None:
+                    continue
+                v = float(m.get("Value"))
+                if e.tag == "MxDEnumParameter":
+                    lab = [x.find("./Name").get("Value") for x in e.findall("./Names/Name")]
+                    v = lab[int(v)] if 0 <= int(v) < len(lab) else int(v)
+                vals[n.get("Value")[3:]] = v
+        if vals:
+            (out["song"] if nm == "Main" else out["tracks"].setdefault(nm, {})).update(vals)
+    out["signature"] = signature(names)
+    cf = Path(cards_file) if cards_file else Path(os.environ.get("HYPNOMIX_APP_HOME", "~/Documents/Hypnomix")).expanduser() / "cards.json"
+    if cf.exists():
+        card = json.loads(cf.read_text()).get(out["signature"], {})
+        if card.get("chords"):
+            out["song"]["chords"] = card["chords"]
+    s = out["song"]
+    if s.get("key") and s["key"] != "not set":
+        s["key_name"] = key_name(s["key"], s.get("scale", "major"))
+    return out
+
+
+MODES = {"major": 0, "dorian": 2, "phrygian": 4, "lydian": 5, "mixolydian": 7, "minor": 9, "locrian": 11}
+NOTES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
+
+
+def key_name(root, scale):
+    """A key the tuning tools understand ("A minor", "Eb major"): a mode becomes the major key with the same notes."""
+    if scale in ("major", "minor"):
+        return f"{root} {scale}"
+    i = NOTES.index(root)
+    return f"{NOTES[(i - MODES[scale]) % 12]} major"
 
 
 # ---------------------------------------------------------------- receiving
@@ -332,6 +597,23 @@ class Hub:
         self.capture = None               # dict(started, label, blocks: {id: [...]}) while recording
         self.gain = {}                    # probe id -> dB the probe should apply (A/B loudness match)
         self.server = None
+        self.meta = {}                    # id -> dict(name, main, sig, params, chords, at)
+
+    def on_meta(self, tid, name, main, sig, params, chords=""):
+        try:
+            pr = json.loads(params) if params else {}
+        except ValueError:
+            pr = {}
+        with self.lock:
+            self.meta[int(tid)] = dict(name=str(name), main=bool(main), sig=str(sig), params=pr, chords=str(chords), at=time.time())
+
+    def song_card(self):
+        """Everything the devices say right now: the song card from Main and what each track is."""
+        with self.lock:
+            m = {k: dict(v) for k, v in self.meta.items() if time.time() - v["at"] < 30}
+        main = next((v for v in m.values() if v["main"]), {})
+        return dict(sig=main.get("sig", ""), song=dict(main.get("params", {}), chords=main.get("chords", "")),
+                    tracks={v["name"]: v["params"] for v in m.values() if not v["main"]})
 
     def on_block(self, tid, name, main, beat, playing, fader, pan, sr, *vals):
         if len(vals) < NV:
@@ -353,6 +635,7 @@ class Hub:
         from pythonosc.osc_server import ThreadingOSCUDPServer
         d = Dispatcher()
         d.map("/hm/probe", lambda addr, *a: self.on_block(*a))
+        d.map("/hm/meta", lambda addr, *a: self.on_meta(*a))
         self.server = ThreadingOSCUDPServer(("127.0.0.1", port), d)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         return self
@@ -364,7 +647,8 @@ class Hub:
             for tid, t in self.tracks.items():
                 bl = [b for b in t["blocks"] if now - b[0] < window_s]
                 last = t["blocks"][-1][0] if t["blocks"] else 0
-                row = dict(id=tid, name=t["name"], main=t["main"], live=now - last < 1.5, seen=round(now - last, 1))
+                row = dict(id=tid, name=t["name"], main=t["main"], live=now - last < 1.5, seen=round(now - last, 1),
+                           card=self.meta.get(tid, {}).get("params", {}))
                 if bl:
                     v = [b[5] for b in bl]
                     row.update(momentary=lufs_of(v[-4:]), short=lufs_of(v[-30:]), peak=db(max(max(x[2], x[3]) for x in v)),
@@ -384,7 +668,7 @@ class Hub:
             cap, self.capture = self.capture, None
         if cap is None:
             raise RuntimeError("not recording")
-        cap.update(ended=time.time(), song=song)
+        cap.update(ended=time.time(), song=song, card=self.song_card())
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         f = out_dir / f"capture-{time.strftime('%Y%m%d-%H%M%S')}{('-' + safe(cap['label'])) if cap['label'] else ''}.json"
@@ -454,6 +738,8 @@ ROLE_ORDER = ["lead", "kick", "snare", "bass", "drums", "vocal", "harmony", "gui
 
 
 def role(name):
+    if name in TOLD:
+        return TOLD[name]
     n = name.lower()
     pats = [("lead", r"\blead\b|lead vo|main vo"), ("harmony", r"harm|bgv|backing|double|dbl|choir|\bbv"),
             ("vocal", r"vox|vocal|voice|sing"), ("kick", r"kick|\bkik|\bbd\b"), ("snare", r"snare|\bsd\b|clap"),
@@ -466,6 +752,13 @@ def role(name):
     return "other"
 
 
+CARD_ROLE = {"lead vocal": "lead", "harmony": "harmony", "double": "harmony", "backing vocals": "harmony", "kick": "kick",
+             "snare": "snare", "drums": "drums", "percussion": "drums", "bass": "bass", "guitar": "guitar",
+             "acoustic guitar": "guitar", "piano": "keys", "keys": "keys", "synth": "synth", "strings": "strings",
+             "pad": "pad", "brass": "keys", "fx": "fx", "other": "other"}
+TOLD = {}                                 # track name -> role told in Live (filled per report)
+
+
 def rank(name):
     r = role(name)
     return ROLE_ORDER.index(r) if r in ROLE_ORDER else len(ROLE_ORDER)
@@ -474,6 +767,11 @@ def rank(name):
 def analyse(cap, prefs=None, target=None, bpb=4):
     """Findings from a capture. `target`: 8 band levels (relative dB) for Main from `tonal`, optional."""
     prefs = prefs or {}
+    TOLD.clear()
+    for n, v in ((cap.get("card") or {}).get("tracks") or {}).items():
+        if v.get("role") in CARD_ROLE:
+            TOLD[n] = CARD_ROLE[v["role"]]
+    pri = {n: str(v.get("priority", "normal")) for n, v in ((cap.get("card") or {}).get("tracks") or {}).items()}
     tg = (prefs.get("targets") or {})
     t_lufs, t_tp = float(tg.get("lufs", -14)), float(tg.get("true_peak", -1))
     tracks = {}
@@ -590,6 +888,11 @@ def analyse(cap, prefs=None, target=None, bpb=4):
     for frac, A, B, k, both in fights[:10]:
         na, nb = tracks[A]["name"], tracks[B]["name"]
         give, keep = (nb, na) if rank(na) <= rank(nb) else (na, nb)
+        pa, pb = pri.get(na, "normal"), pri.get(nb, "normal")
+        if pa.startswith("background") or pb.startswith("focus"):
+            give, keep = na, nb
+        elif pb.startswith("background") or pa.startswith("focus"):
+            give, keep = nb, na
         lo, hi = BANDS[k][1], BANDS[k][2]
         f0 = int(math.sqrt(lo * hi))
         add(kind="masking", severity="medium" if frac >= 0.5 else "low", track=give, where=f"{BANDS[k][0]} {lo}-{hi} Hz",
@@ -631,10 +934,52 @@ def analyse(cap, prefs=None, target=None, bpb=4):
     return F, tracks
 
 
-def report(capture, out_dir, set_path="", bpb=4, target_name=None):
+def card_prefs(prefs, card):
+    """The song card typed in Live wins over the saved preferences for this song."""
+    import copy as _c
+    pr = _c.deepcopy(prefs or {})
+    song = (card or {}).get("song", {})
+    tg = pr.setdefault("targets", {})
+    if isinstance(song.get("target"), (int, float)):
+        tg["lufs"] = song["target"]
+    if isinstance(song.get("ceiling"), (int, float)):
+        tg["true_peak"] = song["ceiling"]
+    prot = [n for n, v in (card or {}).get("tracks", {}).items() if str(v.get("protect", "off")).startswith("on")]
+    if prot:
+        pt = pr.setdefault("protect", {})
+        have = pt.get("tracks") or []
+        pt["tracks"] = sorted(set(have if isinstance(have, list) else str(have).split(",")) | set(prot))
+    return pr
+
+
+def master_findings(wav, prefs, n0=0):
+    """The recorded master, checked before export: loudness and true peak against the targets."""
+    from hypnomix.core import dsp
+    y, sr = dsp.load(str(wav))
+    tg = (prefs or {}).get("targets", {})
+    t_lufs, t_tp = float(tg.get("lufs", -14)), float(tg.get("true_peak", -1))
+    L, tp = dsp.lufs(y, sr), dsp.true_peak(y, sr)
+    F = []
+    if tp > t_tp:
+        F.append(dict(kind="true-peak", severity="high" if tp > 0 else "medium", track="Main", where="",
+                      problem=f"The recorded master reaches {tp:+.2f} dBTP (true peak) against your ceiling of {t_tp:+.1f}.",
+                      fix=f"Lower the limiter ceiling by {tp - t_tp + 0.1:.1f} dB (codecs add peaks on top: -1 dBTP is safe).",
+                      value=round(tp, 2)))
+    if abs(L - t_lufs) > 0.5:
+        F.append(dict(kind="loudness", severity="medium" if abs(L - t_lufs) > 2 else "low", track="Main", where="",
+                      problem=f"The recorded master is {L:.1f} LUFS integrated; the song card asks for {t_lufs:.1f}.",
+                      fix=f"Limiter gain {'up' if L < t_lufs else 'down'} by {abs(L - t_lufs):.1f} dB, then record again.",
+                      value=round(L, 2)))
+    for i, f in enumerate(F, 1):
+        f.update(id=f"master-{n0 + i}", tool="probe", group="live", applies="manual")
+    return F, dict(lufs=round(L, 2), true_peak=round(tp, 2), seconds=round(len(y) / sr, 1))
+
+
+def report(capture, out_dir, set_path="", bpb=4, target_name=None, mix=None):
     from hypnomix.workflow import prefs as P, scan as S
     cap = json.loads(Path(capture).read_text())
-    prefs = P.load()
+    card = cap.get("card") or {}
+    prefs = card_prefs(P.load(), card)
     target = None
     if target_name:
         try:
@@ -647,11 +992,26 @@ def report(capture, out_dir, set_path="", bpb=4, target_name=None):
     (od / "raw").mkdir(parents=True, exist_ok=True)
     notes = [f"Measured live by the probe: {len(tracks)} tracks over {cap.get('ended', 0) - cap.get('started', 0):.0f} s "
              "of playback. Tracks are measured after their devices, before the fader (the fader is added)."]
+    song = card.get("song") or {}
+    told = {k: v for k, v in song.items() if v not in ("", "not set", None)}
+    if told:
+        notes.append("Song card from Live: " + ", ".join(f"{k} {v}" for k, v in told.items()))
+    roles = {n: v.get("role") for n, v in (card.get("tracks") or {}).items() if v.get("role") not in (None, "auto")}
+    if roles:
+        notes.append("Told in Live: " + ", ".join(f"{n} = {r}" for n, r in sorted(roles.items())))
     if not any(t["main"] for t in tracks.values()):
         notes.append("WARNING: no probe on Main, so loudness, peak and tone of the mix were not checked.")
+    if mix and Path(mix).exists():
+        mf, m = master_findings(mix, prefs, len(F))
+        F = mf + F
+        for i, f in enumerate(F, 1):
+            f["n"] = i
+        notes.insert(0, f"Recorded master: {Path(mix).name}, {m['seconds']:.0f} s, {m['lufs']} LUFS, {m['true_peak']:+} dBTP. "
+                        "It is what Live played (a real-time bounce): use it as the mix for `master`, `qc` and `translate`.")
     (od / "findings.json").write_text(json.dumps({"set": set_path, "notes": notes, "findings": F}, indent=1))
-    (od / "scan.json").write_text(json.dumps({"mode": "live", "capture": str(Path(capture).resolve()),
-                                              "set": set_path, "at": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
+    (od / "scan.json").write_text(json.dumps({"mode": "live", "capture": str(Path(capture).resolve()), "card": card,
+                                              "mix": str(mix or ""), "set": set_path,
+                                              "at": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
     S.write_review(od, set_path, F, notes, {"live": cap.get("ended", 0) - cap.get("started", 0)}, P.summary(prefs))
     return F
 
@@ -670,6 +1030,9 @@ def insert(set_path, out=None, include_returns=True):
         if not d.tag.startswith("MxDevice"):
             return False
         return any("HypnomixProbe" in (e.get("Value") or "") for e in d.iter() if e.tag in ("Name", "RelativePath", "Path", "UserName"))
+    def is_ours(d):
+        return d.tag.startswith("MxDevice") and any("HypnomixMain" in (e.get("Value") or "") for e in d.iter()
+                                                   if e.tag in ("Name", "RelativePath", "Path", "UserName"))
     proto = None
     for d in root.iter():
         if is_probe(d):
@@ -682,12 +1045,18 @@ def insert(set_path, out=None, include_returns=True):
     for t in list(root.iter("AudioTrack")) + list(root.iter("MidiTrack")) + list(root.iter("GroupTrack")) + \
             (list(root.iter("ReturnTrack")) if include_returns else []) + list(root.iter("MainTrack")) + list(root.iter("MasterTrack")):
         devs = t.find("./DeviceChain/DeviceChain/Devices")
-        if devs is not None and not any(is_probe(d) for d in devs):
+        if devs is not None and not any(is_probe(d) or is_ours(d) for d in devs):
             lists.append(devs)
     npi = root.find(".//NextPointeeId")
     nxt = int(npi.get("Value"))
     for devs in lists:
         new = copy.deepcopy(proto)
+        for e in new.iter():                  # each copy starts at "auto": what the first track was told is not copied
+            n = e.find("./Name")
+            if e.tag.startswith("MxD") and e.tag.endswith("Parameter") and n is not None and (n.get("Value") or "").startswith("hm_"):
+                dflt, m = e.find("./Default"), e.find("./Timeable/Manual")
+                if dflt is not None and m is not None:
+                    m.set("Value", dflt.get("Value"))
         for e in new.iter():
             if (e.tag.endswith("Target") or e.tag == "Pointee") and (e.get("Id") or "").isdigit():
                 e.set("Id", str(nxt))
@@ -750,7 +1119,13 @@ def main():
     r.add_argument("--set", default="")
     r.add_argument("--bpb", type=int, default=4)
     r.add_argument("--target")
+    r.add_argument("--mix", help="the master recorded by HypnomixMain (Record and review)")
+    c = sub.add_parser("cards", help="what was told in Live (roles, song card), read from a saved set")
+    c.add_argument("set")
     a = ap.parse_args()
+    if a.cmd == "cards":
+        print(json.dumps(read_cards(a.set), indent=1))
+        return
 
     if a.cmd == "device":
         lib = Path("~/Music/Ableton/User Library").expanduser()
@@ -795,7 +1170,7 @@ def main():
         return
     if a.cmd == "report":
         od = Path(a.out)
-        F = report(a.capture, od, a.set, a.bpb, a.target)
+        F = report(a.capture, od, a.set, a.bpb, a.target, a.mix)
         print(f"{len(F)} findings → {od / 'REVIEW.md'}")
         return
     # listen

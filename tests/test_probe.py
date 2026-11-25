@@ -144,3 +144,76 @@ class Insert(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Cards(unittest.TestCase):
+    def test_read_cards_from_a_saved_set(self):
+        def enum(name, idx, labels):
+            names = "".join(f'<Name Id="{i}"><Name Value="{l}"/></Name>' for i, l in enumerate(labels))
+            return (f'<MxDEnumParameter><Name Value="{name}"/><Default Value="0"/><Timeable><Manual Value="{idx}"/></Timeable>'
+                    f'<Names>{names}</Names></MxDEnumParameter>')
+
+        def fl(name, v):
+            return f'<MxDFloatParameter><Name Value="{name}"/><Timeable><Manual Value="{v}"/></Timeable></MxDFloatParameter>'
+        dev = lambda body: f'<MxDeviceAudioEffect Id="0"><ParameterList>{body}</ParameterList></MxDeviceAudioEffect>'
+        tr = lambda n, body: (f'<AudioTrack Id="1"><Name><UserName Value="{n}"/></Name><DeviceChain><DeviceChain><Devices>'
+                              f'{dev(body)}</Devices></DeviceChain></DeviceChain></AudioTrack>')
+        xml = ('<Ableton><LiveSet><Tracks>' + tr("Vox 1", enum("hm_role", 1, P.ROLES) + enum("hm_protect", 1, ["off", "on: ask"]))
+               + tr("Gtr", enum("hm_role", 0, P.ROLES)) + '</Tracks><MainTrack><DeviceChain><DeviceChain><Devices>'
+               + dev(enum("hm_key", 10, P.KEYS) + enum("hm_scale", 2, P.SCALES) + fl("hm_target", -10))
+               + '</Devices></DeviceChain></DeviceChain></MainTrack></LiveSet></Ableton>')
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "Song.als"
+            with gzip.open(src, "wb") as fh:
+                fh.write(xml.encode())
+            sig = P.signature(["Vox 1", "Gtr"])
+            (Path(d) / "cards.json").write_text(json.dumps({sig: {"chords": "| Am | F | C | G |"}}))
+            c = P.read_cards(src, Path(d) / "cards.json")
+        self.assertEqual(c["tracks"]["Vox 1"], {"role": "lead vocal", "protect": "on: ask"})
+        self.assertEqual(c["tracks"]["Gtr"], {"role": "auto"})
+        self.assertEqual(c["song"]["key_name"], "G major")            # A dorian has the notes of G major
+        self.assertEqual(c["song"]["target"], -10.0)
+        self.assertEqual(c["song"]["chords"], "| Am | F | C | G |")
+
+    def test_keys_and_card_prefs(self):
+        self.assertEqual(P.key_name("A", "minor"), "A minor")
+        self.assertEqual(P.key_name("E", "phrygian"), "C major")
+        pr = P.card_prefs({"targets": {"lufs": -14}}, {"song": {"target": -9.5, "ceiling": -1.5},
+                                                       "tracks": {"Lead": {"protect": "on: ask before any change"}}})
+        self.assertEqual(pr["targets"], {"lufs": -9.5, "true_peak": -1.5})
+        self.assertEqual(pr["protect"]["tracks"], ["Lead"])
+
+    def test_told_roles_and_priority_decide_who_gives_way(self):
+        mid = [0.0, 0.0, 0.0, 0.05, 0.0, 0.0, 0.0, 0.0]
+        a = rows(lambda i: block(bands=mid))
+        b = rows(lambda i: block(bands=[0, 0, 0, 0.045, 0, 0, 0, 0]))
+        cap = capture([("Audio 3", False, a), ("Audio 7", False, b)])
+        cap["card"] = {"tracks": {"Audio 3": {"role": "pad", "priority": "normal"},
+                                  "Audio 7": {"role": "guitar", "priority": "background: gives way"}}}
+        F, _ = P.analyse(cap, {})
+        self.assertEqual(next(f for f in F if f["kind"] == "masking")["track"], "Audio 7")
+
+    def test_master_findings_on_a_recorded_master(self):
+        import numpy as np, soundfile as sf
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "m.wav"
+            t = np.arange(48000 * 4) / 48000
+            sf.write(str(f), np.stack([0.99 * np.sin(2 * np.pi * 997 * t)] * 2, 1).astype(np.float32), 48000, subtype="FLOAT")
+            F, m = P.master_findings(f, {"targets": {"lufs": -14, "true_peak": -1}})
+        self.assertEqual({x["kind"] for x in F}, {"true-peak", "loudness"})
+
+    @unittest.skipUnless(Path("/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc").exists(), "macOS")
+    def test_device_and_python_recognise_the_song_the_same_way(self):
+        import subprocess
+        names = ["Lead Vox", "Bass", "Drüms", "Gtr · B smooth-2"]
+        body = P.script()
+        sig_fn = "function signature()" + body.split("function signature()")[1].split("function word")[0]
+        prog = ("function str(x){return (x instanceof Array)?x.join(' '):String(x)}\nvar N=%s;\nfunction LiveAPI(p){this.getcount="
+                "function(){return N.length};this.get=function(){return [N[parseInt(p.split(' ')[2])]]}}\n" % json.dumps(names)
+                + sig_fn + "\nprint(signature());")
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "s.js"
+            f.write_text(prog)
+            out = subprocess.run(["/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc", str(f)],
+                                 capture_output=True, text=True).stdout.strip()
+        self.assertEqual(out, P.signature(names))

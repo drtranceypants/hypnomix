@@ -18,6 +18,7 @@ a STANDARD (you do it the same way every time: tools should keep to it); a wide 
 (ask). Writes TASTE.md (plain words) and ~/.hypnomix/taste.json (for the tools).
 
 Usage:  hypnomix taste SONG.als [SONG2.als …] [--out DIR]
+        hypnomix taste --library [DIR …]      first run: study every set you have (see hypnomix/workflow/library.py)
 """
 import argparse, collections, gzip, hashlib, json, math, os, re, sys
 import xml.etree.ElementTree as ET
@@ -66,14 +67,19 @@ def device_names(t):
     return out
 
 
-def song(set_path):
+def song(set_path, labels=None, require_lead=True, root=None):
+    """One set's numbers. `labels` ({track name: (label, confidence)}) replaces the `voices --learn` names cache
+    (the library scan passes labels guessed from track names); `require_lead=False` keeps songs without a lead
+    vocal (their levels against the lead are then left empty); `root` is an already-parsed set."""
     set_path = Path(set_path)
-    nj = CACHE / "names" / cache_key(set_path) / "names.json"
-    if not nj.exists():
-        return dict(song=set_path.stem, skipped="not studied yet: run `hypnomix voices --learn` on it first")
-    labels = {r["old"]: (str(r.get("final") or r.get("label") or ""), float(r.get("confidence") or 0))
-              for r in json.loads(nj.read_text())["tracks"]}
-    root = ET.fromstring(gzip.open(set_path).read())
+    if labels is None:
+        nj = CACHE / "names" / cache_key(set_path) / "names.json"
+        if not nj.exists():
+            return dict(song=set_path.stem, skipped="not studied yet: run `hypnomix voices --learn` on it first")
+        labels = {r["old"]: (str(r.get("final") or r.get("label") or ""), float(r.get("confidence") or 0))
+                  for r in json.loads(nj.read_text())["tracks"]}
+    if root is None:
+        root = ET.fromstring(gzip.open(set_path).read())
     tempo = float(v(root, ".//Tempo/Manual"))
     returns = []
     for t in root.find(".//Tracks"):
@@ -122,15 +128,16 @@ def song(set_path):
                          comped=bool(t.findall(".//TakeLanes//AudioClip")),
                          warp=[WARP.get(v(c, "./WarpMode"), v(c, "./WarpMode")) for c in clips if v(c, "./IsWarped") == "true"]))
     lead = next((r for r in rows if r["role"] == "lead"), None)
-    if lead is None:
+    if lead is None and require_lead:
         return dict(song=set_path.stem, skipped="no lead vocal found")
     by = collections.defaultdict(list)
     for r in rows:
         by[r["role"]].append(r)
     out = dict(song=set_path.stem, tempo=round(tempo, 1), parts={k: len(x) for k, x in by.items()},
-               returns=[(r["name"], r["kind"]) for r in returns], main_chain=device_names(root.find(".//MainTrack")),
+               returns=[(r["name"], r["kind"]) for r in returns], main_chain=device_names(next((m for m in (root.find(".//MainTrack"), root.find(".//MasterTrack")) if m is not None))),
                return_chains={r["name"]: r["chain"] for r in returns})
-    out["level_vs_lead"] = {k: round(float(np.median([r["fader"] - lead["fader"] for r in x])), 1) for k, x in by.items() if k != "lead"}
+    out["level_vs_lead"] = {k: round(float(np.median([r["fader"] - lead["fader"] for r in x])), 1)
+                            for k, x in by.items() if k != "lead"} if lead else {}
     out["pan_width"] = {k: round(float(np.median([abs(r["pan"]) for r in x])), 2) for k, x in by.items()}
     out["hard_panned"] = {k: round(float(np.mean([abs(r["pan"]) >= 0.8 for r in x])), 2) for k, x in by.items()}
     hp = [r["pan"] for r in by.get("harmony", [])]
@@ -148,7 +155,7 @@ def song(set_path):
     # harmony timing against the lead, from the cached renders
     rd = CACHE / "renders" / cache_key(set_path)
     safe = lambda n: re.sub(r'[\\/:*?"<>|]', "-", n)
-    lp = rd / f"{safe(lead['track'])}.wav"
+    lp = rd / f"{safe(lead['track'])}.wav" if lead else Path("/nonexistent")
     tight = []
     if lp.exists():
         from hypnomix.core import dsp
@@ -304,8 +311,20 @@ def report(prof, songs):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix taste", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("sets", nargs="+"); ap.add_argument("--out")
-    a = ap.parse_args()
+    ap.add_argument("sets", nargs="*"); ap.add_argument("--out")
+    ap.add_argument("--library", nargs="*", metavar="DIR",
+                    help="study every Ableton set in these folders (default: your Ableton folders): LIBRARY.md")
+    if "--library" in sys.argv[1:] and {"-h", "--help"} & set(sys.argv[1:]):
+        from hypnomix.workflow import library
+        return library.main(["-h"])
+    a, rest = ap.parse_known_args()
+    if a.library is not None:
+        from hypnomix.workflow import library
+        return library.main(list(a.library) + list(a.sets) + rest + (["--out", a.out] if a.out else []))
+    if rest:
+        ap.error(f"unrecognized arguments: {' '.join(rest)}")
+    if not a.sets:
+        ap.error("give one or more sets, or --library")
     songs = []
     for sp in a.sets:
         print(f"  {Path(sp).stem}…", flush=True)

@@ -208,8 +208,9 @@ async function prefsView() {
 function liveRows(P) {
   if (!P.tracks.length) return '<p class="note">No probes are sending. In Live: put <b>HypnomixProbe</b> last on each track and on Main (make it with <code>hypnomix probe device</code>; <code>hypnomix probe insert SET.als</code> copies it to every track), then press play.</p>';
   const band = b => b.map(x => `<i style="height:${Math.max(1, Math.min(22, (x + 70) / 3))}px"></i>`).join('');
-  return '<table><tr><td>Track</td><td>Loudness now</td><td class="num">short-term</td><td class="num">peak</td><td>tone (sub → air)</td><td class="num">L/R</td></tr>'
+  return '<table><tr><td>Track</td><td>Told in Live</td><td>Loudness now</td><td class="num">short-term</td><td class="num">peak</td><td>tone (sub → air)</td><td class="num">L/R</td></tr>'
     + P.tracks.map(t => `<tr${t.live ? '' : ' style="opacity:.5"'}><td>${t.main ? '<b>Main</b>' : esc(t.name)}</td>
+      <td class="note">${esc(t.main ? [t.card.genre, t.card.key && t.card.key !== 'not set' ? t.card.key + ' ' + (t.card.scale || '') : '', t.card.target != null ? t.card.target + ' LUFS' : ''].filter(x => x && x !== 'not set').join(' · ') : [t.card.role, t.card.priority && t.card.priority !== 'normal' ? t.card.priority.split(':')[0] : '', String(t.card.protect || '').startsWith('on') ? 'protected' : ''].filter(x => x).join(' · '))}</td>
       <td>${t.momentary != null ? `<span class="meter"><i style="width:${Math.max(0, Math.min(100, (t.momentary + 60) / 0.6))}%"></i></span> <span class="num">${t.momentary.toFixed(1)}</span>` : '<span class="note">silent</span>'}</td>
       <td class="num">${t.short != null ? t.short.toFixed(1) + ' LUFS' : ''}</td><td class="num">${t.peak != null ? t.peak.toFixed(1) + ' dB' : ''}</td>
       <td>${t.bands ? `<span class="bands">${band(t.bands)}</span>` : ''}</td><td class="num">${t.corr != null ? t.corr.toFixed(2) : ''}</td></tr>`).join('') + '</table>';

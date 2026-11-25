@@ -267,6 +267,63 @@ def blind_record(d, body):
     return dict(n=len(mine), b=sum(1 for r in mine if r["chose"] == "B"))
 
 
+def cards_file():
+    return work() / "cards.json"
+
+
+def card_save(sig, chords=None, params=None):
+    f = cards_file()
+    allc = json.loads(f.read_text()) if f.exists() else {}
+    c = allc.setdefault(sig, {})
+    if chords is not None:
+        c["chords"] = chords
+    if params:
+        c["params"] = params
+    c["updated"] = time.strftime("%Y-%m-%d %H:%M")
+    f.write_text(json.dumps(allc, indent=1))
+    return c
+
+
+MASTER = {"path": "", "song": ""}
+
+
+def master_record(body):
+    """Main's Record and review: start → a file to record into (and the probes start listening); stop → the review."""
+    hub = PROBE["hub"]
+    if body.get("state") == "start":
+        if JOB["status"] == "running":
+            raise RuntimeError("the app is busy: wait for the current job")
+        d = work() / "bounces"
+        d.mkdir(parents=True, exist_ok=True)
+        MASTER["path"] = str(d / f"master-{time.strftime('%Y%m%d-%H%M%S')}.wav")
+        if hub:
+            hub.begin("master")
+        return {"path": MASTER["path"]}
+    path = body.get("path") or MASTER["path"]
+    cap = hub.end(work() / "captures", "master") if hub and hub.capture is not None else None
+    sig = body.get("sig") or "song"
+    name = safe(f"Pre-export {time.strftime('%Y-%m-%d %H%M')}")
+    d = work() / "scan" / name
+    pr = body.get("params") or {}
+    steps = []
+    if cap:
+        steps.append(("Reading what the probes heard, and the recorded master", ["probe", "report", str(cap), "--out", str(d), "--mix", path], True))
+    flags = []
+    if isinstance(pr.get("target"), (int, float)):
+        flags += ["--target", str(pr["target"])]
+    if isinstance(pr.get("ceiling"), (int, float)):
+        flags += ["--ceiling", str(pr["ceiling"])]
+    if pr.get("mode") in ("clean", "punch", "loud"):
+        flags += ["--limiter-mode", pr["mode"]]
+    if isinstance(pr.get("amount"), (int, float)):
+        flags += ["--amount", str(pr["amount"])]
+    steps.append(("Release checks on the recorded master", ["qc", path] + (["--target", str(pr["target"])] if "target" in flags else []), False))
+    steps.append(("How it translates (mono, phone, earbuds, car, codecs)", ["translate", path], False))
+    steps.append(("Mastering moves, as proposals", ["master", path, "--plan", str(d)] + flags, False))
+    run_job("probe", "Review before export", steps, d)
+    return {"job": JOB["id"], "dir": str(d)}
+
+
 def start_probe_hub():
     try:
         from hypnomix.app.probe import Hub
@@ -367,6 +424,11 @@ def make_handler(port):
                 if u.path == "/api/probe/cmd":            # each probe asks twice a second: its gain (A/B loudness match)
                     g, diff = ab_gain() if q.get("main") == "1" else (0.0, None)
                     return self.send(200, dict(gain_db=round(g, 2), ab_diff=diff))
+                if u.path == "/api/probe/card":
+                    f = cards_file()
+                    return self.send(200, (json.loads(f.read_text()) if f.exists() else {}).get(q.get("sig", ""), {}))
+                if u.path == "/api/probe/song":            # what the devices say right now (song card + track roles)
+                    return self.send(200, PROBE["hub"].song_card() if PROBE["hub"] else {})
                 if u.path == "/audio":
                     d = scan_dir(q["dir"])
                     f = d / "ab" / Path(unquote(q["f"])).name
@@ -414,6 +476,10 @@ def make_handler(port):
                     return self.send(200, dict(state=AB["state"], match=AB["match"], diff=diff))
                 if u.path == "/api/ab/blind":
                     return self.send(200, blind_record(scan_dir(LIVE["dir"]), body))
+                if u.path == "/api/probe/card":
+                    return self.send(200, card_save(str(body["sig"]), body.get("chords"), body.get("params")))
+                if u.path == "/api/master/record":
+                    return self.send(200, master_record(body))
                 if u.path == "/api/probe/start":
                     if not PROBE["hub"]:
                         return self.send(409, {"error": "the probe receiver is not running: " + PROBE["error"]})
