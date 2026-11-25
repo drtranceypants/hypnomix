@@ -1,0 +1,72 @@
+# Rendering through your plug-ins
+
+`hypnomix plugrender` plays the tracks of a saved Live set through their real plug-in chains, offline and
+faster than real time, without opening Live. Each VST3 and Audio Unit plug-in on a track is loaded with the
+settings Live saved in the set, the track's audio runs through the chain in order, then through its fader and
+pan. Nothing in the set or its audio is changed: it only writes WAVs.
+
+It is what lets `hypnomix ab` play a before / after of a device change (a compressor setting, a limiter gain)
+as you would hear it on the track, instead of the dry track.
+
+## Install
+
+The plug-in host is Spotify's [pedalboard](https://github.com/spotify/pedalboard). It is GPL-3.0, so it is an
+optional extra and hypnomix itself stays MIT:
+
+```bash
+uv pip install -e ".[plugins]"        # or: pip install pedalboard
+```
+
+Without it, `plugrender` still renders the clips, Live's devices that hypnomix models and the mixer, and says
+that each plug-in was skipped.
+
+## Use
+
+```bash
+hypnomix plugrender "Song.als" --list                 # each track's chain: what can be rendered, what can't
+hypnomix plugrender "Song.als" --check                # load every plug-in, restore its settings, report
+hypnomix plugrender "Song.als" --tracks "Lead Vocal"  # render (WAVs + plugrender.json in hypnomix-out/)
+hypnomix plugrender "Song.als" --group "Vocals" --no-stock   # third-party plug-ins only
+```
+
+`--check` says, per plug-in, whether it loaded, whether its saved state was restored, and how much of it reads
+back the same: the parameter values Live saved against the plug-in's own, and for plug-ins that keep their
+settings as readable state (many free ones do), setting by setting. Run it first on a new set.
+
+## What it renders
+
+| on the track | rendered? |
+|---|---|
+| audio clips | yes, as `hypnomix render` does: clip gain, fades, warps (as mono, fed to the chain as stereo) |
+| VST3 plug-ins | yes, found by name in `/Library/Audio/Plug-Ins/VST3` and `~/Library/Audio/Plug-Ins/VST3` |
+| Audio Unit plug-ins | yes, found by their component codes in the two `Components` folders |
+| Live's Utility (gain), Compressor, Glue Compressor, Limiter | yes, with hypnomix's models of them (approximations; a compressor's sidechain from another track is followed) |
+| other Live devices (EQ Eight, Saturator, reverbs, delays…), racks, Max for Live | no: skipped, and listed as skipped |
+| VST2 plug-ins | no: pedalboard hosts VST3 and AU only |
+| switched-off devices | skipped, as in Live |
+| fader and pan | yes (volume automation too); pan is an approximation of Live's |
+| group tracks | yes: their playing tracks summed, then the group's chain and fader |
+| sends, return tracks, the Main track | no |
+| MIDI tracks (instruments) | no |
+| automation of device or plug-in parameters | no: every device plays at its saved setting |
+
+A plug-in that is missing, fails to load or fails to restore is skipped with a warning; the track still
+renders without it. Every plug-in is first loaded in a separate process, so one that crashes is reported and
+skipped and never takes the render down. When an Audio Unit will not load but the same plug-in is installed
+as a VST3 and its saved state is a JUCE state (common in free plug-ins), the VST3 is used with that state, and
+the report says so.
+
+## How `ab` uses it
+
+```bash
+hypnomix ab "<SCAN_DIR>" --plugins
+```
+
+For each device-change finding (`devices`, `duck`, `sidechain`, `distortion`), `ab` writes a temporary copy
+of the set with only that fix applied (next to the original, deleted afterwards), renders the track through
+its chain in both, and writes a level-matched pair around the loudest part of the track. Findings on return
+tracks (most `duck` items) can't be previewed, because returns are fed by sends; `ab.json` says so. Without
+`--plugins`, or without pedalboard, `ab` behaves exactly as before.
+
+The pair is the track on its own, through the devices that could be rendered: listen for what the change
+does, then confirm in Live.

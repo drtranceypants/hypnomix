@@ -18,6 +18,11 @@ What cannot (said in ab.json and on the review page):
   device changes          distortion and sidechain fixes change effects, which only Live can play
 For those, apply the one fix into a new set (`hypnomix fix ... --approve ID`) and listen in Live.
 
+  --plugins   device changes too (devices, duck, sidechain, distortion), when pedalboard is installed: the
+              track is rendered through its real plug-ins and hypnomix's models of Live's devices, in the set as
+              it is and with only that fix applied (see `hypnomix plugrender`; no sends, so return tracks can't
+              be previewed). Without pedalboard, or without --plugins, nothing changes.
+
 The preview is the track on its own, without effects: it shows what the fix does, not the final sound.
 """
 import argparse, json, re, shutil, subprocess, sys, tempfile
@@ -138,6 +143,8 @@ def main():
     ap.add_argument("--ids", default="", help="only these finding ids (default: every finding that changes something)")
     ap.add_argument("--pre", type=float, default=2.0, help="seconds before the spot (default 2)")
     ap.add_argument("--post", type=float, default=4.0, help="seconds after the spot (default 4)")
+    ap.add_argument("--plugins", action="store_true",
+                    help="also preview device changes through the track's plug-in chain (needs pedalboard)")
     a = ap.parse_args()
     sd = Path(a.scan_dir)
     data = json.loads((sd / "findings.json").read_text())
@@ -180,10 +187,29 @@ def main():
             if tmp.exists():
                 tmp.unlink()
 
+    # ---- device changes through the track's real chain (--plugins, needs pedalboard): hypnomix plugrender
+    done = set()
+    if a.plugins and orig and orig.exists():
+        from hypnomix.session import plugrender as PR
+        if not PR.have_pedalboard():
+            print("--plugins: pedalboard is not installed (pip install pedalboard): device changes are not previewed")
+        else:
+            cache = {}
+            for f in [f for f in findings if f["tool"] in PR.DEVICE_TOOLS and f.get("applies") == "set"]:
+                print(f"rendering {f.get('host') or f.get('track')} through its chain for {f['id']} …")
+                before, after, note = PR.device_preview(f, orig, scan, sd, sr, hx, cache)
+                if before is None:
+                    manifest[f["id"]] = dict(note=note)
+                else:
+                    t = PR.loudest_at(before, sr, a.pre + a.post)
+                    manifest[f["id"]] = write_pair(od, f["id"], cut(before, sr, t, a.pre, a.post),
+                                                   cut(after, sr, t, a.pre, a.post), sr, note)
+                done.add(f["id"])
+
     # ---- everything else
     for f in findings:
         fid = f["id"]
-        if f["tool"] == "smooth" and fid in manifest:
+        if (f["tool"] == "smooth" and fid in manifest) or fid in done:
             continue
         if f.get("plan"):
             manifest[fid] = dict(note="no single preview: approve the moves you want, apply, then compare the result "

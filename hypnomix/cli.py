@@ -59,6 +59,7 @@ GROUPS = [
     ]),
     ("Session files (.als, Live closed or open)", [
         ("render", "hypnomix.session.render", "render tracks from a .als to stems without opening Live (clip gain, fades, warps)"),
+        ("plugrender", "hypnomix.session.plugrender", "render tracks from a .als through their real VST3/AU plug-in chains, offline, faster than real time  [extra: plugins]"),
         ("name", "hypnomix.session.names", "name every track and group by how it sounds (vocal, harmony, guitar, strings, drums…)"),
         ("mine", "hypnomix.session.miner", "tempo, key, tracks, plug-in chains, routing, levels from a set"),
         ("audit", "hypnomix.session.audit", "flags EQ, stacked limiters, bypassed devices; bounce vs your profile"),

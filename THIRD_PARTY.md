@@ -15,4 +15,5 @@ numpy, scipy (BSD) · soundfile (BSD) · sounddevice (MIT) · pyloudnorm (MIT) �
 matplotlib (PSF-based) · python-osc (Unlicense) · noisereduce (MIT).
 
 Optional extras install separately and keep their own licences: matchering (GPL-3.0),
-audio-separator (MIT), basic-pitch (Apache-2.0), google-genai (Apache-2.0).
+audio-separator (MIT), basic-pitch (Apache-2.0), google-genai (Apache-2.0),
+pedalboard (GPL-3.0; the `plugins` extra, used by `hypnomix plugrender` to host VST3 and AU plug-ins).
