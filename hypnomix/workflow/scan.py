@@ -205,7 +205,21 @@ def g_clips(als, od, a):
     notes = []
     if d["notes"].get("regular"):
         notes.append("spikes not checked on tracks with regular hits (drums): " + ", ".join(d["notes"]["regular"]))
-    return d["findings"], notes
+    # clip edges and fades that cut into a word, on the vocal tracks (switched-off comp originals included)
+    je = od / "raw" / "edges.json"
+    nj = od / "raw" / "names" / "names.json"
+    code, txt = hx("edges", als, "--json", je, *(["--names", nj] if nj.exists() else []))
+    save(od / "raw" / "edges.txt", strip_warnings(txt))
+    found = list(d["findings"])
+    if je.exists():
+        ef = json.loads(je.read_text())["findings"]
+        found += ef
+        rec = sum(1 for f in ef if f.get("recommended"))
+        notes.append(f"edges: {len(ef)} item(s) on vocal clip edges, {rec} clear-cut fade fix(es) recommended; "
+                     "cuts are listen-only")
+    else:
+        notes.append(f"edges: did NOT run ({txt.strip()[-200:]})")
+    return found, notes
 
 
 def g_timing(als, od, a, role):

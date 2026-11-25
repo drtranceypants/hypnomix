@@ -138,6 +138,9 @@ def check(path, against=None, renamed=None, reordered=False, added=(), removed=(
                 err.append(f"{name}: a clip has no start or end")
                 continue
             at = f"{name} @ beat {s:g}"
+            tm = c.get("Time")
+            if tm is not None and abs(float(tm) - s) > 1e-6:
+                warn.append(f"{at}: the clip's Time ({float(tm):g}) is not its start; Live keeps them equal")
             if e <= s:
                 err.append(f"{at}: clip ends before it starts")
             spans.append((s, e))

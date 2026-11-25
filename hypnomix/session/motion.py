@@ -329,6 +329,7 @@ def stutter(t_el, b, p):
     for st, ln in plan:
         sl = copy.deepcopy(c); sl.set("Id", str(nid)); nid += 1
         sl.find("./CurrentStart").set("Value", repr(st)); sl.find("./CurrentEnd").set("Value", repr(st + ln))
+        sl.set("Time", repr(float(st)))
         set_loop(sl, src, src + ln, on=False)
         f = sl.find("./Fades")
         if f is not None:                                   # tiny fades: no clicks at the cuts
@@ -342,7 +343,7 @@ def stutter(t_el, b, p):
         pieces.append(sl)
     if ce - b > 1e-6:
         tail = copy.deepcopy(c); tail.set("Id", str(nid))
-        tail.find("./CurrentStart").set("Value", repr(b))
+        tail.find("./CurrentStart").set("Value", repr(b)); tail.set("Time", repr(float(b)))
         if v(c, "./Loop/LoopOn") == "true":
             ls, le = float(v(c, "./Loop/LoopStart")), float(v(c, "./Loop/LoopEnd"))
             rel = (float(v(c, "./Loop/StartRelative") or 0) + (b - cs)) % max(1e-6, le - ls)

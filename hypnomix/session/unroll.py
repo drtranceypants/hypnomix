@@ -56,6 +56,7 @@ def unroll_clip(events, c, tempo):
         x = copy.deepcopy(c)
         x.set("Id", str(c.get("Id")) if k == 0 else str(nid + k - 1))
         _set(x, "./CurrentStart", a); _set(x, "./CurrentEnd", b)
+        x.set("Time", repr(float(a)))                     # Live keeps a clip's Time equal to its start
         for tag, val in (("LoopStart", c0), ("LoopEnd", c1), ("StartRelative", 0.0), ("OutMarker", c1),
                          ("HiddenLoopStart", c0), ("HiddenLoopEnd", c1)):
             _set(x, f"./Loop/{tag}", val)

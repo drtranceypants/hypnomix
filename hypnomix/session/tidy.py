@@ -301,6 +301,7 @@ def cut(c, edge, new, tempo):
     per = per_beat(c, tempo)
     if edge == "start":
         c.find("./CurrentStart").set("Value", repr(float(new)))
+        c.set("Time", repr(float(new)))                  # Live keeps a clip's Time equal to its start
         ls = c.find("./Loop/LoopStart")
         ls.set("Value", repr(float(ls.get("Value")) + (new - a) * per))
         fl, fd = "./Fades/FadeInLength", "./Fades/IsDefaultFadeIn"

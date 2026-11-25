@@ -348,6 +348,7 @@ def place_clip(new_track, src_clip, kind, ls, w0, bars, a, b, nudge):
     L = bars * BPB
     a_b, b_b = (a - 1) * BPB + nudge, (b - 1) * BPB + nudge
     c.find("./CurrentStart").set("Value", repr(a_b)); c.find("./CurrentEnd").set("Value", repr(b_b))
+    c.set("Time", repr(float(a_b)))                    # Live keeps a clip's Time equal to its start
     lp = c.find("./Loop")
     for tag, val in (("LoopStart", s0), ("LoopEnd", s0 + L), ("StartRelative", 0.0), ("OutMarker", s0 + L),
                      ("HiddenLoopStart", s0), ("HiddenLoopEnd", s0 + L)):
