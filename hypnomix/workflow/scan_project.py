@@ -253,7 +253,8 @@ def g_clips(p, R, od, a):
         lv = np.where(inside, lv, -120.0)
         found = spikes(lv, 0.01, HIT_DB)
         minutes = sum(c.length for c in clips) / 60
-        if len(found) >= 4 and minutes > 0 and len(found) / minutes > SPIKES_PER_MIN:   # 4+: one burst is no beat
+        hits = sum(1 for x in found if not x[4])           # phrase-opening consonants are singing, not a beat
+        if hits >= 4 and minutes > 0 and hits / minutes > SPIKES_PER_MIN:      # 4+: one burst is no beat
             regular.append(t.name)          # regular hits: the instrument (drums, plucks), not a problem
             continue
         for pk, b0, b1, size, onset in found:

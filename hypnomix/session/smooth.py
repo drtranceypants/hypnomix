@@ -43,6 +43,8 @@ SOUNDING_DB = -50.0   # quieter than this counts as silence
 CLICK_LIN = 0.01      # a clip edge sample above -40 dBFS with no fade is a click
 MAX_LIN = 1.99526     # Live's fader maximum (+6 dB) as a linear gain
 SPIKES_PER_MIN = 4.0  # more 9 dB bursts than this per minute on a track means regular hits (drums)
+MIN_REGULAR = 4       # ...and at least this many: one or two bursts in a short track are not a beat
+                      # (phrase-opening consonants are not counted: they are singing, not hits)
 HIT_DB = 9.0
 PLOSIVE_HZ = 150.0    # a burst with most of its energy below this is a plosive (B, P), not a pop or bump
 PLOSIVE_SHARE = 0.6
@@ -370,7 +372,10 @@ def analyse(root, als_dir, names, step_db, cut_db, spike_db, explicit, include_o
                 for s in find_steps(c, tempo, step_db):
                     issues.append(dict(kind="step", track=tname, t=t, clip=c, beat=s["beat"], size=s["size"]))
         minutes = sum(c["end"] - c["start"] for c in ok) * 60 / tempo / 60
-        if track_spikes and minutes > 0 and len(track_spikes) / minutes > SPIKES_PER_MIN:
+        # regular hits: count only bursts mid-phrase. The consonants that open sung phrases are singing, not a beat
+        # (counting them made vocal and harmony tracks look like drums, so they were never checked for spikes)
+        hits = sum(1 for sp in track_spikes if not sp["onset"])
+        if hits >= MIN_REGULAR and minutes > 0 and hits / minutes > SPIKES_PER_MIN:
             notes["regular"].add(tname)  # regular hits: the instrument (drums, plucks), not a problem
         else:
             big = [sp for sp in track_spikes if sp["size"] >= spike_db]
