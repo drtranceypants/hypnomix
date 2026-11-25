@@ -44,6 +44,9 @@ pre.fix{max-height:220px;background:var(--bg)}
 .ab{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 0}.ab label{font-size:.8rem;color:var(--mute);display:block}
 .ab audio{width:100%}.act{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 0}.act input{flex:1;min-width:160px}
 .song{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.song .name{font-weight:600;margin-right:auto}
+.meter{display:inline-block;height:8px;background:var(--line);width:120px;border-radius:4px;overflow:hidden;vertical-align:middle}
+.meter i{display:block;height:100%;background:var(--ok,#5a9)}.bands{display:inline-flex;gap:2px;align-items:flex-end;height:22px;vertical-align:middle}
+.bands i{display:block;width:7px;background:var(--mute)}.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 table{border-collapse:collapse;width:100%}td{padding:6px 8px;border-top:1px solid var(--line);vertical-align:top}
 td code{font:13px ui-monospace,monospace}tr.cmd{cursor:pointer}tr.cmd:hover td{background:var(--bg)}
 .grp td{font-weight:700;border-top:2px solid var(--line);padding-top:14px}
@@ -54,7 +57,7 @@ animation:sp 1s linear infinite;vertical-align:-1px;margin-right:6px}@keyframes 
 </style></head><body>
 <header><span class="brand">hypnomix</span>
 <nav><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
-<button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button></nav>
+<button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button></nav>
 <span class="live" id="live"></span></header>
 <main id="main"></main>
 <script>
@@ -148,10 +151,11 @@ function reviewView() {
     return `<div class="card item${d ? ' done' : ''}" id="f-${esc(f.id)}"><div class="head"><span class="sev ${esc(f.severity)}">${esc(f.severity)}</span>
       <span class="title">${esc(f.track || f.tool)}</span><span class="where">${esc(f.where || '')}</span>
       <span class="tag">${esc(f.tool)} · ${esc(f.applies)}</span><span class="tag">${esc(f.id)}</span>
-      ${f.protected ? '<span class="tag prot">protected: ask again</span>' : ''}</div>
+      ${f.protected ? '<span class="tag prot">protected: ask again</span>' : ''}
+      ${R.ab_live && R.ab_live.items[f.id] && R.ab_live.items[f.id].parts.length ? '<span class="tag">A/B in Live</span>' : ''}</div>
       <div>${esc(f.problem)}</div>
       ${fix.includes('\n') ? `<pre class="fix">${esc(fix)}</pre>` : `<p class="fix">Proposed: ${esc(fix)}</p>`}
-      ${f.history ? `<p class="note">${esc(f.history)}</p>` : ''}${players}${note}${act}</div>`;
+      ${f.history ? `<p class="note">${esc(f.history)}</p>` : ''}${players}${note}${blindNote(R, f.id)}${act}</div>`;
   }).join('');
   const prot = actionable.some(f => f.protected && dec[f.id] && dec[f.id].decision === 'approve');
   const tune = actionable.some(f => f.tool === 'tune' && dec[f.id] && dec[f.id].decision === 'approve');
@@ -164,10 +168,22 @@ function reviewView() {
       <button data-reveal="${esc(R.dir)}">Show files</button><span class="note">${left ? left + ' still undecided (they are left alone).' : ''}</span></div>
     ${R.fix_log ? `<h2>Last time it was applied</h2><pre>${esc(R.fix_log)}</pre>` : ''}</div>`;
   return `<h1>Review: ${esc(R.name)}</h1>
-  <p class="sub">Nothing has been changed. Listen, decide each item, then apply only what you approved.</p>${top}
+  <p class="sub">Nothing has been changed. Listen, decide each item, then apply only what you approved.</p>${top}${abLiveCard(R)}
   <div class="bar"><span class="count">${n.approve} approved · ${n.skip} skipped · ${n.change} to change · ${left} undecided</span>
     <button id="alllow" title="Low-severity items that are not protected">Approve all low</button></div>
   ${items || '<p class="note">No findings.</p>'}${apply}`;
+}
+function blindNote(R, id) {
+  const rows = (R.blind || []).filter(r => r.id === id);
+  if (!rows.length) return '';
+  const b = rows.filter(r => r.chose === 'B').length;
+  return `<p class="note">Blind test in Live: you chose the fix ${b} of ${rows.length} time(s)${b * 2 > rows.length ? ', so approving it matches your ears' : b * 2 < rows.length ? ': you preferred what you have' : ''}.</p>`;
+}
+function abLiveCard(R) {
+  if (!R.is_set) return '';
+  const ready = R.ab_live ? `<p style="margin-top:0"><b>Ready:</b> ${esc(R.ab_live.set.split('/').pop())}. Close the original in Live, open this set, put the hypnomix device on any track, then use <b>A · now</b>, <b>B · fix</b> and <b>Blind</b> on each finding. Every plug-in plays; nothing is rendered.</p>` : '';
+  return `<div class="card">${ready || '<p style="margin-top:0">Hear every fix inside Live, with all your plug-ins, by switching A and B instantly.</p>'}
+    <div class="row"><button id="abbuild">${R.ab_live ? 'Build it again' : 'Build A/B set for Live'}</button><span class="note">Writes one new set next to the original; the original is not changed.</span></div></div>`;
 }
 async function decide(id, d, note) {
   const R = S.review;
@@ -186,6 +202,33 @@ async function prefsView() {
     return `<div class="row" style="align-items:flex-start"><label style="min-width:100%;color:var(--ink)">${esc(q.ask)}</label>${field}<p class="note" style="min-width:100%;margin:0">${esc(q.why)}</p></div>`;
   }).join('')}
   <div class="row"><button class="primary" id="saveprefs">Save</button><span class="note" id="saved"></span></div></div>`;
+}
+
+// ---------------------------------------------------------------- live (probes)
+function liveRows(P) {
+  if (!P.tracks.length) return '<p class="note">No probes are sending. In Live: put <b>HypnomixProbe</b> last on each track and on Main (make it with <code>hypnomix probe device</code>; <code>hypnomix probe insert SET.als</code> copies it to every track), then press play.</p>';
+  const band = b => b.map(x => `<i style="height:${Math.max(1, Math.min(22, (x + 70) / 3))}px"></i>`).join('');
+  return '<table><tr><td>Track</td><td>Loudness now</td><td class="num">short-term</td><td class="num">peak</td><td>tone (sub → air)</td><td class="num">L/R</td></tr>'
+    + P.tracks.map(t => `<tr${t.live ? '' : ' style="opacity:.5"'}><td>${t.main ? '<b>Main</b>' : esc(t.name)}</td>
+      <td>${t.momentary != null ? `<span class="meter"><i style="width:${Math.max(0, Math.min(100, (t.momentary + 60) / 0.6))}%"></i></span> <span class="num">${t.momentary.toFixed(1)}</span>` : '<span class="note">silent</span>'}</td>
+      <td class="num">${t.short != null ? t.short.toFixed(1) + ' LUFS' : ''}</td><td class="num">${t.peak != null ? t.peak.toFixed(1) + ' dB' : ''}</td>
+      <td>${t.bands ? `<span class="bands">${band(t.bands)}</span>` : ''}</td><td class="num">${t.corr != null ? t.corr.toFixed(2) : ''}</td></tr>`).join('') + '</table>';
+}
+function liveView() {
+  const P = S.probe || {tracks: [], recording: false, error: ''};
+  return `<h1>Live: measure while you play</h1>
+  <p class="sub">Every track at once, after all of its plug-ins. Nothing is rendered or exported, and nothing in the set is changed.</p>
+  ${P.error ? `<div class="warn">The probe receiver is not running: ${esc(P.error)}</div>` : ''}
+  <div class="card"><div class="row">
+    ${P.recording ? '<button class="primary" id="probestop">Stop and review</button><span class="note"><span class="spin"></span>recording what the probes hear…</span>'
+                  : '<button class="primary" id="probestart">Record</button><span class="note">Press Record, play the song (or the part you are working on) in Live, then Stop. A review is made from what was heard.</span>'}
+  </div></div>
+  <div id="probes">${liveRows(P)}</div>`;
+}
+async function pollProbe() {
+  if (S.view !== 'live') return;
+  try { S.probe = await get('/api/probe/status'); } catch (e) { return; }
+  const el = $('#probes'); if (el) el.innerHTML = liveRows(S.probe);
 }
 
 // ---------------------------------------------------------------- tools
@@ -215,6 +258,7 @@ async function render() {
   else if (S.view === 'review') m.innerHTML = reviewView();
   else if (S.view === 'prefs') m.innerHTML = await prefsView();
   else if (S.view === 'tools') m.innerHTML = toolsView();
+  else if (S.view === 'live') { await pollProbe(); m.innerHTML = liveView(); }
   refresh();
 }
 document.addEventListener('click', async e => {
@@ -241,6 +285,10 @@ document.addEventListener('click', async e => {
       await post('/api/fix', body); S.logLines = []; S.logAt = 0; S.lastStatus = 'running'; await refresh(); go('job');
     }
     else if (ds.reveal) await post('/api/reveal', {path: ds.reveal});
+    else if (b.id === 'probestart') { await post('/api/probe/start', {label: ''}); await pollProbe(); render(); }
+    else if (b.id === 'probestop') { const r = await post('/api/probe/stop', {song: ''}); const j = await post('/api/probe/report', {capture: r.capture});
+      S.logLines = []; S.logAt = 0; S.lastStatus = 'running'; await refresh(); go('job'); }
+    else if (b.id === 'abbuild') { await post('/api/ab/build', {dir: S.review.dir, key: S.form.key}); S.logLines = []; S.logAt = 0; S.lastStatus = 'running'; await refresh(); go('job'); }
     else if (b.id === 'stop') await post('/api/stop');
     else if (b.id === 'saveprefs') {
       const body = {}; document.querySelectorAll('[data-pref]').forEach(el => { if (el.value !== '' || el.tagName === 'INPUT') body[el.dataset.pref] = el.value; });
@@ -259,6 +307,6 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('play', e => { document.querySelectorAll('audio').forEach(a => { if (a !== e.target) a.pause(); }); }, true);
 render();
-setInterval(() => { refresh(); pollJob(); }, 1000);
+setInterval(() => { refresh(); pollJob(); pollProbe(); }, 1000);
 </script></body></html>
 """

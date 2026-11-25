@@ -50,6 +50,8 @@ GROUPS = [
     ("Live: hands on the set (AbletonOSC)", [
         ("live", "hypnomix.live.osc", "mixer, devices, VST parameters, transport, snapshots, arm/record"),
         ("loop", "hypnomix.live.loop", "play bars → record → measure → compare; one-change A/Bs"),
+        ("probe", "hypnomix.app.probe", "measure every track while Live plays, after all its plug-ins (Max for Live probe): no renders, a review from what was heard"),
+        ("abset", "hypnomix.workflow.abset", "one new set with every proposed fix as a switched-off B next to yours: A / B / Blind inside Live, loudness-matched"),
         ("diagnose", "hypnomix.session.doctor", "solo every group in the loudest section: who owns the sub, bass, vocal band"),
     ]),
     ("Projects: REAPER (.rpp), Ardour (.ardour) and Live (.als)", [

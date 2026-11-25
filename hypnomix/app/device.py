@@ -16,6 +16,12 @@ finding you are on and has these buttons:
   Brace on/off   whether the Arrangement loop brace is moved around the spot
   App            open the full review (with the before / after players) in your browser
 
+In an A/B set (`hypnomix abset SCAN_DIR`, opened in Live instead of the original) a second row appears:
+
+  A · now / B · fix   switch the finding's devices or tracks, instantly, with every plug-in playing
+  Blind               X and Y in random order; "I like X / Y" records your choice (blind.json), then tells you
+  Match on / off      with the probe on Main (`hypnomix probe`), B is turned down or up to A's loudness
+
 "Jump" means: the finding's track is selected, the Arrangement playhead moves to the spot, the loop brace
 is put around it (without switching looping on), and the clip under it opens in the Detail view. "Show in
 Live" buttons in the app do the same through this device.
@@ -42,7 +48,8 @@ mgraphics.autofill = 0;
 
 var BASE = "http://127.0.0.1:__PORT__";
 var W = __W__, H = __H__;
-var st = {ready: false, seq: -1, cur: null, lastOk: 0, flash: "", flashUntil: 0, brace: true, busy: false};
+var st = {ready: false, seq: -1, cur: null, lastOk: 0, flash: "", flashUntil: 0, brace: true, busy: false,
+          ab: {id: "", spec: null, state: "A", blind: null, heard: {}}};
 var buttons = [];
 var task = new Task(tick, this);
 
@@ -81,6 +88,7 @@ function tick() {
         if (d.cmd && !first && d.seq > st.seq) run(d.cmd);
         st.seq = d.seq;
         st.cur = d.current;
+        abFollow();
         mgraphics.redraw();
     });
 }
@@ -131,6 +139,78 @@ function decide(what) {
     request("POST", "/api/live/decide", {decision: what}, function (d) { if (d) { st.cur = d; flash(what == "approve" ? "Approved" : "Skipped"); } });
 }
 
+// ---------------------------------------------------------------- A / B inside Live (an A/B set from `hypnomix abset`)
+function findTrack(name) {
+    if (name == "Main") return new LiveAPI("live_set master_track");
+    var song = new LiveAPI("live_set"), n = song.getcount("tracks");
+    for (var i = 0; i < n; i++) { var x = new LiveAPI("live_set tracks " + i); if (nameOf(x) == name) return x; }
+    for (i = 0; i < song.getcount("return_tracks"); i++) { var r = new LiveAPI("live_set return_tracks " + i); if (nameOf(r) == name) return r; }
+    return null;
+}
+function devOn(track, idx, on, expectB) {
+    var d = new LiveAPI(track.unquotedpath + " devices " + idx);
+    if (!d.id || d.id == "0") throw "device " + idx + " is missing on " + nameOf(track);
+    if (expectB && nameOf(d).indexOf("B · ") != 0) throw "this is not the A/B set (open the set hypnomix abset wrote)";
+    var p = new LiveAPI(track.unquotedpath + " devices " + idx + " parameters 0");     // "Device On"
+    p.set("value", on ? 1 : 0);
+}
+function applyAB(spec, state) {
+    for (var k = 0; k < spec.parts.length; k++) {
+        var part = spec.parts[k], i, t;
+        if (part.mode == "devices") {
+            t = findTrack(part.track);
+            if (!t) throw "no track called \"" + part.track + "\"";
+            for (i = 0; i < part.a.length; i++) devOn(t, part.a[i], state == "A" ? part.a_on[i] : false, false);
+            for (i = 0; i < part.b.length; i++) devOn(t, part.b[i], state == "B" ? part.b_on[i] : false, true);
+        } else {
+            for (i = 0; i < part.a.length; i++) { t = findTrack(part.a[i]); if (!t) throw "no track called \"" + part.a[i] + "\"";
+                t.set("mute", state == "A" ? (part.a_on[i] ? 0 : 1) : 1); }
+            for (i = 0; i < part.b.length; i++) { t = findTrack(part.b[i]); if (!t) throw "this is not the A/B set (no track \"" + part.b[i] + "\")";
+                t.set("mute", state == "B" ? (part.b_on[i] ? 0 : 1) : 1); }
+        }
+    }
+}
+function setAB(state) {
+    var c = st.cur;
+    if (!c || !c.ab) return;
+    try { applyAB(c.ab, state); } catch (e) { flash(String(e)); return; }
+    st.ab.state = state; st.ab.id = c.id; st.ab.spec = c.ab;
+    st.ab.heard[state] = true;
+    request("POST", "/api/ab/state", {id: c.id, state: state}, function (d) {
+        if (d && d.diff !== null && d.diff !== undefined) flash((st.ab.blind ? "" : state + " · ") + "levels matched (" + (d.diff > 0 ? "+" : "") + d.diff + " dB)");
+    });
+    mgraphics.redraw();
+}
+function abFollow() {                     // moving to another finding puts the last one back to A
+    var c = st.cur;
+    if (st.ab.spec && (!c || c.id != st.ab.id)) {
+        try { if (st.ab.state != "A") applyAB(st.ab.spec, "A"); } catch (e) { }
+        st.ab = {id: "", spec: null, state: "A", blind: null, heard: {}};
+    }
+}
+function blind() {
+    if (!st.cur || !st.cur.ab) return;
+    st.ab.blind = Math.random() < 0.5 ? {X: "A", Y: "B"} : {X: "B", Y: "A"};
+    st.ab.heard = {};
+    setAB(st.ab.blind.X);
+    flash("Blind: listen to X and Y, then choose the one you like");
+}
+function choose(which) {
+    var b = st.ab.blind;
+    if (!b) return;
+    var chose = b[which];
+    request("POST", "/api/ab/blind", {id: st.cur.id, chose: chose, x: b.X}, function (d) {
+        flash("You chose " + which + " = " + (chose == "B" ? "B, the fix" : "A, what you have") +
+              (d && d.n > 1 ? "  (B " + d.b + " of " + d.n + " times)" : ""));
+    });
+    st.ab.blind = null;
+    mgraphics.redraw();
+}
+function match() {
+    var on = !(st.cur && st.cur.match);
+    request("POST", "/api/ab/state", {id: st.cur.id, state: st.ab.state, match: on}, function () { flash(on ? "Loudness match on (needs the probe on Main)" : "Loudness match off"); tick(); });
+}
+
 // ---------------------------------------------------------------- drawing
 function wrap(text, width, maxLines) {
     var words = String(text || "").split(/\s+/), lines = [], line = "";
@@ -150,8 +230,8 @@ function text(str, x, y, rgba, size, bold) {
     mgraphics.move_to(x, y);
     mgraphics.show_text(String(str));
 }
-function button(label, x, w, on, act) {
-    var y = H - 27, h = 20;
+function button(label, x, w, on, act, row) {
+    var y = H - 27 - (row ? 24 : 0), h = 20;
     mgraphics.set_source_rgba(on ? 0.56 : 0.24, on ? 0.25 : 0.24, on ? 0.25 : 0.25, 1);
     mgraphics.rectangle_rounded(x, y, w, h, 6, 6);
     mgraphics.fill();
@@ -190,13 +270,27 @@ function paint() {
     text(String(c.severity || "").toUpperCase(), 8, y, SEV[c.severity] || mute, 9, true);
     text((c.track || "") + "   " + (c.where || ""), 58, y, ink, 11, true);
     mgraphics.select_font_face("Arial"); mgraphics.set_font_size(11);
-    var lines = wrap(c.problem, W - 16, 3), i;
+    var lines = wrap(c.problem, W - 16, c.ab ? 2 : 3), i;
     for (i = 0; i < lines.length; i++) { y += 15; text(lines[i], 8, y, ink, 11, false); }
     mgraphics.select_font_face("Arial"); mgraphics.set_font_size(10);
-    var fx = wrap("Proposed: " + c.fix, W - 16, 2);
+    var fx = wrap("Proposed: " + c.fix, W - 16, c.ab ? 1 : 2);
     y += 4;
     for (i = 0; i < fx.length; i++) { y += 13; text(fx[i], 8, y, mute, 10, false); }
-    if (now() < st.flashUntil) text(st.flash, 8, H - 34, [0.5, 0.82, 0.64, 1], 10, false);
+    if (now() < st.flashUntil) text(st.flash, 8, c.ab ? H - 56 : H - 34, [0.5, 0.82, 0.64, 1], 10, false);
+    if (c.ab) {
+        var bx = 8, bl = st.ab.blind;
+        if (bl) {
+            bx = button("X", bx, 30, st.ab.id == c.id && st.ab.state == bl.X, "X", 1);
+            bx = button("Y", bx, 30, st.ab.id == c.id && st.ab.state == bl.Y, "Y", 1);
+            bx = button("I like X", bx, 58, false, "likeX", 1);
+            bx = button("I like Y", bx, 58, false, "likeY", 1);
+        } else {
+            bx = button("A · now", bx, 56, st.ab.id != c.id || st.ab.state == "A", "A", 1);
+            bx = button("B · fix", bx, 50, st.ab.id == c.id && st.ab.state == "B", "B", 1);
+            bx = button("Blind", bx, 44, false, "blind", 1);
+        }
+        bx = button(c.match ? "Match on" : "Match off", bx, 64, c.match, "match", 1);
+    }
     var x = 8;
     x = button("Prev", x, 40, false, "prev");
     x = button("Next", x, 40, false, "next");
@@ -221,6 +315,12 @@ function act(a) {
     else if (a == "approve" || a == "skip") decide(a);
     else if (a == "brace") { st.brace = !st.brace; mgraphics.redraw(); }
     else if (a == "app") max.launchbrowser(BASE + "/");
+    else if (a == "A" || a == "B") setAB(a);
+    else if (a == "X" || a == "Y") setAB(st.ab.blind[a]);
+    else if (a == "likeX") choose("X");
+    else if (a == "likeY") choose("Y");
+    else if (a == "blind") blind();
+    else if (a == "match") match();
 }
 """
 

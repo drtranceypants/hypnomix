@@ -1,0 +1,849 @@
+#!/usr/bin/env python3
+"""Probe: measure every track while Live plays, with every plug-in on it, and nothing rendered or exported.
+
+  hypnomix probe device                write HypnomixProbe.amxd + hypnomix_probe.js into your Live User Library
+  hypnomix probe insert SET.als        a NEW set with the probe at the end of every track, return and Main
+  hypnomix probe status                which tracks are sending, with their loudness right now
+  hypnomix probe listen [--secs 60]    record what the probes measure while you play (or --bars 33-48 --play)
+  hypnomix probe report CAPTURE.json   turn a capture into a review: findings.json + REVIEW.md
+
+How it works. The probe is a small Max for Live audio effect. Put it LAST on a track: it hears the track after
+all of its devices and plug-ins (before the fader; the fader and pan are read and added). Ten times a second it
+sends what it measured to the hypnomix app on this computer (UDP, 127.0.0.1 only):
+
+  loudness   K-weighted mean square per channel (BS.1770 filters at Live's sample rate): momentary,
+             short-term and integrated loudness are worked out from it
+  peak       sample peak per channel (not true peak: use `measure` on a bounce for that)
+  tone       energy in 8 bands (sub 20-60, bass 60-120, upper bass 120-250, low-mid 250-500, mid 500-2k,
+             upper-mid 2-4k, presence 4-8k, air 8k+), the same bands as `match`
+  stereo     L/R correlation, side vs mid, and correlation below 120 Hz (is the low end mono?)
+  where      the song position in beats and whether Live is playing, so every number has a bar
+
+One play of the song measures every track at once. A deep scan that renders every track (without its effects)
+takes far longer and still cannot hear third-party plug-ins; the probe hears exactly what you hear.
+Play only the loudest 30 seconds for a quick check, or one section while you work on it.
+
+`listen` works with the app running (it records through the app) or on its own. `--play` starts Live at the bar
+through AbletonOSC (`hypnomix install`); without it, press play yourself.
+
+What the report finds: loudness and peak of Main against your targets, tracks that clip into the next device,
+frequency fights between tracks while they play together (with the band and who should give way), the lead
+vocal's level against the band section by section, a low end that is not mono, and very narrow or very wide
+mixes. Everything is a proposal for the normal review; nothing is applied to the set.
+
+The probe also takes part in the in-Live A/B (`hypnomix abset`): on Main it matches the loudness of A and B,
+so the louder one does not win just for being louder.
+"""
+import argparse, glob, json, math, os, re, sys, threading, time
+from collections import deque
+from pathlib import Path
+
+PORT_UDP = 8792
+PORT_APP = 8791
+NV = 20                                   # values per block, in this order:
+FIELDS = ["kL", "kR", "pL", "pR", "rL", "rR", "mid", "side", "lr", "lowL", "lowR", "lowLR"] + [f"b{i}" for i in range(8)]
+BANDS = [("sub", 20, 60), ("bass", 60, 120), ("upper bass", 120, 250), ("low-mid", 250, 500),
+         ("mid", 500, 2000), ("upper-mid", 2000, 4000), ("presence", 4000, 8000), ("air", 8000, 20000)]
+SPLITS = [60, 120, 250, 500, 2000, 4000, 8000]
+W, H = 300, 60
+WIN = 4800                                # averaging window in samples (100 ms at 48 kHz)
+
+
+# ---------------------------------------------------------------- the device's script
+JS = r"""// hypnomix probe (jsui): measures this track and sends it to the hypnomix app. Audio passes through.
+autowatch = 1;
+inlets = 1;
+outlets = 2;            // 0: OSC to udpsend   1: filter coefficients and gain
+mgraphics.init();
+mgraphics.relative_coords = 0;
+mgraphics.autofill = 0;
+
+var BASE = "http://127.0.0.1:__APP__";
+var W = __W__, H = __H__, NV = __NV__;
+var v = [];
+var st = {ready: false, id: 0, name: "", main: false, fader: 0, pan: 0, sr: 0, gain: 0, lastSend: 0, lk: -120, pk: -120,
+          playing: 0, beat: 0, sent: 0, ok: 0, busy: false};
+var slow = new Task(refresh, this);
+var cmdTask = new Task(askCmd, this);
+for (var i = 0; i < NV; i++) v.push(0);
+
+function bang() {                         // live.thisdevice: the Live API is ready
+    st.ready = true;
+    refresh();
+    slow.interval = 1000; slow.repeat();
+    cmdTask.interval = 500; cmdTask.repeat();
+}
+function notifydeleted() { slow.cancel(); cmdTask.cancel(); }
+function loadbang() { mgraphics.redraw(); }
+function now() { return new Date().getTime(); }
+function str(x) { return (x instanceof Array) ? x.join(" ") : String(x); }
+
+function refresh() {
+    if (!st.ready) return;
+    try {
+        var t = new LiveAPI("this_device canonical_parent");
+        st.id = parseInt(t.id);
+        st.main = String(t.unquotedpath).indexOf("master_track") >= 0;
+        st.name = st.main ? "Main" : str(t.get("name"));
+        var vol = new LiveAPI(t.unquotedpath + " mixer_device volume");
+        var s = str(vol.call("str_for_value", parseFloat(vol.get("value"))));
+        st.fader = (s.indexOf("inf") >= 0) ? -120 : parseFloat(s);
+        var pan = new LiveAPI(t.unquotedpath + " mixer_device panning");
+        st.pan = parseFloat(pan.get("value"));
+    } catch (e) { }
+    mgraphics.redraw();
+}
+
+function sr(x) {                          // dspstate~: Live's sample rate; set the K-weighting filters for it
+    if (!x || x == st.sr) return;
+    st.sr = x;
+    var K = Math.tan(Math.PI * 1681.974450955533 / x), Q = 0.7071752369554196;
+    var Vh = Math.pow(10, 3.999843853973347 / 20), Vb = Math.pow(Vh, 0.4996667741545416);
+    var a0 = 1 + K / Q + K * K;
+    outlet(1, "k1", (Vh + Vb * K / Q + K * K) / a0, 2 * (K * K - Vh) / a0, (Vh - Vb * K / Q + K * K) / a0,
+           2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0);
+    K = Math.tan(Math.PI * 38.13547087602444 / x); Q = 0.5003270373238773;
+    a0 = 1 + K / Q + K * K;
+    outlet(1, "k2", 1, -2, 1, 2 * (K * K - 1) / a0, (1 - K / Q + K * K) / a0);
+}
+
+function val(i, x) { if (i >= 0 && i < NV) v[i] = x; }
+
+function blk() {                          // after every 100 ms block: send it
+    if (!st.ready) return;
+    if (!st.song) st.song = new LiveAPI("live_set");
+    var song = st.song;
+    st.playing = parseInt(song.get("is_playing"));
+    st.beat = parseFloat(song.get("current_song_time"));
+    var msg = ["/hm/probe", st.id, st.name, st.main ? 1 : 0, st.beat, st.playing, st.fader, st.pan, st.sr];
+    for (var i = 0; i < NV; i++) msg.push(v[i]);
+    outlet(0, msg);
+    st.sent++;
+    var ms = v[0] * v[0] + v[1] * v[1];
+    st.lk = ms > 0 ? -0.691 + 10 * Math.log(ms) / Math.LN10 : -120;
+    var p = Math.max(v[2], v[3]);
+    st.pk = p > 0 ? 20 * Math.log(p) / Math.LN10 : -120;
+    if (st.sent % 3 == 0) mgraphics.redraw();
+}
+
+function askCmd() {                       // the app may set a gain (loudness matching in the A/B)
+    if (st.busy && now() - st.busyAt < 3000) return;
+    st.busy = true; st.busyAt = now();
+    var r = new XMLHttpRequest();
+    r.open("GET", BASE + "/api/probe/cmd?id=" + st.id + "&name=" + encodeURIComponent(st.name) + "&main=" + (st.main ? 1 : 0));
+    r.onreadystatechange = function () {
+        if (this.readyState != 4) return;
+        st.busy = false;
+        var d = null;
+        try { d = JSON.parse(this.responseText); } catch (e) { d = null; }
+        if (!d) return;
+        st.ok = now();
+        var g = parseFloat(d.gain_db || 0);
+        if (Math.abs(g - st.gain) > 0.01) { st.gain = g; outlet(1, "g", Math.pow(10, g / 20)); mgraphics.redraw(); }
+    };
+    r.send();
+}
+
+function paint() {
+    mgraphics.set_source_rgba(0.13, 0.125, 0.11, 1);
+    mgraphics.rectangle(0, 0, W, H); mgraphics.fill();
+    mgraphics.select_font_face("Arial Bold"); mgraphics.set_font_size(10);
+    mgraphics.set_source_rgba(0.93, 0.91, 0.87, 1);
+    mgraphics.move_to(6, 14); mgraphics.show_text("HYPNOMIX PROBE");
+    mgraphics.select_font_face("Arial"); mgraphics.set_font_size(10);
+    var on = now() - st.ok < 2500;
+    mgraphics.set_source_rgba(on ? 0.5 : 0.63, on ? 0.82 : 0.6, on ? 0.64 : 0.56, 1);
+    mgraphics.move_to(104, 14); mgraphics.show_text(on ? "app connected" : "app not running: start hypnomix app");
+    mgraphics.set_source_rgba(0.63, 0.6, 0.56, 1);
+    mgraphics.move_to(6, 30);
+    mgraphics.show_text(st.name + "   " + (st.lk > -100 ? st.lk.toFixed(1) + " LUFS-M" : "silent") +
+                        "   peak " + (st.pk > -100 ? st.pk.toFixed(1) : "-inf") + (st.gain ? "   match " + st.gain.toFixed(1) + " dB" : ""));
+    var x = Math.max(0, Math.min(1, (st.lk + 60) / 60));
+    mgraphics.set_source_rgba(0.24, 0.24, 0.25, 1); mgraphics.rectangle(6, 40, W - 12, 8); mgraphics.fill();
+    mgraphics.set_source_rgba(0.56, 0.78, 0.64, 1); mgraphics.rectangle(6, 40, (W - 12) * x, 8); mgraphics.fill();
+}
+"""
+
+
+# ---------------------------------------------------------------- the patch
+class Patch:
+    def __init__(self):
+        self.boxes, self.lines, self.n = [], [], 100
+
+    def add(self, text, ins, outs, otype=None, x=0, y=0, **extra):
+        self.n += 1
+        bid = f"obj-{self.n}"
+        b = {"id": bid, "maxclass": "newobj", "numinlets": ins, "numoutlets": outs,
+             "outlettype": otype if otype is not None else ["signal"] * outs,
+             "patching_rect": [float(x), float(y), 9.0 * max(6, len(text)), 22.0], "text": text}
+        b.update(extra)
+        self.boxes.append({"box": b})
+        return bid
+
+    def wire(self, a, ao, b, bi):
+        self.lines.append({"patchline": {"destination": [b, bi], "source": [a, ao]}})
+
+
+def build_patch(patch):
+    """The probe patch on top of Live's blank Max Audio Effect: pass-through with a smoothed gain, plus meters."""
+    p = patch["patcher"]
+    keep = [b for b in p["boxes"] if b["box"].get("text") in ("plugin~", "plugout~", "Device vertical limit")]
+    pin = next(b["box"]["id"] for b in keep if b["box"].get("text") == "plugin~")
+    pout = next(b["box"]["id"] for b in keep if b["box"].get("text") == "plugout~")
+    P = Patch()
+    # pass-through with gain (1.0 unless the A/B asks Main to match loudness)
+    gL, gR = P.add("*~ 1.", 2, 1, x=40, y=70), P.add("*~ 1.", 2, 1, x=100, y=70)
+    line = P.add("line~", 2, 2, ["signal", "bang"], x=160, y=70)
+    pk = P.add("pack f 30", 2, 1, [""], x=160, y=46)
+    for ch, g in ((0, gL), (1, gR)):
+        P.wire(pin, ch, g, 0)
+        P.wire(g, 0, pout, ch)
+        P.wire(line, 0, g, 1)
+    P.wire(pk, 0, line, 0)
+    # the script (display, Live API, OSC out)
+    thisdev = P.add("live.thisdevice", 1, 3, ["bang", "int", "int"], x=400, y=20)
+    js = P.add("", 1, 2, ["", ""], x=400, y=60)
+    jsbox = P.boxes[-1]["box"]
+    jsbox.update({"maxclass": "jsui", "filename": "hypnomix_probe.js", "border": 0, "parameter_enable": 0,
+                  "presentation": 1, "presentation_rect": [0.0, 0.0, float(W), float(H)]})
+    jsbox["patching_rect"] = [400.0, 60.0, float(W), float(H)]
+    del jsbox["text"]
+    P.wire(thisdev, 0, js, 0)
+    udp = P.add(f"udpsend 127.0.0.1 {PORT_UDP}", 1, 0, [], x=400, y=140)
+    P.wire(js, 0, udp, 0)
+    route = P.add("route k1 k2 g", 1, 4, ["", "", "", ""], x=600, y=140)
+    P.wire(js, 1, route, 0)
+    P.wire(route, 2, pk, 0)
+    dsp = P.add("dspstate~", 1, 4, ["int", "float", "int", "int"], x=600, y=20)
+    srp = P.add("prepend sr", 1, 1, [""], x=600, y=46)
+    P.wire(dsp, 1, srp, 0)
+    P.wire(srp, 0, js, 0)
+    lb = P.add("loadbang", 1, 1, ["bang"], x=700, y=20)
+    P.wire(lb, 0, dsp, 0)
+    # clock: every 100 ms bang every snapshot~ (right outlet first), then tell the script the block is complete
+    metro = P.add("metro 100", 2, 1, ["bang"], x=700, y=46)
+    tog = P.add("t b b", 1, 2, ["bang", "bang"], x=700, y=70)
+    P.wire(lb, 0, metro, 0)
+    P.wire(metro, 0, tog, 0)
+    blk = P.add("", 2, 1, [""], x=760, y=96)
+    bb = P.boxes[-1]["box"]
+    bb.update({"maxclass": "message", "text": "blk"})
+    P.wire(tog, 0, blk, 0)
+    dl = P.add("deferlow", 1, 1, [""], x=760, y=120)      # the Live API may not be called from the audio scheduler
+    P.wire(blk, 0, dl, 0)
+    P.wire(dl, 0, js, 0)
+
+    y0 = 200
+
+    def meter(sig, outlet_, idx, mode, x):
+        avg = P.add(f"average~ {WIN} {mode}", 1, 1, x=x, y=y0 + 60)
+        snap = P.add("snapshot~", 2, 1, [""], x=x, y=y0 + 90)
+        pre = P.add(f"prepend val {idx}", 1, 1, [""], x=x, y=y0 + 120)
+        P.wire(sig, outlet_, avg, 0)
+        P.wire(avg, 0, snap, 0)
+        P.wire(tog, 1, snap, 0)
+        P.wire(snap, 0, pre, 0)
+        P.wire(pre, 0, js, 0)
+
+    # K-weighted loudness, per channel: two biquads in series
+    for ch, (i0, x) in enumerate(((0, 40), (1, 140))):
+        b1 = P.add("biquad~ 1. 0. 0. 0. 0.", 6, 1, x=x, y=y0)
+        b2 = P.add("biquad~ 1. 0. 0. 0. 0.", 6, 1, x=x, y=y0 + 30)
+        P.wire(pin, ch, b1, 0)
+        P.wire(route, 0, b1, 0)
+        P.wire(b1, 0, b2, 0)
+        P.wire(route, 1, b2, 0)
+        meter(b2, 0, i0, "rms", x)
+    # sample peak
+    for ch, (i0, x) in enumerate(((2, 240), (3, 300))):
+        pa = P.add("peakamp~", 2, 1, [""], x=x, y=y0 + 60)
+        pre = P.add(f"prepend val {i0}", 1, 1, [""], x=x, y=y0 + 120)
+        P.wire(pin, ch, pa, 0)
+        P.wire(tog, 1, pa, 0)
+        P.wire(pa, 0, pre, 0)
+        P.wire(pre, 0, js, 0)
+    # raw RMS per channel
+    meter(pin, 0, 4, "rms", 360)
+    meter(pin, 1, 5, "rms", 420)
+    # mid, side, L*R
+    add = P.add("+~", 2, 1, x=480, y=y0)
+    sub = P.add("-~", 2, 1, x=540, y=y0)
+    mid = P.add("*~ 0.5", 2, 1, x=480, y=y0 + 30)
+    side = P.add("*~ 0.5", 2, 1, x=540, y=y0 + 30)
+    lr = P.add("*~", 2, 1, x=600, y=y0 + 30)
+    for b in (add, sub, lr):
+        P.wire(pin, 0, b, 0)
+        P.wire(pin, 1, b, 1)
+    P.wire(add, 0, mid, 0)
+    P.wire(sub, 0, side, 0)
+    meter(mid, 0, 6, "rms", 480)
+    meter(side, 0, 7, "rms", 540)
+    meter(lr, 0, 8, "bipolar", 600)
+    # below 120 Hz: L, R and L*R
+    cl, cr = P.add("cross~ 120", 2, 2, x=660, y=y0), P.add("cross~ 120", 2, 2, x=720, y=y0)
+    P.wire(pin, 0, cl, 0)
+    P.wire(pin, 1, cr, 0)
+    llr = P.add("*~", 2, 1, x=780, y=y0 + 30)
+    P.wire(cl, 0, llr, 0)
+    P.wire(cr, 0, llr, 1)
+    meter(cl, 0, 9, "rms", 660)
+    meter(cr, 0, 10, "rms", 720)
+    meter(llr, 0, 11, "bipolar", 780)
+    # 8 bands of the mid signal: a chain of crossovers
+    src, so = mid, 0
+    for k, f in enumerate(SPLITS):
+        c = P.add(f"cross~ {f}", 2, 2, x=840 + 60 * k, y=y0)
+        P.wire(src, so, c, 0)
+        meter(c, 0, 12 + k, "rms", 840 + 60 * k)
+        src, so = c, 1
+    meter(src, so, 19, "rms", 840 + 60 * 7)
+
+    p["boxes"] = keep + P.boxes
+    p["lines"] = P.lines                   # plugin~ → gain → plugout~ replaces the direct wires
+    p["openinpresentation"] = 1
+    p["devicewidth"] = float(W)
+    p["description"] = "hypnomix probe: measures this track (after its devices) for the hypnomix app; audio passes through"
+    return patch
+
+
+def build(out, tpl=None):
+    from hypnomix.app.device import template, read_amxd, write_amxd
+    tpl = Path(tpl) if tpl else template()
+    if not tpl or not tpl.exists():
+        raise FileNotFoundError("could not find Live's blank Max Audio Effect (is Ableton Live with Max for Live installed?); "
+                                "pass --template PATH to a 'Max Audio Effect.amxd'")
+    head, patch = read_amxd(tpl)
+    out = Path(out).expanduser()
+    out.mkdir(parents=True, exist_ok=True)
+    write_amxd(out / "HypnomixProbe.amxd", head, build_patch(patch))
+    (out / "hypnomix_probe.js").write_text(JS.replace("__APP__", str(PORT_APP)).replace("__W__", str(W))
+                                           .replace("__H__", str(H)).replace("__NV__", str(NV)))
+    return out
+
+
+# ---------------------------------------------------------------- receiving
+class Hub:
+    """Collects probe blocks from every track. Thread-safe; used by the app and by `probe listen`."""
+
+    def __init__(self, keep_s=3600):
+        self.lock = threading.Lock()
+        self.tracks = {}                  # id -> dict(name, main, sr, blocks: deque of (t, beat, playing, fader, pan, vals))
+        self.keep = int(keep_s * 10)
+        self.capture = None               # dict(started, label, blocks: {id: [...]}) while recording
+        self.gain = {}                    # probe id -> dB the probe should apply (A/B loudness match)
+        self.server = None
+
+    def on_block(self, tid, name, main, beat, playing, fader, pan, sr, *vals):
+        if len(vals) < NV:
+            return
+        b = (time.time(), float(beat), int(playing), float(fader), float(pan), [float(x) for x in vals[:NV]])
+        with self.lock:
+            t = self.tracks.setdefault(int(tid), dict(name=str(name), main=bool(main), sr=sr, blocks=deque(maxlen=self.keep)))
+            t.update(name=str(name), main=bool(main), sr=sr)
+            t["blocks"].append(b)
+            if self.capture is not None:
+                self.capture["tracks"].setdefault(str(int(tid)), dict(name=str(name), main=bool(main), blocks=[]))
+                c = self.capture["tracks"][str(int(tid))]
+                c["name"] = str(name)
+                c["blocks"].append([round(b[0] - self.capture["started"], 3), round(b[1], 4), b[2], round(b[3], 2),
+                                    round(b[4], 3)] + [float(f"{x:.6g}") for x in b[5]])
+
+    def start(self, port=PORT_UDP):
+        from pythonosc.dispatcher import Dispatcher
+        from pythonosc.osc_server import ThreadingOSCUDPServer
+        d = Dispatcher()
+        d.map("/hm/probe", lambda addr, *a: self.on_block(*a))
+        self.server = ThreadingOSCUDPServer(("127.0.0.1", port), d)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        return self
+
+    def status(self, window_s=3.0):
+        now = time.time()
+        out = []
+        with self.lock:
+            for tid, t in self.tracks.items():
+                bl = [b for b in t["blocks"] if now - b[0] < window_s]
+                last = t["blocks"][-1][0] if t["blocks"] else 0
+                row = dict(id=tid, name=t["name"], main=t["main"], live=now - last < 1.5, seen=round(now - last, 1))
+                if bl:
+                    v = [b[5] for b in bl]
+                    row.update(momentary=lufs_of(v[-4:]), short=lufs_of(v[-30:]), peak=db(max(max(x[2], x[3]) for x in v)),
+                               fader=bl[-1][3], bands=band_db([x[12:20] for x in v]), corr=corr_of(v),
+                               playing=bool(bl[-1][2]), beat=bl[-1][1])
+                out.append(row)
+        out.sort(key=lambda r: (not r["main"], r["name"].lower()))
+        return out
+
+    def begin(self, label=""):
+        with self.lock:
+            self.capture = dict(started=time.time(), label=label, fields=["t", "beat", "playing", "fader", "pan"] + FIELDS,
+                                tracks={})
+
+    def end(self, out_dir, song=""):
+        with self.lock:
+            cap, self.capture = self.capture, None
+        if cap is None:
+            raise RuntimeError("not recording")
+        cap.update(ended=time.time(), song=song)
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        f = out_dir / f"capture-{time.strftime('%Y%m%d-%H%M%S')}{('-' + safe(cap['label'])) if cap['label'] else ''}.json"
+        f.write_text(json.dumps(cap))
+        return f
+
+    def last_main(self, since):
+        """Main's blocks (values) after wall-clock `since`, playing only."""
+        with self.lock:
+            for t in self.tracks.values():
+                if t["main"]:
+                    return [b for b in t["blocks"] if b[0] >= since and b[2]]
+        return []
+
+
+def safe(s):
+    return re.sub(r"[^\w.-]+", "-", str(s)).strip("-")[:40]
+
+
+# ---------------------------------------------------------------- numbers
+def db(x, floor=-120.0):
+    return round(20 * math.log10(x), 2) if x > 0 else floor
+
+
+def lufs_of(vals):
+    """Loudness of a run of blocks (ungated): -0.691 + 10 log10(mean(msL + msR))."""
+    if not vals:
+        return -120.0
+    ms = sum(v[0] ** 2 + v[1] ** 2 for v in vals) / len(vals)
+    return round(-0.691 + 10 * math.log10(ms), 2) if ms > 0 else -120.0
+
+
+def integrated(vals):
+    """BS.1770 gating on 400 ms windows (4 blocks, 75 % overlap): -70 LUFS absolute, then -10 LU relative."""
+    if len(vals) < 4:
+        return lufs_of(vals)
+    ms = [v[0] ** 2 + v[1] ** 2 for v in vals]
+    win = [sum(ms[i:i + 4]) / 4 for i in range(0, len(ms) - 3)]
+    lk = lambda m: -0.691 + 10 * math.log10(m) if m > 0 else -200
+    g1 = [m for m in win if lk(m) > -70]
+    if not g1:
+        return -120.0
+    rel = lk(sum(g1) / len(g1)) - 10
+    g2 = [m for m in g1 if lk(m) > rel]
+    return round(lk(sum(g2) / len(g2)), 2) if g2 else -120.0
+
+
+def short_term(vals):
+    return [lufs_of(vals[i:i + 30]) for i in range(0, max(1, len(vals) - 29), 5)]
+
+
+def band_db(bands_rows):
+    """Average energy per band (dB, absolute) over the rows."""
+    if not bands_rows:
+        return [-120.0] * 8
+    return [db(math.sqrt(sum(r[k] ** 2 for r in bands_rows) / len(bands_rows))) for k in range(8)]
+
+
+def corr_of(vals, i=(4, 5, 8)):
+    num = sum(v[i[2]] for v in vals) / len(vals)
+    den = math.sqrt((sum(v[i[0]] ** 2 for v in vals) / len(vals)) * (sum(v[i[1]] ** 2 for v in vals) / len(vals)))
+    return round(num / den, 3) if den > 1e-12 else None
+
+
+# ---------------------------------------------------------------- the report
+ROLE_ORDER = ["lead", "kick", "snare", "bass", "drums", "vocal", "harmony", "guitar", "keys", "synth", "strings", "pad", "fx"]
+
+
+def role(name):
+    n = name.lower()
+    pats = [("lead", r"\blead\b|lead vo|main vo"), ("harmony", r"harm|bgv|backing|double|dbl|choir|\bbv"),
+            ("vocal", r"vox|vocal|voice|sing"), ("kick", r"kick|\bkik|\bbd\b"), ("snare", r"snare|\bsd\b|clap"),
+            ("bass", r"bass|\bsub\b|808"), ("drums", r"drum|perc|hat|cymbal|overhead|\boh\b|tom|room|loop"),
+            ("guitar", r"gtr|guitar|acoustic"), ("keys", r"key|piano|rhodes|organ|wurl"), ("synth", r"synth|lead syn|arp"),
+            ("strings", r"string|violin|cello|viola"), ("pad", r"pad|atmos|drone"), ("fx", r"fx|riser|sweep|noise|impact")]
+    for r, p in pats:
+        if re.search(p, n):
+            return r
+    return "other"
+
+
+def rank(name):
+    r = role(name)
+    return ROLE_ORDER.index(r) if r in ROLE_ORDER else len(ROLE_ORDER)
+
+
+def analyse(cap, prefs=None, target=None, bpb=4):
+    """Findings from a capture. `target`: 8 band levels (relative dB) for Main from `tonal`, optional."""
+    prefs = prefs or {}
+    tg = (prefs.get("targets") or {})
+    t_lufs, t_tp = float(tg.get("lufs", -14)), float(tg.get("true_peak", -1))
+    tracks = {}
+    for tid, t in cap["tracks"].items():
+        rows = [r for r in t["blocks"] if r[2]]                       # playing only
+        if len(rows) < 10:
+            continue
+        tracks[tid] = dict(name=t["name"], main=t.get("main", False), rows=rows, vals=[r[5:] for r in rows],
+                           beats=[r[1] for r in rows], fader=rows[-1][3])
+    F = []
+    n = 0
+
+    def add(**f):
+        nonlocal n
+        n += 1
+        f.setdefault("id", f"live-{n}")
+        f.setdefault("tool", "probe")
+        f.setdefault("group", "live")
+        f.setdefault("applies", "manual")
+        F.append(f)
+
+    def bars(b0, b1):
+        return f"bars {int(b0 // bpb) + 1}-{int(b1 // bpb) + 1}"
+
+    main = next((t for t in tracks.values() if t["main"]), None)
+    span = ""
+    if main:
+        span = bars(min(main["beats"]), max(main["beats"]))
+        L = integrated(main["vals"])
+        st = short_term(main["vals"])
+        pk = db(max(max(v[2], v[3]) for v in main["vals"]))
+        if pk > t_tp:
+            add(kind="peak", severity="high" if pk > 0 else "medium", track="Main", where=span,
+                problem=f"Main peaks at {pk:+.1f} dBFS (sample peak; true peak is higher) against your ceiling of {t_tp:+.1f} dBTP.",
+                fix=f"Lower the limiter ceiling or the gain into it by about {pk - t_tp + 0.3:.1f} dB, then check a bounce "
+                    f"with `hypnomix measure` (true peak).", value=pk)
+        if abs(L - t_lufs) > 1.0:
+            add(kind="loudness", severity="low", track="Main", where=span,
+                problem=f"Main measured {L:.1f} LUFS over what was played (target {t_lufs:.0f}); loudest 3 s {max(st):.1f} LUFS.",
+                fix=("Turn the limiter's gain " + ("up" if L < t_lufs else "down") + f" by about {abs(L - t_lufs):.1f} dB "
+                     "(only if what you played is representative of the song)."), value=L)
+        lc = corr_of(main["vals"], (9, 10, 11))
+        if lc is not None and lc < 0.8 and db(math.sqrt(sum(v[9] ** 2 for v in main["vals"]) / len(main["vals"]))) > -40:
+            add(kind="low-end-mono", severity="medium" if lc < 0.5 else "low", track="Main", where=span,
+                problem=f"The low end (below 120 Hz) is not mono on Main: L/R correlation {lc:.2f} (1.0 = mono).",
+                fix="Find the wide bass part (a stereo bass or synth, a widened kick) and make it mono below 120 Hz with "
+                    "Utility (Bass Mono) on that track, or on Main as a last resort.", value=lc)
+        c = corr_of(main["vals"])
+        if c is not None and c < 0.2:
+            add(kind="width", severity="medium", track="Main", where=span,
+                problem=f"The mix is very wide or out of phase: L/R correlation {c:.2f}. It will lose parts in mono.",
+                fix="Check `hypnomix translate` on a bounce (mono); look for a track with its polarity flipped or a wide effect.",
+                value=c)
+        if target:
+            mb = band_db([v[12:20] for v in main["vals"]])
+            tot = 10 * math.log10(sum(10 ** (x / 10) for x in mb) or 1e-12)
+            rel = [x - tot for x in mb]
+            gaps = [(rel[k] - target[k], k) for k in range(8)]
+            med = sorted(g for g, _ in gaps)[4]
+            for g, k in gaps:
+                g -= med
+                if abs(g) > 2.0:
+                    add(kind="tonal", severity="low", track="Main", where=span,
+                        problem=f"{BANDS[k][0]} ({BANDS[k][1]}-{BANDS[k][2]} Hz) is {abs(g):.1f} dB "
+                                f"{'over' if g > 0 else 'under'} your tonal target.",
+                        fix=f"{'Cut' if g > 0 else 'Boost'} about {min(abs(g), 3):.1f} dB around there on the part that "
+                            "carries that band (or gently on Main).", value=round(g, 1))
+
+    # tracks: clipping into the next device, frequency fights, vocal level by section
+    tl = [t for t in tracks.values() if not t["main"]]
+    for t in tl:
+        pk = db(max(max(v[2], v[3]) for v in t["vals"]))
+        if pk > 0:
+            add(kind="track-peak", severity="low", track=t["name"], where=bars(min(t["beats"]), max(t["beats"])),
+                problem=f"{t['name']} peaks at {pk:+.1f} dBFS after its devices. Live doesn't clip inside a track, but a "
+                        "plug-in that models hardware after it (or a bounce of the track) will.",
+                fix=f"Turn the last device's output (or a Utility at the end) down by {pk + 3:.0f} dB and the fader up by the same.",
+                value=pk)
+    # masking: for each 100 ms block shared by two tracks
+    by_time = {}
+    for tid, t in tracks.items():
+        if t["main"]:
+            continue
+        for r in t["rows"]:
+            by_time.setdefault(round(r[0], 1), {})[tid] = r[5 + 12:5 + 20]
+    pairs = {}
+    for slot in by_time.values():
+        if len(slot) < 2:
+            continue
+        ids = sorted(slot)
+        lvl = {i: [db(x) + tracks[i]["fader"] for x in slot[i]] for i in ids}
+        top = [max(lvl[i][k] for i in ids) for k in range(8)]
+        for a in range(len(ids)):
+            for b in range(a + 1, len(ids)):
+                A, B = ids[a], ids[b]
+                key = (A, B)
+                e = pairs.setdefault(key, dict(both=0, band=[0] * 8))
+                if max(lvl[A]) < -60 or max(lvl[B]) < -60:
+                    continue
+                e["both"] += 1
+                for k in range(1, 7):             # sub and air: not fights anyone hears as "mud"
+                    la, lb = lvl[A][k], lvl[B][k]
+                    if la > -50 and lb > -50 and abs(la - lb) < 6 and min(la, lb) > top[k] - 9:
+                        e["band"][k] += 1
+    fights = []
+    for (A, B), e in pairs.items():
+        if e["both"] < 30:
+            continue
+        k = max(range(8), key=lambda j: e["band"][j])
+        frac = e["band"][k] / e["both"]
+        if frac >= 0.3:
+            fights.append((frac, A, B, k, e["both"]))
+    fights.sort(reverse=True)
+    for frac, A, B, k, both in fights[:10]:
+        na, nb = tracks[A]["name"], tracks[B]["name"]
+        give, keep = (nb, na) if rank(na) <= rank(nb) else (na, nb)
+        lo, hi = BANDS[k][1], BANDS[k][2]
+        f0 = int(math.sqrt(lo * hi))
+        add(kind="masking", severity="medium" if frac >= 0.5 else "low", track=give, where=f"{BANDS[k][0]} {lo}-{hi} Hz",
+            problem=f"{na} and {nb} sit on top of each other in the {BANDS[k][0]} band ({lo}-{hi} Hz) "
+                    f"{frac:.0%} of the time they play together (measured after their plug-ins).",
+            fix=f"Give {keep} the room: on {give}, EQ Eight bell around {f0} Hz, -2 to -3 dB, Q 1.0 "
+                f"(or a dynamic cut keyed from {keep}).", value=round(frac, 2), other=keep)
+    # vocal vs band, by 8-bar section
+    leads = [t for t in tl if role(t["name"]) == "lead"] or [t for t in tl if role(t["name"]) == "vocal"]
+    if main and leads:
+        ld = max(leads, key=lambda t: len(t["rows"]))
+        sec = 8 * bpb
+        def by_sec(t):
+            out = {}
+            for r in t["rows"]:
+                out.setdefault(int(r[1] // sec), []).append(r[5:])
+            return out
+        ls, ms = by_sec(ld), by_sec(main)
+        diffs = {}
+        for s, v in ls.items():
+            if s in ms and len(v) >= 20:
+                lv = lufs_of(v) + ld["fader"]
+                if lv > -50:
+                    diffs[s] = lv - lufs_of(ms[s])
+        if len(diffs) >= 3:
+            med = sorted(diffs.values())[len(diffs) // 2]
+            for s, d in sorted(diffs.items()):
+                if abs(d - med) > 2.0:
+                    add(kind="vocal-balance", severity="medium" if abs(d - med) > 3 else "low", track=ld["name"],
+                        where=bars(s * sec, s * sec + sec - 1),
+                        problem=f"The lead vocal is {abs(d - med):.1f} dB {'louder' if d > med else 'quieter'} against the band "
+                                f"here than in the rest of the song.",
+                        fix=f"A volume ride of about {med - d:+.1f} dB on {ld['name']} over these bars (or check what the band "
+                            "does here).", value=round(d - med, 1))
+    sev = {"high": 0, "medium": 1, "low": 2, "info": 3}
+    F.sort(key=lambda f: sev.get(f.get("severity"), 4))
+    for i, f in enumerate(F, 1):
+        f["n"] = i
+    return F, tracks
+
+
+def report(capture, out_dir, set_path="", bpb=4, target_name=None):
+    from hypnomix.workflow import prefs as P, scan as S
+    cap = json.loads(Path(capture).read_text())
+    prefs = P.load()
+    target = None
+    if target_name:
+        try:
+            from hypnomix.ears import tonal
+            target = tonal.target_bands(target_name)
+        except Exception as e:                    # the tonal module is optional here
+            print(f"(no tonal target: {e})")
+    F, tracks = analyse(cap, prefs, target, bpb)
+    od = Path(out_dir)
+    (od / "raw").mkdir(parents=True, exist_ok=True)
+    notes = [f"Measured live by the probe: {len(tracks)} tracks over {cap.get('ended', 0) - cap.get('started', 0):.0f} s "
+             "of playback. Tracks are measured after their devices, before the fader (the fader is added)."]
+    if not any(t["main"] for t in tracks.values()):
+        notes.append("WARNING: no probe on Main, so loudness, peak and tone of the mix were not checked.")
+    (od / "findings.json").write_text(json.dumps({"set": set_path, "notes": notes, "findings": F}, indent=1))
+    (od / "scan.json").write_text(json.dumps({"mode": "live", "capture": str(Path(capture).resolve()),
+                                              "set": set_path, "at": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
+    S.write_review(od, set_path, F, notes, {"live": cap.get("ended", 0) - cap.get("started", 0)}, P.summary(prefs))
+    return F
+
+
+# ---------------------------------------------------------------- putting probes into a new set
+def insert(set_path, out=None, include_returns=True):
+    """Copy the probe from the track where you put it once into every track, return and Main, in a NEW set."""
+    import copy, gzip
+    import xml.etree.ElementTree as ET
+    from hypnomix.session import automation as A
+    src = Path(set_path)
+    tree = A.load(src)
+    root = tree.getroot()
+
+    def is_probe(d):
+        if not d.tag.startswith("MxDevice"):
+            return False
+        return any("HypnomixProbe" in (e.get("Value") or "") for e in d.iter() if e.tag in ("Name", "RelativePath", "Path", "UserName"))
+    proto = None
+    for d in root.iter():
+        if is_probe(d):
+            proto = d
+            break
+    if proto is None:
+        raise RuntimeError("no probe in this set yet: drag HypnomixProbe onto any one track, save the set, then run "
+                           "this again (Live writes the device's details into the set; hypnomix copies them)")
+    lists = []
+    for t in list(root.iter("AudioTrack")) + list(root.iter("MidiTrack")) + list(root.iter("GroupTrack")) + \
+            (list(root.iter("ReturnTrack")) if include_returns else []) + list(root.iter("MainTrack")) + list(root.iter("MasterTrack")):
+        devs = t.find("./DeviceChain/DeviceChain/Devices")
+        if devs is not None and not any(is_probe(d) for d in devs):
+            lists.append(devs)
+    npi = root.find(".//NextPointeeId")
+    nxt = int(npi.get("Value"))
+    for devs in lists:
+        new = copy.deepcopy(proto)
+        for e in new.iter():
+            if (e.tag.endswith("Target") or e.tag == "Pointee") and (e.get("Id") or "").isdigit():
+                e.set("Id", str(nxt))
+                nxt += 1
+        used = [int(d.get("Id")) for d in devs if (d.get("Id") or "").isdigit()]
+        new.set("Id", str(max(used) + 1 if used else 0))
+        devs.append(new)
+    npi.set("Value", str(nxt))
+    out = Path(out) if out else src.with_name(src.stem + " (probes).als")
+    if out.resolve() == src.resolve():
+        raise RuntimeError("refusing to overwrite the set: choose another --out")
+    A.save(tree, src, out)
+    return out, len(lists)
+
+
+# ---------------------------------------------------------------- CLI
+def app_up():
+    import urllib.request
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{PORT_APP}/api/probe/status", timeout=1).read()
+        return True
+    except Exception:
+        return False
+
+
+def app_call(path, body=None):
+    import urllib.request
+    req = urllib.request.Request(f"http://127.0.0.1:{PORT_APP}{path}", data=json.dumps(body or {}).encode() if body is not None else None,
+                                 headers={"Content-Type": "application/json"})
+    return json.loads(urllib.request.urlopen(req, timeout=10).read())
+
+
+def out_home():
+    from hypnomix.core import paths
+    return paths.out("probe")
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="hypnomix probe", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    d = sub.add_parser("device", help="write the probe device into your Live User Library")
+    d.add_argument("--out")
+    d.add_argument("--template")
+    i = sub.add_parser("insert", help="a new set with the probe on every track (copied from the one you placed)")
+    i.add_argument("set")
+    i.add_argument("--out")
+    i.add_argument("--no-returns", action="store_true")
+    s = sub.add_parser("status", help="which tracks are sending, loudness right now")
+    l = sub.add_parser("listen", help="record the probes while Live plays, then write a review")
+    l.add_argument("--secs", type=float, default=0, help="stop after this many seconds (default: when Live stops)")
+    l.add_argument("--bars", help="A-B: with --play, play these bars in Live (AbletonOSC)")
+    l.add_argument("--play", action="store_true")
+    l.add_argument("--label", default="")
+    l.add_argument("--set", default="", help="the Live set being played (for the review's jump links)")
+    l.add_argument("--out", help="review folder to write (default hypnomix-out/scan/<label or 'live'>)")
+    l.add_argument("--target", help="tonal target name from `hypnomix tonal build`")
+    r = sub.add_parser("report", help="a review from a saved capture")
+    r.add_argument("capture")
+    r.add_argument("--out", required=True)
+    r.add_argument("--set", default="")
+    r.add_argument("--bpb", type=int, default=4)
+    r.add_argument("--target")
+    a = ap.parse_args()
+
+    if a.cmd == "device":
+        lib = Path("~/Music/Ableton/User Library").expanduser()
+        out = a.out or (lib / "Presets" / "Audio Effects" / "Max Audio Effect" / "Hypnomix")
+        if not a.out and not lib.is_dir():
+            sys.exit("no Live User Library at ~/Music/Ableton/User Library: say where to write with --out FOLDER")
+        try:
+            od = build(out, a.template)
+        except FileNotFoundError as e:
+            sys.exit(str(e))
+        print(f"wrote {od / 'HypnomixProbe.amxd'}\n      {od / 'hypnomix_probe.js'}   (keep the two together)")
+        print("In Live: drag HypnomixProbe onto the LAST slot of a track (and one onto Main), or put it on one track, "
+              "save, and run `hypnomix probe insert SET.als` for every track.")
+        return
+    if a.cmd == "insert":
+        try:
+            out, n = insert(a.set, a.out, not a.no_returns)
+        except RuntimeError as e:
+            sys.exit(str(e))
+        from hypnomix.session import check as C
+        print(f"wrote {out}: probe added to {n} tracks (returns and Main included). The original is unchanged.")
+        err, warn, _ = C.check(str(out), against=a.set)
+        for e in err:
+            print(f"CHECK ERROR: {e}")
+        for w in warn[:6]:
+            print(f"check: {w}")
+        return
+    if a.cmd == "status":
+        rows = app_call("/api/probe/status") if app_up() else None
+        if rows is None:
+            hub = Hub().start()
+            time.sleep(1.5)
+            rows = hub.status()
+        else:
+            rows = rows["tracks"]
+        if not rows:
+            print("no probes are sending: is Live open with HypnomixProbe on your tracks?")
+        for t in rows:
+            seen = "live" if t["live"] else f"{t['seen']}s ago"
+            print(f"{'*' if t['main'] else ' '} {t['name'][:28]:<28} {seen:<9}"
+                  + (f" {t.get('momentary', -120):6.1f} LUFS-M  peak {t.get('peak', -120):6.1f}" if 'momentary' in t else ""))
+        return
+    if a.cmd == "report":
+        od = Path(a.out)
+        F = report(a.capture, od, a.set, a.bpb, a.target)
+        print(f"{len(F)} findings → {od / 'REVIEW.md'}")
+        return
+    # listen
+    label = a.label or "live"
+    od = Path(a.out) if a.out else Path("hypnomix-out") / "scan" / f"{safe(label)}-live"
+    use_app = app_up()
+    hub = None if use_app else Hub().start()
+    live = None
+    if a.play:
+        from hypnomix.live.osc import Live
+        live = Live()
+        b0, b1 = (int(x) for x in (a.bars or "1-9").split("-"))
+        live.play_from(b0, loop_bars=None)
+    (app_call("/api/probe/start", {"label": label}) if use_app else hub.begin(label))
+    print("recording what the probes hear" + (" (through the app)" if use_app else "") + "; Ctrl-C to stop")
+    t0 = time.time()
+    seen_play = False
+    try:
+        while True:
+            time.sleep(0.5)
+            el = time.time() - t0
+            if a.secs and el >= a.secs:
+                break
+            if live and a.bars:
+                b0, b1 = (int(x) for x in a.bars.split("-"))
+                try:
+                    if live.position() >= b1 * live.beats_per_bar():
+                        break
+                except Exception:
+                    pass
+            if not a.secs:
+                rows = app_call("/api/probe/status")["tracks"] if use_app else hub.status()
+                playing = any(r.get("playing") for r in rows)
+                seen_play |= playing
+                if seen_play and not playing:
+                    break
+    except KeyboardInterrupt:
+        pass
+    if live:
+        live.stop()
+    if use_app:
+        cap = Path(app_call("/api/probe/stop", {"song": label})["capture"])
+    else:
+        cap = hub.end(out_home(), label)
+    print(f"capture: {cap}")
+    F = report(cap, od, a.set, 4, a.target)
+    print(f"{len(F)} findings → {od / 'REVIEW.md'}")
+
+
+if __name__ == "__main__":
+    main()

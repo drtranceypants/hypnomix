@@ -28,6 +28,8 @@ TOKEN = secrets.token_urlsafe(18)
 LOCK = threading.Lock()
 JOB = {"id": 0, "status": "idle", "log": [], "title": "", "kind": "", "dir": "", "step": ""}
 LIVE = {"seq": 0, "cmd": None, "seen": 0.0, "dir": "", "cursor": -1}
+PROBE = {"hub": None, "error": ""}    # the probe hub (UDP from HypnomixProbe devices in Live)
+AB = {"id": "", "state": "A", "since": 0.0, "last": 0.0, "match": True, "acc": {}, "skip": 0.6}
 HIDDEN = {"app", "install"}            # not offered in the Tools tab (install asks questions; app is this)
 
 
@@ -159,7 +161,8 @@ def review_payload(d):
     return dict(dir=str(d), name=d.name, source=source, is_set=is_set, mode=meta.get("mode", "set" if is_set else "folder"),
                 findings=data["findings"], decisions=dec, ab=ab, prefs=P.summary(P.load()),
                 broken=[n for n in notes if "failed" in n or n.startswith("WARNING") or "did NOT run" in n],
-                fix_log=log[-6000:], suggested_out=(Path(source).stem + " (fixed).als") if is_set else "")
+                fix_log=log[-6000:], suggested_out=(Path(source).stem + " (fixed).als") if is_set else "",
+                ab_live=ab_spec(d), blind=json.loads((d / "blind.json").read_text()) if (d / "blind.json").exists() else [])
 
 
 def actionable(d):
@@ -192,7 +195,8 @@ def live_current():
     f = payload[act[i]["id"]]
     return dict(n=i + 1, of=len(act), left=left, id=f["id"], track=f.get("track") or f.get("tool"), where=f.get("where") or "",
                 severity=f.get("severity"), problem=f.get("problem", ""), fix=str(f.get("fix", "")).split("\n")[0][:240],
-                decision=dec.get(f["id"], {}).get("decision", ""), jump=f.get("jump"), song=d.name)
+                decision=dec.get(f["id"], {}).get("decision", ""), jump=f.get("jump"), song=d.name,
+                ab=ab_spec(d, f["id"]), match=AB["match"])
 
 
 def live_step(delta, undecided=False):
@@ -209,6 +213,66 @@ def live_step(delta, undecided=False):
     cur = live_current()
     if cur.get("jump"):
         live_send(dict(type="jump", **cur["jump"]))
+
+
+# ---------------------------------------------------------------- probe and in-Live A/B
+def ab_spec(d, fid=None):
+    f = Path(d) / "ab_live.json"
+    if not f.exists():
+        return None
+    spec = json.loads(f.read_text())
+    if fid is None:
+        return spec
+    it = spec.get("items", {}).get(fid)
+    if not it or not it.get("parts"):
+        return None
+    return dict(set=Path(spec["set"]).name, parts=it["parts"])
+
+
+def ab_set_state(fid, state, match=None):
+    if fid != AB["id"] or state != AB["state"]:
+        AB.update(id=fid, state=state, since=time.time(), last=0.0)
+    if match is not None:
+        AB["match"] = bool(match)
+
+
+def ab_gain():
+    """Loudness of A and B on Main while each plays (measured before the probe's own gain); B is matched to A."""
+    hub = PROBE["hub"]
+    if not hub or not AB["id"]:
+        return 0.0, None
+    rows = hub.last_main(max(AB["since"] + AB["skip"], AB["last"]))       # skip the moment of switching
+    acc = AB["acc"].setdefault(f"{AB['id']}|{AB['state']}", [0.0, 0])
+    for r in rows:
+        v = r[5]
+        acc[0] += v[0] ** 2 + v[1] ** 2
+        acc[1] += 1
+        AB["last"] = r[0] + 1e-6
+    a, b = AB["acc"].get(f"{AB['id']}|A"), AB["acc"].get(f"{AB['id']}|B")
+    if not (a and b and a[1] >= 30 and b[1] >= 30 and a[0] > 0 and b[0] > 0):
+        return 0.0, None
+    import math
+    diff = 10 * math.log10((a[0] / a[1]) / (b[0] / b[1]))          # A minus B, in dB
+    diff = max(-12.0, min(12.0, diff))
+    return (diff if AB["state"] == "B" and AB["match"] else 0.0), round(diff, 2)
+
+
+def blind_record(d, body):
+    f = Path(d) / "blind.json"
+    rows = json.loads(f.read_text()) if f.exists() else []
+    rows.append(dict(id=body["id"], chose=body["chose"], x=body.get("x", ""), at=time.strftime("%Y-%m-%d %H:%M"),
+                     listens=body.get("listens", 0)))
+    f.write_text(json.dumps(rows, indent=1))
+    mine = [r for r in rows if r["id"] == body["id"]]
+    return dict(n=len(mine), b=sum(1 for r in mine if r["chose"] == "B"))
+
+
+def start_probe_hub():
+    try:
+        from hypnomix.app.probe import Hub
+        PROBE["hub"] = Hub().start()
+    except Exception as e:                    # the port is taken (another app, or `hypnomix probe listen`)
+        PROBE["error"] = str(e)
 
 
 # ---------------------------------------------------------------- native file dialogs (macOS)
@@ -296,6 +360,13 @@ def make_handler(port):
                     since = int(q.get("since", -1))
                     cmd = LIVE["cmd"] if LIVE["seq"] > since >= 0 else None
                     return self.send(200, dict(seq=LIVE["seq"], cmd=cmd, current=live_current()))
+                if u.path == "/api/probe/status":
+                    hub = PROBE["hub"]
+                    return self.send(200, dict(tracks=hub.status() if hub else [], error=PROBE["error"],
+                                               recording=bool(hub and hub.capture is not None)))
+                if u.path == "/api/probe/cmd":            # each probe asks twice a second: its gain (A/B loudness match)
+                    g, diff = ab_gain() if q.get("main") == "1" else (0.0, None)
+                    return self.send(200, dict(gain_db=round(g, 2), ab_diff=diff))
                 if u.path == "/audio":
                     d = scan_dir(q["dir"])
                     f = d / "ab" / Path(unquote(q["f"])).name
@@ -337,6 +408,20 @@ def make_handler(port):
                     r = AL.handle_post(u.path, body)
                     if r:
                         return self.send(*r)
+                if u.path == "/api/ab/state":            # the device switched A / B (or loudness matching)
+                    ab_set_state(body["id"], body.get("state", "A"), body.get("match"))
+                    g, diff = ab_gain()
+                    return self.send(200, dict(state=AB["state"], match=AB["match"], diff=diff))
+                if u.path == "/api/ab/blind":
+                    return self.send(200, blind_record(scan_dir(LIVE["dir"]), body))
+                if u.path == "/api/probe/start":
+                    if not PROBE["hub"]:
+                        return self.send(409, {"error": "the probe receiver is not running: " + PROBE["error"]})
+                    PROBE["hub"].begin(body.get("label", ""))
+                    return self.send(200, {"recording": True})
+                if u.path == "/api/probe/stop":
+                    f = PROBE["hub"].end(work() / "captures", body.get("song", ""))
+                    return self.send(200, {"capture": str(f)})
                 if self.headers.get("X-Hypnomix") != TOKEN:
                     return self.send(403, {"error": "open the app's own page to do this"})
                 if u.path == "/api/pick":
@@ -385,6 +470,17 @@ def make_handler(port):
                             argv.append("--" + flag.replace("_", "-"))
                     run_job("fix", f"Applying approved fixes: {d.name}", [("Applying only what you approved", argv, True)], d)
                     return self.send(200, {"job": JOB["id"], "out": out})
+                if u.path == "/api/ab/build":
+                    d = scan_dir(body["dir"])
+                    argv = ["abset", str(d)] + (["--key", str(body["key"])] if body.get("key") else [])
+                    run_job("abset", f"A/B set for Live: {d.name}", [("Building every fix as a switch (changes nothing)", argv, True)], d)
+                    return self.send(200, {"job": JOB["id"]})
+                if u.path == "/api/probe/report":
+                    cap = Path(body["capture"])
+                    d = work() / "scan" / safe((body.get("name") or cap.stem) + " (live)")
+                    argv = ["probe", "report", str(cap), "--out", str(d)] + (["--set", body["set"]] if body.get("set") else [])
+                    run_job("probe", f"Live check: {d.name}", [("Reading what the probes heard", argv, True)], d)
+                    return self.send(200, {"job": JOB["id"], "dir": str(d)})
                 if u.path == "/api/tool":
                     from hypnomix import cli
                     if body.get("cmd") not in cli.COMMANDS or body["cmd"] in HIDDEN:
@@ -432,6 +528,7 @@ def main():
         srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(a.port))
     except OSError:
         sys.exit(f"port {a.port} is in use: is the hypnomix app already running? (http://127.0.0.1:{a.port})")
+    start_probe_hub()
     url = f"http://127.0.0.1:{a.port}/"
     print(f"hypnomix app: {url}   (this computer only; Ctrl-C to stop)\nsongs are kept in {work()}", flush=True)
     if not a.no_open:
