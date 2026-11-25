@@ -67,6 +67,7 @@ loop brace on the spot, clip open. See [docs/APP.md](docs/APP.md).
 ```
 hypnomix prefs                                   # once: your targets, protected tracks, how you like to review
 hypnomix scan "Song.als" --mix "Song.wav"        # every check at once; changes nothing
+hypnomix scan "Song.rpp"                         # or a REAPER project (REAPER can stay open)
 hypnomix scan "raw takes/"                       # or a folder of recordings / stems from any DAW
 #   → REVIEW.md: clicks, cuts, spikes, timing, vocal pitch, distortion, sidechains, loudness, noise…
 hypnomix ab     <scan folder>                    # before/after clips for each fix, level-matched
@@ -74,6 +75,11 @@ hypnomix review <scan folder> --serve            # a page: play A and B, click a
 hypnomix fix  <scan folder> --decide smooth-3=approve,timing-7=skip      # or record decisions by hand
 hypnomix fix  <scan folder> --approved --out "Song (fixed).als"          # apply only what you approved
 ```
+
+**REAPER:** `hypnomix project Song.rpp` shows what is in a project (folders, items, takes, plug-ins, automation)
+and `--render` renders its tracks without opening REAPER. `scan` on an `.rpp` checks missing files, item edges and
+comp cuts, vocal pitch and doubles, plug-ins, the source recordings, boosted noise and automation; its project
+changes are listed for you to make in REAPER for now (writing a fixed `.rpp` is next).
 
 The scan runs every check below in parallel and writes one review list, most severe first. You (or an AI agent,
 item by item with you) approve what to fix; `fix` writes only those changes into **one new set** next to the

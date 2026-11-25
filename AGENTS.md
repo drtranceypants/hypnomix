@@ -13,6 +13,10 @@ A command-line mixing and mastering toolkit (`hypnomix <command>`). Three kinds 
 - **File tools:** read audio files (stems, takes, mixes). Work with any DAW. Never need Live.
 - **Session tools:** read a saved Ableton Live set (`.als`, gzipped XML) plus the audio its clips play. Live can
   be closed. Tools that change a set always write a **new** `.als` next to the original.
+- **Project tools (REAPER):** read a REAPER project (`.rpp`, plain text) through the shared model in
+  `hypnomix/project/` (`project`, and `scan` on an `.rpp`). Times are in seconds. REAPER can stay open: nothing is
+  written next to the project. The same model also reads `.als` sets; new tools that should work in both DAWs
+  belong there (`project.load(path)`), not on raw XML.
 - **Live tools:** drive the open Live set through AbletonOSC (`hypnomix live`, `loop`, `diagnose`, `chain`).
   The last resort, not the first: they need Live running, a remote script, and a person at the screen.
 

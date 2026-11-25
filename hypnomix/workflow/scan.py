@@ -2,6 +2,7 @@
 """First-pass scan: run every hypnomix check on a song, change NOTHING, and write one review list.
 
   hypnomix scan SET.als [--mix MIX.wav] [--ref INSTRUMENTAL.wav] [--out DIR] [--only GROUP ...]
+  hypnomix scan SONG.rpp             (a REAPER project: see `hypnomix.workflow.scan_project` for its groups)
   hypnomix scan FOLDER               (raw recordings or exported stems, any DAW: no Live set needed)
   hypnomix scan --merge DIR          (rebuild REVIEW.md from group results, e.g. after parallel agents)
 
@@ -55,7 +56,7 @@ GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "devices", "
 FOLDER_GROUPS = ["recordings", "stems"]
 AUDIO_EXT = (".wav", ".aif", ".aiff", ".flac")
 PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow"]         # written by `prep|automix|master --plan`
-ALL_GROUPS = list(dict.fromkeys(GROUPS + FOLDER_GROUPS + PLAN_GROUPS))
+ALL_GROUPS = list(dict.fromkeys(GROUPS + FOLDER_GROUPS + PLAN_GROUPS + ["recordings"]))
 SEV = {"high": 0, "medium": 1, "low": 2, "info": 3}
 VOCAL_LABELS = ("Lead Vocal", "Vocal", "Harmony", "Backing Vocal")
 
@@ -522,7 +523,7 @@ def g_effects(als, od, a):
     return findings, notes
 
 
-def g_mix(als, od, a):
+def g_mix(als, od, a, tempo=None):
     if not a.mix:
         return [], ["mix: skipped (give --mix MIX.wav for loudness, true peak, qc and translation)"]
     findings = []
@@ -536,7 +537,8 @@ def g_mix(als, od, a):
     try:  # sections: needs the tempo, which a set knows
         from hypnomix.session import automation as aa
         from hypnomix.ears import sections as SE
-        tempo = float(aa.load(als).getroot().find(".//Tempo/Manual").get("Value")) if Path(als).is_file() else None
+        if tempo is None and Path(als).is_file() and Path(als).suffix.lower() == ".als":
+            tempo = float(aa.load(als).getroot().find(".//Tempo/Manual").get("Value"))
         if tempo:
             r = SE.analyse(a.mix, bpm=tempo)
             save(od / "raw" / "sections.json", json.dumps(r, indent=1, default=str))
@@ -958,9 +960,11 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
                    if r.get("new") and r.get("new") != r.get("old")}
     show = lambda t: f"{newname[t]} (now '{t}')" if t in newname else (t or "-")
     counts = {s: sum(1 for f in findings if f.get("severity") == s) for s in SEV}
+    rpp_ = str(setp).lower().endswith(".rpp")
     L = [f"# First-pass review: {Path(setp).stem if setp else od.name}", "",
-         f"Set: `{setp}`  ", "Nothing has been changed. Go through the items one at a time: **approve**, **skip** "
-         "or **change** each, then `hypnomix fix` writes every approved set change into ONE new set.", "",
+         f"{'Project' if rpp_ else 'Set'}: `{setp}`  ", "Nothing has been changed. Go through the items one at a time: "
+         "**approve**, **skip** or **change** each" + (", then make the approved changes (see Apply)." if rpp_ else
+         ", then `hypnomix fix` writes every approved set change into ONE new set."), "",
          f"**{len(findings)} findings:** {counts['high']} high, {counts['medium']} medium, {counts['low']} low, "
          f"{counts['info']} info", ""]
     if pref_lines:
@@ -999,6 +1003,13 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
         else:
             L.append("- decision: [ ] approve  [ ] skip  [ ] change: ")
         L.append("")
+    if str(setp).lower().endswith(".rpp"):
+        L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision', "```",
+              "REAPER project: *manual* items say what to change in REAPER; *audio* items (tune, dehiss, deess, "
+              "breaths) become new files with `hypnomix fix` as for any project, and you swap them in as new takes. "
+              "Writing approved project changes into a new .rpp comes with the next hypnomix release."]
+        (od / "REVIEW.md").write_text("\n".join(L) + "\n")
+        return
     L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision',
           f'hypnomix fix "{od}" --approved --out "<Song> (fixed).als"   # apply only what was approved', "```",
           "Close the set in Live first. `fix` writes approved *set* changes in one new set next to the original; "
@@ -1011,7 +1022,7 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix scan", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("als", nargs="?", metavar="SET.als|FOLDER")
+    ap.add_argument("als", nargs="?", metavar="SET.als|SONG.rpp|FOLDER")
     ap.add_argument("--mix", help="a bounce of the full mix (loudness, true peak, release checks)")
     ap.add_argument("--ref", help="mix or instrumental for tuning and key (vocals); defaults to --mix")
     ap.add_argument("--backing", metavar="INSTRUMENTAL.wav", help="the song without vocals (sample-aligned): the chord "
@@ -1020,7 +1031,7 @@ def main():
     ap.add_argument("--like", metavar="REFERENCE.wav", help="a finished song you want this mix to sit next to: "
                     "tone, dynamics and width differences become proposals (needs --mix)")
     ap.add_argument("--out", help="output folder (default hypnomix-out/scan/<song>)")
-    ap.add_argument("--only", action="append", choices=sorted(set(GROUPS + FOLDER_GROUPS)), help="run only these groups (repeatable)")
+    ap.add_argument("--only", action="append", choices=sorted(set(GROUPS + FOLDER_GROUPS + ["effects", "recordings"])), help="run only these groups (repeatable)")
     ap.add_argument("--vocal-track", action="append", help="vocal tracks to check (default: from `name`)")
     ap.add_argument("--lead-track", help="the lead vocal (default: from `name`, else the vocal that sings most)")
     ap.add_argument("--timing-track", action="append", help="instrument tracks for timing (default: from `name`)")
@@ -1042,13 +1053,18 @@ def main():
     folder = als.is_dir()
     if folder and not audio_files(als):
         sys.exit(f"no audio files (wav, aif, flac) in {als}")
+    reaper = not folder and als.suffix.lower() == ".rpp"
     od = out_at(a.out, "scan", als.stem if not folder else als.name)
-    mine = FOLDER_GROUPS if folder else GROUPS
+    if reaper:
+        from hypnomix.workflow import scan_project as SP
+        mine = SP.GROUPS
+    else:
+        mine = FOLDER_GROUPS if folder else GROUPS
     groups = a.only or mine
     wrong = [g for g in groups if g not in mine]
     if wrong:
-        sys.exit(f"{', '.join(wrong)}: not a group for a {'folder' if folder else 'Live set'} (use {', '.join(mine)})")
-    info = {"set": str(als), "mode": "folder" if folder else "set", "mix": a.mix, "ref": a.ref, "backing": a.backing, "key": a.key, "lead": None,
+        sys.exit(f"{', '.join(wrong)}: not a group for a {'folder' if folder else 'REAPER project' if reaper else 'Live set'} (use {', '.join(mine)})")
+    info = {"set": str(als), "mode": "folder" if folder else "reaper" if reaper else "set", "mix": a.mix, "ref": a.ref, "backing": a.backing, "key": a.key, "lead": None,
             "set_mtime": als.stat().st_mtime}
     (od / "raw").mkdir(exist_ok=True)
     sj = od / "scan.json"
@@ -1058,6 +1074,9 @@ def main():
             info = {k: (v if v is not None else old.get(k)) for k, v in info.items()}
     sj.write_text(json.dumps(info, indent=1))
     print(f"scanning {als.name}: {', '.join(groups)} → {od}")
+    if reaper:
+        SP.run(a, als, od, groups)
+        return finish(od)
     role = roles(als, od) if {"names", "timing", "vocals", "devices"} & set(groups) else {}
     if role:
         vox = [t for t, r in role.items() if is_vocal(r["label"])]
@@ -1083,6 +1102,10 @@ def main():
 
     with ThreadPoolExecutor(max_workers=max(1, min(a.jobs, len(groups)))) as ex:
         list(ex.map(run, groups))
+    finish(od)
+
+
+def finish(od):
     findings, notes = merge(od)
     counts = {s: sum(1 for f in findings if f.get("severity") == s) for s in SEV}
     print(f"\n{len(findings)} findings ({counts['high']} high, {counts['medium']} medium, {counts['low']} low, "

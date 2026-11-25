@@ -1,4 +1,4 @@
-"""hypnomix: a mixing and mastering engineer for Ableton Live, driven by you or by Claude Code.
+"""hypnomix: a mixing and mastering engineer for Ableton Live and REAPER, driven by you or by Claude Code.
 
 Run `hypnomix` for the command list, `hypnomix <command> -h` for each command's help.
 """
@@ -50,6 +50,9 @@ GROUPS = [
         ("live", "hypnomix.live.osc", "mixer, devices, VST parameters, transport, snapshots, arm/record"),
         ("loop", "hypnomix.live.loop", "play bars → record → measure → compare; one-change A/Bs"),
         ("diagnose", "hypnomix.session.doctor", "solo every group in the loudest section: who owns the sub, bass, vocal band"),
+    ]),
+    ("Projects: REAPER (.rpp) and Live (.als)", [
+        ("project", "hypnomix.project.show", "look inside a REAPER or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
     ]),
     ("Session files (.als, Live closed or open)", [
         ("render", "hypnomix.session.render", "render tracks from a .als to stems without opening Live (clip gain, fades, warps)"),
