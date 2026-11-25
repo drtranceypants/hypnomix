@@ -22,6 +22,10 @@ Every clip edge gets Live's default ~3 ms fade so cuts don't click.
 Clips are played like Live: from the start marker, and looped clips wrap from loop end to loop start
 (missing this put whole phrases in the wrong place on sets that use looped vocal clips).
 
+Render cache: each rendered clip is kept (hypnomix home/cache/render, capped at HYPNOMIX_RENDER_CACHE_MB, default
+2048) keyed by its source file, its settings, the tempo and the sample rate, so rendering the same set again only
+renders what changed, bit for bit the same. --no-cache (or HYPNOMIX_NO_CACHE=1) renders everything again.
+
 Limits: warped clips are rendered from their first and last warp markers (a straight-line stretch); clips
 with several warp markers that bend the timing will drift between markers. Unwarped clips are exact.
 Output is 32-bit float, so nothing clips. Write re-renders to a NEW folder: Live caches audio by file
@@ -54,6 +58,116 @@ def clip_source(c, als, sources):
         if alt.exists():
             return alt
     return cand
+
+
+# ---------------------------------------------------------------- render cache
+# Each rendered clip is kept under <hypnomix home>/cache/render/, keyed by a hash of: the source file (path, mtime,
+# size), the clip's XML (warp markers, loop, fades, gain: everything but where it sits on the timeline), its
+# length, the tempo, the sample rate, --tighten and the stretcher in use. A changed clip or file is a new key, so
+# a stale render is never reused. Size cap: HYPNOMIX_RENDER_CACHE_MB (default 2048), oldest-used removed first.
+# Off with --no-cache or HYPNOMIX_NO_CACHE=1. Clips are kept as 32-bit float (what render writes; clips on one
+# Arrangement track never overlap, so the written files are bit for bit the same with or without the cache).
+CACHE_VERSION = 1
+CACHE_STATS = {"hits": 0, "misses": 0, "writes": 0}
+_PUTS = [0]
+_HAVE_RB = [bool(shutil.which("rubberband"))]       # the stretcher in use is part of every key
+
+
+def cache_dir():
+    d = os.environ.get("HYPNOMIX_RENDER_CACHE")
+    if d:
+        return Path(d).expanduser()
+    return Path(os.environ.get("HYPNOMIX_HOME", "~/.hypnomix")).expanduser() / "cache" / "render"
+
+
+def cache_enabled(flag=None):
+    if flag is not None:
+        return bool(flag)
+    return os.environ.get("HYPNOMIX_NO_CACHE", "") in ("", "0")
+
+
+def cache_key(c, src, spb, SR, tighten, beats, ls, le, start_rel, loop_on):
+    import copy, hashlib, tempfile
+    try:
+        st = Path(src).stat()
+    except OSError:
+        return None
+    if not os.environ.get("HYPNOMIX_RENDER_CACHE") and \
+            str(Path(src).resolve()).startswith(str(Path(tempfile.gettempdir()).resolve())):
+        return None                      # throwaway files (tests, previews) are not worth keeping
+    cc = copy.deepcopy(c)
+    cc.tail = None
+    cc.attrib.pop("Time", None)
+    for tag in ("CurrentStart", "CurrentEnd"):
+        el = cc.find(tag)
+        if el is not None:
+            cc.remove(el)
+    h = hashlib.sha256(ET.tostring(cc))
+    h.update(repr((CACHE_VERSION, str(Path(src).resolve()), st.st_mtime_ns, st.st_size, round(spb, 12), SR,
+                   float(tighten or 0), round(beats, 9), ls, le, start_rel, loop_on,
+                   _HAVE_RB[0])).encode())
+    return h.hexdigest()
+
+
+def cache_get(key):
+    if not key:
+        return None
+    p = cache_dir() / key[:2] / f"{key}.npy"
+    try:
+        a = np.load(p, allow_pickle=False)
+    except (OSError, ValueError):
+        CACHE_STATS["misses"] += 1
+        return None
+    try:
+        os.utime(p)                      # recently used: kept longest when the cache is trimmed
+    except OSError:
+        pass
+    CACHE_STATS["hits"] += 1
+    return a
+
+
+def cache_put(key, seg):
+    if not key:
+        return
+    d = cache_dir() / key[:2]
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        tmp = d / f".{key}.{os.getpid()}.tmp.npy"
+        np.save(tmp, np.asarray(seg, dtype=np.float32), allow_pickle=False)
+        os.replace(tmp, d / f"{key}.npy")
+        CACHE_STATS["writes"] += 1
+    except OSError:
+        return
+    _PUTS[0] += 1
+    if _PUTS[0] % 50 == 1:
+        cache_trim()
+
+
+def cache_trim(cap_mb=None):
+    """Remove the least recently used entries until the cache is under its cap. Returns bytes removed."""
+    cap = float(cap_mb if cap_mb is not None else os.environ.get("HYPNOMIX_RENDER_CACHE_MB", 2048)) * 1e6
+    root = cache_dir()
+    if not root.exists():
+        return 0
+    files = []
+    for f in root.glob("*/*.npy"):
+        try:
+            st = f.stat()
+            files.append((st.st_mtime, st.st_size, f))
+        except OSError:
+            pass
+    total = sum(sz for _, sz, _ in files)
+    removed = 0
+    for _, sz, f in sorted(files):
+        if total <= cap:
+            break
+        try:
+            f.unlink()
+            total -= sz
+            removed += sz
+        except OSError:
+            pass
+    return removed
 
 
 _STRETCH = {}
@@ -107,7 +221,98 @@ def song_end(root):
     return end, strays
 
 
-def render_track(t, als, spb, N, SR, sources, tighten, warn):
+def clip_audio(c, src, spb, SR, tighten, warn, s, e, ls, le, start_rel, loop_on):
+    """One clip as Live plays it (start marker, loops, warp, clip gain, fades), length (e - s) beats, or None."""
+    multi = None
+    if v(c, "./IsWarped") == "true":
+        m = sorted((float(w.get("SecTime")), float(w.get("BeatTime"))) for w in c.find("./WarpMarkers"))
+        if len(m) > 2:
+            multi = m                        # follow every marker (below), not one straight stretch
+        (s0, b0), (s1, b1) = m[0], m[-1]
+        slope = (s1 - s0) / (b1 - b0) if b1 != b0 else spb
+        to_sec = lambda b, s0=s0, b0=b0, slope=slope: s0 + (b - b0) * slope   # clip beats -> source seconds
+        per_beat = 1.0                                     # loop/start values are in beats
+    else:
+        slope = spb
+        to_sec = lambda x: x
+        per_beat = 1 / spb                                 # unwarped: loop/start values are in seconds
+    k = spb / slope                          # how much longer the clip plays than it was recorded
+    clip_len = int((e - s) * spb * SR)
+    if multi is not None:
+        # many warp markers (transient-warped drums, edited takes): every stretch between two markers keeps
+        # its own timing. Read straight from the source along the marker map (varispeed per segment: timing
+        # exact, pitch may waver a little where a segment is stretched a lot)
+        try:
+            from hypnomix.core import dsp
+            srcy, _ = dsp.load(src, SR)
+        except Exception as e_:
+            if warn is not None:
+                warn.append(f"could not read {Path(src).name} ({type(e_).__name__}): clip left out of the render")
+            return None
+        srcm = srcy.mean(1)
+        ms, mb = np.array([x for x, _ in multi]), np.array([b for _, b in multi])
+        eb = np.arange(clip_len) / (spb * SR)                     # beats since the clip started playing
+        if loop_on and le > ls:
+            cb = ls + ((start_rel + eb) % (le - ls))
+        else:
+            cb = ls + start_rel + eb
+        lo_slope = (ms[1] - ms[0]) / max(1e-9, mb[1] - mb[0])
+        hi_slope = (ms[-1] - ms[-2]) / max(1e-9, mb[-1] - mb[-2])
+        sec = np.interp(cb, mb, ms)
+        sec = np.where(cb < mb[0], ms[0] + (cb - mb[0]) * lo_slope, sec)       # Live extends the end segments
+        sec = np.where(cb > mb[-1], ms[-1] + (cb - mb[-1]) * hi_slope, sec)
+        seg = np.interp(sec * SR, np.arange(len(srcm)), srcm, left=0.0, right=0.0)
+    else:
+        try:
+            a = stretched(src, k, SR)        # pitch-preserving stretch of the whole source
+        except Exception as e_:              # a file nothing can decode: leave this clip out, say so
+            if warn is not None:
+                warn.append(f"could not read {Path(src).name} ({type(e_).__name__}): clip left out of the render")
+            return None
+    # play it like Live: start at the start marker; a looped clip wraps from loop end back to loop start
+    need = (e - s) * per_beat if multi is None else 0.0
+    pos = ls + start_rel
+    parts = []
+    while multi is None and need > 1e-9 and len(parts) < 10000:
+        stop = le if (loop_on and le > pos) else pos + need
+        take = min(need, stop - pos)
+        i0, i1 = int(round(to_sec(pos) * k * SR)), int(round(to_sec(pos + take) * k * SR))
+        piece = a[max(0, i0):max(0, i1)]
+        if i0 < 0:
+            piece = np.concatenate([np.zeros(min(-i0, i1 - i0)), piece])
+        parts.append(piece)
+        need -= take
+        pos = ls if loop_on else pos + take
+    if multi is None:
+        seg = np.concatenate(parts) if parts else np.zeros(0)
+    seg = np.pad(seg, (0, max(0, clip_len - len(seg))))[:clip_len]
+    seg = seg * float(v(c, "./SampleVolume") or 1)
+    fi = float(v(c, "./Fades/FadeInLength") or 0) * spb * SR       # Live stores clip fades in beats
+    fo = float(v(c, "./Fades/FadeOutLength") or 0) * spb * SR
+    seg = seg[: int((e - s) * spb * SR)].copy()
+    if tighten and len(seg) > SR // 10:
+        env = np.sqrt(np.maximum(np.convolve(seg ** 2, np.ones(441) / 441, "same"), 0))
+        edb = 20 * np.log10(env + 1e-12)
+        on = np.flatnonzero(edb > edb.max() - tighten)
+        if len(on):
+            a0, f0 = max(0, on[0] - int(0.06 * SR)), int(0.04 * SR)
+            b0, f1 = min(len(seg), on[-1] + int(0.12 * SR)), int(0.15 * SR)
+            m = np.zeros(len(seg))
+            m[a0:b0] = 1
+            r0 = slice(max(0, a0 - f0), a0); m[r0] = np.linspace(0, 1, r0.stop - r0.start)
+            r1 = slice(b0, min(len(seg), b0 + f1)); m[r1] = np.linspace(1, 0, r1.stop - r1.start)
+            seg = seg * m
+    # Live's default ~3 ms edge fades, unless the clip's fade was set explicitly (an unrolled loop's seams: 0)
+    if v(c, "./Fades/IsDefaultFadeIn") != "false" or fi > 0:
+        fi = max(fi, 0.003 * SR)
+    if v(c, "./Fades/IsDefaultFadeOut") != "false" or fo > 0:
+        fo = max(fo, 0.003 * SR)
+    kk = min(int(fi), len(seg)); seg[:kk] *= np.linspace(0, 1, kk)
+    kk = min(int(fo), len(seg)); seg[len(seg) - kk:] *= np.linspace(1, 0, kk)
+    return seg
+
+
+def render_track(t, als, spb, N, SR, sources, tighten, warn, cache=None):
     y = np.zeros(N)
     name = v(t, "./Name/EffectiveName")
     for c in t.findall(".//ArrangerAutomation/Events/AudioClip"):
@@ -121,92 +326,15 @@ def render_track(t, als, spb, N, SR, sources, tighten, warn):
         if not src.exists():
             warn.append(f"{name}: missing file {src.name}")
             continue
-        multi = None
-        if v(c, "./IsWarped") == "true":
-            m = sorted((float(w.get("SecTime")), float(w.get("BeatTime"))) for w in c.find("./WarpMarkers"))
-            if len(m) > 2:
-                multi = m                        # follow every marker (below), not one straight stretch
-            (s0, b0), (s1, b1) = m[0], m[-1]
-            slope = (s1 - s0) / (b1 - b0) if b1 != b0 else spb
-            to_sec = lambda b, s0=s0, b0=b0, slope=slope: s0 + (b - b0) * slope   # clip beats -> source seconds
-            per_beat = 1.0                                     # loop/start values are in beats
-        else:
-            slope = spb
-            to_sec = lambda x: x
-            per_beat = 1 / spb                                 # unwarped: loop/start values are in seconds
-        k = spb / slope                          # how much longer the clip plays than it was recorded
-        clip_len = int((e - s) * spb * SR)
-        if multi is not None:
-            # many warp markers (transient-warped drums, edited takes): every stretch between two markers keeps
-            # its own timing. Read straight from the source along the marker map (varispeed per segment: timing
-            # exact, pitch may waver a little where a segment is stretched a lot)
-            try:
-                from hypnomix.core import dsp
-                srcy, _ = dsp.load(src, SR)
-            except Exception as e_:
-                if warn is not None:
-                    warn.append(f"could not read {Path(src).name} ({type(e_).__name__}): clip left out of the render")
+        ck = cache_key(c, src, spb, SR, tighten, e - s, ls, le, start_rel, loop_on) if cache_enabled(cache) else None
+        seg = cache_get(ck)
+        if seg is None:
+            seg = clip_audio(c, src, spb, SR, tighten, warn, s, e, ls, le, start_rel, loop_on)
+            if seg is None:
                 continue
-            srcm = srcy.mean(1)
-            ms, mb = np.array([x for x, _ in multi]), np.array([b for _, b in multi])
-            eb = np.arange(clip_len) / (spb * SR)                     # beats since the clip started playing
-            if loop_on and le > ls:
-                cb = ls + ((start_rel + eb) % (le - ls))
-            else:
-                cb = ls + start_rel + eb
-            lo_slope = (ms[1] - ms[0]) / max(1e-9, mb[1] - mb[0])
-            hi_slope = (ms[-1] - ms[-2]) / max(1e-9, mb[-1] - mb[-2])
-            sec = np.interp(cb, mb, ms)
-            sec = np.where(cb < mb[0], ms[0] + (cb - mb[0]) * lo_slope, sec)       # Live extends the end segments
-            sec = np.where(cb > mb[-1], ms[-1] + (cb - mb[-1]) * hi_slope, sec)
-            seg = np.interp(sec * SR, np.arange(len(srcm)), srcm, left=0.0, right=0.0)
-        else:
-            try:
-                a = stretched(src, k, SR)        # pitch-preserving stretch of the whole source
-            except Exception as e_:              # a file nothing can decode: leave this clip out, say so
-                if warn is not None:
-                    warn.append(f"could not read {Path(src).name} ({type(e_).__name__}): clip left out of the render")
-                continue
-        # play it like Live: start at the start marker; a looped clip wraps from loop end back to loop start
-        need = (e - s) * per_beat if multi is None else 0.0
-        pos = ls + start_rel
-        parts = []
-        while multi is None and need > 1e-9 and len(parts) < 10000:
-            stop = le if (loop_on and le > pos) else pos + need
-            take = min(need, stop - pos)
-            i0, i1 = int(round(to_sec(pos) * k * SR)), int(round(to_sec(pos + take) * k * SR))
-            piece = a[max(0, i0):max(0, i1)]
-            if i0 < 0:
-                piece = np.concatenate([np.zeros(min(-i0, i1 - i0)), piece])
-            parts.append(piece)
-            need -= take
-            pos = ls if loop_on else pos + take
-        if multi is None:
-            seg = np.concatenate(parts) if parts else np.zeros(0)
-        seg = np.pad(seg, (0, max(0, clip_len - len(seg))))[:clip_len]
-        seg = seg * float(v(c, "./SampleVolume") or 1)
-        fi = float(v(c, "./Fades/FadeInLength") or 0) * spb * SR       # Live stores clip fades in beats
-        fo = float(v(c, "./Fades/FadeOutLength") or 0) * spb * SR
-        seg = seg[: int((e - s) * spb * SR)].copy()
-        if tighten and len(seg) > SR // 10:
-            env = np.sqrt(np.maximum(np.convolve(seg ** 2, np.ones(441) / 441, "same"), 0))
-            edb = 20 * np.log10(env + 1e-12)
-            on = np.flatnonzero(edb > edb.max() - tighten)
-            if len(on):
-                a0, f0 = max(0, on[0] - int(0.06 * SR)), int(0.04 * SR)
-                b0, f1 = min(len(seg), on[-1] + int(0.12 * SR)), int(0.15 * SR)
-                m = np.zeros(len(seg))
-                m[a0:b0] = 1
-                r0 = slice(max(0, a0 - f0), a0); m[r0] = np.linspace(0, 1, r0.stop - r0.start)
-                r1 = slice(b0, min(len(seg), b0 + f1)); m[r1] = np.linspace(1, 0, r1.stop - r1.start)
-                seg = seg * m
-        # Live's default ~3 ms edge fades, unless the clip's fade was set explicitly (an unrolled loop's seams: 0)
-        if v(c, "./Fades/IsDefaultFadeIn") != "false" or fi > 0:
-            fi = max(fi, 0.003 * SR)
-        if v(c, "./Fades/IsDefaultFadeOut") != "false" or fo > 0:
-            fo = max(fo, 0.003 * SR)
-        kk = min(int(fi), len(seg)); seg[:kk] *= np.linspace(0, 1, kk)
-        kk = min(int(fo), len(seg)); seg[len(seg) - kk:] *= np.linspace(1, 0, kk)
+            if ck:      # kept as 32-bit float, like the files render writes: a first and a cached run are identical
+                seg = seg.astype(np.float32)
+                cache_put(ck, seg)
         i = int(round(s * spb * SR))
         L = min(len(seg), N - i)
         if L > 0:
@@ -219,6 +347,7 @@ def main():
     ap.add_argument("als"); ap.add_argument("--group"); ap.add_argument("--tracks", nargs="*")
     ap.add_argument("--out"); ap.add_argument("--sources"); ap.add_argument("--tighten", type=float, default=0)
     ap.add_argument("--sr", type=int, default=44100)
+    ap.add_argument("--no-cache", action="store_true", help="render every clip again (no render cache)")
     a = ap.parse_args()
     r = ET.fromstring(gzip.open(a.als).read())
     tempo = float(v(r, ".//Tempo/Manual"))
@@ -245,7 +374,7 @@ def main():
     warn = []
     for t in pick:
         n = v(t, "./Name/EffectiveName")
-        y = render_track(t, a.als, spb, N, a.sr, a.sources, a.tighten, warn)
+        y = render_track(t, a.als, spb, N, a.sr, a.sources, a.tighten, warn, cache=False if a.no_cache else None)
         if not np.any(y):
             continue
         safe = re.sub(r'[\\/:*?"<>|]', "-", n)
@@ -253,6 +382,10 @@ def main():
         print(f"{n:<30} peak {20 * np.log10(np.abs(y).max() + 1e-9):6.1f} dBFS")
     for w_ in sorted(set(warn)):
         print("  !", w_, file=sys.stderr)
+    if cache_enabled(False if a.no_cache else None):
+        cache_trim()
+        print(f"render cache: {CACHE_STATS['hits']} clip(s) reused, {CACHE_STATS['writes']} rendered and kept "
+              f"({cache_dir()})")
     print(f"→ {od}")
 
 

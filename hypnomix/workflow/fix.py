@@ -10,6 +10,18 @@
   hypnomix fix SCAN_DIR --approve ID --from "Song (fixed 1).als" --out "Song (fixed 2).als"
                                                             one fix at a time, each on top of the last
   hypnomix fix SCAN_DIR --approved --out "Song (fixed).rpp"  a REAPER project: see workflow/fix_project.py
+  hypnomix fix SCAN_DIR --decide smooth-3=approve@60        approve 60% of the proposed move (default 100)
+  hypnomix fix SCAN_DIR --decide-like smooth-3=approve@60 [--dry-run] [--band 50]
+                                                            the same decision for every undecided finding like
+                                                            smooth-3 (same tool, kind and track role, size within
+                                                            +-50%); lists the matches first
+  --as NAME                                                 who is deciding (default: prefs review.name)
+
+Amounts: tools with a strength control get it scaled (smooth: share of each jump eased and fade length; timing:
+strength of each nudge; duck: ducking depth; tune: correction strength); device, sidechain, clip-gain and edge
+fixes move each changed value that share of the way toward the proposed one (gains in dB). Kinds that can't be
+scaled (renames, track order, tidy, plans, borrowed loops, motion moves) say so and apply in full for any amount
+above 0; amount 0 applies nothing. Every apply run is logged for `hypnomix history` (versions, diff, undo).
 
 What happens to each approved finding (see REVIEW.md for the ids):
   set     written into ONE new set next to the original, in this order: distortion parameter fixes,
@@ -37,6 +49,8 @@ in Live are not in the file this reads. Every run appends to SCAN_DIR/fix-log.md
 """
 import argparse, json, re, shutil, subprocess, sys, time
 from pathlib import Path
+
+from hypnomix.workflow import oversight as O
 
 ORDER = ["distortion", "devices", "sidechain", "duck", "smooth", "edges", "cliplevel", "timing", "motion", "borrow", "tidy", "order"]   # track names come last, after all of these
 DECISIONS = ("approve", "skip", "change")
@@ -160,6 +174,38 @@ def rematch(items, now):
     return sorted(set(ids)), skipped
 
 
+def apply_args(tool, cur, nxt, ids, items, sd, scan, dec, src, timing_tracks, timing_melodic, timing_low):
+    """The command that applies these ids with `tool` from cur into nxt."""
+    args = [tool, cur, "--apply", nxt, "--ids", ",".join(ids)]
+    if tool == "timing":
+        args += ["--list", "0"]
+        for t in timing_tracks:
+            args += ["--track", t]
+        for t in timing_melodic:
+            args += ["--melodic", t]
+        for flag, t in timing_low:
+            args += [flag, t]
+        if any(f.get("unroll") for f in items):     # approved looped-clip items: unroll, then nudge
+            args += ["--unroll-loops"]
+    if tool == "distortion" and scan.get("mix"):
+        args += ["--mix", scan["mix"]]
+    if tool in ("order", "tidy", "edges", "cliplevel", "duck", "devices"):
+        args += ["--names", sd / "raw" / "names" / "names.json"]
+    if tool == "tidy":              # archive the set as it was before this run, then tidy
+        args += ["--archive-from", src]
+        for f in items:
+            note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
+            if note and f["id"] in ids:
+                args += ["--tweak", f"{f['id']}:{note}"]
+    if tool in ("motion", "borrow"):   # the person's fine controls from the review notes
+        args += motion_args(sd, scan) if tool == "motion" else borrow_args(scan)
+        for f in items:
+            note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
+            if note and f["id"] in ids:
+                args += ["--tweak", f"{f['id']}:{note}"]
+    return args
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix fix", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -179,6 +225,11 @@ def main():
     ap.add_argument("--stale-ok", action="store_true", help="apply although the set changed since the scan")
     ap.add_argument("--no-verify", action="store_true", help="skip the check of the new set after writing")
     ap.add_argument("--list", action="store_true", help="list findings and exit")
+    ap.add_argument("--decide-like", default="", metavar="ID=approve[@AMOUNT]",
+                    help="the same decision for every undecided finding like ID (lists them first)")
+    ap.add_argument("--band", type=float, default=50.0, help="with --decide-like: how close in size (percent, default 50)")
+    ap.add_argument("--dry-run", action="store_true", help="with --decide-like: list the matches, record nothing")
+    ap.add_argument("--as", dest="by", metavar="NAME", help="who is deciding (default: prefs review.name)")
     a = ap.parse_args()
     sd = Path(a.scan_dir)
     data = json.loads((sd / "findings.json").read_text())
@@ -190,8 +241,12 @@ def main():
 
     if a.list:
         for f in findings:
+            e = dec.get(f["id"]) if isinstance(dec.get(f["id"]), dict) else {}
+            dd = (decision_of(dec, f['id']) or '-') + (f"@{O.amount_of(e)}" if e.get("amount") is not None else "")
+            who = f" by {e['by']}" if e.get("by") else ""
+            conf = " CONFLICT" if e.get("conflicts") else ""
             print(f"{f['n']:4d}  {f['id']:<22} [{f.get('severity')}] {f.get('applies'):<6} "
-                  f"{decision_of(dec, f['id']) or '-':<8}{'PROTECTED ' if f.get('protected') else ''}"
+                  f"{dd:<12}{who}{conf} {'PROTECTED ' if f.get('protected') else ''}"
                   f"{f['tool']}: {f.get('track') or '-'} {f.get('where', '')}  {str(f.get('problem'))[:80]}")
         return
 
@@ -209,6 +264,38 @@ def main():
         if not (a.approve or a.approved):
             return
 
+    if a.decide_like:
+        if "=" not in a.decide_like:
+            sys.exit(f"expected ID=decision[@amount], got {a.decide_like!r}")
+        k, v = (x.strip() for x in a.decide_like.split("=", 1))
+        if k not in by_key:
+            sys.exit(f"unknown id: {k}")
+        try:
+            what, amt = O.parse_decision(v)
+        except ValueError as e:
+            sys.exit(str(e))
+        ex = by_key[k]
+        matched = O.like(findings, dec, ex, band=a.band / 100.0, role_of=O.roles(sd))
+        sz = O.size(ex)
+        print(f"like {ex['id']} ({ex['tool']} {ex.get('kind')}" + (f", size {sz:g}" if sz is not None else "")
+              + f", band +-{a.band:g}%): {len(matched)} undecided finding(s)")
+        for f in matched:
+            s_ = O.size(f)
+            print(f"  {f['id']:<22} [{f.get('severity')}] {f.get('track') or '-'} {f.get('where', '')}"
+                  + (f"  size {s_:g}" if s_ is not None else "") + f"  {str(f.get('problem'))[:70]}")
+        if amt is not None and amt not in (0, 100) and not O.scalable(ex)[0]:
+            print(f"note: {ex['tool']} {ex.get('kind')} can't be scaled ({O.scalable(ex)[1]}): any amount above 0 applies it in full")
+        if a.dry_run:
+            print("dry run: nothing recorded")
+            return
+        targets = ([ex] if not decision_of(dec, ex["id"]) else []) + matched
+        for f in targets:
+            dec[f["id"]] = O.entry(what, a.note, amt, by=a.by, via=None if f is ex else f"like:{ex['id']}")
+        save_decisions(sd, dec)
+        print(f"recorded {what}" + (f"@{amt}" if amt is not None else "") + f" for {len(targets)} finding(s); "
+              "a decision made on one of them later wins")
+        return
+
     if a.decide:
         for item in a.decide.split(","):
             if "=" not in item:
@@ -216,9 +303,15 @@ def main():
             k, v = (x.strip() for x in item.split("=", 1))
             if k not in by_key:
                 sys.exit(f"unknown id: {k}")
-            if v not in DECISIONS:
-                sys.exit(f"decision must be one of {', '.join(DECISIONS)} (got {v!r})")
-            dec[by_key[k]["id"]] = {"decision": v, "note": a.note, "at": time.strftime("%Y-%m-%d %H:%M")}
+            try:
+                what, amt = O.parse_decision(v)
+            except ValueError as e:
+                sys.exit(str(e))
+            f = by_key[k]
+            if amt is not None and amt not in (0, 100) and what != "skip" and not O.scalable(f)[0]:
+                print(f"note: {f['id']} ({f['tool']} {f.get('kind')}) can't be scaled ({O.scalable(f)[1]}): "
+                      "any amount above 0 applies it in full")
+            dec[f["id"]] = O.entry(what, a.note, amt, by=a.by)
         save_decisions(sd, dec)
         n = {d: sum(1 for k in dec if decision_of(dec, k) == d) for d in DECISIONS}
         left = sum(1 for f in findings if f.get("applies") not in ("info", "answer") and f["id"] not in dec)
@@ -244,6 +337,17 @@ def main():
         sys.exit(f"these were recorded as skip/change, not approve: {', '.join(refused)}. "
                  "Record the new decision with --decide first.")
     chosen = [by_key[w] for w in sorted(want)]
+    amounts = {f["id"]: O.effective_amount(f, dec.get(f["id"])) for f in chosen}
+    zero = [f for f in chosen if amounts[f["id"]] == 0]
+    chosen = [f for f in chosen if amounts[f["id"]] > 0]
+    for f in chosen:
+        raw_amt = O.amount_of(dec.get(f["id"]))
+        if raw_amt != amounts[f["id"]]:
+            print(f"note: {f['id']} can't be scaled ({O.scalable(f)[1]}); applying it in full, not {raw_amt}%")
+    if zero:
+        print(f"amount 0, not applied: {', '.join(f['id'] for f in zero)}")
+    if not chosen:
+        sys.exit("nothing to apply: every approved item has amount 0")
     prot = [f["id"] for f in chosen if f.get("protected")]
     if prot and not a.allow_protected:
         sys.exit(f"on protected tracks: {', '.join(prot)}. Ask the person again, then add --allow-protected.")
@@ -292,10 +396,11 @@ def main():
 
     for f in chosen:  # an explicit --approve is a decision too
         if f["id"] not in dec:
-            dec[f["id"]] = {"decision": "approve", "note": "via --approve", "at": time.strftime("%Y-%m-%d %H:%M")}
+            dec[f["id"]] = O.entry("approve", "via --approve", by=a.by)
     save_decisions(sd, dec)
+    tag = lambda f: f["id"] + (f"@{amounts[f['id']]}" if amounts[f["id"]] != 100 else "")
     log = [f"\n## fix run {time.strftime('%Y-%m-%d %H:%M')}", "",
-           f"approved: {', '.join(f['id'] for f in chosen)}", ""]
+           "approved: " + ", ".join(tag(f) for f in chosen), ""]
     failed, skipped_all = [], []
 
     if reaper_ and (set_items or tune_rpp):      # REAPER: one pass into one new .rpp (workflow/fix_project.py)
@@ -330,8 +435,14 @@ def main():
                         target = src.parent / f"{src.stem} (fix step {step}.{k}).als"
                         temps.append(target)
                         extra = ["--glue-to-compressor"] if f.get("glue") else []
-                        c, t = hx("sidechain", tmp, "--host", f["host"], "--apply", target, *extra)
+                        amt = amounts[f["id"]]
+                        made = target if amt >= 100 else target.with_name(target.stem + " full.als")
+                        temps.append(made)
+                        c, t = hx("sidechain", tmp, "--host", f["host"], "--apply", made, *extra)
                         txt += t + "\n"
+                        if c == 0 and made.exists() and made != target:
+                            ns, nk = O.blend(tmp, made, target, amt / 100.0)
+                            txt += f"amount {amt}%: {ns} value(s) moved {amt}% of the way, {nk} kept as written\n"
                         if c == 0 and target.exists():
                             tmp = target
                         else:
@@ -340,49 +451,59 @@ def main():
                     if ok:
                         shutil.copyfile(tmp, nxt)
                 else:
-                    now = recheck(tool, cur, sd, scan, timing_tracks, f"pre{step}")
-                    if now is None:
-                        failed += [f"{f['id']}: could not re-check the set with {tool}" for f in items]
+                    # one pass per amount (most items are 100%): each pass is re-checked on the set as it now is,
+                    # so ids from an earlier pass are never reused
+                    groups = {}
+                    for f in items:
+                        groups.setdefault(amounts[f["id"]], []).append(f)
+                    gcur, any_ids, n_skip, broke = cur, False, 0, False
+                    for gi, (amt, gitems) in enumerate(sorted(groups.items(), key=lambda kv: -kv[0])):
+                        now = recheck(tool, gcur, sd, scan, timing_tracks, f"pre{step}" + (f".{gi}" if gi else ""))
+                        if now is None:
+                            failed += [f"{f['id']}: could not re-check the set with {tool}" for f in gitems]
+                            broke = True
+                            continue
+                        ids, skipped = rematch(gitems, now)
+                        skipped_all += skipped
+                        n_skip += len(skipped)
+                        if not ids:
+                            continue
+                        any_ids = True
+                        gnxt = src.parent / f"{src.stem} (fix step {step}.{gi}).als"
+                        temps.append(gnxt)
+                        mode = (O.SCALING.get(tool) or (None,))[0] if amt < 100 else None
+                        made = gnxt
+                        if mode == "blend":
+                            made = src.parent / f"{src.stem} (fix step {step}.{gi} full).als"
+                            temps.append(made)
+                        args = apply_args(tool, gcur, made, ids, gitems, sd, scan, dec, src, timing_tracks,
+                                          timing_melodic, timing_low)
+                        if mode == "flags":
+                            args += O.amount_flags(tool, amt)
+                        code, t_ = hx(*args)
+                        txt += t_ + "\n"
+                        if code != 0 or not made.exists():
+                            failed += [f"{f['id']}: {tool} --apply failed" for f in gitems]
+                            continue
+                        if mode == "blend":
+                            ns, nk = O.blend(gcur, made, gnxt, amt / 100.0)
+                            txt += f"amount {amt}%: {ns} value(s) moved {amt}% of the way, {nk} kept as written\n"
+                            print(f"{tool:<11} amount {amt}%: {ns} value(s) scaled"
+                                  + (f", {nk} kept in full (added or switches)" if nk else ""))
+                        elif mode == "flags":
+                            txt += f"amount {amt}%: {' '.join(O.amount_flags(tool, amt))}\n"
+                        gcur = gnxt
+                    if not any_ids and not broke:
+                        log += [f"### {tool}: nothing to apply (see skipped)", ""]
+                        print(f"{tool:<11} nothing to apply ({n_skip} skipped)")
+                        continue
+                    if broke and gcur == cur:
                         log += [f"### {tool}: FAILED (re-check did not run)", ""]
                         print(f"{tool:<11} FAILED  (re-check did not run)")
                         continue
-                    ids, skipped = rematch(items, now)
-                    skipped_all += skipped
-                    if not ids:
-                        log += [f"### {tool}: nothing to apply (see skipped)", ""]
-                        print(f"{tool:<11} nothing to apply ({len(skipped)} skipped)")
-                        continue
-                    args = [tool, cur, "--apply", nxt, "--ids", ",".join(ids)]
-                    if tool == "timing":
-                        args += ["--list", "0"]
-                        for t in timing_tracks:
-                            args += ["--track", t]
-                        for t in timing_melodic:
-                            args += ["--melodic", t]
-                        for flag, t in timing_low:
-                            args += [flag, t]
-                        if any(f.get("unroll") for f in items):     # approved looped-clip items: unroll, then nudge
-                            args += ["--unroll-loops"]
-                    if tool == "distortion" and scan.get("mix"):
-                        args += ["--mix", scan["mix"]]
-                    if tool in ("order", "tidy", "edges", "cliplevel", "duck", "devices"):
-                        args += ["--names", sd / "raw" / "names" / "names.json"]
-                    if tool == "tidy":              # archive the set as it was before this run, then tidy
-                        args += ["--archive-from", src]
-                        for f in items:
-                            note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
-                            if note and f["id"] in ids:
-                                args += ["--tweak", f"{f['id']}:{note}"]
-                    if tool in ("motion", "borrow"):   # the person's fine controls from the review notes
-                        args += motion_args(sd, scan) if tool == "motion" else borrow_args(scan)
-                        for f in items:
-                            note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
-                            if note and f["id"] in ids:
-                                args += ["--tweak", f"{f['id']}:{note}"]
-                    code, txt = hx(*args)
-                    ok = code == 0 and nxt.exists()
-                    if not ok:
-                        failed += [f"{f['id']}: {tool} --apply failed" for f in items]
+                    ok = gcur != cur          # a pass that failed is listed under FAILED; the others still apply
+                    if ok:
+                        shutil.copyfile(gcur, nxt)
                 log += [f"### {tool}: {'applied' if ok else 'FAILED'} ({len(items)} approved)", "", "```",
                         txt.strip()[-2500:], "```", ""]
                 print(f"{tool:<11} {'ok' if ok else 'FAILED'}  ({len(items)} approved)")
@@ -683,7 +804,8 @@ def main():
             take_ch = CHD.take_time(song_ch, spans, int(_sf.info(str(take)).duration / CHD.HOP_S) + 1)
             chord_npz = tdir / f"{safe_name(take.stem)} (chords).npz"
             CHD.save(chord_npz, take_ch)
-            args = ["tune", take, dest, *tune_key, "--chords", chord_npz] + (["--ref", scan["ref"]] if scan.get("ref") else [])
+            args = ["tune", take, dest, *tune_key, "--chords", chord_npz] + (["--ref", scan["ref"]] if scan.get("ref") else []) \
+                + O.amount_flags("tune", amounts[f["id"]])
             code, txt = hx(*args)
             ok = code == 0 and dest.exists()
             log += [f"### tune {f['track']}, take {take.name}: {'written ' + dest.name if ok else 'FAILED'}", "",
@@ -730,6 +852,18 @@ def main():
         log += ["### FAILED (not done)", ""] + [f"- {x}" for x in failed] + [""]
         for x in failed:
             print(f"- {x}")
+    final = name_out if name_out and Path(name_out).exists() else None
+    try:  # every apply run is a version in the song's history (hypnomix history: list, diff, undo)
+        from hypnomix.workflow import history as H
+        v = H.log_run(sd, scan, src, final, [dict(id=f["id"], amount=amounts[f["id"]], tool=f.get("tool"),
+                                                   kind=f.get("kind"), track=f.get("track"), where=f.get("where", ""))
+                                              for f in chosen], kind="fix", failed=failed,
+                      extra=dict(allow_protected=bool(a.allow_protected), key=a.key, by=O.reviewer(a.by)))
+        log.append(f"history: logged as v{v} (`hypnomix history \"{sd}\"`)")
+        print(f"\nhistory: v{v} (hypnomix history \"{sd}\" lists every version; --undo N, --undo-item ID)")
+    except Exception as e:
+        log.append(f"history: could not log this run ({e})")
+        print(f"history: could not log this run ({e})")
     with open(sd / "fix-log.md", "a") as fh:
         fh.write("\n".join(log) + "\n")
     print(f"\nlog: {sd / 'fix-log.md'}")

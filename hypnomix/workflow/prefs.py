@@ -15,6 +15,8 @@ What the workflow does with them:
   protect.tracks   findings on these tracks are marked PROTECTED; `fix` refuses them without --allow-protected
   protect.notes    things never to change (shown at the top of every REVIEW.md)
   review.*         how the review is run (one at a time, which kinds may be batched, how much explanation)
+                   review.max_questions=N (the rest goes into a batch section), review.teach=on|off (why each
+                   technique, default on), review.name=NAME (recorded with every decision)
   taste.*          tuning / timing strictness and free-text taste notes (shown to the reviewer; tools stay gentle
                    by default and only go further when you say so)
   tools.*          your DAW and the free plug-ins you have installed (proposals only name what you have)

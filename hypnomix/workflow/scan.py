@@ -21,7 +21,16 @@ Groups (each can run on its own with --only, so several agents can scan in paral
   mix      loudness, true peak, release checks, translation     (measure, qc, translate; needs --mix)
   noise    takes whose big clip-gain boost lifts their noise floor into the mix
   intent   "is this deliberate?": every automated control, big clip gains, hard pans, switched-off tracks
+  structure  the set's structure and level extremes, from the XML alone
   stems    with --deep only (renders every track): frequency fights between tracks, mic phase and polarity
+
+Faster scans:
+  --quick        only the groups that read the set itself (files, intent, structure; no rendering, no audio
+                 analysis): seconds, for a check while you work
+  --since DIR    incremental: compare the set with the copy DIR's scan kept (raw/scanned.als), re-run only the
+                 groups the changes can affect, keep DIR's other findings (marked carried; new ones marked new).
+                 Decisions follow their findings. Combine with --quick. `hypnomix watch SET.als` does this on
+                 every save.
 
 The vocals group also measures how far doubles and harmonies sit from the lead in time (vocalign).
 
@@ -47,13 +56,13 @@ Each finding says how it is fixed:
 Tip: --ref should be the song's mix or instrumental (tuning and key for the vocal check). Without it
 the vocals are measured against their own average tuning, which under-corrects a flat singer.
 """
-import argparse, json, re, subprocess, sys, time
+import argparse, json, re, shutil, subprocess, sys, time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from hypnomix.core.paths import out_at
 
-GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "devices", "mix", "noise", "intent", "stems"]
+GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "devices", "mix", "noise", "intent", "structure", "stems"]
 FOLDER_GROUPS = ["recordings", "stems"]
 AUDIO_EXT = (".wav", ".aif", ".aiff", ".flac")
 PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow"]         # written by `prep|automix|master --plan`
@@ -949,11 +958,39 @@ def merge(od):
     setp = sorted(map(str, sets))[0] if sets else ""
     (od / "findings.json").write_text(json.dumps({"set": setp, "notes": notes, "findings": findings},
                                                  indent=1, default=str))
-    write_review(od, setp, findings, notes, meta, P.summary(prefs))
+    write_review(od, setp, findings, notes, meta, P.summary(prefs), prefs=prefs)
     return findings, notes
 
 
-def write_review(od, setp, findings, notes, meta, pref_lines=()):
+def oversight_lines(f, ov, show):
+    """The "you usually / common practice / confidence / why" lines for one finding in REVIEW.md."""
+    e = ov["extras"].get(f["id"], {})
+    L = [f"- confidence: {e.get('confidence', 0.5):.0%} ({e.get('confidence_from', 'default')})"
+         + ("" if f.get("applies") in ("info", "answer") else
+            (" · amount: 0-100 (`--decide ID=approve@60`)" if e.get("scalable") else
+             f" · all or nothing ({e.get('scale_note')})"))]
+    if e.get("usually"):
+        L.append(f"- you usually: {e['usually']}")
+    if e.get("practice"):
+        L.append(f"- common practice: {e['practice']}")
+    if ov["teach"] and e.get("why"):
+        L.append(f"- why this technique: {e['why']}")
+    like = ov["like"].get(f["id"])
+    if like and f.get("applies") not in ("info", "answer"):
+        L.append(f"- {len(like)} more like this: `hypnomix fix DIR --decide-like {f['id']}=approve` (or skip; "
+                 "--dry-run lists them first)")
+    return L
+
+
+def write_review(od, setp, findings, notes, meta, pref_lines=(), prefs=None):
+    od = Path(od)
+    try:
+        from hypnomix.workflow import oversight as O, review as RV, prefs as P
+        prefs = P.load() if prefs is None else prefs
+        ov = RV.oversight_payload(od, findings, prefs)
+    except Exception as e:  # the review must still be written
+        ov = None
+        notes = list(notes) + [f"WARNING: oversight lines failed ({e})"]
     nj = Path(od) / "raw" / "names" / "names.json"
     newname = {}
     if nj.exists():
@@ -987,13 +1024,13 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
         L += ["", "## Checks that did NOT run (so 'no findings' there means nothing)", ""] + [f"- {n}" for n in broken]
     if notes:
         L += ["", "## Notes", ""] + [f"- {n}" for n in notes]
-    L += ["", "## Items (most severe first)", ""]
-    for f in findings:
+    def item(f):
         where = f" @ {f['where']}" if f.get("where") else ""
         also = f" (same audio again at {', '.join(f['also_at'][:5])})" if f.get("also_at") else ""
-        L.append(f"### {f['n']}. [{f.get('severity')}] {f['tool']}: {show(f.get('track')) if f['tool'] != 'name' else f.get('track')}{where}{also}")
+        mark = " · NEW since the last scan" if f.get("new") else " · carried over from the last scan" if f.get("carried") else ""
+        L.append(f"### {f.get('n', '')}. [{f.get('severity')}] {f['tool']}: {show(f.get('track')) if f['tool'] != 'name' else f.get('track')}{where}{also}")
         L.append(f"- id: `{f['id']}` · applies: **{f.get('applies')}**"
-                 + (" · **PROTECTED track: ask again before changing**" if f.get("protected") else ""))
+                 + (" · **PROTECTED track: ask again before changing**" if f.get("protected") else "") + mark)
         if f.get("history"):
             L.append(f"- history: {f['history']}")
         L.append(f"- problem: {f.get('problem')}")
@@ -1002,11 +1039,41 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
         if f.get("flagged_notes"):
             L.append(f"- notes to check by ear: " + ", ".join(f"{x['time']} {x['sung']} ({x['cents']:+d}c)"
                                                            for x in f["flagged_notes"][:12]))
+        if ov:
+            L.extend(oversight_lines(f, ov, show))
         if f.get("applies") == "answer":
             L.append(f"- answer: [ ] {f['notes'][0]}  [ ] {f['notes'][1]}  [ ] both   (record: `hypnomix fix DIR --answer NOTE`)")
-        else:
-            L.append("- decision: [ ] approve  [ ] skip  [ ] change: ")
+        elif f.get("applies") != "info":
+            L.append("- decision: [ ] approve  [ ] skip  [ ] change: ____  amount: ___%")
         L.append("")
+
+    budget = (ov or {}).get("budget")
+    if budget:
+        by_id = {f["id"]: f for f in findings}
+        L += ["", f"## Items (most severe first; your question budget: {budget['max']})", ""]
+        for fid in budget["ask"]:
+            item(by_id[fid])
+        if budget["batch"]:
+            L += ["<details>", f"<summary>Low priority: batch ({len(budget['batch'])} items beyond your "
+                  f"{budget['max']} questions; high-severity and protected items are never in here)</summary>", "",
+                  "Suggested grouped decisions (advice: each still needs your yes; any single item can be decided "
+                  "differently afterwards and wins):", ""]
+            for sg in budget["suggestions"]:
+                L.append(f"- {sg['tool']} {sg['kind']}{' (' + sg['role'] + ')' if sg['role'] else ''}: "
+                         f"{len(sg['ids'])} item(s), suggested **{sg['decision']}** ({sg['why']}): "
+                         f"`hypnomix fix \"{od}\" --decide {','.join(i + '=' + sg['decision'] for i in sg['ids'][:40])}`")
+            L.append("")
+            for fid in budget["batch"]:
+                item(by_id[fid])
+            L += ["</details>", ""]
+        if budget["info"]:
+            L += ["## Measurements (nothing to decide)", ""]
+            for fid in budget["info"]:
+                item(by_id[fid])
+    else:
+        L += ["", "## Items (most severe first)", ""]
+        for f in findings:
+            item(f)
     if daw == "reaper":
         L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision',
               f'hypnomix fix "{od}" --approved --out "<Song> (fixed).rpp"   # apply only what was approved', "```",
@@ -1034,6 +1101,100 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
     (od / "REVIEW.md").write_text("\n".join(L) + "\n")
 
 
+# ---------------------------------------------------------------- incremental (--since)
+def incremental_plan(als, od, prev, groups, a):
+    """What to re-run: compare the set with the copy the previous scan kept. Old group results not re-run are
+    carried into od (with their findings marked carried)."""
+    from hypnomix.session import diff as D
+    from hypnomix.workflow import quick as Q
+    prev = prev.resolve()
+    if not (prev / "findings.json").exists():
+        sys.exit(f"--since: no scan in {prev}")
+    snap = prev / "raw" / Q.SNAPSHOT
+    old_groups = {g: json.loads((prev / f"{g}.json").read_text()) for g in ALL_GROUPS if (prev / f"{g}.json").exists()}
+    old_findings = json.loads((prev / "findings.json").read_text())["findings"]
+    old_dec = json.loads((prev / "decisions.json").read_text()) if (prev / "decisions.json").exists() else {}
+    if not snap.exists():
+        print(f"--since: {prev} kept no copy of the set it scanned (an older scan): every group runs again")
+        rows, rerun, why = [{"track": "(song)", "what": "no earlier copy to compare"}], list(groups), \
+            {g: "no earlier copy to compare" for g in groups}
+    else:
+        rows = D.diff(snap, als)
+        nj = prev / "raw" / "names" / "names.json"
+        labels = {}
+        if nj.exists():
+            labels = {r["old"]: str(r.get("final") or r.get("label") or "") for r in json.loads(nj.read_text()).get("tracks", [])}
+        rerun, why = Q.changed_groups(rows, groups, labels)
+        for g in groups:                       # a group the previous scan never ran has nothing to carry
+            if g not in old_groups and g not in rerun:
+                rerun.append(g)
+                why[g] = "not in the previous scan"
+        if a.mix and "mix" in groups and "mix" not in rerun:
+            old_scan = json.loads((prev / "scan.json").read_text()) if (prev / "scan.json").exists() else {}
+            if old_scan.get("mix") != a.mix or Path(a.mix).stat().st_mtime > (prev / "findings.json").stat().st_mtime:
+                rerun.append("mix")
+                why["mix"] = "a new or re-bounced mix"
+    if od.resolve() != prev:                   # keep what fix needs from the previous scan's raw files
+        for sub in ("names",):
+            if (prev / "raw" / sub).is_dir() and not (od / "raw" / sub).exists():
+                shutil.copytree(prev / "raw" / sub, od / "raw" / sub)
+        for j in (prev / "raw").glob("*.json"):
+            if not (od / "raw" / j.name).exists():
+                shutil.copyfile(j, od / "raw" / j.name)
+    if any(r["what"] in ("track added", "track removed", "renamed") for r in rows) and "names" in rerun:
+        nj = od / "raw" / "names" / "names.json"
+        if nj.exists():
+            nj.unlink()                         # track names and roles are measured again
+    affected, _ = Q.changed_groups(rows, list(old_groups))
+    for g, d in old_groups.items():
+        if g in rerun:
+            continue
+        for f in d["findings"]:
+            f["carried"] = True
+            f.pop("new", None)
+            if g in affected:
+                f["stale"] = True
+        d.setdefault("notes", [])
+        d["notes"] = [n for n in d["notes"] if not n.startswith(f"{g}: carried")] + [
+            f"{g}: carried over from the scan in {prev.name}" + (" (its tracks changed since: run the full scan for this "
+                                                                 "group)" if g in affected else "")]
+        (od / f"{g}.json").write_text(json.dumps(d, indent=1, default=str))
+    return dict(dir=str(prev), rows=rows, rerun=rerun, why=why, old_groups=old_groups, old_findings=old_findings,
+                old_dec=old_dec)
+
+
+def incremental_finish(od, since):
+    """Mark the re-run groups' findings that were not in the previous scan as new."""
+    from hypnomix.workflow import quick as Q
+    old_fp = {Q.fp(f) for f in since["old_findings"]}
+    for g in since["rerun"]:
+        p = od / f"{g}.json"
+        if not p.exists():
+            continue
+        d = json.loads(p.read_text())
+        for f in d["findings"]:
+            f.pop("carried", None)
+            if Q.fp(f) not in old_fp:
+                f["new"] = True
+        p.write_text(json.dumps(d, indent=1, default=str))
+
+
+def incremental_decisions(od, since):
+    """Decisions from the previous scan, re-keyed by what each finding is. Those whose finding is gone are kept
+    apart in decisions-stale.json (nothing is lost; nothing is applied from it)."""
+    from hypnomix.workflow import quick as Q
+    new = json.loads((od / "findings.json").read_text())["findings"]
+    dec, dropped = Q.remap_decisions(since["old_findings"], new, since["old_dec"])
+    if dec or (od / "decisions.json").exists():
+        (od / "decisions.json").write_text(json.dumps(dec, indent=1))
+    if dropped:
+        p = od / "decisions-stale.json"
+        old = json.loads(p.read_text()) if p.exists() else {}
+        old.update(dropped)
+        p.write_text(json.dumps(old, indent=1))
+    return dec, dropped
+
+
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix scan", description=__doc__,
@@ -1055,6 +1216,10 @@ def main():
     ap.add_argument("--deep", action="store_true", help="a set: also render every track and check frequency fights "
                     "and mic phase between tracks (slower)")
     ap.add_argument("--merge", metavar="DIR", help="only rebuild findings.json + REVIEW.md from DIR")
+    ap.add_argument("--quick", action="store_true", help="only the checks that read the set itself (files, intent, "
+                    "structure): no rendering or audio analysis, seconds")
+    ap.add_argument("--since", metavar="DIR", help="incremental: re-run only the groups whose tracks changed since "
+                    "the scan in DIR, and keep its other findings")
     a = ap.parse_args()
     if a.merge:
         findings, notes = merge(a.merge)
@@ -1079,6 +1244,11 @@ def main():
     else:
         mine = FOLDER_GROUPS if folder else GROUPS
     groups = a.only or mine
+    if a.quick:
+        if folder:
+            sys.exit("--quick is for a Live set (a folder of audio is always measured)")
+        from hypnomix.workflow.quick import QUICK_GROUPS
+        groups = [g for g in groups if g in QUICK_GROUPS] or list(QUICK_GROUPS)
     wrong = [g for g in groups if g not in mine]
     if wrong:
         sys.exit(f"{', '.join(wrong)}: not a group for a {'folder' if folder else PJ.NAMES[daw] + ' project' if reaper else 'Live set'} (use {', '.join(mine)})")
@@ -1090,8 +1260,17 @@ def main():
         old = json.loads(sj.read_text())
         if old.get("set") == info["set"]:
             info = {k: (v if v is not None else old.get(k)) for k, v in info.items()}
+    since = None
+    if a.since and not folder:
+        since = incremental_plan(als, od, Path(a.since).expanduser(), groups, a)
+        groups = since["rerun"]
+        info["since"] = str(Path(a.since).expanduser().resolve())
+    info["quick"] = bool(a.quick)
     sj.write_text(json.dumps(info, indent=1))
-    print(f"scanning {als.name}: {', '.join(groups)} → {od}")
+    if not folder and not reaper:
+        from hypnomix.workflow.quick import keep_snapshot
+        keep_snapshot(als, od)              # the next `--since` compares against this copy
+    print(f"scanning {als.name}: {', '.join(groups) or 'nothing changed'} → {od}")
     if reaper:
         SP.run(a, als, od, groups)
         return finish(od)
@@ -1106,6 +1285,7 @@ def main():
               "timing": lambda: g_timing(als, od, a, role), "vocals": lambda: g_vocals(als, od, a, role),
               "effects": lambda: g_effects(als, od, a), "mix": lambda: g_mix(als, od, a),
               "noise": lambda: g_noise(als, od, a), "intent": lambda: g_intent(als, od, a),
+              "structure": lambda: __import__("hypnomix.workflow.quick", fromlist=["g_structure"]).g_structure(als, od, a),
               "recordings": lambda: g_recordings(als, od, a),
               "stems": lambda: (g_stems(als, od, a) if folder else g_stems_set(als, od, a))}[g]
         try:
@@ -1118,13 +1298,25 @@ def main():
         print(f"  {g:<8} {len(f):4d} findings  ({secs:.0f} s)")
         return g
 
-    with ThreadPoolExecutor(max_workers=max(1, min(a.jobs, len(groups)))) as ex:
+    with ThreadPoolExecutor(max_workers=max(1, min(a.jobs, len(groups) or 1))) as ex:
         list(ex.map(run, groups))
-    finish(od)
+    finish(od, since)
 
 
-def finish(od):
+def finish(od, since=None):
+    if since:
+        incremental_finish(od, since)
     findings, notes = merge(od)
+    if since:
+        dec, dropped = incremental_decisions(od, since)
+        if dropped:
+            print(f"  {len(dropped)} decision(s) whose finding is gone kept in decisions-stale.json")
+        n_new = sum(1 for f in findings if f.get("new"))
+        n_car = sum(1 for f in findings if f.get("carried"))
+        print(f"\nincremental: {len(since['rows'])} change(s) since {since['dir']}; re-ran {', '.join(since['rerun']) or 'no groups'}; "
+              f"{n_car} finding(s) carried over, {n_new} new")
+        for g, why in since["why"].items():
+            print(f"  {g:<9} re-run: {why}")
     counts = {s: sum(1 for f in findings if f.get("severity") == s) for s in SEV}
     print(f"\n{len(findings)} findings ({counts['high']} high, {counts['medium']} medium, {counts['low']} low, "
           f"{counts['info']} info). Nothing was changed.\nreview: {od / 'REVIEW.md'}")

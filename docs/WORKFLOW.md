@@ -187,6 +187,104 @@ the changed spots with the original at the same bars. Then:
 hypnomix prefs learn "hypnomix-out/scan/Song"
 ```
 
+## 4b. You stay in charge, faster
+
+### How much of a fix (amount)
+
+```bash
+hypnomix fix DIR --decide smooth-3=approve@60      # 60% of the proposed move (default 100)
+```
+
+`fix` scales what can be scaled: `smooth` (share of each jump eased, fade length), `timing` (strength of each
+nudge), `duck` (ducking depth), `tune` (correction strength), and device, sidechain, clip-gain and edge fixes (each
+changed value moves that share of the way toward the proposed one; gains in dB; switches and modes all or
+nothing). Kinds that can't be scaled (renames, track order, tidy, plans, borrowed loops, motion moves: use the
+note's `depth=` instead) say so and apply in full for any amount above 0; `@0` applies nothing. The review page has
+an amount slider on every finding that can scale.
+
+### Grouped decisions
+
+```bash
+hypnomix fix DIR --decide-like smooth-3=approve@60 --dry-run     # lists the findings it would match
+hypnomix fix DIR --decide-like smooth-3=approve@60               # records them (each marked via "like:smooth-3")
+```
+
+It matches undecided findings of the same tool and kind, the same track role (for per-track kinds, when the scan
+named the tracks) and a size (dB, ms, cents) within ±50% of the example (`--band`). High-severity and protected
+items are only matched by an example that is one too. Decided items are never touched, and a decision made on one
+item afterwards wins. The page: "Approve the N like this" / "Skip the N like this".
+
+### A question budget
+
+`hypnomix prefs set review.max_questions=25`. REVIEW.md and the page list the most severe 25 questions (high
+severity, protected items and key questions are always asked, budget or not); the rest go into a collapsed
+"Low priority: batch" section, grouped by kind with a suggested decision for each group (from your past reviews,
+else from the tool's confidence). A suggestion is advice: nothing is decided until you click or run it.
+
+### On every finding: you usually, common practice, confidence
+
+- **you usually**: from your past reviews (`prefs learn`), your finished songs (`~/.hypnomix/taste.json`, made by
+  `hypnomix taste`) and `library.json` when present. Missing files just mean no line.
+- **common practice**: what engineers commonly do about it (a habit, not a rule).
+- **confidence**: the tool's own measure where it has one (names, edges, optional timing nudges, tuning), else a
+  default for that kind of finding.
+
+### Teach mode
+
+`review.teach=on` (the default) adds a few plain words per finding on why the technique exists (clicks and fades,
+level jumps, tuning, timing, de-ess, breaths, de-hiss, compression, sidechain, ducking, masking, harmony balance,
+loudness and true peak...). `hypnomix prefs set review.teach=off` hides them.
+
+### Collaborators
+
+Every decision records `by` (`--as NAME`, else `prefs review.name`) and `at`. On the page a reviewer sets their
+name and adds notes at a bar (`33.2`) or a time (`1:23.5`) to any finding.
+
+```bash
+hypnomix review DIR --export "review (Sam).json"     # decisions + notes, portable (findings matched by what they are)
+hypnomix review DIR --merge "review (Sam).json"      # fills in what you haven't decided; lists every conflict
+hypnomix review DIR --settle smooth-3=mine            # or =theirs
+```
+
+Your decision is never overwritten by a merge: where you decided differently, theirs is kept beside yours as a
+conflict (shown on the page and in `fix --list`) until you settle it.
+
+### History and undo
+
+Every `fix` run that applies something is a version in `DIR/history/` (the approved ids with amounts, the list of
+changes, and a copy of the set it started from and the set it wrote).
+
+```bash
+hypnomix history DIR                    # every version
+hypnomix history DIR --diff 1 2         # what changed between two versions (0 = what v1 started from)
+hypnomix history DIR --undo 2           # a NEW set equal to what v2 started from
+hypnomix history DIR --undo-item timing-7    # the latest version again, without timing-7 (fix runs again)
+```
+
+Nothing is deleted or overwritten; undo sets go next to the original with a new name, and are versions too.
+
+### Faster scans: quick, incremental, watch
+
+```bash
+hypnomix scan Song.als --quick                     # files, intent, structure: from the set alone, seconds
+hypnomix scan Song.als --since "hypnomix-out/scan/Song"     # only the groups the changes since then can affect
+hypnomix watch Song.als                            # on every save: a quick incremental scan; Ctrl-C to stop
+```
+
+Every scan keeps a copy of the set it read (`raw/scanned.als`). `--since` compares the set with it, re-runs the
+groups those changes can affect (a clip edit: clips, timing or vocals, noise; a device change: effects, devices; a
+fader or pan: intent; tempo or added tracks: everything) and carries the rest over (marked carried; carried
+groups whose tracks changed are marked stale). New findings are marked new; decisions follow their findings by
+what they are, and decisions whose finding is gone are kept in `decisions-stale.json`. `watch` only reads the set.
+
+### Render cache
+
+`render` (and every check that renders: vocals, names, edges, previews) keeps each rendered clip in
+`~/.hypnomix/cache/render/`, keyed by the source file (path, modification time, size), the clip's settings, its
+length, the tempo, the sample rate and the stretcher. Rendering the same set again only renders what changed, and
+the files are bit for bit the same. Capped at 2 GB (`HYPNOMIX_RENDER_CACHE_MB`), least recently used first;
+`render --no-cache` or `HYPNOMIX_NO_CACHE=1` turns it off.
+
 ## 5. Before the final mixdown: keep it moving
 
 Loops that repeat for 16 or 32 bars feel static. `motion` offers the moves a DJ-style producer draws by hand, on

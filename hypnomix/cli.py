@@ -91,6 +91,8 @@ GROUPS = [
         ("prefs", "hypnomix.workflow.prefs", "your preferences, asked once: targets, protected tracks, how you like to review"),
         ("ab", "hypnomix.workflow.ab", "before/after clips for each proposed fix, level-matched, so you hear it before approving"),
         ("review", "hypnomix.workflow.review", "the review as one page: play each A/B, tick approve / skip / change"),
+        ("history", "hypnomix.workflow.history", "every version fix wrote for a song: list, diff, undo into a new set, rebuild without one item"),
+        ("watch", "hypnomix.workflow.watch", "watch a set while you work: a quick incremental scan on every save (read-only)"),
     ]),
     ("App: no terminal, no AI needed", [
         ("app", "hypnomix.app.server", "the first pass in a window: choose a song, hear each fix, approve, apply (this computer only)"),
