@@ -10,11 +10,11 @@ What is read, and from where (REAPER writes everything in seconds, so nothing ne
             (item volume, first take's pan and volume), each take's NAME, SOFFS, PLAYRATE (rate, keep pitch),
             TAKEVOLPAN, SOURCE (WAVE/FLAC/MP3/... FILE, SECTION, MIDI, EMPTY), stretch markers (SM)
 
-Volume values are linear amplitude (1.0 = 0 dB). Envelopes REAPER stores with fader scaling (VOLTYPE 1) keep
-their raw values and say so in their name. Stretch markers and reversed sections are counted and reported; the renderer plays such takes
+Volume values are linear amplitude (1.0 = 0 dB), envelope points too: REAPER saves amplitudes even when the
+envelope shows fader scaling (VOLTYPE 1), checked against REAPER 7.86. FADEIN/FADEOUT: shape (6 is saved as 5.1),
+length, auto-crossfade length (used when set). Stretch markers and reversed sections are counted and reported; the renderer plays such takes
 straight (a warning says so).
 """
-import math
 from pathlib import Path
 
 from hypnomix.project import rpp
@@ -99,7 +99,8 @@ def _takes(item, proj_dir, rec, warn, where):
         rate = num(pr.tokens[1], 1.0) if pr is not None and len(pr.tokens) > 1 else 1.0
         keep = (pr.tokens[2] != "0") if pr is not None and len(pr.tokens) > 2 else True
         nm = lines.get("NAME")
-        sm = sum(1 for c in g if isinstance(c, rpp.Line) and c.key == "SM")
+        # stretch markers: one SM line, markers joined by "+" ("SM 0.5 0.5 + 1.5 1.2")
+        sm = sum(1 + c.tokens.count("+") for c in g if isinstance(c, rpp.Line) and c.key == "SM" and len(c.tokens) > 1)
         sm_total += sm if n == active else 0
         if rev and n == active:
             warn.append(f"{where}: a reversed take is rendered forwards")
@@ -114,8 +115,12 @@ def _fade(item, key):
     ln = item.line(key)
     if ln is None or len(ln.tokens) < 3:
         return 0.0, 0
-    shape, length = int(num(ln.tokens[1])), num(ln.tokens[2])
+    raw = num(ln.tokens[1])
+    shape = 6 if abs(raw - 5.1) < 1e-6 else int(raw)      # REAPER saves shape 6 as "5.1"
+    length = num(ln.tokens[2])
     auto = num(ln.tokens[3]) if len(ln.tokens) > 3 else 0.0
+    if len(ln.tokens) > 5 and ln.tokens[5] == "1":        # equal-power crossfade (measured: sin / cos)
+        shape = 7
     return (auto if auto > 0 else length), shape
 
 
@@ -147,10 +152,7 @@ def _envelope(ch):
     return pts, on
 
 
-def fader_scaled(ch):
-    """True when REAPER stored this volume envelope with fader scaling (VOLTYPE 1): values are fader
-    positions, not amplitudes. They are kept as read and labelled, never converted by guesswork."""
-    return ch.get("VOLTYPE", cast=int, default=0) == 1
+
 
 
 def _devices(tr):
@@ -228,8 +230,7 @@ def read(path):
             if ch.name in ENV_NAMES or ch.name.startswith("AUXVOLENV"):
                 pts, on = _envelope(ch)
                 if on and pts:
-                    label = ENV_NAMES.get(ch.name, "Send volume")
-                    envs[label + (" (fader-scaled)" if fader_scaled(ch) else "")] = pts
+                    envs[ENV_NAMES.get(ch.name, "Send volume")] = pts
         t = Track(name=name, index=i, kind=kind, clips=clips, devices=devices, envelopes=envs,
                   volume=num(vp.tokens[1], 1.0) if vp is not None and len(vp.tokens) > 1 else 1.0,
                   pan=num(vp.tokens[2]) if vp is not None and len(vp.tokens) > 2 else 0.0,

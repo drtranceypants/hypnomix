@@ -224,6 +224,54 @@ class Reaper(unittest.TestCase):
         # looped 1 s section: 1.25 s plays the source at 0.25 s
         self.assertAlmostEqual(h[int(1.25 * SR)], 0.25 / 3, places=4)
 
+    def test_reaper_786_lines(self):
+        """Lines exactly as REAPER 7.86 saves them (checked against its own renders)."""
+        txt = """<REAPER_PROJECT 0.1 "7.86/macOS-arm64" 1764000000
+  TEMPO 100 4 4
+  SAMPLERATE 44100 1 0
+  <TRACK
+    NAME X
+    VOLPAN 1 0 -1 -1 1
+    <VOLENV2
+      ACT 1 -1
+      VOLTYPE 1
+      PT 0 1 1
+      PT 0.5 0.5 1
+    >
+    <ITEM
+      POSITION 0
+      LENGTH 2
+      FADEIN 5.1 0.5 0 5.1 0 0 0 1 0 0 1 0 0
+      FADEOUT 1.1 0 0.2 1 1 0 0 1 0 0 1 0 0
+      VOLPAN 1 0 1 -1
+      SOFFS 0
+      PLAYRATE 1 1 0 -1 0 0.0025
+      SM 0.5 0.5 + 1.5 1.2
+      <SOURCE WAVE
+        FILE "Audio/lead.wav"
+      >
+    >
+  >
+>
+"""
+        (self.dir / "x.rpp").write_text(txt)
+        p = project.load(self.dir / "x.rpp")
+        c = p.tracks[0].clips[0]
+        self.assertEqual(c.fade_in_shape, 6)              # shape 6 is saved as 5.1
+        self.assertEqual((c.fade_out, c.fade_out_shape), (0.2, 7))   # auto-crossfade length, equal power
+        self.assertEqual(c.stretch_markers, 2)            # one SM line, markers joined by "+"
+        self.assertEqual(p.tracks[0].envelopes["Volume"], [(0.0, 1.0), (0.5, 0.5)])  # amplitudes even with VOLTYPE 1
+
+    def test_fade_shapes_match_reaper(self):
+        """Values read off REAPER 7.86 renders of a constant 0.5 source, fade in, at x = 0.1 .. 0.9."""
+        from hypnomix.project.model import fade_curve
+        measured = {1: [0.19, 0.36, 0.51], 2: [0.01, 0.04, 0.09], 3: [0.344, 0.59, 0.76], 4: [0.0, 0.002, 0.008],
+                    5: [0.028, 0.104, 0.216], 6: [0.001, 0.013, 0.065], 7: [0.156, 0.309, 0.454]}
+        for shape, want in measured.items():
+            y = fade_curve(1000, shape)
+            for x, v in zip((0.1, 0.2, 0.3), want):
+                self.assertAlmostEqual(y[int(x * 1000)], v, delta=0.002, msg=f"shape {shape} at {x}")
+
     def test_unsupported_suffix(self):
         with self.assertRaises(SystemExit):
             project.load(self.dir / "x.ptx")

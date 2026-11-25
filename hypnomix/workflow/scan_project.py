@@ -349,7 +349,7 @@ def g_intent(p, R, od, a):
             vals = [v for _, v in pts]
             if len(pts) < 2 or max(vals) - min(vals) < 1e-6:
                 continue
-            if lab.startswith("Volume") and "fader-scaled" not in lab:
+            if lab.startswith("Volume"):
                 d = lambda v: f"{20 * math.log10(v):+.1f} dB" if v > 0 else "silence"
                 rng = f"{d(min(vals))} to {d(max(vals))}"
             else:

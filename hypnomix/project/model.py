@@ -188,18 +188,26 @@ def _stretched(path, rate, sr):
 
 
 def fade_curve(n, shape, rising=True):
-    """REAPER fade shapes, approximately: 0 linear, 1 fast start, 2 fast end, 3/4 fast/slow S, 5/6 sharp."""
+    """REAPER's fade shapes, measured from REAPER's own renders (sample i of n is at x = i/n):
+    0 linear, 1 1-(1-x)^2, 2 x^2, 3 1-(1-x)^4, 4 x^4, 5 smooth S (3x^2-2x^3), 6 sharp S (power-4 halves),
+    7 equal power (sin, REAPER's crossfades between overlapping items)."""
     if n <= 0:
         return np.ones(0)
-    x = np.linspace(0, 1, n, endpoint=False) + 0.5 / n
+    x = np.arange(n) / n
     if shape == 1:
         y = 1 - (1 - x) ** 2
     elif shape == 2:
         y = x ** 2
-    elif shape in (3, 4):
-        y = 0.5 - 0.5 * np.cos(np.pi * x)
-    elif shape in (5, 6):
-        y = x ** 4 if shape == 6 else 1 - (1 - x) ** 4
+    elif shape == 3:
+        y = 1 - (1 - x) ** 4
+    elif shape == 4:
+        y = x ** 4
+    elif shape == 5:
+        y = 3 * x ** 2 - 2 * x ** 3
+    elif shape == 7:
+        y = np.sin(x * np.pi / 2)
+    elif shape == 6:
+        y = np.where(x < 0.5, 0.5 * (2 * x) ** 4, 1 - 0.5 * (2 - 2 * x) ** 4)
     else:
         y = x
     return y if rising else y[::-1]
