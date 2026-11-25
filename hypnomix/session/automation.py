@@ -153,10 +153,20 @@ def insert_point(root, env, b, v):
     ev.insert(idx, new)
 
 
+DEFAULT_TIME = -63072000.0     # where Live keeps an envelope's first (default) point
+MAX_TIME = 1e7                 # beats: far past any song
+
+
 def scale_range(root, env, d_db, b0, b1, ramp=0.0, vol_like=True):
     """multiply (volume/send) values inside [b0,b1] by d_db; ramps of `ramp` beats at the edges."""
     _, pts = events(env)
     edges = [b0 - ramp, b0, b1, b1 + ramp] if ramp else [b0, b1]
+    lo = pts[0][0] if pts else DEFAULT_TIME
+    # an open end (no --from / --to) gets no edge point; never put a point before the envelope's default point
+    # (Live refuses a set whose first automation event is earlier: "First automation event has invalid time")
+    edges = [e for e in edges if e is not None and e > lo + 1e-6 and e < MAX_TIME]
+    b0 = -math.inf if b0 is None else b0
+    b1 = math.inf if b1 is None else b1
     for e in edges:
         if not any(abs(t - e) < 1e-6 for t, *_ in pts):
             insert_point(root, env, e, value_at(pts, e))
@@ -196,8 +206,8 @@ def cmd_show(a):
 def cmd_offset(a):
     tree = load(a.set); r = tree.getroot(); t = find_track(r, a.track)
     env, (lab, prm, vl) = get_or_create_env(r, t, a.target)
-    b0 = beats(a.frm) if a.frm else -1e9
-    b1 = beats(a.to) if a.to else 1e9
+    b0 = beats(a.frm) if a.frm else None          # open ends: the whole curve, no edge points
+    b1 = beats(a.to) if a.to else None
     scale_range(r, env, a.db, b0, b1, 0, vl)
     save(tree, a.set, a.out)
 

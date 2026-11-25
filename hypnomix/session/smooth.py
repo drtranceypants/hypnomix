@@ -7,7 +7,9 @@ loops and Clip Gain), then reports three kinds of problem:
   click  a clip starts or stops on a loud sample with no fade (an audible tick)
   cut    one clip ends mid-phrase and the next starts at a noticeably different level (comped vocals),
          or a looped clip jumps in level each time it wraps around
-  spike  a short burst far louder than what surrounds it (a plosive, a bump, one shouted word)
+  spike  a short burst far louder than what surrounds it (a pop, a bump, one shouted word). Not flagged: a loud
+         consonant that opens a sung phrase (quiet before, singing right after: the "B" of "baby"). A burst that
+         is mostly low end (under 150 Hz) inside a phrase is a plosive: it gets at most a 3 dB dip
   step   (only with --steps) a sudden level change inside a clip that lasts. Usually this is the
          music itself (a section change, a loop's own dynamics), so it is off by default
 
@@ -42,6 +44,9 @@ CLICK_LIN = 0.01      # a clip edge sample above -40 dBFS with no fade is a clic
 MAX_LIN = 1.99526     # Live's fader maximum (+6 dB) as a linear gain
 SPIKES_PER_MIN = 4.0  # more 9 dB bursts than this per minute on a track means regular hits (drums)
 HIT_DB = 9.0
+PLOSIVE_HZ = 150.0    # a burst with most of its energy below this is a plosive (B, P), not a pop or bump
+PLOSIVE_SHARE = 0.6
+PLOSIVE_MAX_DIP = 3.0 # dB: a plosive inside a phrase gets at most this much (a full dip cuts the consonant)
 
 db = lambda p: 10 * np.log10(np.maximum(p, 1e-12))  # power -> dB
 
@@ -230,10 +235,30 @@ def find_spikes(ci, tempo, spike_db):
             pk = i + int(np.argmax(dev[i:j]))
             b0 = ci["start"] + max(0, i - 2) * BLOCK * tempo / 60
             b1 = ci["start"] + min(n, j + 2) * BLOCK * tempo / 60
+            # the start of a sung phrase or word: a gap just before (30-150 ms, 15 dB or more under the
+            # surroundings), and singing holds right after (the next 300 ms near the surrounding level). A "B" or "P"
+            # opening a word is part of it; a pop or bump mid-phrase has sound right before it
+            pre = L[max(0, i - 15):max(0, i - 3)]
+            post = L[j:j + 30]
+            onset = (len(pre) == 0 or float(np.median(pre)) < max(SOUNDING_DB, M[pk] - 15)) and \
+                len(post) >= 10 and float(np.median(post)) >= M[pk] - 12
             spikes.append(dict(beat=ci["start"] + pk * BLOCK * tempo / 60, b0=b0, b1=b1,
-                               size=float(dev[pk])))
+                               size=float(dev[pk]), onset=bool(onset), low=low_share(ci, tempo, b0, b1)))
         i = j
     return spikes
+
+
+def low_share(ci, tempo, b0, b1, hz=PLOSIVE_HZ):
+    """Share of a burst's energy below `hz` (a plosive's thump is almost all low end)."""
+    y, sr, _ = load_audio(ci["path"])
+    s0, s1 = file_seconds(ci, [b0, b1], tempo)
+    seg = y[max(0, int(s0 * sr)):max(0, int(s1 * sr))].mean(axis=1)
+    if len(seg) < 64:
+        return 0.0
+    spec = np.abs(np.fft.rfft(seg * np.hanning(len(seg)))) ** 2
+    f = np.fft.rfftfreq(len(seg), 1 / sr)
+    tot = float(spec.sum())
+    return float(spec[f < hz].sum() / tot) if tot > 0 else 0.0
 
 
 def loop_wraps(ci, tempo):
@@ -290,7 +315,7 @@ def seamless(a, b, tempo):
 
 def analyse(root, als_dir, names, step_db, cut_db, spike_db, explicit, include_off=False):
     tempo = float(root.find(".//Tempo/Manual").get("Value"))
-    issues, notes = [], {"default_fade_edges": 0, "missing": set(), "clips": 0, "regular": set(), "off": []}
+    issues, notes = [], {"default_fade_edges": 0, "missing": set(), "clips": 0, "regular": set(), "off": [], "onsets": {}}
     for tname, t in audio_tracks(root, names, include_off, notes["off"]):
         ev = t.find("./DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events")
         if ev is None:
@@ -339,7 +364,8 @@ def analyse(root, als_dir, names, step_db, cut_db, spike_db, explicit, include_o
                                    beat=w["beat"], size=w["size"]))
             for sp in find_spikes(c, tempo, min(spike_db, HIT_DB)):
                 track_spikes.append(dict(kind="spike", track=tname, t=t, clip=c, beat=sp["beat"],
-                                         b0=sp["b0"], b1=sp["b1"], size=sp["size"]))
+                                         b0=sp["b0"], b1=sp["b1"], size=sp["size"], onset=sp["onset"],
+                                         plosive=sp["low"] >= PLOSIVE_SHARE))
             if step_db:
                 for s in find_steps(c, tempo, step_db):
                     issues.append(dict(kind="step", track=tname, t=t, clip=c, beat=s["beat"], size=s["size"]))
@@ -347,7 +373,11 @@ def analyse(root, als_dir, names, step_db, cut_db, spike_db, explicit, include_o
         if track_spikes and minutes > 0 and len(track_spikes) / minutes > SPIKES_PER_MIN:
             notes["regular"].add(tname)  # regular hits: the instrument (drums, plucks), not a problem
         else:
-            issues += [sp for sp in track_spikes if sp["size"] >= spike_db]
+            big = [sp for sp in track_spikes if sp["size"] >= spike_db]
+            starts = [sp for sp in big if sp["onset"]]          # phrase-opening consonants: part of the singing
+            if starts:
+                notes["onsets"][tname] = len(starts)
+            issues += [sp for sp in big if not sp["onset"]]
     issues.sort(key=lambda i: (i["track"], i["beat"]))
     return tempo, issues, notes
 
@@ -403,7 +433,10 @@ def apply(root, issues, tempo, a):
         elif i["kind"] == "spike":
             env, _ = aa.get_or_create_env(root, i["t"], "Volume")
             ramp = 0.02 * tempo / 60
-            aa.scale_range(root, env, -i["size"] * a.amount, i["b0"], i["b1"], ramp=ramp)
+            dip = i["size"] * a.amount
+            if i.get("plosive"):
+                dip = min(dip, PLOSIVE_MAX_DIP)          # gentle: a deep dip cuts the consonant itself
+            aa.scale_range(root, env, -dip, i["b0"], i["b1"], ramp=ramp)
             done.append(i)
         elif i["kind"] == "cut":
             if i.get("prev") is not None:
@@ -443,6 +476,10 @@ def describe(i, a):
         return (f"clip {'starts' if i['edge'] == 'in' else 'ends'} on a {i['size']:.0f} dBFS sample, no fade",
                 f"{a.fade_ms:g} ms fade")
     if i["kind"] == "spike":
+        if i.get("plosive"):
+            return (f"{i['size']:.1f} dB plosive thump (mostly under {PLOSIVE_HZ:g} Hz) inside a phrase",
+                    f"gentle dip {-min(i['size'] * a.amount, PLOSIVE_MAX_DIP):+.1f} dB over the burst; if it still "
+                    "thumps, a high-pass around 80-100 Hz on the vocal is the better fix")
         return (f"{i['size']:.1f} dB burst above its surroundings",
                 f"dip {-i['size'] * a.amount:+.1f} dB over the burst")
     word = "louder" if i["size"] > 0 else "quieter"
@@ -541,6 +578,9 @@ def main():
     if notes["regular"]:
         print("spikes not flagged on tracks with regular hits (drums, plucks): "
               + ", ".join(sorted(notes["regular"])))
+    if notes["onsets"]:
+        print("not flagged: loud consonants that open a sung phrase (a \"B\" or \"P\" after a breath is part of the "
+              "word; dipping it cuts the word): " + ", ".join(f"{k} ({n})" for k, n in sorted(notes["onsets"].items())))
     for m in sorted(notes["missing"]):
         print(f"skipped (audio file not found): {m}")
 

@@ -107,6 +107,11 @@ def check(path, against=None, renamed=None, reordered=False, added=(), removed=(
         ev = env.find("./Automation/Events")
         times = [float(x.get("Time")) for x in ev if x.get("Time") is not None] if ev is not None else []
         vals = [x.get("Value") for x in ev if x.get("Value") is not None] if ev is not None else []
+        if any(t < -63072000.0 - 1e-6 or t > 1e7 for t in times):
+            err.append(f"an automation point has a time Live refuses (before the envelope's start point or far past "
+                       f"the song; Live: \"First automation event has invalid time\") (target id {pid.get('Value')})")
+        elif times and abs(times[0] + 63072000.0) > 1e-6:
+            warn.append(f"an automation envelope does not start with Live's default point (target id {pid.get('Value')})")
         if any(b < a - 1e-9 for a, b in zip(times, times[1:])):
             err.append(f"automation points out of time order (target id {pid.get('Value')})")
         for v in vals:

@@ -8,16 +8,17 @@ pitch while leaving everything inside the note (vibrato, scoops, slides, breath)
            Only notes sung near a quarter-tone (ambiguous) use the key, or with --guide the lead
            vocal (the more consonant choice against what the lead sings at that moment).
            Harmonies come out matched to each other because every part is locked to the same grid.
-  amount   how far to pull each note (--amount 0.8 = 80% of the way; 1.0 = fully in tune)
+  amount   how far to pull each note (default 0.35: extremely gentle; 1.0 = fully in tune)
   leave    notes already within --tolerance cents are untouched; a note sung halfway between two
            notes that neither the key nor the guide can settle is flagged, not changed
   drift    optional (--drift 0.5): also flatten slow pitch drift inside long notes; vibrato stays
 
 The shift is done by Rubber Band (R3 engine, formants preserved so the voice keeps its character),
-then the output is aligned back to the input sample-for-sample so it drops straight into Live.
+then the output is aligned back to the input sample-for-sample so it drops straight into Live. Only the
+notes that move are replaced (each +-20 ms, 10 ms crossfades): every other sample is the original take.
 
 Usage:
-  hypnomix tune IN.wav OUT.wav --ref MIX.wav [--key "A minor"] [--amount 0.8] [--guide LEAD.wav]
+  hypnomix tune IN.wav OUT.wav --ref MIX.wav [--key "A minor"] [--amount 0.35] [--guide LEAD.wav]
   hypnomix tune IN.wav --report-only --ref MIX.wav     (just measure; the report goes to ./reports/tune)
   hypnomix tune IN.wav OUT.wav --ref MIX.wav --scales KEY.json [--answer F#] [--answer "17-24=both"]
            per-section scales from `hypnomix key --sections --json KEY.json` (songs that change key or borrow
@@ -365,15 +366,41 @@ def shift_curve(midi, notes, a, ramp_s=0.03):
     return np.convolve(np.pad(curve, (w // 2, w - 1 - w // 2), mode="edge"), kernel, mode="valid")
 
 
-def render(in_path, out_path, curve, sr, n_samples, channels, keep=()):
-    """Shift each sung phrase separately (Rubber Band's pitch-map mode drifts over long files),
-    line each phrase up with the original sample-for-sample, and splice it back in."""
+def merge_spans(spans):
+    out = []
+    for a, b in sorted(spans):
+        if out and a <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return out
+
+
+def crossfade_in(out, new, i0, i1, sr, fade_s=0.01):
+    """Replace out[i0:i1] with new[i0:i1], with `fade_s` crossfades at both ends."""
+    n = i1 - i0
+    if n <= 0:
+        return
+    fade = min(int(fade_s * sr), n // 4)
+    w = np.ones(n, np.float32)
+    if fade:
+        w[:fade] = np.linspace(0, 1, fade)
+        w[n - fade:] = np.linspace(1, 0, fade)
+    out[i0:i1] = out[i0:i1] * (1 - w[:, None]) + new[i0:i1] * w[:, None]
+
+
+def render(in_path, out_path, curve, sr, n_samples, channels, keep=(), moved=None, pad_s=0.02):
+    """Shift each sung phrase separately (Rubber Band's pitch-map mode drifts over long files) and line it up
+    with the original sample-for-sample. Only the notes that move are spliced in (each note +-pad_s, 10 ms
+    crossfades); everything else, notes left alone included, stays the original audio bit for bit.
+    `moved`: [(t0, t1)] of the moved notes (None: the whole phrase, the old behaviour)."""
     from concurrent.futures import ThreadPoolExecutor
     src, _ = sf.read(str(in_path), dtype="float32", always_2d=True)
     mono = src.mean(1)
     peak = float(np.abs(src).max()) or 1.0
     scale = 0.9 / peak                      # Rubber Band writes fixed-point: keep float overs intact
     out = src.copy()
+    shifted = src.copy()
     regions = active_regions(mono, sr, pad=0.4)
     work = []
     for a, b in regions:
@@ -417,7 +444,12 @@ def render(in_path, out_path, curve, sr, n_samples, channels, keep=()):
             w = np.ones(n, np.float32)
             w[:fade] = np.linspace(0, 1, fade)
             w[n - fade:] = np.linspace(1, 0, fade)
-            out[i0:i1] = out[i0:i1] * (1 - w[:, None]) + y[:n] * w[:, None]
+            shifted[i0:i1] = shifted[i0:i1] * (1 - w[:, None]) + y[:n] * w[:, None]
+    if moved is None:
+        out = shifted
+    else:                                   # the moved notes only; the rest stays exactly as sung
+        for t0, t1 in merge_spans([(t0 - pad_s, t1 + pad_s) for t0, t1 in moved]):
+            crossfade_in(out, shifted, max(0, int(t0 * sr)), min(len(src), int(t1 * sr)), sr)
     for t0, t1 in keep:                     # held notes: the original audio, sample for sample, 10 ms crossfades
         i0, i1 = max(0, int(t0 * sr)), min(len(src), int(t1 * sr))
         n = i1 - i0
@@ -578,8 +610,11 @@ def main():
     ap.add_argument("--answer", action="append", default=[], metavar="NOTE|BARS=NOTE|both",
                     help="the person's answer to a key QUESTION, e.g. F#, \"17-24=F\" or both (repeatable)")
     ap.add_argument("--guide", help="lead vocal file: settles ambiguous harmony notes toward a consonant interval")
-    ap.add_argument("--amount", type=float, default=0.8, help="how far to pull each note, 0-1 (default 0.8)")
-    ap.add_argument("--tolerance", type=float, default=10.0, help="leave notes within this many cents (10)")
+    ap.add_argument("--amount", type=float, default=0.35,
+                    help="how far to pull each note, 0-1 (default 0.35: extremely gentle, a nudge not a fix)")
+    ap.add_argument("--tolerance", type=float, default=15.0, help="leave notes within this many cents (15)")
+    ap.add_argument("--whole-phrases", action="store_true",
+                    help="send whole phrases through the shifter (old behaviour); default replaces only moved notes")
     ap.add_argument("--max", type=float, default=60.0, help="never move a note more than this many cents (60)")
     ap.add_argument("--drift", type=float, default=0.0, help="also flatten slow drift inside notes, 0-1 (0)")
     ap.add_argument("--tuning", type=float, help="song tuning in cents from A=440 (default: measured)")
@@ -659,7 +694,10 @@ def main():
     curve = shift_curve(midi, notes, a)
     print("shifting with Rubber Band…")
     keep = [(nt["t0"] - 0.01, nt["t1"] + 0.01) for nt in notes if nt["action"] == "hold"]
-    lags, out = render(a.input, out_path, curve, sr, len(y), y2.shape[1], keep)
+    moved = [(nt["t0"], nt["t1"]) for nt in notes if nt["action"] == "fix" and abs(nt["shift"]) > 1e-4]
+    lags, out = render(a.input, out_path, curve, sr, len(y), y2.shape[1], keep,
+                       moved=None if a.whole_phrases else moved)
+    untouched = float(np.mean(np.all(out == y2, axis=1))) if out.shape == y2.shape else float("nan")
     lag = f"{lags[2]} phrases, Rubber Band latency {lags[0]} samples (removed from all), " \
           f"per-phrase estimates within {lags[1]:.0f} samples of it"
     print("checking the result…")
@@ -672,6 +710,9 @@ def main():
     nhold = sum(n["action"] == "hold" for n in notes)
     print(f"{len(notes)} notes: {nfix} moved, {nflag} flagged (left alone)"
           + (f", {nhold} held as sung (disputed note where the key is unsure)" if nhold else "") + ".")
+    print(f"{untouched:.0%} of the take is the original audio, bit for bit"
+          + (" (--whole-phrases: every phrase with a moved note went through the shifter)" if a.whole_phrases
+             else " (only moved notes are replaced)"))
     print(f"wrote {out_path}, {report_path.name}, {out_path.with_suffix('.png').name}")
 
 
