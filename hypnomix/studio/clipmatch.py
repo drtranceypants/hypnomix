@@ -92,7 +92,7 @@ def table(rows):
 # ---------------------------------------------------------------- Live set
 def warp_map(clip):
     """beat-in-clip -> seconds-in-file, from the clip's warp markers."""
-    ms = [(float(w.get("BeatTime")), float(w.get("SecTime"))) for w in clip.iter("WarpMarker")]
+    ms = [(float(w.get("BeatTime")), float(w.get("SecTime"))) for w in clip.findall("./WarpMarkers/WarpMarker")]   # the clip's own markers, not the saved list
     if len(ms) >= 2:
         b, s = zip(*sorted(ms))
         return lambda beat: float(np.interp(beat, b, s, left=s[0] + (beat - b[0]) * (s[1] - s[0]) / max(1e-9, b[1] - b[0]),
