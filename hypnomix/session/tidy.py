@@ -314,11 +314,7 @@ def cut(c, edge, new, tempo):
         c.find(fl).set("Value", "0")
         if c.find(fd) is not None:
             c.find(fd).set("Value", "false")
-    n = span(c)[1] - span(c)[0]
-    for p in ("./Fades/FadeInLength", "./Fades/FadeOutLength"):      # no fade longer than the clip
-        f = c.find(p)
-        if f is not None and float(f.get("Value")) > n:
-            f.set("Value", repr(n))
+    # a fade longer than the clip is left as it is: Live already plays it clamped, rewriting it changes the sound
 
 
 def silence_probe(set_path, tempo, floor_db=-55.0):

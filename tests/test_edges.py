@@ -57,3 +57,58 @@ class UnrollTime(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def clip(i, a, b, ls, warped=True, disabled=False, fi=0.5, fo=0.5):
+    return ET.fromstring(
+        f'<AudioClip Id="{i}" Time="{a}"><CurrentStart Value="{a}"/><CurrentEnd Value="{b}"/>'
+        f'<IsWarped Value="{"true" if warped else "false"}"/><Disabled Value="{"true" if disabled else "false"}"/>'
+        f'<Loop><LoopStart Value="{ls}"/><LoopEnd Value="{ls + (b - a) * (1 if warped else 0.5)}"/>'
+        f'<StartRelative Value="0"/><LoopOn Value="false"/></Loop>'
+        f'<Fades><FadeInLength Value="{fi}"/><FadeOutLength Value="{fo}"/><IsDefaultFadeIn Value="true"/>'
+        f'<IsDefaultFadeOut Value="true"/></Fades></AudioClip>')
+
+
+class Consonant(unittest.TestCase):
+    spb = 0.5                                     # 120 BPM
+
+    def test_start_moves_earlier_and_trims_the_clip_before(self):
+        lane = ET.Element("Events")
+        prev, cur, mute = clip(1, 0, 8, 0), clip(2, 8, 16, 20), clip(3, 6, 8, 40, disabled=True)
+        lane.extend([prev, mute, cur])
+        what, touched = E.fix_consonant(lane, cur, "in", -0.05, self.spb)      # consonant 40 ms before + 10 ms
+        self.assertIn("start moved 50 ms earlier", what)
+        self.assertAlmostEqual(float(cur.get("Time")), 7.9)
+        self.assertAlmostEqual(float(cur.find("./CurrentStart").get("Value")), 7.9)
+        self.assertAlmostEqual(float(cur.find("./Loop/LoopStart").get("Value")), 19.9)   # content moves the same
+        self.assertEqual(cur.find("./Loop/StartRelative").get("Value"), "0")            # never double-shifted
+        self.assertAlmostEqual(float(prev.find("./CurrentEnd").get("Value")), 7.9)
+        self.assertAlmostEqual(float(prev.find("./Loop/LoopEnd").get("Value")), 7.9)
+        self.assertAlmostEqual(float(mute.find("./CurrentEnd").get("Value")), 7.9)
+        self.assertAlmostEqual(float(cur.find("./Fades/FadeInLength").get("Value")), 0.02)
+
+    def test_unwarped_start_moves_in_seconds(self):
+        lane = ET.Element("Events")
+        cur = clip(2, 8, 16, 20, warped=False)
+        lane.append(cur)
+        E.fix_consonant(lane, cur, "in", -0.05, self.spb)
+        self.assertAlmostEqual(float(cur.find("./Loop/LoopStart").get("Value")), 19.95)  # 50 ms, not 0.1 s
+
+    def test_comp_switch_moves_later_when_the_next_take_starts_after(self):
+        lane = ET.Element("Events")
+        a, b = clip(1, 0, 8, 0, fo=0), clip(2, 8, 16, 30)
+        lane.extend([a, b])
+        what, touched = E.fix_consonant(lane, a, "out", 0.05, self.spb)
+        self.assertIn("comp switch moved", what)
+        self.assertAlmostEqual(float(a.find("./CurrentEnd").get("Value")), 8.1)
+        self.assertAlmostEqual(float(b.find("./CurrentStart").get("Value")), 8.1)
+        self.assertAlmostEqual(float(b.get("Time")), 8.1)
+        self.assertAlmostEqual(float(b.find("./Loop/LoopStart").get("Value")), 30.1)
+
+    def test_start_is_not_moved_over_a_clip_that_keeps_playing(self):
+        lane = ET.Element("Events")
+        over, cur = clip(1, 0, 9, 0), clip(2, 8, 16, 20)
+        lane.extend([over, cur])
+        what, _ = E.fix_consonant(lane, cur, "in", -0.05, self.spb)
+        self.assertIn("NOT moved", what)
+        self.assertAlmostEqual(float(cur.find("./CurrentStart").get("Value")), 8.0)

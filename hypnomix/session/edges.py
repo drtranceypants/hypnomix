@@ -38,6 +38,8 @@ from hypnomix.session.render import render_track, v
 SR = 22050
 LP = butter(4, 150, "lp", fs=SR, output="sos")
 BP = butter(4, [300, 3000], "bp", fs=SR, output="sos")
+HF = butter(4, [3500, 10000], "bp", fs=SR, output="sos")      # where "s", "sh", "t" live
+HOP = int(0.005 * SR)
 VOCAL_WORDS = ("vocal", "harmony", "lead", "vox", "voice", "choir", "bv", "backing")
 
 
@@ -134,8 +136,59 @@ def bar(b):
     return f"{int(b // 4) + 1}.{int(b % 4) + 1}"
 
 
+def consonant_hits(op, X, L, s, e, spb, fi, fo, peak, comp_hf, comp_bb, base, look, cons_range=25, cons_loss=6):
+    """Consonants ("s", "sh", "t") the take sings at this clip's edges that the comp, as it plays, turns down.
+    A consonant: a 30-300 ms run where the 3.5-10 kHz band is within cons_range dB of the take's own high-band
+    peak AND no more than 8 dB under the full band (breaths and hiss are broader and weaker). It counts only when
+    the comp continues the word right after it (full band within 30 dB of the peak within 150 ms): where the comp
+    leaves a word out, adding its first consonant would leave a stray "s"."""
+    op_hf = env_db(sosfiltfilt(HF, op), int(0.01 * SR))[::HOP]
+    op_bb = env_db(op, int(0.01 * SR))[::HOP]
+    X5, L5 = X // HOP, L // HOP
+    if L5 <= 0:
+        return []
+    hf_peak = float(np.percentile(op_hf[X5:X5 + L5], 99.5))
+    sib = (op_hf > hf_peak - cons_range) & (op_hf - op_bb > -8)
+    runs, i = [], 0
+    while i < len(sib):
+        if sib[i]:
+            j = i
+            while j < len(sib) and sib[j]:
+                j += 1
+            if 6 <= j - i <= 60:
+                runs.append((i, j))
+            i = j
+        else:
+            i += 1
+    origin = int(round((s * spb - look / 1000) * SR)) // HOP          # comp frame of the take's frame 0
+    fi5, fo5 = int(max(fi, 0.03) * SR) // HOP, int(max(fo, 0.03) * SR) // HOP
+    out = []
+    for i0, i1 in runs:
+        at_start = i0 <= X5 + fi5 and i1 >= X5 - 2
+        at_end = i1 > X5 + L5 - fo5 and i0 <= X5 + L5 + 2
+        if not (at_start or at_end):
+            continue
+        if origin + i0 < 0 or origin + i1 > len(comp_hf):
+            continue
+        lost = float(np.median(op_hf[i0:i1] - np.maximum(comp_hf[origin + i0:origin + i1], hf_peak - 60)))
+        if lost < cons_loss:
+            continue
+        v0, v1 = origin + i1, origin + i1 + int(0.15 * SR) // HOP
+        if v1 > len(comp_bb) or np.max(comp_bb[v0:v1]) < peak - 30:
+            continue                              # the comp leaves this word out on purpose
+        c0, c1 = (i0 - X5) * HOP / SR, (i1 - X5) * HOP / SR                # seconds from the clip start
+        if at_start:
+            out.append(dict(base, kind="consonant", edge="in", beat=s, lost=lost, c0=c0, c1=c1,
+                            move_s=min(0.0, c0 - 0.01), sure=True))
+        else:
+            ln = (e - s) * spb
+            out.append(dict(base, kind="consonant", edge="out", beat=e, lost=lost, c0=c0 - ln, c1=c1 - ln,
+                            move_s=max(0.0, c1 - ln + 0.015), sure=True))
+    return out
+
+
 def scan(als, root, tracks, look=150, rng=25, max_fade_ms=40, loss=6, cut_range=15, swell_s=2.0,
-         fix_within_ms=150, fix_min_db=10, log=print):
+         fix_within_ms=150, fix_min_db=10, log=print, consonants=True, cons_range=25, cons_loss=6):
     tempo = float(v(root, ".//Tempo/Manual"))
     spb = 60 / tempo
     ext = look / 1000 / spb
@@ -148,6 +201,15 @@ def scan(als, root, tracks, look=150, rng=25, max_fade_ms=40, loss=6, cut_range=
         lane = t.find("./DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events")
         clips = [c for c in (list(lane) if lane is not None else []) if c.tag == "AudioClip" and v(c, "./Disabled") != "true"]
         spans = [(float(v(c, "./CurrentStart")), float(v(c, "./CurrentEnd"))) for c in clips]
+        comp_hf = comp_bb = None
+        if clips and consonants:                 # the track as it plays (every clip, fade and edge)
+            try:
+                N = int((max(e for _, e in spans) * spb + 2) * SR)
+                comp = render_track(t, als, spb, N, SR, None, None, [])
+                comp_hf = env_db(sosfiltfilt(HF, comp), int(0.01 * SR))[::HOP]
+                comp_bb = env_db(comp, int(0.01 * SR))[::HOP]
+            except Exception as ex:
+                log(f"  ({name}: consonants not checked, {type(ex).__name__})")
         for ci, c in enumerate(clips):
             if v(c, "./Loop/LoopOn") == "true":
                 continue
@@ -178,6 +240,9 @@ def scan(als, root, tracks, look=150, rng=25, max_fade_ms=40, loss=6, cut_range=
                 i = int(np.argmin(ed))
                 return (max(0, lo) + i - X) / SR, float(ed[i]) - peak
 
+            if comp_hf is not None:
+                found += consonant_hits(op, X, L, s, e, spb, fi, fo, peak, comp_hf, comp_bb, base, look,
+                                        cons_range, cons_loss)
             pre, post = op[X - w:X], op[X:X + w]
             if rms_db(pre) > peak - cut_range and rms_db(post) > floor and not covered(s - ext, s):
                 q = quiet(0, X)
@@ -207,6 +272,12 @@ def scan(als, root, tracks, look=150, rng=25, max_fade_ms=40, loss=6, cut_range=
                     d, tt, lo = max(hits)
                     found.append(dict(base, kind="fade-out", beat=e, edge="out", fade_ms=fo * 1000,
                                       at_ms=(tt - n / SR) * 1000, duck=d, thump=lo > 0.6, sure=False))
+    best = {}                                     # one consonant treatment per clip edge: the widest move
+    for f in [f for f in found if f["kind"] == "consonant"]:
+        k = (f["track"], f["clip"], f["edge"])
+        if k not in best or abs(f["move_s"]) > abs(best[k]["move_s"]) or (f["move_s"] == best[k]["move_s"] and f["lost"] > best[k]["lost"]):
+            best[k] = f
+    found = [f for f in found if f["kind"] != "consonant"] + list(best.values())
     found.sort(key=lambda f: (f["beat"], f["track"]))
     return found
 
@@ -214,8 +285,32 @@ def scan(als, root, tracks, look=150, rng=25, max_fade_ms=40, loss=6, cut_range=
 OFF = " (switched-off comp track: copies made from it carry the same problem)"
 
 
+def consonant_item(f, fix_fade_ms=10):
+    off = OFF if f["off"] else ""
+    if f["edge"] == "in":
+        act = (f"move the clip start {abs(f['move_s']) * 1000:.0f} ms earlier (10 ms before the consonant; a clip "
+               "ending right there is trimmed to match)" if f["move_s"] < 0 else "") or ""
+        fix = "; ".join(x for x in (f"a {fix_fade_ms:g} ms fade-in", act) if x)
+        where_ = f"{f['c0'] * 1000:+.0f} to {f['c1'] * 1000:+.0f} ms from the clip start"
+    else:
+        act = (f"end {f['move_s'] * 1000:.0f} ms later (into empty space, or by moving the comp switch when the "
+               "next take starts after the consonant)" if f["move_s"] > 0 else "")
+        fix = "; ".join(x for x in (f"a {fix_fade_ms:g} ms fade-out", act) if x)
+        where_ = f"{f['c0'] * 1000:+.0f} to {f['c1'] * 1000:+.0f} ms from the clip end"
+    return dict(tool="edges", kind="consonant", severity="medium", track=f["track"], where=f"bar {bar(f['beat'])}",
+                problem=(f"the take sings a consonant (an \"s\", \"sh\" or \"t\") at {where_} that the comp plays "
+                         f"{f['lost']:.0f} dB down, and the word goes on right after it: the word is heard without "
+                         f"its first sound" + off),
+                fix=fix + " (recommended). Re-checked after the fix; undone if the track there plays more than 2.5 dB "
+                          "above the take's own audio (two takes doubling)",
+                applies="set", targets=[[f["clip"], f["edge"], "consonant", f["move_s"]]], recommended=True,
+                expect_db=round(f["lost"], 1))
+
+
 def one(f, fix_fade_ms=10):
     """A single edge as its own item (for `--tracks`: pick exactly which fades to shorten)."""
+    if f["kind"] == "consonant":
+        return consonant_item(f, fix_fade_ms)
     off = OFF if f["off"] else ""
     if f["kind"] in ("fade-in", "fade-out"):
         side = "from the clip start" if f["kind"] == "fade-in" else "before the clip end"
@@ -226,7 +321,8 @@ def one(f, fix_fade_ms=10):
                                                                 "purpose" if f["thump"] else "") + off),
                     fix=f"shorten the {f['kind']} to {fix_fade_ms:g} ms" + (" (recommended: clear-cut)" if f.get("sure")
                                                                              else ": listen first"),
-                    applies="set", targets=[[f["clip"], f["edge"]]], recommended=bool(f.get("sure")))
+                    applies="set", targets=[[f["clip"], f["edge"]]], recommended=bool(f.get("sure")),
+                    expect_db=round(f["duck"], 1))
     q = (f"; the nearest quiet point is {f['quiet_ms']:+.0f} ms away ({f['quiet_db']:+.0f} dB)"
          if f.get("quiet_ms") is not None else "")
     return dict(tool="edges", kind=f["kind"], severity="low", track=f["track"], where=f"bar {bar(f['beat'])}",
@@ -241,15 +337,17 @@ def findings(found, fix_fade_ms=10):
     listen-only item for its possible cuts, so a song with many comp edits stays reviewable."""
     out = []
     add = lambda **k: out.append(dict(id=f"edges-{len(out) + 1}", tool="edges", **k))
-    for f in [f for f in found if f.get("sure")]:
+    for f in [f for f in found if f["kind"] == "consonant"]:
+        out.append(dict(consonant_item(f, fix_fade_ms), id=f"edges-{len(out) + 1}"))
+    for f in [f for f in found if f.get("sure") and f["kind"] != "consonant"]:
         add(kind=f["kind"], severity="medium", track=f["track"], where=f"bar {bar(f['beat'])}",
             problem=(f"a {f['fade_ms']:.0f} ms {f['kind']} turns down a word that starts {abs(f['at_ms']):.0f} ms from "
                      f"the clip start by {f['duck']:.0f} dB: its first sound is ducked" + (OFF if f["off"] else "")),
             fix=f"shorten the fade-in to {fix_fade_ms:g} ms (recommended: clear-cut)", applies="set",
-            targets=[[f["clip"], f["edge"]]], recommended=True)
+            targets=[[f["clip"], f["edge"]]], recommended=True, expect_db=round(f["duck"], 1))
     by = {}
     for f in found:
-        if f.get("sure"):
+        if f.get("sure") or f["kind"] == "consonant":
             continue
         grp = "fades" if f["kind"] in ("fade-in", "fade-out") else "cuts"
         by.setdefault((f["track"], grp), []).append(f)
@@ -264,7 +362,8 @@ def findings(found, fix_fade_ms=10):
                                                                      "hiding on purpose" if th else "") + off),
                 fix=(f"listen first; approving shortens all {len(fs)} to {fix_fade_ms:g} ms. To pick some, run "
                      f"`hypnomix edges SET --tracks \"{trk}\"` and apply those ids"),
-                applies="set", targets=[[f["clip"], f["edge"]] for f in fs], recommended=False)
+                applies="set", targets=[[f["clip"], f["edge"]] for f in fs], recommended=False,
+                expect_db=round(max(f["duck"] for f in fs), 1))
         else:
             ns, ne = sum(f["kind"] == "start-cut" for f in fs), sum(f["kind"] == "end-cut" for f in fs)
             add(kind="cuts", severity="low", track=trk, where=f"{len(fs)} edge(s): bars {bars}",
@@ -276,26 +375,206 @@ def findings(found, fix_fade_ms=10):
     return out
 
 
-def apply(root, items, fix_fade_ms=10):
+def _f(c, p):
+    return float(v(c, p) or 0)
+
+
+def _setf(c, p, val):
+    if c.find(p) is not None:
+        c.find(p).set("Value", repr(float(val)))
+
+
+def _per(c, spb):
+    """Content units per beat: loop/start values are beats for warped clips, seconds for unwarped ones."""
+    return 1.0 if v(c, "./IsWarped") == "true" else spb
+
+
+def _fade(c, edge, beats):
+    k, d = ("FadeInLength", "IsDefaultFadeIn") if edge == "in" else ("FadeOutLength", "IsDefaultFadeOut")
+    if c.find(f"./Fades/{k}") is None:
+        return False
+    c.find(f"./Fades/{k}").set("Value", repr(beats))
+    if c.find(f"./Fades/{d}") is not None:
+        c.find(f"./Fades/{d}").set("Value", "false")
+    return True
+
+
+def _set_start(c, ns, spb):
+    """Move a loop-off clip's start, keeping what plays at every other moment: Time, CurrentStart and LoopStart
+    move together (StartRelative stays, or the audio would shift twice)."""
+    d = ns - _f(c, "./CurrentStart")
+    c.set("Time", repr(float(ns)))
+    _setf(c, "./CurrentStart", ns)
+    _setf(c, "./Loop/LoopStart", _f(c, "./Loop/LoopStart") + d * _per(c, spb))
+
+
+def _set_end(c, ne, spb):
+    d = ne - _f(c, "./CurrentEnd")
+    _setf(c, "./CurrentEnd", ne)
+    _setf(c, "./Loop/LoopEnd", _f(c, "./Loop/LoopEnd") + d * _per(c, spb))
+
+
+def fix_consonant(lane, c, edge, move_s, spb, fix_fade_ms=10):
+    """The consonant fixes, in order: shorten the fade that eats it; move the start to 10 ms before it (trimming a
+    clip that ends right there and any muted clip under it); at an end, extend into empty space or move a comp
+    switch later when the next take starts after the consonant. Returns (what was done, clips touched)."""
+    fb = fix_fade_ms / 1000 / spb
+    sib = [x for x in lane if x.tag == "AudioClip" and v(x, "./Disabled") != "true" and x is not c]
+    muted = [x for x in lane if x.tag == "AudioClip" and v(x, "./Disabled") == "true"]
+    cs, ce = _f(c, "./CurrentStart"), _f(c, "./CurrentEnd")
+    if edge == "in":
+        _fade(c, "in", fb)
+        d = -move_s / spb
+        if d * spb < 0.001:                       # under a millisecond: nothing to move
+            return "fade-in shortened", [c]
+        ns = cs - d
+        if _f(c, "./Loop/LoopStart") - d * _per(c, spb) < 0:
+            return "fade-in shortened (the take starts too late to move the edge earlier)", [c]
+        over = [x for x in sib if _f(x, "./CurrentStart") < cs and _f(x, "./CurrentEnd") > ns]
+        if not all(abs(_f(x, "./CurrentEnd") - cs) < 1e-4 and _f(x, "./CurrentStart") < ns - 1e-4 for x in over):
+            return "fade-in shortened; start NOT moved (another clip plays there): listen", [c]
+        for x in over:                            # contiguous: hand it the space
+            _set_end(x, ns, spb)
+            fo = _f(x, "./Fades/FadeOutLength")
+            _fade(x, "out", min(fb, fo) if fo > 0 else fb)
+        for x in muted:                           # muted clips under the new start: trimmed too
+            xs, xe = _f(x, "./CurrentStart"), _f(x, "./CurrentEnd")
+            if xs < ns < xe <= cs + 1e-4:
+                _set_end(x, ns, spb)
+        _set_start(c, ns, spb)
+        return f"fade-in shortened, start moved {-move_s * 1000:.0f} ms earlier", [c] + over
+    long_fade = _f(c, "./Fades/FadeOutLength") > fb * 1.5
+    _fade(c, "out", fb)
+    d = move_s / spb
+    if d * spb < 0.001:
+        return "fade-out shortened", [c]
+    ne = ce + d
+    over = [x for x in sib if _f(x, "./CurrentStart") < ne and _f(x, "./CurrentEnd") > ce]
+    if not over:
+        _set_end(c, ne, spb)
+        return f"fade-out shortened, end moved {move_s * 1000:.0f} ms later", [c]
+    if long_fade:
+        return "fade-out shortened (edge kept)", [c]
+    x = over[0]
+    if len(over) == 1 and abs(_f(x, "./CurrentStart") - ce) < 1e-4 and _f(x, "./CurrentEnd") - ne > 1.0 \
+            and v(x, "./Loop/LoopOn") != "true":
+        _set_end(c, ne, spb)                      # this take finishes the consonant, then the next takes over
+        _set_start(x, ne, spb)
+        _fade(x, "in", fb)
+        return f"comp switch moved {move_s * 1000:.0f} ms later", [c, x]
+    return "fade-out shortened; end NOT moved (the next clip plays there): listen", [c]
+
+
+def _peaks_jump(before, after, t0, t1, limit=2.5):
+    i0, i1 = max(0, int(t0 * SR)), int(t1 * SR)
+    pb = np.max(env_db(before[i0:i1], int(0.01 * SR))) if i1 > i0 else -240
+    pa = np.max(env_db(after[i0:i1], int(0.01 * SR))) if i1 > i0 else -240
+    return float(pa - pb) > limit, float(pa - pb)
+
+
+def apply(root, items, fix_fade_ms=10, als=None, passes=3, log=print):
+    """Apply approved items. Consonant fixes are re-checked (up to `passes` rounds, only on the clips the
+    approved fixes touched), then the track is rendered before and after: where its peak jumps over 2.5 dB at a
+    changed spot (two takes doubling), that change is undone."""
     tempo = float(v(root, ".//Tempo/Manual"))
-    beats = fix_fade_ms / 1000 * tempo / 60
+    spb = 60 / tempo
+    beats = fix_fade_ms / 1000 / spb
     tracks = {v(t, "./Name/EffectiveName"): t for t in root.find(".//Tracks") if t.tag == "AudioTrack"}
+    before = {}                                   # track name -> its element before any change (for the compare)
+    edits = []                                    # (track, spot seconds, [(lane, index, original clip)], what)
     done = 0
+
+    def lane_of(name):
+        return tracks[name].find("./DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events")
+
+    def run(f, cid, edge, kind=None, move=0.0, expect=0.0):
+        nonlocal done
+        lane = lane_of(f["track"])
+        c = next((x for x in lane if x.get("Id") == cid), None) if lane is not None else None
+        if c is None:
+            return None
+        before.setdefault(f["track"], copy.deepcopy(tracks[f["track"]]))
+        snap = [(i, copy.deepcopy(x)) for i, x in enumerate(lane) if x.tag == "AudioClip"]
+        spot = (_f(c, "./CurrentStart") if edge == "in" else _f(c, "./CurrentEnd")) * spb
+        if kind == "consonant":
+            what, touched = fix_consonant(lane, c, edge, move, spb, fix_fade_ms)
+        else:
+            what, touched = ("fade shortened", [c]) if _fade(c, edge, beats) else (None, [])
+        if what is None:
+            return None
+        ids = {x.get("Id") for x in touched}
+        edits.append((f["track"], spot, [(i, o) for i, o in snap if o.get("Id") in ids], what, expect))
+        done += 1
+        return ids
+
+    touched = {}
     for f in items:
         if f["applies"] != "set" or f["track"] not in tracks:
             continue
-        lane = tracks[f["track"]].find("./DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events")
-        for cid, edge in f.get("targets", []):
-            c = next((x for x in lane if x.get("Id") == cid), None) if lane is not None else None
-            if c is None:
+        for tg in f.get("targets", []):
+            ids = run(f, *tg, expect=float(f.get("expect_db") or 0)) if len(tg) > 2 else \
+                run(f, *tg, None, 0.0, float(f.get("expect_db") or 0))
+            if ids and len(tg) > 2:
+                touched.setdefault(f["track"], set()).update(ids)
+    # re-run until clean, on the clips the approved consonant fixes touched
+    for _ in range(max(0, passes - 1) if als else 0):
+        more = 0
+        for name, ids in list(touched.items()):
+            again = [g for g in scan(als, root, [tracks[name]], log=lambda *_: None)
+                     if g["kind"] == "consonant" and g["clip"] in ids]
+            for g in again:
+                new = run(dict(track=name), g["clip"], g["edge"], "consonant", g["move_s"], g["lost"])
+                if new:
+                    ids |= new
+                    more += 1
+        if not more:
+            break
+    # render-compare each changed spot: a peak jump means two takes now play at once there
+    undone = []
+    if als:
+        for name in {e[0] for e in edits}:
+            try:
+                n = int((max(_f(c, "./CurrentEnd") for c in lane_of(name) if c.tag == "AudioClip") * spb + 2) * SR)
+                rb = render_track(before[name], als, spb, n, SR, None, None, [])
+                ra = render_track(tracks[name], als, spb, n, SR, None, None, [])
+            except Exception as ex:
+                log(f"  ({name}: not render-checked, {type(ex).__name__})")
                 continue
-            k, d = ("FadeInLength", "IsDefaultFadeIn") if edge == "in" else ("FadeOutLength", "IsDefaultFadeOut")
-            if c.find(f"./Fades/{k}") is not None:
-                c.find(f"./Fades/{k}").set("Value", repr(beats))
-                if c.find(f"./Fades/{d}") is not None:
-                    c.find(f"./Fades/{d}").set("Value", "false")
-                done += 1
-    return done
+            for tr, spot, snap, what, expect in reversed([e for e in edits if e[0] == name]):
+                # a fix may bring a ducked sound back up to the take's own level, never above it: louder than both
+                # the old render and the clips' own unfaded audio means something else now plays there (two
+                # takes doubling, or audio shifted onto the wrong spot)
+                ids = {o.get("Id") for _, o in snap}
+                own = ET.Element("AudioTrack")
+                ET.SubElement(ET.SubElement(own, "Name"), "EffectiveName").set("Value", "own")
+                ev = ET.SubElement(ET.SubElement(ET.SubElement(own, "X"), "ArrangerAutomation"), "Events")
+                for x in lane_of(name):
+                    if x.tag == "AudioClip" and x.get("Id") in ids:
+                        y = copy.deepcopy(x)
+                        _fade(y, "in", 0.0); _fade(y, "out", 0.0)
+                        if y.find("./Disabled") is not None:
+                            y.find("./Disabled").set("Value", "false")
+                        ev.append(y)
+                try:
+                    ro = render_track(own, als, spb, n, SR, None, None, [])
+                except Exception:
+                    ro = rb
+                ref = np.maximum(np.abs(rb), np.abs(ro))
+                bad, jump = _peaks_jump(ref, ra, spot - 0.1, spot + 0.25, limit=2.5)
+                if bad:
+                    lane = lane_of(name)
+                    for i, orig in snap:              # put those clips back as they were
+                        cur = next((x for x in lane if x.get("Id") == orig.get("Id")), None)
+                        if cur is not None:
+                            k = list(lane).index(cur)
+                            lane.remove(cur)
+                            lane.insert(k, orig)
+                    undone.append(f"{name} at {int(spot // 60)}:{spot % 60:05.2f}: undone ({what}; the peak there "
+                                  f"is {jump:+.1f} dB above both the old render and the take's own audio: two takes doubling)")
+                    done -= 1
+    for u in undone:
+        log("  " + u)
+    return max(0, done)
 
 
 def main():
@@ -332,11 +611,11 @@ def main():
         want = {x.strip() for x in (a.ids or "").split(",") if x.strip()}
         if not want:
             sys.exit("say which: --ids edges-1,… (nothing is changed by default)")
-        n = apply(root, [f for f in fs if f["id"] in want], a.fix_fade_ms)
+        n = apply(root, [f for f in fs if f["id"] in want], a.fix_fade_ms, als=str(src))
         data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
         with gzip.open(a.apply, "wb") as fh:
             fh.write(data)
-        print(f"wrote {a.apply}: {n} fade(s) shortened to {a.fix_fade_ms:g} ms")
+        print(f"wrote {a.apply}: {n} edge fix(es) (fades {a.fix_fade_ms:g} ms; consonant edges moved where asked)")
 
 
 if __name__ == "__main__":

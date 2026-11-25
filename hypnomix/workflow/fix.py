@@ -618,38 +618,62 @@ def main():
                           f"(the scan estimated {f.get('key')})")
             print(f"tune       REFUSED  {f['track']}: the key is not confirmed (--key)")
             continue
-        rdir = sd / "raw" / ("renders" if not a.from_set else f"renders-{safe_name(src.stem)}")
-        rendered = rdir / f"{safe_name(f['track'])}.wav"
-        if not rendered.exists():
-            hx("render", src, "--tracks", f["track"], "--out", rdir)
-        if not rendered.exists():
-            failed.append(f"{f['id']}: could not render {f['track']} from the set")
-            print(f"tune       FAILED  {f['track']}: render failed")
+        # pitch correction goes on the TAKES under the comp clips: each take file is tuned into a new file of the
+        # same length and, in the new set, this track's comp clips play it. The comp stays exactly as it was
+        # (positions, edges, fades, warp, gain); no rendered copy of the track is made or swapped in
+        if "--scales" in [str(x) for x in tune_key]:
+            failed.append(f"{f['id']}: not tuned: tuning the takes needs one key (--key \"<key>\"); the section map "
+                          "is in song time and a take file is not")
+            print(f"tune       REFUSED  {f['track']}: pass one --key for the takes")
+            continue
+        import gzip as _gz, xml.etree.ElementTree as _ET
+        from hypnomix.session import sources as SRC, check as C
+        target = name_out
+        base = target if Path(target).exists() else src
+        root_t = _ET.fromstring(_gz.open(base).read())
+        tname = f["track"]
+        if SRC.find_track(root_t, tname) is None:            # renamed earlier in this run
+            tname = next((n_ for o_, n_ in (locals().get("done_n") or []) if o_ == tname), tname)
+        takes = SRC.track_sources(root_t, tname, base)
+        if not takes:
+            failed.append(f"{f['id']}: {f['track']} has no enabled clips to tune")
             continue
         tdir = src.parent / "Samples" / "Tuned"
         tdir.mkdir(parents=True, exist_ok=True)
-        dest, k = tdir / f"{safe_name(f['track'])} (tuned).wav", 1
-        while dest.exists():
-            k += 1
-            dest = tdir / f"{safe_name(f['track'])} (tuned {k}).wav"
-        args = ["tune", rendered, dest, *tune_key]
-        lead = scan.get("lead")
-        if lead and lead != f["track"]:      # a harmony: settle in-between notes against the same lead as the scan
-            lrend = rdir / f"{safe_name(lead)}.wav"
-            if not lrend.exists():
-                hx("render", src, "--tracks", lead, "--out", rdir)
-            if lrend.exists():
-                args += ["--guide", lrend]
-        if scan.get("ref"):
-            args += ["--ref", scan["ref"]]
-        code, txt = hx(*args)
-        ok = code == 0 and dest.exists()
-        log += [f"### tune {f['track']}: {'written' if ok else 'FAILED'}", "", "```", txt.strip()[-1500:], "```", ""]
-        print(f"tune       {'ok' if ok else 'FAILED'}  {dest if ok else f['track']}")
-        if ok:
-            print("           put it on a new audio track at bar 1 (warp off), mute the original, A/B")
-        else:
-            failed.append(f"{f['id']}: tune failed on {f['track']}")
+        done_files = 0
+        for take, clips in takes.items():
+            if not take.exists():
+                failed.append(f"{f['id']}: take file not found: {take.name}")
+                continue
+            dest, k = tdir / f"{safe_name(take.stem)} (tuned).wav", 1
+            while dest.exists():
+                k += 1
+                dest = tdir / f"{safe_name(take.stem)} (tuned {k}).wav"
+            args = ["tune", take, dest, *tune_key] + (["--ref", scan["ref"]] if scan.get("ref") else [])
+            code, txt = hx(*args)
+            ok = code == 0 and dest.exists()
+            log += [f"### tune {f['track']}, take {take.name}: {'written ' + dest.name if ok else 'FAILED'}", "",
+                    "```", txt.strip()[-1200:], "```", ""]
+            if ok:
+                SRC.repoint(clips, dest, src.parent)
+                done_files += 1
+                print(f"tune       ok  {f['track']}: take {take.name} → {dest.name} ({len(clips)} comp clip(s))")
+            else:
+                failed.append(f"{f['id']}: tune failed on take {take.name}")
+        if done_files:
+            tmp = Path(target).with_name(Path(target).stem + " (tune step).als")
+            with _gz.open(tmp, "wb") as fh:
+                fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n' + _ET.tostring(root_t, encoding="utf-8"))
+            shutil.move(str(tmp), str(target))
+            errs, _, _ = C.check(target, src, allow_removed=True)
+            if errs:
+                bad = Path(target).with_name(Path(target).stem + " (BROKEN, do not open).als")
+                Path(target).rename(bad)
+                failed += [f"structure check after tuning: {e}" for e in errs]
+                print(f"check      FAILED after tuning: renamed to {bad.name}; keep using the original.")
+            else:
+                print(f"           {f['track']}'s comp clips now play the tuned takes in {Path(target).name}; "
+                      "the original take files are untouched (A/B against the original set)")
 
     if skipped_all:
         print("\nskipped (not applied):")

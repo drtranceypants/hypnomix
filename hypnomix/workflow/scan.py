@@ -461,9 +461,10 @@ def doubles(files, lead):
         out.append(dict(id=f"doubles-{n}", tool="vocalign", kind="vocal-timing", severity=sev, track=t, where="",
                         problem=f"sits {med:.0f} ms from the lead on average where both sing (worst moments {p95:.0f} ms{' or more: the most this check measures' if p95 >= 148 else ''}): "
                                 "words start and end apart, which smears consonants",
-                        fix="time-align it to the lead, pitch untouched, into a new file (vocalign). Skip this if it is a "
-                            "counter-melody or sings different words: it is only for parts that follow the lead.",
-                        applies="audio", run=["vocalign", str(files[lead]), str(p), "--trim-tails", "--out", "{out}"]))
+                        fix=("listen, then nudge this part's own comp clips in Live where its words start apart from the "
+                             "lead (clip edits only: no aligned or rendered copy is swapped in). Skip this if it is a "
+                             "counter-melody or sings different words: it is only for parts that follow the lead."),
+                        applies="manual"))
     notes.append(f"doubles: {len(files) - 1} vocal(s) compared with the lead '{lead}' for timing")
     return out, notes
 
