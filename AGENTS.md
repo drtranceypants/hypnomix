@@ -15,7 +15,9 @@ A command-line mixing and mastering toolkit (`hypnomix <command>`). Three kinds 
   be closed. Tools that change a set always write a **new** `.als` next to the original.
 - **Project tools (REAPER, Ardour):** read a REAPER project (`.rpp`, plain text) or an Ardour session (`.ardour`
   XML, or the session folder) through the shared model in `hypnomix/project/` (`project`, and `scan` on either).
-  Times are in seconds. The DAW can stay open: nothing is written next to the project. The same model also reads `.als` sets; new tools that should work in both DAWs
+  Times are in seconds. The DAW can stay open: `scan` writes nothing next to the project, and `fix` on a REAPER
+  scan writes ONE new `.rpp` (`workflow/fix_project.py`, edits in `project/rpp_edit.py`; tuned vocals become new
+  takes on the person's own items, never a rendered copy). The same model also reads `.als` sets; new tools that should work in both DAWs
   belong there (`project.load(path)`), not on raw XML.
 - **Live tools:** drive the open Live set through AbletonOSC (`hypnomix live`, `loop`, `diagnose`, `chain`).
   The last resort, not the first: they need Live running, a remote script, and a person at the screen.

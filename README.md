@@ -80,8 +80,10 @@ hypnomix fix  <scan folder> --approved --out "Song (fixed).als"          # apply
 
 **REAPER:** `hypnomix project Song.rpp` shows what is in a project (folders, items, takes, plug-ins, automation)
 and `--render` renders its tracks without opening REAPER. `scan` on an `.rpp` checks missing files, item edges and
-comp cuts, vocal pitch and doubles, plug-ins, the source recordings, boosted noise and automation; its project
-changes are listed for you to make in REAPER for now (writing a fixed `.rpp` is next).
+comp cuts, spikes, vocal pitch and doubles, plug-ins, the source recordings, boosted noise and automation.
+`fix … --out "Song (fixed).rpp"` writes what you approved into **one new project**: item fades, volume eases at
+comp cuts and dips over spikes (as track volume automation), and tuned vocals as **new takes** on your own items,
+so the original take is one click away. Checked against REAPER 7.86's own renders.
 
 **Ardour:** the same for an Ardour session (Ardour 3 to 9): `hypnomix project "Song/"` lists tracks, buses,
 regions, plug-ins and automation, `--render` plays the regions the way Ardour layers them (upper regions cover

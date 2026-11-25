@@ -9,6 +9,7 @@
                                                             same, naming the ids here (also recorded)
   hypnomix fix SCAN_DIR --approve ID --from "Song (fixed 1).als" --out "Song (fixed 2).als"
                                                             one fix at a time, each on top of the last
+  hypnomix fix SCAN_DIR --approved --out "Song (fixed).rpp"  a REAPER project: see workflow/fix_project.py
 
 What happens to each approved finding (see REVIEW.md for the ids):
   set     written into ONE new set next to the original, in this order: distortion parameter fixes,
@@ -265,12 +266,14 @@ def main():
         if was and not a.from_set and abs(orig.stat().st_mtime - was) > 1 and not a.stale_ok:
             sys.exit("the set was saved again after the scan, so the findings may not match it any more.\n"
                      "Re-scan it (recommended), or pass --stale-ok if the change cannot affect these findings.")
-    voices_in_set = bool(orig) and any(f.get("tool") == "voices" for f in audio_items)
-    if set_items or name_items or voices_in_set:
+    reaper_ = orig is not None and orig.suffix.lower() == ".rpp"
+    voices_in_set = bool(orig) and not reaper_ and any(f.get("tool") == "voices" for f in audio_items)
+    tune_rpp = reaper_ and any(f.get("tool") == "tune" for f in audio_items)
+    if set_items or name_items or voices_in_set or tune_rpp:
         if not orig:
             sys.exit("this scan has no Live set: set changes cannot be applied")
         if not a.out:
-            sys.exit("approved set changes need --out NEW.als")
+            sys.exit("approved set changes need --out NEW" + (".rpp" if reaper_ else ".als"))
         out = Path(a.out)
         if not out.is_absolute():
             out = src.parent / out
@@ -281,7 +284,9 @@ def main():
         if out.exists():
             sys.exit(f"{out.name} already exists: choose a new name (nothing is ever overwritten)")
     name_out = out
-    if orig and (set_items or audio_items or name_items) and live_running():
+    if reaper_ and out is not None and out.suffix.lower() != ".rpp":
+        sys.exit("a REAPER project is written as a new .rpp: give --out \"<Song> (fixed).rpp\"")
+    if orig and not reaper_ and (set_items or audio_items or name_items) and live_running():
         print("NOTE: Live is running. Changes not saved in Live are not in the file being read, and the set "
               "must be closed in Live before the new one is opened.\n")
 
@@ -293,6 +298,17 @@ def main():
            f"approved: {', '.join(f['id'] for f in chosen)}", ""]
     failed, skipped_all = [], []
 
+    if reaper_ and (set_items or tune_rpp):      # REAPER: one pass into one new .rpp (workflow/fix_project.py)
+        from hypnomix.workflow import fix_project as FP
+        tune_items = [f for f in audio_items if f.get("tool") == "tune"]
+        wrote, l2, f2, s2 = FP.run(sd, scan, src, out, set_items, tune_items, dec, a.key or scan.get("key"),
+                                   verify=not a.no_verify)
+        log += l2
+        failed += f2
+        skipped_all += s2
+        audio_items = [f for f in audio_items if f.get("tool") != "tune"]
+        set_items = []
+        out = wrote
     if set_items:
         tj = sd / "raw" / "timing.json"
         tjd = json.loads(tj.read_text()) if tj.exists() else {}
@@ -717,7 +733,10 @@ def main():
     with open(sd / "fix-log.md", "a") as fh:
         fh.write("\n".join(log) + "\n")
     print(f"\nlog: {sd / 'fix-log.md'}")
-    if out:
+    if out and str(out).lower().endswith(".rpp"):
+        print("Open the new project in REAPER and A/B the changed spots against the original (tuned parts: switch "
+              "takes on the items).")
+    elif out:
         print("Close the original in Live, open the new set, and A/B the changed spots against the original.")
     if failed:
         sys.exit(1)

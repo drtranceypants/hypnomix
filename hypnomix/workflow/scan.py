@@ -966,7 +966,8 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
     rpp_ = daw in ("reaper", "ardour")
     L = [f"# First-pass review: {Path(setp).stem if setp else od.name}", "",
          f"{'Project' if rpp_ else 'Set'}: `{setp}`  ", "Nothing has been changed. Go through the items one at a time: "
-         "**approve**, **skip** or **change** each" + (", then make the approved changes (see Apply)." if rpp_ else
+         "**approve**, **skip** or **change** each" + (", then `hypnomix fix` writes them into ONE new project." if daw == "reaper" else
+                                                       ", then make the approved changes (see Apply)." if rpp_ else
          ", then `hypnomix fix` writes every approved set change into ONE new set."), "",
          f"**{len(findings)} findings:** {counts['high']} high, {counts['medium']} medium, {counts['low']} low, "
          f"{counts['info']} info", ""]
@@ -1006,6 +1007,16 @@ def write_review(od, setp, findings, notes, meta, pref_lines=()):
         else:
             L.append("- decision: [ ] approve  [ ] skip  [ ] change: ")
         L.append("")
+    if daw == "reaper":
+        L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision',
+              f'hypnomix fix "{od}" --approved --out "<Song> (fixed).rpp"   # apply only what was approved', "```",
+              "`fix` writes approved *set* items (fades, eases, dips) into ONE new .rpp next to the original, and "
+              "tuned vocals as NEW TAKES on your own items (the original take stays: switch takes to A/B). Other "
+              "*audio* items become new files; *manual* items are listed for you. Every finding is looked up again "
+              "before anything changes, and the new project is checked and measured again afterwards. REAPER can stay "
+              "open; open the new file when it is written."]
+        (od / "REVIEW.md").write_text("\n".join(L) + "\n")
+        return
     if rpp_:
         name, ext, swap = {"reaper": ("REAPER", ".rpp", "as new takes"),
                            "ardour": ("Ardour", ".ardour", "as new regions")}[daw]

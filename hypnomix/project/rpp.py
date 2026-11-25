@@ -138,7 +138,8 @@ class Chunk:
         return ln
 
     def add(self, child, at=None):
-        child.parent = self
+        if isinstance(child, Chunk):
+            child.parent = self
         if isinstance(child, (Line, Chunk)) and not child.indent:
             child.indent = self._child_indent()
         self.children.insert(len(self.children) if at is None else at, child)

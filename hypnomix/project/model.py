@@ -325,3 +325,39 @@ def mixdown(project, sr=44100, tracks=None, length=None, warn=None):
         out[: len(y), 0] += y * g * l * math.sqrt(2)
         out[: len(y), 1] += y * g * r * math.sqrt(2)
     return out
+
+
+# ---------------------------------------------------------------- envelopes as heard
+_FADER = None
+
+
+def _fader_table():
+    global _FADER
+    if _FADER is None:
+        import json
+        d = json.loads((Path(__file__).parent / "reaper_fader.json").read_text())
+        _FADER = (np.array(d["db"]), np.array(d["fader"]))
+    return _FADER
+
+
+def to_fader(amp):
+    """Amplitude -> REAPER's fader-scaled envelope value (from REAPER's own numbers)."""
+    db, fd = _fader_table()
+    a = np.maximum(np.asarray(amp, dtype=float), 1e-12)
+    return np.interp(20 * np.log10(a), db, fd, left=0.0)
+
+
+def from_fader(f):
+    db, fd = _fader_table()
+    f = np.asarray(f, dtype=float)
+    return np.where(f <= fd[0], 0.0, 10 ** (np.interp(f, fd, db) / 20))
+
+
+def envelope_at(points, t, fader=False):
+    """Envelope value(s) at time(s) t: straight lines between points, held outside them. fader=True follows a
+    REAPER volume envelope in fader-scaled mode (VOLTYPE 1), which runs straight in fader position, not amplitude."""
+    xs = [p[0] for p in points]
+    vs = np.array([p[1] for p in points], dtype=float)
+    if not fader:
+        return np.interp(t, xs, vs)
+    return from_fader(np.interp(t, xs, to_fader(vs)))

@@ -148,8 +148,58 @@ def g_files(p, R, od, a):
     return out, [f"files: {sum(len(t.clips) for t in p.tracks)} items checked, {len(out)} missing"]
 
 
+FADE_S = 0.005          # a click fix: 5 ms fade
+AMOUNT = 0.5            # how much of a jump / spike a fix takes away (Live `smooth` --amount)
+EASE_S = 0.3            # a cut's ease back to normal (Live `smooth` --ease-ms)
+SPIKE_DB = 12.0         # a burst this far over its surroundings is a spike (Live `smooth` --spike-db)
+
+
+def _edit(p, finding, **edit):
+    """Attach the exact project edit to a finding. Only REAPER projects are written for now; elsewhere the
+    finding stays manual (what to do by hand)."""
+    if p.daw == "reaper":
+        finding.update(applies="set", edit=edit)
+    return finding
+
+
+def spikes(levels_db, block_s=0.01, spike_db=SPIKE_DB):
+    """Short bursts far over the surrounding level, from a 10 ms level curve (Live `smooth.find_spikes`, ported to
+    any audio). [(block of the peak, first block, last block, size dB, onset?)]. A burst that opens a sung phrase
+    (quiet just before, singing right after) is a consonant, not a problem: onset=True."""
+    from hypnomix.session.smooth import SOUNDING_DB
+    L = np.convolve(levels_db, np.ones(5) / 5, mode="same")
+    k = int(1.5 / block_s)
+    Lq = np.where(L > SOUNDING_DB, L, np.nan)
+    pad = np.pad(Lq, k, constant_values=np.nan)
+    win = np.lib.stride_tricks.sliding_window_view(pad, 2 * k + 1)[:, ::5]
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        M = np.nanmedian(win, axis=1)
+    dev = L - M
+    hot = (dev >= spike_db) & (M > SOUNDING_DB)
+    out, i, n = [], 0, len(hot)
+    while i < n:
+        if not hot[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and hot[j]:
+            j += 1
+        if (j - i) * block_s <= 0.4:
+            pk = i + int(np.argmax(dev[i:j]))
+            pre, post = L[max(0, i - 15):max(0, i - 3)], L[j:j + 30]
+            onset = (len(pre) == 0 or float(np.median(pre)) < max(SOUNDING_DB, M[pk] - 15)) and \
+                len(post) >= 10 and float(np.median(post)) >= M[pk] - 12
+            out.append((pk, max(0, i - 2), min(n, j + 2), float(dev[pk]), bool(onset)))
+        i = j
+    return out
+
+
 def g_clips(p, R, od, a):
-    out, n = [], 0
+    from hypnomix.project.rpp_edit import locator
+    from hypnomix.session.smooth import HIT_DB, PLOSIVE_HZ, PLOSIVE_MAX_DIP, PLOSIVE_SHARE, SPIKES_PER_MIN
+    out, n, notes, regular, onsets = [], 0, [], [], 0
     for t in p.audio_tracks():
         clips = sorted((c for c in t.clips if not c.muted and c.kind == "audio"), key=lambda c: c.start)
         for c in clips:
@@ -162,11 +212,14 @@ def g_clips(p, R, od, a):
                                          ("end", c.fade_out < 0.002, abs(seg[-1]), c.end)):
                 if short and lvl > 0.01:
                     n += 1
-                    out.append(_f("clips", n, tool="clips", kind="click", severity="medium" if lvl > 0.05 else "low",
-                                  track=t.name, where=_where(p, at),
-                                  problem=f"{W['item']} '{c.name}' {edge}s on a loud sample ({20 * math.log10(lvl):.0f} dBFS) "
-                                          f"with no fade: an audible tick",
-                                  fix=f"give the {W['item']} a short fade {'in' if edge == 'start' else 'out'} (5 ms) in {W['daw']}"))
+                    which = "in" if edge == "start" else "out"
+                    out.append(_edit(p, _f("clips", n, tool="clips", kind="click",
+                                           severity="medium" if lvl > 0.05 else "low", track=t.name, where=_where(p, at),
+                                           problem=f"{W['item']} '{c.name}' {edge}s on a loud sample "
+                                                   f"({20 * math.log10(lvl):.0f} dBFS) with no fade: an audible tick",
+                                           fix=f"a {FADE_S * 1000:.0f} ms fade {which} on the {W['item']} "
+                                               f"(in {W['daw']}, or approve it here)"),
+                                     op="fade", which=which, seconds=FADE_S, item=locator(t, c)))
         if t.name not in R.files:
             continue
         y, _ = sf.read(str(R.files[t.name]), dtype="float32")
@@ -179,13 +232,58 @@ def g_clips(p, R, od, a):
             if b < -50 or f < -50 or abs(f - b) < 4:
                 continue
             n += 1
-            out.append(_f("clips", n, tool="clips", kind="cut", severity="medium" if abs(f - b) >= 8 else "low",
-                          track=t.name, where=_where(p, c1.start),
-                          problem=f"level jumps {f - b:+.1f} dB where '{c0.name}' meets '{c1.name}' (a comp cut "
-                                  "recorded at a different level)",
-                          fix=f"listen first; if it is not the performance, set {W['item']} '{c1.name}' volume "
-                              f"{-(f - b) / 2:+.1f} dB (half the jump) or lengthen the crossfade"))
-    return out, [f"clips: {W['item']} edges and cuts checked on {len(p.audio_tracks())} tracks"]
+            out.append(_edit(p, _f("clips", n, tool="clips", kind="cut", severity="medium" if abs(f - b) >= 8 else "low",
+                                   track=t.name, where=_where(p, c1.start),
+                                   problem=f"level jumps {f - b:+.1f} dB where '{c0.name}' meets '{c1.name}' (a comp "
+                                           "cut recorded at a different level)",
+                                   fix=f"listen first. If it is not the performance: short fades either side of the "
+                                       f"cut and a volume ease that takes {AMOUNT:.0%} of the jump away and returns to "
+                                       f"normal over {EASE_S * 1000:.0f} ms (note `method=item` to set the "
+                                       f"{W['item']} volume {-(f - b) * AMOUNT:+.1f} dB instead; `amount=0.3` for "
+                                       "less)"),
+                             op="cut", t=c1.start, size=f - b, item=locator(t, c1), prev=locator(t, c0),
+                             fade=FADE_S, amount=AMOUNT, ease=EASE_S))
+        # spikes: 10 ms levels of the track as heard (clip gains and fades), inside its items only
+        blk = int(0.01 * SR)
+        nb = len(y) // blk
+        lv = 10 * np.log10((y[: nb * blk].astype(np.float64) ** 2).reshape(nb, blk).mean(axis=1) + 1e-12)
+        inside = np.zeros(nb, bool)
+        for c in clips:
+            inside[int(c.start / 0.01):int(c.end / 0.01) + 1] = True
+        lv = np.where(inside, lv, -120.0)
+        found = spikes(lv, 0.01, HIT_DB)
+        minutes = sum(c.length for c in clips) / 60
+        if len(found) >= 4 and minutes > 0 and len(found) / minutes > SPIKES_PER_MIN:   # 4+: one burst is no beat
+            regular.append(t.name)          # regular hits: the instrument (drums, plucks), not a problem
+            continue
+        for pk, b0, b1, size, onset in found:
+            if size < SPIKE_DB:
+                continue
+            if onset:
+                onsets += 1
+                continue
+            seg = y[b0 * blk:b1 * blk].astype(np.float64)
+            spec = np.abs(np.fft.rfft(seg * np.hanning(len(seg)))) ** 2 if len(seg) >= 64 else np.zeros(1)
+            fr = np.fft.rfftfreq(len(seg), 1 / SR) if len(seg) >= 64 else np.zeros(1)
+            plosive = spec.sum() > 0 and spec[fr < PLOSIVE_HZ].sum() / spec.sum() >= PLOSIVE_SHARE
+            d = min(size * AMOUNT, PLOSIVE_MAX_DIP) if plosive else size * AMOUNT
+            n += 1
+            out.append(_edit(p, _f("clips", n, tool="clips", kind="spike", severity="medium" if size >= 18 else "low",
+                                   track=t.name, where=_where(p, pk * 0.01),
+                                   problem=f"a short burst {size:.0f} dB over its surroundings"
+                                           + (" (mostly low end: a plosive)" if plosive else " (a pop, bump or one "
+                                              "shouted word)"),
+                                   fix=f"a quick {d:.1f} dB dip in the track volume over the burst, like riding it by "
+                                       "hand (listen first: skip it if it is the performance)"),
+                             op="dip", t0=b0 * 0.01, t1=b1 * 0.01, db=round(d, 2), ramp=0.02))
+    notes.append(f"clips: {W['item']} edges, cuts and spikes checked on {len(p.audio_tracks())} tracks")
+    if regular:
+        notes.append("spikes not checked on tracks with regular hits (drums): " + ", ".join(regular))
+    if onsets:
+        notes.append(f"clips: {onsets} loud consonant(s) opening a phrase left alone (part of the singing)")
+    if p.daw == "reaper":
+        notes.append("clips: approved fixes are written into a NEW .rpp by `hypnomix fix` (the original is never touched)")
+    return out, notes
 
 
 def g_vocals(p, R, od, a, role):

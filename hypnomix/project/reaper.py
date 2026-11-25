@@ -125,6 +125,7 @@ def _fade(item, key):
 
 
 def _clip(item, proj_dir, rec, warn, tname):
+    item.project_dir = proj_dir                 # edits write new file paths relative to the project
     pos, length = num(item.get("POSITION")), num(item.get("LENGTH"))
     where = f"{tname} item at {pos:.2f} s"
     takes, active, sm = _takes(item, proj_dir, rec, warn, where)
@@ -226,11 +227,15 @@ def read(path):
         kinds = {c.kind for c in clips}
         kind = "folder" if folder else ("midi" if kinds and kinds <= {"midi", "empty"} else "audio")
         devices, envs = _devices(tr)
+        fader_envs = set()
         for ch in tr.chunks():
             if ch.name in ENV_NAMES or ch.name.startswith("AUXVOLENV"):
                 pts, on = _envelope(ch)
                 if on and pts:
-                    envs[ENV_NAMES.get(ch.name, "Send volume")] = pts
+                    lab = ENV_NAMES.get(ch.name, "Send volume")
+                    envs[lab] = pts
+                    if ch.get("VOLTYPE", cast=int, default=0) == 1:
+                        fader_envs.add(lab)
         t = Track(name=name, index=i, kind=kind, clips=clips, devices=devices, envelopes=envs,
                   volume=num(vp.tokens[1], 1.0) if vp is not None and len(vp.tokens) > 1 else 1.0,
                   pan=num(vp.tokens[2]) if vp is not None and len(vp.tokens) > 2 else 0.0,
@@ -238,6 +243,7 @@ def read(path):
                   solo=ms is not None and len(ms.tokens) > 2 and ms.tokens[2] not in ("0", ""),
                   polarity=tr.get("IPHASE", cast=int, default=0) == 1,
                   parent=stack[-1] if stack else None, native=tr)
+        t.fader_envelopes = fader_envs           # envelopes REAPER interpolates in fader position (VOLTYPE 1)
         proj.tracks.append(t)
         if folder:
             stack.append(t)

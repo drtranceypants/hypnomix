@@ -272,6 +272,52 @@ class Reaper(unittest.TestCase):
             for x, v in zip((0.1, 0.2, 0.3), want):
                 self.assertAlmostEqual(y[int(x * 1000)], v, delta=0.002, msg=f"shape {shape} at {x}")
 
+    def test_edits_write_a_new_project(self):
+        from hypnomix.project import rpp_edit as E
+        from hypnomix.project.model import envelope_at
+        p = project.load(self.song)
+        lead = p.tracks[1]
+        c = lead.clips[0]
+        self.assertTrue(E.fade(c, "in", 0.05))            # 0.01 -> 0.05
+        self.assertFalse(E.fade(c, "out", 0.05))          # 0.1 is already longer: never shortened
+        E.item_volume(c, -6.0206)
+        E.dip(lead, 1.0, 1.5, 6.0206, ramp=0.02)          # the existing envelope (1.0 -> 0.5 over 2 s) is scaled
+        harm = p.tracks[2]
+        E.ease(harm, 1.0, 6.0, amount=0.5, ease_s=0.3)    # no envelope yet: one is made, starting at 1.0
+        E.add_take(harm.clips[0], self.dir / "Audio" / "lead.wav", "tuned")
+        out = self.dir / "Song (fixed).rpp"
+        E.save(p, out)
+        self.assertEqual(E.check(self.song, out), [])
+        q = project.load(out)
+        c2 = q.tracks[1].clips[0]
+        self.assertEqual(c2.fade_in, 0.05)
+        self.assertAlmostEqual(c2.gain, 0.25, places=4)
+        env = q.tracks[1].envelopes["Volume"]
+        self.assertAlmostEqual(float(envelope_at(env, 1.25)), 0.5 * (1 - 0.5 * 1.25 / 2), places=3)    # dipped by half
+        self.assertAlmostEqual(float(envelope_at(env, 1.9)), 1 - 0.5 * 1.9 / 2, places=3)           # ride kept outside
+        h = q.tracks[2]
+        self.assertAlmostEqual(float(envelope_at(h.envelopes["Volume"], 1.0)), 10 ** (-3 / 20), places=4)
+        self.assertEqual(float(envelope_at(h.envelopes["Volume"], 2.0)), 1.0)
+        hc = h.clips[0]
+        self.assertEqual((len(hc.takes), hc.active, hc.take.name), (2, 1, "tuned"))
+        self.assertIn('FILE "Audio/lead.wav"', rpp.dumps(q.native))     # new files are written relative
+
+    def test_fader_curve_is_reapers(self):
+        from hypnomix.project.model import from_fader, to_fader
+        # ScaleToEnvelopeMode(1, amp) as REAPER 7.86 returned it
+        for amp, f in ((1.0, 716.21785031261), (0.5, 592.44867591629), (0.25, 483.25551068857), (2.0, 852.77445440699)):
+            self.assertAlmostEqual(float(to_fader(amp)), f, delta=0.6)
+            self.assertAlmostEqual(float(from_fader(f)), amp, delta=amp * 0.01)
+
+    def test_one_burst_is_not_a_drum_track(self):
+        from hypnomix.workflow.scan_project import spikes
+        lv = np.full(1000, -20.0)
+        lv[500:506] = 0.0                                  # one 60 ms burst, 20 dB over a steady part
+        found = spikes(lv, 0.01, 9.0)
+        self.assertEqual(len(found), 1)
+        self.assertGreater(found[0][3], 12)
+        self.assertFalse(found[0][4])                      # sound right before it: not a phrase-opening consonant
+
     def test_unsupported_suffix(self):
         with self.assertRaises(SystemExit):
             project.load(self.dir / "x.ptx")
