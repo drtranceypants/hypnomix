@@ -37,3 +37,7 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["hypnomix"]
 
+
+# the PDF guides' Markdown is also the app's wiki (hypnomix/app/wiki.py reads it from here when installed)
+[tool.hatch.build.targets.wheel.force-include]
+"docs/guides" = "hypnomix/app/wiki/guides"

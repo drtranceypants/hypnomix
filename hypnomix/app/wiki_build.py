@@ -162,8 +162,13 @@ def faq_jsonld(arts):
 
 
 def commit_time(root):
+    """The last commit that changed the wiki: its articles or the guides' Markdown."""
+    paths = [str(root)]
+    g = W.guides_dir(root)
+    if g is not None:
+        paths.append(str(g / "[0-9][0-9]-*.md"))
     try:
-        r = subprocess.run(["git", "log", "-1", "--format=%ct %h", "--", str(root)], cwd=root,
+        r = subprocess.run(["git", "log", "-1", "--format=%ct %h", "--", *paths], cwd=root,
                            capture_output=True, text=True, timeout=20)
         t, sha = r.stdout.split()
         return int(t), sha

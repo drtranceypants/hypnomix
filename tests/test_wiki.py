@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from hypnomix.app import wiki, wiki_build
+from hypnomix.app import wiki, wiki_build, wiki_md
 
 ART = """<!--
 title: The first pass
@@ -24,6 +24,38 @@ title: Decide faster
 group: Training
 -->
 <p>Second.</p>
+"""
+GUIDE = """---
+title: Vocal Things
+subtitle: doubles that sit
+file: 3 - Vocal Things
+wiki_id: vocals-guide
+teaser: Short.
+---
+
+# Vocal Things
+
+Tight stacks are **expensive**, see [the site](https://example.com).
+
+<!--toc-->
+
+## Three ways in
+
+| you have | use |
+|---|---|
+| files | `hypnomix vocalign` |
+
+```bash
+hypnomix vocalign "Lead.wav" "Double.wav"   # align the double
+```
+
+> Tip: under ~10 ms reads as one voice.
+
+> Careful: the device is new.
+
+- one
+- two
+  continued
 """
 TEMPLATE = "<html><head><title>t</title></head><body><nav>site</nav><main><!--WIKI--></main></body></html>"
 
@@ -129,11 +161,42 @@ class WikiTest(unittest.TestCase):
         self.assertEqual(wiki_build.faq_items(faq), [("Is it free?", "Yes.")])
         self.assertIn('"name": "Is it free?"', wiki_build.faq_jsonld([faq]))
 
+    def test_guides_are_articles(self):
+        gdir = self.src / "guides"
+        gdir.mkdir()
+        (gdir / "03-vocal-things.md").write_text(GUIDE)
+        (gdir / "99-commands.md").write_text("---\ntitle: Commands\n---\n# Commands\n")   # generated: left out
+        wiki._CACHE.clear()
+        arts = wiki.local()
+        self.assertEqual([a["id"] for a in arts], ["l3", "l4", "vocals-guide"])
+        g = arts[2]
+        self.assertEqual((g["group"], g["title"], g["sub"], g["no"], g["teaser"]),
+                         ("Guides", "Vocal Things", "doubles that sit", "guide 3", "Short."))
+        h = g["html"]
+        self.assertNotIn("<h1", h)
+        self.assertIn('<p class="lead">Tight stacks are <b>expensive</b>, see <a href="https://example.com" '
+                      'target="_blank" rel="noopener">the site</a>.</p>', h)
+        self.assertIn('<h3 class="sub-h">Three ways in</h3>', h)
+        self.assertIn("<td><code>hypnomix vocalign</code></td>", h)
+        self.assertIn('<span class="p">$</span> hypnomix vocalign "Lead.wav" "Double.wav"'
+                      '<span class="c">   # align the double</span>', h)
+        self.assertIn('<p class="note-box">Tip: under ~10 ms reads as one voice.</p>', h)
+        self.assertIn('<p class="warn-box">Careful: the device is new.</p>', h)
+        self.assertIn("<ul><li>one</li><li>two continued</li></ul>", h)
+        self.assertIn("hypnomix 3 - Vocal Things", h)                 # points to the PDF of the same guide
+        (self.src / "articles" / "03-vocals-guide.html").write_text("<!--\ntitle: Mine\n-->\n<p>x</p>")
+        wiki._CACHE.clear()
+        self.assertEqual([a["title"] for a in wiki.local() if a["id"] == "vocals-guide"], ["Mine"])  # a file wins
+
     def test_shipped_wiki_is_complete(self):
         """The wiki that ships with the app: every image or video an article uses is there, and nothing extra."""
         import re
         real = Path(wiki.__file__).with_name("wiki")
         arts = [wiki.parse(f) for f in sorted((real / "articles").glob("*.html"))]
+        guides = [wiki_md.article(f) for f in wiki.guide_files(real)]
+        self.assertGreaterEqual(len(guides), 8)
+        self.assertIn("reaper", [g["id"] for g in guides])               # guide 8 keeps the REAPER article's id
+        arts += guides
         self.assertGreaterEqual(len(arts), 20)
         self.assertEqual(len({a["id"] for a in arts}), len(arts))
         used = {m for a in arts for m in re.findall(r'/wiki/assets/([^"]+)"', a["html"])}

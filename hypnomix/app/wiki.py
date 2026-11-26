@@ -1,7 +1,9 @@
 """The hypnomix wiki: one set of articles for the app's Wiki tab and the website's /wiki/ page.
 
 Source: one file per article in hypnomix/app/wiki/articles/ ("NN-id.html": NN sets the order), an HTML
-fragment under a short header, and the images and videos it shows in hypnomix/app/wiki/assets/:
+fragment under a short header, and the images and videos it shows in hypnomix/app/wiki/assets/. The PDF guides
+(docs/guides/NN-*.md) are articles too, in the Guides group, read straight from their Markdown (wiki_md.py), so
+one file feeds the PDF, the app and the website:
 
     <!--
     title: The first pass
@@ -78,12 +80,33 @@ def parse(path):
             "file": str(Path(path).resolve())}
 
 
+def guides_dir(root=None):
+    """The PDF guides' Markdown: docs/guides in a checkout, or the copy bundled with an installed hypnomix."""
+    root = Path(root) if root else HERE
+    for d in (root.resolve().parents[2] / "docs" / "guides", root / "guides"):
+        if d.is_dir():
+            return d
+    return None
+
+
+def guide_files(root=None):
+    d = guides_dir(root)
+    return sorted(f for f in d.glob("[0-9][0-9]-*.md") if not f.name.startswith("99")) if d else []
+
+
 def local(root=None):
+    """Every article: the article files, with the guides placed before the Reference group."""
     root = Path(root) if root else HERE
     files = sorted((root / "articles").glob("*.html"))
-    key = (str(root), tuple((f.name, f.stat().st_mtime) for f in files))
+    guides = guide_files(root)
+    key = (str(root), tuple((f.name, f.stat().st_mtime) for f in files + guides))
     if _CACHE.get("key") != key:
-        _CACHE.update(key=key, arts=[parse(f) for f in files])
+        from hypnomix.app import wiki_md
+        arts = [parse(f) for f in files]
+        ids = {a["id"] for a in arts}
+        gs = [g for g in (wiki_md.article(f) for f in guides) if g["id"] not in ids]   # an article file wins
+        at = next((i for i, a in enumerate(arts) if a["group"] in ("Reference", "FAQ")), len(arts))
+        _CACHE.update(key=key, arts=arts[:at] + gs + arts[at:])
     return _CACHE["arts"]
 
 
@@ -95,15 +118,25 @@ def git(*args, cwd=None):
         return 1, str(e)
 
 
+def sources(top):
+    """The paths in the repo that make up the wiki: the wiki folder and the guides' Markdown."""
+    out = [str(HERE.resolve().relative_to(Path(top).resolve()))]
+    g = guides_dir()
+    if g is not None and str(g.resolve()).startswith(str(Path(top).resolve())):
+        out.append(str(g.resolve().relative_to(Path(top).resolve())) + "/[0-9][0-9]-*.md")
+    return out
+
+
 def checkout():
     """-> (repo root, commit time of the wiki, unpublished changes) when running from a git checkout."""
     code, top = git("rev-parse", "--show-toplevel")
     top = top.strip()
     if code:
         return None, 0, []
-    _, t = git("log", "-1", "--format=%ct", "--", str(HERE))
+    paths = sources(top)
+    _, t = git("log", "-1", "--format=%ct", "--", *paths, cwd=top)
     t = t.strip()
-    _, st = git("status", "--porcelain", "--", str(HERE))
+    _, st = git("status", "--porcelain", "--", *paths, cwd=top)
     return Path(top), int(t) if t.isdigit() else 0, [ln[3:].split(" -> ")[-1] for ln in st.splitlines() if ln.strip()]
 
 
@@ -225,7 +258,7 @@ def asset(name, rng=None):
 
 # ---------------------------------------------------------------- edit and publish (a git checkout only)
 def edit(aid):
-    a = next((a for a in local() if a["id"] == aid), None)
+    a = next((a for a in local() if a["id"] == aid), None)   # a guide opens its Markdown file
     if a is None:
         return 404, {"error": "no such article"}
     subprocess.run(["open", "-t", a["file"]])          # the default text editor
@@ -239,9 +272,9 @@ def publish(message=""):
         return 400, {"error": "this copy of hypnomix is not a git checkout: edit the wiki in your hypnomix folder"}
     if not dirty:
         return 200, {"done": "nothing to publish"}
-    rel = str(HERE.resolve().relative_to(top.resolve()))
-    for args in (("add", "-A", "--", rel),
-                 ("commit", "-q", "-m", "wiki: " + (message.strip() or "update articles"), "--", rel),
+    paths = sources(top)
+    for args in (("add", "-A", "--", *paths),
+                 ("commit", "-q", "-m", "wiki: " + (message.strip() or "update articles"), "--", *paths),
                  ("pull", "-q", "--rebase", "--autostash"), ("push", "-q")):
         code, out = git(*args, cwd=top)
         if code:
