@@ -67,8 +67,9 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="hypnomix in y
        say=["On the **Songs** tab choose the saved set, project or session (or a folder of stems from any DAW), add a bounce of the "
             "mix if you have one (loudness, release checks, the key) and press Start the first pass. Every check runs in parallel and nothing "
             "changes. **Deep scan** also renders every track for frequency fights and mic phase.",
-            "The review lists findings by severity. **Approve**, **Skip** or **Change** (with a note) each; *Approve all "
-            "low* is there for the small ones. Checks that didn't run are listed at the top: no finding there means nothing."],
+            "The review lists the fixes you can hear first, by severity. **Approve**, **Skip** or **Change** (with a note) each, with the mouse "
+            "or the keys (j and k move, a, s and c decide, space plays, b switches A and B, ? lists them all); *Approve all "
+            "low* shows you a list of the small, safe ones to confirm (never tuning or other taste calls). Checks that didn't run are listed at the top: no finding there means nothing."],
        how={"live": ["Save the set first: the scan reads the saved .als.", "Give the key on the Songs tab or the song card before any vocal tuning is applied."],
             "reaper": ["Save the project: the scan reads the .rpp and finds files the way REAPER does."],
             "ardour": ["Save the session, then scan its folder."]},

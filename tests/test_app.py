@@ -1,5 +1,5 @@
 """The hypnomix app server (first pass in a window) and the Max for Live device builder."""
-import json, os, tempfile, threading, unittest, urllib.error, urllib.request
+import json, os, shutil, subprocess, tempfile, threading, time, unittest, urllib.error, urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -58,7 +58,10 @@ class App(unittest.TestCase):
         code, st, _ = call(self.base, "/api/state")
         self.assertEqual([s["name"] for s in st["scans"]], ["Song"])
         self.assertEqual(st["scans"][0]["findings"], 2)                     # the info item is not a decision
-        names = [c["name"] for c in st["commands"]]
+        self.assertNotIn("commands", st)                                    # the 14 KB list is not sent every second
+        _, cm, _ = call(self.base, "/api/commands")
+        self.assertEqual(cm["rev"], st["commands_rev"])
+        names = [c["name"] for c in cm["commands"]]
         self.assertIn("scan", names)
         self.assertNotIn("install", names)
 
@@ -323,6 +326,698 @@ class App(unittest.TestCase):
             self.assertIn(why, r["error"])
 
 
+def F(id, tool="smooth", kind="click", severity="low", track="Vox", where="1.1.00", applies="set", **kw):
+    return dict(dict(id=id, n=1, tool=tool, kind=kind, severity=severity, track=track, where=where, applies=applies,
+                     problem="a problem", fix="a fix"), **kw)
+
+
+DEFAULTS = [F("order-1", "order", "track-order", track="(all tracks)", where="", default="approve",
+              fix="reorder the tracks. ON BY DEFAULT: skip this item to keep the current order"),
+            F("retire-1", "tidy", "retire-off", track="Old A, Old B", where="2 switched-off track(s)", default="approve", retire=["Old A", "Old B"]),
+            F("merge-1", "tidy", "consolidate", track="Gtr 2 -> Gtr 1", where="4 clip(s)", default="approve", removes=True)]
+
+
+class AppFlow(unittest.TestCase):
+    """What the review and Apply pages are told, and what the app starts when they are pressed: the commands themselves are
+    stood in for here (the audit that found these ran the real ones)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.td = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.td.name)
+        cls.work = cls.root / "work"
+        cls.music = cls.root / "music"
+        cls.music.mkdir()
+        os.environ["HYPNOMIX_APP_HOME"] = str(cls.work)
+        from hypnomix.app import server as S
+        cls.S = S
+        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), S.make_handler(0))
+        port = cls.srv.server_address[1]
+        cls.srv.RequestHandlerClass = S.make_handler(port)
+        cls.base = f"http://127.0.0.1:{port}"
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+        cls.td.cleanup()
+        os.environ.pop("HYPNOMIX_APP_HOME", None)
+
+    def setUp(self):
+        shutil.rmtree(self.work / "scan", ignore_errors=True)
+        for f in self.music.iterdir():
+            shutil.rmtree(f) if f.is_dir() else f.unlink()
+        self.S.JOB.update(status="idle", log=[], files=[], reason="", stopped=False, dir="", kind="")
+        self.runs = []                                            # (kind, title, steps, sdir, watch) of every job the app started
+        self._run_job = self.S.run_job
+        self.S.run_job = lambda kind, title, steps, sdir="", watch=(): (self.runs.append((kind, title, steps, str(sdir), list(watch))), 1)[1]
+
+    def tearDown(self):
+        self.S.run_job = self._run_job
+
+    def post(self, path, body):
+        return call(self.base, path, body, self.S.TOKEN)
+
+    def scan(self, name, source, findings, dec=None, mode="set", **meta):
+        d = self.work / "scan" / name
+        (d / "ab").mkdir(parents=True)
+        (d / "findings.json").write_text(json.dumps(dict(set=str(source), notes=[], findings=findings)))
+        was = Path(source).stat().st_mtime if Path(source).is_file() else None
+        (d / "scan.json").write_text(json.dumps(dict(dict(set=str(source), mode=mode, set_mtime=was), **meta)))
+        if dec is not None:
+            (d / "decisions.json").write_text(json.dumps(dec))
+        return d
+
+    def source(self, name, text="x"):
+        p = self.music / name
+        p.write_text(text)
+        return p
+
+    def review(self, d):
+        code, r, _ = call(self.base, "/api/review?dir=" + urllib.request.quote(str(d)))
+        self.assertEqual(code, 200, r)
+        return r
+
+    # ---- 1. the Apply card tells the truth about on-by-default items
+    def test_on_by_default_items_are_in_the_page_and_in_what_apply_counts(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("smooth-1"), F("eq-1", "audit", "eq", applies="manual")] + DEFAULTS)
+        r = self.review(d)
+        by = {f["id"]: f for f in r["findings"]}
+        self.assertTrue(by["order-1"]["on_by_default"])
+        self.assertEqual((by["order-1"]["default"], by["order-1"]["applies"]), ("approve", "set"))
+        self.assertEqual(by["retire-1"]["retire_n"], 2)
+        self.assertFalse(by["smooth-1"]["on_by_default"])
+        self.assertEqual(r["archive_name"], "Song (archive, all takes).als")
+        plan = self.S.apply_plan(r["findings"], r["decisions"])
+        self.assertEqual([f["id"] for f in plan["auto"]], ["order-1", "retire-1", "merge-1"])      # nothing approved, three steps run
+        self.assertEqual([f["id"] for f in plan["defaults"]], ["order-1", "retire-1", "merge-1"])
+        # approving one by-hand item changes nothing about what is written: it is listed, not applied
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), id="eq-1", decision="approve"))[0], 200)
+        plan = self.S.apply_plan(self.review(d)["findings"], self.review(d)["decisions"])
+        self.assertEqual([f["id"] for f in plan["manual"]], ["eq-1"])
+        self.assertEqual(len(plan["auto"]), 3)
+        # turning one off records a skip through the usual route, and it is no longer in the plan
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), id="retire-1", decision="skip"))[0], 200)
+        r = self.review(d)
+        self.assertEqual(r["decisions"]["retire-1"]["decision"], "skip")
+        self.assertEqual([f["id"] for f in self.S.apply_plan(r["findings"], r["decisions"])["auto"]], ["order-1", "merge-1"])
+        # the song list counts them too
+        row = call(self.base, "/api/state")[1]["scans"][0]
+        self.assertEqual((row["approved"], row["on_default"]), (1, 2))
+
+    def test_apply_refuses_when_nothing_can_be_written_and_names_what_will_be(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("smooth-1"), F("eq-1", "audit", "eq", applies="manual")] + DEFAULTS,
+                      {"eq-1": {"decision": "approve"}, "order-1": {"decision": "skip"}, "retire-1": {"decision": "skip"}, "merge-1": {"decision": "skip"}})
+        code, r, _ = self.post("/api/fix", dict(dir=str(d)))                         # only a by-hand item is approved
+        self.assertEqual(code, 409)
+        self.assertIn("Nothing here can be applied automatically", r["error"])
+        self.assertIn("handoff", r["error"])
+        self.assertEqual(self.runs, [])
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), id="smooth-1", decision="approve"))[0], 200)
+        code, r, _ = self.post("/api/fix", dict(dir=str(d), out="Song (fixed)"))
+        self.assertEqual(code, 200, r)
+        kind, title, steps, sdir, watch = self.runs[-1]
+        argv = steps[0][1]
+        self.assertEqual(argv[:2], ["fix", str(d.resolve())])
+        self.assertIn("--approved", argv)
+        self.assertEqual(Path(argv[argv.index("--out") + 1]), self.music / "Song (fixed).als")      # the suffix is enforced
+        self.assertIn(self.music.resolve(), {Path(w).resolve() for w in watch})
+
+    def test_only_on_by_default_steps_are_enough_to_apply(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, DEFAULTS)
+        self.assertEqual(self.post("/api/fix", dict(dir=str(d)))[0], 200)
+
+    # ---- 2. the new file's name and ending follow the kind of project
+    def test_the_new_files_ending_follows_the_scan_and_the_name_is_free(self):
+        S = self.S
+        self.assertEqual(S.source_kind("/x/Song.als"), "als")
+        self.assertEqual(S.source_kind("/x/Song.rpp"), "rpp")
+        self.assertEqual(S.source_kind("/x/Sess.ardour", "ardour"), "ardour")
+        self.assertEqual(S.source_kind("/x/Stems", "folder"), "folder")
+        als = self.source("Song.als")
+        self.assertEqual(S.free_out(als, "als"), "Song (fixed).als")
+        (self.music / "Song (fixed).als").write_text("x")
+        (self.music / "Song (fixed 2).als").write_text("x")
+        self.assertEqual(S.free_out(als, "als"), "Song (fixed 3).als")
+        self.assertEqual(S.free_out(self.music / "R.rpp", "rpp"), "R (fixed).rpp")
+        self.assertEqual(S.free_out(self.music / "S.ardour", "ardour"), "S (fixed).ardour")
+        self.assertEqual(S.clean_out("My copy", "rpp", als), "My copy.rpp")
+        self.assertEqual(S.clean_out("My copy.als", "rpp", als), "My copy.rpp")                 # the wrong ending is replaced, not stacked
+        self.assertEqual(S.clean_out("Song.rpp.als", "als", als), "Song.als")
+        self.assertEqual(S.clean_out("../../etc/passwd", "als", als), "-..-etc-passwd.als")     # no folders
+        self.assertEqual(S.clean_out("  ", "ardour", self.music / "S.ardour"), "S (fixed).ardour")
+        for name, mode, suffix in (("Rsong.rpp", "reaper", ".rpp"), ("Sess.ardour", "ardour", ".ardour")):
+            src = self.source(name)
+            d = self.scan(name.split(".")[0], src, [F("fade-1", edit=dict(op="fade", item="r1"))], {"fade-1": {"decision": "approve"}}, mode=mode)
+            r = self.review(d)
+            self.assertEqual((r["kind"], r["suffix"]), ({".rpp": "rpp", ".ardour": "ardour"}[suffix], suffix))
+            self.assertEqual(r["suggested_out"], f"{src.stem} (fixed){suffix}")
+            code, j, _ = self.post("/api/fix", dict(dir=str(d), out="Mine.als"))
+            self.assertEqual(code, 200, j)
+            self.assertEqual(Path(j["out"]).name, "Mine" + suffix, j)                              # never "Rsong (fixed).rpp.als"
+        (self.music / "Taken.als").write_text("x")
+        d = self.scan("Song", als, [F("smooth-1")], {"smooth-1": {"decision": "approve"}})
+        code, j, _ = self.post("/api/fix", dict(dir=str(d), out="Taken"))
+        self.assertEqual(code, 409)
+        self.assertIn("already exists", j["error"])
+        # a folder scan writes no project file: repaired copies go to the scan's fixed folder
+        stems = self.music / "Stems"
+        stems.mkdir()
+        d = self.scan("Stems", stems, [F("clip-1", "repair", "clip", applies="audio")], {"clip-1": {"decision": "approve"}}, mode="folder")
+        r = self.review(d)
+        self.assertEqual((r["kind"], r["suggested_out"]), ("folder", ""))
+        code, j, _ = self.post("/api/fix", dict(dir=str(d)))
+        self.assertEqual((code, j["out"]), (200, ""))
+        self.assertNotIn("--out", self.runs[-1][2][0][1])
+
+    def test_an_ardour_session_does_not_promise_what_fix_cannot_write(self):
+        src = self.source("Sess.ardour")
+        fade = F("clips-1", "clips", "click", edit=dict(op="fade", item="r1"))
+        d = self.scan("Sess", src, [fade, F("order-1", "order", "track-order", default="approve", track="(all tracks)"),
+                                    F("tune-Lead", "tune", "pitch", applies="audio")], mode="ardour")
+        r = self.review(d)
+        by = {f["id"]: f for f in r["findings"]}
+        self.assertEqual((by["clips-1"]["applies_here"], by["order-1"]["applies_here"], by["tune-Lead"]["applies_here"]), ("set", "manual", "blocked"))
+        plan = self.S.apply_plan(r["findings"], r["decisions"])
+        self.assertEqual(([f["id"] for f in plan["auto"]], [f["id"] for f in plan["defmanual"]]), ([], ["order-1"]))
+        self.post("/api/decide", dict(dir=str(d), id="tune-Lead", decision="approve"))
+        self.post("/api/decide", dict(dir=str(d), id="clips-1", decision="approve"))
+        code, j, _ = self.post("/api/fix", dict(dir=str(d)))
+        self.assertEqual(code, 409)
+        self.assertIn("tune-Lead", j["error"])
+
+    # ---- 3. the song chooser and the file manager
+    def test_the_chooser_takes_every_kind_of_project_and_never_fails_silently(self):
+        S = self.S
+        calls = []
+
+        def fake(argv, **kw):
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, self.rc, self.out, self.err)
+        real_run, real_plat = S.subprocess.run, S.sys.platform
+        S.subprocess.run = fake
+        try:
+            S.sys.platform = "darwin"
+            self.rc, self.out, self.err = 0, "/x/Song.rpp\n", ""
+            self.assertEqual(S.pick("song"), "/x/Song.rpp")
+            script = calls[-1][2]
+            for ext in ('"als"', '"rpp"', '"ardour"'):
+                self.assertIn(ext, script)
+            S.pick("folder")
+            self.assertIn("choose folder", calls[-1][2])
+            self.rc, self.out, self.err = 1, "", "execution error: User canceled. (-128)"
+            self.assertEqual(S.pick("song"), "")                                       # Cancel is not an error
+            self.rc, self.err = 1, "execution error: something else (-1)"
+            with self.assertRaises(S.PickUnavailable) as cm:
+                S.pick("song")
+            self.assertIn("paste the path", str(cm.exception))
+            S.sys.platform = "win32"                                                 # Windows: the standard library's own chooser, in a process of its own
+            self.rc, self.out, self.err = 0, "C:/Music/Song.rpp", ""
+            self.assertEqual(S.pick("song"), "C:/Music/Song.rpp")
+            self.assertEqual(calls[-1][1], "-c")
+            self.assertEqual(calls[-1][3], "song")
+            self.rc, self.out, self.err = 3, "", "tkinter is not installed (No module named 'tkinter')"
+            with self.assertRaises(S.PickUnavailable) as cm:
+                S.pick("song")
+            self.assertIn("Path box", str(cm.exception))
+            with self.assertRaises(ValueError):
+                S.pick("../../etc")
+        finally:
+            S.subprocess.run, S.sys.platform = real_run, real_plat
+        self.assertIn("*.ardour", S._TK)
+        # the route says why in a plain sentence (409), a bad kind is a 400
+        real_pick = S.pick
+        S.pick = lambda kind: (_ for _ in ()).throw(S.PickUnavailable("the file chooser is not available here: type or paste the path in the Path box instead"))
+        try:
+            code, r, _ = self.post("/api/pick", dict(kind="song"))
+        finally:
+            S.pick = real_pick
+        self.assertEqual(code, 409)
+        self.assertIn("Path box", r["error"])
+        self.assertEqual(self.post("/api/pick", dict(kind="nope"))[0], 400)
+        self.assertEqual(self.post("/api/pick", {})[0], 400)
+
+    def test_show_files_works_off_macos_and_says_when_it_cannot(self):
+        S = self.S
+        f = self.source("a.als")
+        opened = []
+        real_popen, real_run, real_plat, real_win, real_which = S.subprocess.Popen, S.subprocess.run, S.sys.platform, S.is_windows, S.shutil.which
+        S.subprocess.Popen = lambda argv, **kw: opened.append(argv)
+        S.subprocess.run = lambda argv, **kw: opened.append(argv) or subprocess.CompletedProcess(argv, 0)
+        try:
+            S.sys.platform = "linux"
+            S.shutil.which = lambda n: None
+            ok, why = S.reveal(f)
+            self.assertFalse(ok)
+            self.assertIn("xdg-open", why)
+            self.assertIn(str(self.music), why)
+            S.shutil.which = lambda n: "/usr/bin/xdg-open"
+            self.assertTrue(S.reveal(f)[0])
+            self.assertEqual(opened[-1], ["/usr/bin/xdg-open", str(self.music)])        # the folder, never the file itself
+            S.sys.platform, S.is_windows = "win32", lambda: True
+            self.assertTrue(S.reveal(f)[0])
+            self.assertEqual(opened[-1], ["explorer", f"/select,{f}"])
+            S.sys.platform, S.is_windows = "darwin", lambda: False
+            self.assertTrue(S.reveal(f)[0])
+            self.assertEqual(opened[-1][:2], ["open", "-R"])
+        finally:
+            S.subprocess.Popen, S.subprocess.run, S.sys.platform, S.is_windows, S.shutil.which = real_popen, real_run, real_plat, real_win, real_which
+        code, r, _ = self.post("/api/reveal", dict(path=str(self.music / "gone.als")))
+        self.assertEqual((code, r["shown"]), (200, False))
+        self.assertIn("not there any more", r["message"])
+        self.assertEqual(self.post("/api/reveal", {})[0], 400)
+
+    # ---- 4. scan folders
+    def test_the_same_path_goes_back_to_its_folder_and_a_different_one_never_shares(self):
+        a = self.source("Song.als")
+        (self.music / "Elsewhere").mkdir()
+        b = self.music / "Elsewhere" / "Song.als"
+        b.write_text("y")
+        ard = self.music / "Song"                                  # an Ardour session folder with the same name
+        ard.mkdir()
+        (ard / "Song.ardour").write_text("z")
+        stems1, stems2 = self.music / "x" / "Stems", self.music / "y" / "Stems"
+        for s in (stems1, stems2):
+            s.mkdir(parents=True)
+        dirs = []
+        for src in (a, b, ard, stems1, stems2, a, stems2):
+            code, r, _ = self.post("/api/scan", dict(source=str(src)))
+            self.assertEqual(code, 200, r)
+            d = Path(r["dir"])
+            if not d.exists() or not (d / "scan.json").exists():                        # the stand-in scan: record what a real one would
+                (d / "raw").mkdir(parents=True, exist_ok=True)
+                (d / "scan.json").write_text(json.dumps(dict(set=str(src.resolve()), mode="set")))
+                (d / "findings.json").write_text(json.dumps(dict(set=str(src.resolve()), findings=[])))
+            dirs.append((r["dir"], r["reused"]))
+        names = [Path(d).name for d, _ in dirs]
+        self.assertEqual(names, ["Song", "Song (2)", "Song (3)", "Stems", "Stems (2)", "Song", "Stems (2)"])
+        self.assertEqual([re for _, re in dirs], [False, False, False, False, False, True, True])
+        rows = {r["name"]: r for r in call(self.base, "/api/state")[1]["scans"]}
+        self.assertTrue(all(rows[n]["same_name"] for n in ("Song", "Song (2)", "Stems", "Stems (2)")))
+        self.assertEqual(rows["Song (2)"]["parent"], str(b.resolve().parent))
+        self.assertEqual(rows["Stems"]["parent"], str(stems1.resolve().parent))
+        # decisions and the fix log of one never turn up in another
+        (self.work / "scan" / "Song" / "decisions.json").write_text('{"x": {"decision": "approve"}}')
+        self.assertEqual(self.review(self.work / "scan" / "Song (2)")["decisions"], {})
+
+    def test_scan_asks_for_a_song_that_can_be_scanned(self):
+        self.assertEqual(self.post("/api/scan", {})[0], 400)
+        code, r, _ = self.post("/api/scan", dict(source=str(self.music / "nope.als")))
+        self.assertEqual(code, 400)
+        self.assertIn("not found", r["error"])
+        notes = self.source("notes.txt")
+        code, r, _ = self.post("/api/scan", dict(source=str(notes)))
+        self.assertEqual(code, 400)
+        self.assertIn(".ardour", r["error"])
+        self.assertEqual(self.post("/api/scan", dict(source=str(self.source("S.rpp")), mix=5))[0], 400)
+
+    # ---- 5. re-scans and the saved-after-the-scan banner
+    def test_a_rescan_of_a_live_set_carries_decisions_and_others_set_them_aside(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("smooth-1")], {"smooth-1": {"decision": "approve"}}, mix="/m/mix.wav", key="F# major")
+        (d / "app-scan.json").write_text(json.dumps(dict(source=str(als), deep=True, like="/m/like.wav")))
+        code, r, _ = self.post("/api/rescan", dict(dir=str(d)))
+        self.assertEqual((code, r["reused"], r["carries_decisions"]), (200, True, True))
+        steps = self.runs[-1][2]
+        argv = next(a for _, a, _ in steps if isinstance(a, list) and a[0] == "scan")
+        self.assertEqual(Path(argv[argv.index("--since") + 1]).resolve(), d.resolve())
+        self.assertEqual(Path(argv[argv.index("--out") + 1]).resolve(), d.resolve())
+        for flag, v in (("--mix", "/m/mix.wav"), ("--key", "F# major"), ("--like", "/m/like.wav")):
+            self.assertEqual(argv[argv.index(flag) + 1], v)
+        self.assertIn("--deep", argv)
+        self.assertTrue((d / "decisions.json").exists())                                   # kept: scan --since carries them by identity
+        # a REAPER project cannot (scan --since reads a Live set's copy): the old answers are kept aside, not reused
+        rpp = self.source("R.rpp")
+        d2 = self.scan("R", rpp, [F("fade-1")], {"fade-1": {"decision": "approve"}}, mode="reaper")
+        code, r, _ = self.post("/api/rescan", dict(dir=str(d2)))
+        self.assertEqual((code, r["carries_decisions"]), (200, False))
+        steps = self.runs[-1][2]
+        argv = next(a for _, a, _ in steps if isinstance(a, list) and a[0] == "scan")
+        self.assertNotIn("--since", argv)
+        next(a for _, a, _ in steps if callable(a))()                                       # the first step: get ready
+        self.assertFalse((d2 / "decisions.json").exists())
+        self.assertEqual(json.loads((d2 / "decisions before re-scan.json").read_text())["fade-1"]["decision"], "approve")
+        self.assertEqual(self.post("/api/rescan", dict(dir=str(self.work / "scan")))[0], 400)
+        # two folders hold scans of the same set (an older app made them): Re-scan on one card goes into THAT folder
+        d3 = self.scan("Song (older)", als, [F("smooth-1")])
+        os.utime(d3, (time.time() + 500, time.time() + 500))
+        code, r, _ = self.post("/api/rescan", dict(dir=str(d)))
+        self.assertEqual(Path(r["dir"]).resolve(), d.resolve())
+
+    def test_a_set_saved_after_the_scan_is_said_so_before_apply(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("smooth-1")], {"smooth-1": {"decision": "approve"}})
+        self.assertFalse(self.review(d)["stale"]["newer"])
+        os.utime(als, (als.stat().st_atime, als.stat().st_mtime + 120))
+        self.assertTrue(self.review(d)["stale"]["newer"])
+        self.assertTrue(call(self.base, "/api/state")[1]["scans"][0]["stale"])
+        als.unlink()
+        self.assertTrue(self.review(d)["stale"]["missing"])
+        self.assertTrue(call(self.base, "/api/state")[1]["scans"][0]["source_missing"])
+
+    # ---- 6. the handoff list
+    def test_the_handoff_list_is_a_job_and_lists_what_it_made(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("eq-1", "audit", "eq", applies="manual")], {"eq-1": {"decision": "approve"}})
+        code, r, _ = self.post("/api/handoff", dict(dir=str(d)))
+        self.assertEqual(code, 200)
+        kind, title, steps, sdir, watch = self.runs[-1]
+        self.assertEqual((kind, steps[0][1]), ("handoff", ["handoff", str(d.resolve())]))
+        self.assertIn(d.resolve() / "handoff", {Path(w).resolve() for w in watch})
+        self.assertIn(self.music.resolve(), {Path(w).resolve() for w in watch})
+        self.assertEqual(self.post("/api/handoff", {})[0], 400)
+
+    # ---- 7. what an apply did
+    LOG = """
+## fix run 2026-11-26 10:00
+
+approved: smooth-1, order-1
+
+### smooth: applied (1 approved)
+
+```
+edits 1 of 1 written
+```
+
+### Also applied because they are on by default
+
+- order-1: tracks put in working order
+
+### Not applied
+
+- merge-1 Gtr 2 -> Gtr 1 4 clip(s): no longer found in this set
+
+### by hand
+
+- eq-1 Bass 12.1.00: cut 250 Hz by hand
+
+### FAILED (not done)
+
+- tune-Lead: no key
+
+history: logged as v1 (`hypnomix history "x"`)
+"""
+
+    def test_the_log_is_grouped_by_its_own_headings_whatever_they_say(self):
+        run = self.S.parse_fix_log("## fix run 2026-11-25 09:00\n\napproved: old\n\n### old section\n\n- x\n" + self.LOG)
+        self.assertEqual(run["when"], "2026-11-26 10:00")                                  # the last run only
+        self.assertEqual([(x["title"], x["group"]) for x in run["sections"]],
+                         [("smooth: applied (1 approved)", "applied"), ("Also applied because they are on by default", "default"),
+                          ("Not applied", "not_applied"), ("by hand", "not_applied"), ("FAILED (not done)", "failed")])
+        self.assertEqual(run["intro"], ["approved: smooth-1, order-1"])
+        self.assertTrue(run["history"].startswith("history:"))
+        sec = run["sections"][-1]
+        self.assertTrue(all(l["bad"] for l in sec["lines"]))                                # everything under FAILED is marked
+        self.assertFalse(any(l["bad"] for l in run["sections"][0]["lines"]))
+        self.assertTrue(any(l["bad"] for l in self.S.parse_fix_log("## fix run x\n\n### odd\n\n- tune: FAILED to read\n")["sections"][0]["lines"]))
+        # a heading nobody has written yet still shows, as text under "applied"
+        run = self.S.parse_fix_log("## fix run now\n\n### something new\n\nhello\n")
+        self.assertEqual((run["sections"][0]["group"], run["sections"][0]["lines"][0]["t"]), ("applied", "hello"))
+        self.assertIsNone(self.S.parse_fix_log(""))
+
+    def test_the_result_names_the_new_file_what_was_not_applied_and_where_to_listen(self):
+        als = self.source("Song.als")
+        new = self.source("Song (fixed).als")
+        d = self.scan("Song", als, [F("smooth-1", where="12.3.50"), F("smooth-2", where="1 clip(s)"), F("order-1", "order", "track-order", where="", default="approve"),
+                                    F("merge-1", "tidy", "consolidate", default="approve"), F("eq-1", applies="manual"), F("tune-Lead", "tune", applies="audio")])
+        (d / "fix-log.md").write_text(self.LOG)
+        (d / "history").mkdir()
+        (d / "history" / "v1-input.als").write_text("x")
+        (d / "history" / "history.json").write_text(json.dumps({"versions": [dict(
+            n=1, kind="fix", at="2026-11-26 10:00:00", input=str(als), output=str(new), input_snapshot="v1-input.als", changes=3,
+            failed=[], approved=[dict(id=i) for i in ("smooth-1", "smooth-2", "order-1", "merge-1", "eq-1", "tune-Lead")])]}))
+        code, r, _ = call(self.base, "/api/fix/result?dir=" + urllib.request.quote(str(d)))
+        self.assertEqual(code, 200, r)
+        self.assertEqual([f["name"] for f in r["files"]], ["Song (fixed).als"])
+        self.assertEqual(r["files"][0]["folder"], str(self.music))
+        self.assertEqual([x["id"] for x in r["applied"]], ["smooth-1", "smooth-2", "order-1"])             # not merge-1 (not applied), eq-1 (by hand), tune-Lead (failed)
+        self.assertEqual([x["where"] for x in r["listen"]], ["12.3.50"])                         # a spot to listen at: only a real position, not a count like "1 clip(s)"
+        self.assertTrue(r["undo"]["can_undo"])
+        self.assertEqual(r["undo"]["undo_name"], "Song (back to v1 input).als")
+        self.assertTrue(any(s["group"] == "failed" for s in r["run"]["sections"]))
+        self.assertEqual(self.review(d)["last_run"]["when"], "2026-11-26 10:00")
+
+    def test_a_failed_job_says_why_in_the_commands_own_words(self):
+        S = self.S
+        why = S.job_reason(["$ hypnomix fix X", "Song (fixed).als already exists: choose a new name (nothing is ever overwritten)",
+                            "(Applying only what you approved: exit code 1)"])
+        self.assertEqual(why, "Song (fixed).als already exists: choose a new name (nothing is ever overwritten)")
+        why = S.job_reason(["$ hypnomix fix X", "lots of output", "", "FAILED (not done):", "- order-1: could not re-check", "- tune: no key", "", "log: x",
+                            "(Applying only what you approved: exit code 1)"])
+        self.assertEqual(why, "order-1: could not re-check; tune: no key")
+        self.assertEqual(S.job_reason(["$ hypnomix x"]), "")
+
+    def test_a_run_that_wrote_nothing_is_not_called_applied(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("smooth-1")], {"smooth-1": {"decision": "approve"}})
+        (d / "fix-log.md").write_text("\n## fix run now\n\napproved: smooth-1\n\n### skipped (not applied)\n\n- smooth-1: gone\n")
+        S = self.S
+        S.JOB.update(id=7, status="done", kind="fix", dir=str(d.resolve()), files=[], stopped=False, reason="",
+                     log=["$ hypnomix fix", "no set changes could be applied; see fix-log.md"])
+        r = call(self.base, "/api/fix/result?dir=" + urllib.request.quote(str(d)))[1]
+        self.assertTrue(r["wrote_nothing"])
+        self.assertIn("no set changes", r["note"])
+        S.JOB.update(status="failed", reason="Song (fixed).als already exists: choose a new name", log=["x"] * 3)
+        r = call(self.base, "/api/fix/result?dir=" + urllib.request.quote(str(d)))[1]
+        self.assertEqual((r["status"], r["reason"]), ("failed", "Song (fixed).als already exists: choose a new name"))
+
+    # ---- 8. history and undo
+    def test_history_lists_versions_and_only_offers_undo_where_a_snapshot_exists(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("smooth-1")])
+        (d / "history").mkdir()
+        (d / "history" / "v1-input.als").write_text("x")
+        (d / "history" / "history.json").write_text(json.dumps({"versions": [
+            dict(n=1, kind="fix", at="t1", input=str(als), output=str(self.music / "Song (fixed).als"), input_snapshot="v1-input.als", approved=[dict(id="smooth-1")], failed=[]),
+            dict(n=2, kind="fix", at="t2", input=str(als), output=None, approved=[dict(id="x")], failed=["x: stopped"])]}))
+        code, r, _ = call(self.base, "/api/history?dir=" + urllib.request.quote(str(d)))
+        self.assertEqual(code, 200)
+        self.assertEqual([(e["n"], e["can_undo"]) for e in r["entries"]], [(2, False), (1, True)])
+        self.assertIn("no new set", r["entries"][0]["why_not"])
+        self.assertEqual(r["entries"][1]["undo_name"], "Song (back to v1 input).als")
+        code, j, _ = self.post("/api/undo", dict(dir=str(d), n=1))
+        self.assertEqual((code, j["writes"]), (200, "Song (back to v1 input).als"))
+        steps = self.runs[-1][2]
+        self.assertEqual(steps[0][1], ["history", str(d.resolve()), "--undo", "1"])
+        self.assertEqual(self.post("/api/undo", dict(dir=str(d), n=2))[0], 409)           # nothing to go back to
+        self.assertEqual(self.post("/api/undo", dict(dir=str(d), n=9))[0], 400)
+        self.assertEqual(self.post("/api/undo", dict(dir=str(d), n="x"))[0], 400)
+        self.assertEqual(self.post("/api/undo", dict(dir=str(d)))[0], 400)
+        # REAPER, Ardour and folders keep no snapshot: the page says so in words instead of offering a button
+        for name, mode in (("R.rpp", "reaper"), ("S.ardour", "ardour")):
+            src = self.source(name)
+            d2 = self.scan(name.split(".")[0], src, [F("fade-1")], mode=mode)
+            (d2 / "history").mkdir()
+            (d2 / "history" / "history.json").write_text(json.dumps({"versions": [dict(n=1, kind="fix", at="t", input=str(src), output=str(self.music / "o"), approved=[dict(id="fade-1")])]}))
+            e = call(self.base, "/api/history?dir=" + urllib.request.quote(str(d2)))[1]["entries"][0]
+            self.assertFalse(e["can_undo"])
+            self.assertIn("no snapshot", e["why_not"])
+            self.assertIn("never changed", e["why_not"])
+            code, j, _ = self.post("/api/undo", dict(dir=str(d2), n=1))
+            self.assertEqual(code, 409)
+        self.assertEqual(call(self.base, "/api/history?dir=" + urllib.request.quote(str(d)))[1]["note"], "")
+
+    # ---- 9. damaged files
+    def test_a_damaged_decisions_file_keeps_the_song_in_the_list_and_can_be_restored(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("smooth-1"), F("eq-1", applies="manual")])
+        (d / "decisions.json").write_text('{"smooth-1": {"decision": "appr')
+        row = call(self.base, "/api/state")[1]["scans"][0]
+        self.assertEqual((row["name"], row["damaged"], row["can_restore"]), ("Song", "decisions.json", False))
+        r = self.review(d)
+        self.assertEqual(r["damaged"]["file"], "decisions.json")
+        self.assertFalse(r["damaged"]["backup"])
+        self.assertEqual(len(r["findings"]), 2)
+        code, j, _ = self.post("/api/decide", dict(dir=str(d), id="smooth-1", decision="approve"))
+        self.assertEqual(code, 409)
+        self.assertIn("damaged", j["error"])
+        self.assertEqual(self.post("/api/fix", dict(dir=str(d)))[0], 409)
+        self.assertEqual(self.post("/api/restore-decisions", dict(dir=str(d)))[0], 409)          # no backup to restore
+        (d / "decisions.json.bak").write_text(json.dumps({"smooth-1": {"decision": "skip"}}))
+        row = call(self.base, "/api/state")[1]["scans"][0]
+        self.assertTrue(row["can_restore"])
+        code, j, _ = self.post("/api/restore-decisions", dict(dir=str(d)))
+        self.assertEqual((code, j["restored"], j["kept"]), (200, True, "decisions.damaged.json"))
+        self.assertEqual(self.review(d)["decisions"]["smooth-1"]["decision"], "skip")
+        self.assertEqual((d / "decisions.damaged.json").read_text(), '{"smooth-1": {"decision": "appr')     # the damaged file is kept
+        self.assertEqual(self.post("/api/restore-decisions", dict(dir=str(d)))[0], 400)         # no longer damaged
+        # no backup: start again (the damaged file is still kept)
+        (d / "decisions.json.bak").unlink()
+        (d / "decisions.json").write_text("{nope")
+        code, j, _ = self.post("/api/restore-decisions", dict(dir=str(d), fresh=True))
+        self.assertEqual((code, j["restored"], j["kept"]), (200, False, "decisions.damaged 2.json"))
+        self.assertEqual(self.review(d)["decisions"], {})
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), id="smooth-1", decision="approve"))[0], 200)
+
+    def test_a_damaged_findings_file_is_listed_not_dropped(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("smooth-1")])
+        (d / "findings.json").write_text('{"findings": [ {"id"')
+        row = call(self.base, "/api/state")[1]["scans"][0]
+        self.assertEqual((row["name"], row["damaged"], row["can_rescan"]), ("Song", "findings.json", True))
+        r = self.review(d)
+        self.assertEqual((r["damaged"]["file"], r["findings"]), ("findings.json", []))
+        code, j, _ = self.post("/api/rescan", dict(dir=str(d)))                                  # a re-scan does not lean on the damaged file
+        self.assertEqual(code, 200, j)
+        argv = next(a for _, a, _ in self.runs[-1][2] if isinstance(a, list) and a[0] == "scan")
+        self.assertNotIn("--since", argv)
+        # a scan that never finished is listed too
+        d2 = self.work / "scan" / "Half"
+        d2.mkdir()
+        (d2 / "scan.json").write_text(json.dumps(dict(set=str(als), mode="set")))
+        rows = {r["name"]: r for r in call(self.base, "/api/state")[1]["scans"]}
+        self.assertTrue(rows["Half"]["incomplete"])
+
+    # ---- 10. plain errors
+    def test_missing_fields_are_answered_in_a_sentence(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("smooth-1")])
+        bad = [("GET", "/audio", None), ("GET", "/audio?dir=" + urllib.request.quote(str(d)), None), ("GET", "/api/review", None),
+               ("GET", "/api/job?since=abc", None), ("GET", "/api/live/poll?since=x", None),
+               ("POST", "/api/decide", {}), ("POST", "/api/decide", dict(dir=str(d))), ("POST", "/api/decide", dict(dir=str(d), id="smooth-1")),
+               ("POST", "/api/decide", dict(dir=str(d), id="smooth-1", decision="approve", amount="lots")),
+               ("POST", "/api/decide", dict(dir=str(d), id="smooth-1", decision="maybe")), ("POST", "/api/decide-like", {}),
+               ("POST", "/api/note", {}), ("POST", "/api/note", dict(dir=str(d), id="smooth-1")), ("POST", "/api/scan", {}),
+               ("POST", "/api/reveal", {}), ("POST", "/api/fix", {}), ("POST", "/api/ab/build", {}), ("POST", "/api/probe/report", {}),
+               ("POST", "/api/live/jump", {}), ("POST", "/api/ab/state", {}), ("POST", "/api/probe/card", {}),
+               ("POST", "/api/tool", dict(cmd="scan", args="'never closed")),
+               # a field of the wrong kind (a list where text belongs) is a sentence too, never a dropped connection
+               ("POST", "/api/tool", dict(cmd=["scan"])), ("POST", "/api/decide-low", dict(dir=str(d), ids=[["a"]], dry_run=False)),
+               ("POST", "/api/decide-low", dict(dir=str(d), ids="smooth-1", dry_run=False)), ("POST", "/api/decide-low", dict(dir=[1])),
+               ("POST", "/api/master/record", dict(params=[["x"]], path=["p"])), ("POST", "/api/master/record", dict(state=["start"], path=["x"])),
+               ("POST", "/api/decide", dict(dir=str(d), id=["smooth-1"], decision="approve"))]
+        for method, path, body in bad:
+            code, r = (call(self.base, path)[:2] if method == "GET" else self.post(path, body)[:2])
+            self.assertEqual(code, 400, (path, body, r))
+            self.assertTrue(r["error"], (path, body))
+            self.assertNotRegex(r["error"], r"^'\w+'$", (path, body))                          # not the Python word for the missing key
+            self.assertNotIn("KeyError", r["error"])
+            self.assertNotIn("invalid literal", r["error"])
+
+    def test_a_number_that_is_out_of_range_never_says_none(self):
+        code, r, _ = call(self.base, "/api/job?since=-5")
+        self.assertEqual(code, 400)
+        self.assertNotIn("None", r["error"])
+        self.assertIn("0 or more", r["error"])
+        self.assertEqual(self.S.whole(5, "n", 1, 3 - 3 + 9), 5)
+        with self.assertRaises(ValueError) as e:
+            self.S.whole(50, "n", 1, 9)
+        self.assertIn("between 1 and 9", str(e.exception))
+
+    def test_stopping_the_probe_before_it_started_is_answered_plainly(self):
+        S = self.S
+        hub, S.PROBE["hub"] = S.PROBE["hub"], None
+        try:
+            code, r, _ = call(self.base, "/api/probe/stop", {})
+        finally:
+            S.PROBE["hub"] = hub
+        self.assertEqual(code, 409)
+        self.assertIn("not running", r["error"])
+        S.PROBE["hub"] = type("Hub", (), {"capture": None})()
+        try:
+            code, r, _ = call(self.base, "/api/probe/stop", {})
+        finally:
+            S.PROBE["hub"] = hub
+        self.assertEqual(code, 409)
+        self.assertIn("Record first", r["error"])
+
+    def test_align_run_is_checked_before_it_starts_anything(self):
+        for body in (dict(guide="Lead", parts=[1]), dict(guide="Lead", parts="x"), dict(parts=["a"]), dict(guide="Lead", parts=[["a"]], set="/x.als")):
+            code, r, _ = call(self.base, "/api/align/run", body)
+            self.assertEqual(code, 400, body)
+            self.assertIn("parts", r["error"])
+
+    # ---- 12. the demo song
+    def test_the_demo_button_only_exists_where_the_command_does(self):
+        from hypnomix import cli
+        self.assertEqual(call(self.base, "/api/state")[1]["demo"], "demo" in cli.COMMANDS)
+        had = cli.COMMANDS.pop("demo", None)
+        try:
+            self.assertFalse(call(self.base, "/api/state")[1]["demo"])
+            code, r, _ = self.post("/api/demo", {})
+            self.assertEqual(code, 400)
+            self.assertIn("no demo", r["error"])
+            cli.COMMANDS["demo"] = ("x", "demo", "a demo song")
+            self.assertTrue(call(self.base, "/api/state")[1]["demo"])
+            self.assertEqual(self.post("/api/demo", {})[0], 200)
+            kind, title, steps, sdir, watch = self.runs[-1]
+            argv = steps[0][1]
+            self.assertEqual((kind, argv[0], argv[1]), ("scan", "demo", "--out"))
+            self.assertEqual(Path(argv[2]).parent, self.work)                                  # into the app's own folder
+            # once the demo has run, the second step finds the song it wrote and starts the scan on it
+            out = Path(argv[2])
+            out.mkdir(parents=True)
+            (out / "Demo.als").write_text("x")
+            self.S.JOB["log"] = ["$ hypnomix demo", f"wrote {out / 'Demo.als'}"]
+            more = steps[1][1]()
+            self.assertEqual(more[0][0], "Getting ready")
+            self.assertEqual([a[0] for _, a, _ in more if isinstance(a, list)], ["scan", "ab"])
+            self.assertEqual(self.S.JOB["dir"], str(self.work / "scan" / "Demo"))
+        finally:
+            cli.COMMANDS.pop("demo", None)
+            if had:
+                cli.COMMANDS["demo"] = had
+        self.assertIn("Try it on a demo song", __import__("hypnomix.app.ui", fromlist=["PAGE"]).PAGE)
+
+    # ---- 11. stop ends everything a job started
+    @unittest.skipIf(os.name == "nt", "process groups are POSIX; Windows uses taskkill /T")
+    def test_stop_ends_the_whole_process_group_and_removes_temporary_sets(self):
+        S = self.S
+        S.run_job = self._run_job
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("smooth-1")])
+        pidfile = self.root / "child.pid"
+        step_file = self.music / "Song (fix step 1).als"
+        keep = self.source("Song (fixed).als")                                                # a real result next to it is never touched
+
+        def fake(argv):
+            step_file.write_text("temp")
+            return subprocess.Popen(["sh", "-c", f"sleep 120 & echo $! > '{pidfile}'; wait"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, start_new_session=True)
+        real = S.popen_job
+        S.popen_job = fake
+        try:
+            S.run_job("fix", "Applying", [("Applying", ["fix", str(d)], True)], d)
+            for _ in range(100):
+                if pidfile.exists() and pidfile.read_text().strip():
+                    break
+                time.sleep(0.05)
+            child = int(pidfile.read_text())
+            os.kill(child, 0)                                                                    # the grandchild is running
+            self.assertEqual(call(self.base, "/api/stop", {}, S.TOKEN)[1], {"stopped": True})
+            for _ in range(100):
+                if S.JOB["status"] != "running":
+                    break
+                time.sleep(0.05)
+            self.assertEqual((S.JOB["status"], S.JOB["stopped"], S.JOB["reason"]), ("failed", True, "Stopped by you."))
+            for _ in range(60):                                                                  # the grandchild went with it
+                try:
+                    os.kill(child, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.05)
+            else:
+                self.fail("the process the job's command started is still running")
+            self.assertFalse(step_file.exists())
+            self.assertTrue(keep.exists())
+            self.assertTrue(any("removed the temporary set" in l for l in S.JOB["log"]))
+            self.assertEqual(call(self.base, "/api/stop", {}, S.TOKEN)[1], {"stopped": False})     # nothing running: said, not crashed
+        finally:
+            S.popen_job = real
+
+    def test_jobs_start_in_their_own_group(self):
+        import inspect
+        src = inspect.getsource(self.S.popen_job)
+        self.assertIn("start_new_session", src)
+        self.assertIn("CREATE_NEW_PROCESS_GROUP", src)
+        self.assertIn("taskkill", inspect.getsource(self.S.kill_tree))
+        self.assertIn("PYTHONPATH", inspect.getsource(self.S.cli_env))
+
+
 class Device(unittest.TestCase):
     def test_builds_a_device_live_can_read(self):
         from hypnomix.app import device as D
@@ -352,6 +1047,496 @@ class Device(unittest.TestCase):
             self.assertNotIn("__", js.replace("__PORT__", ""))                            # every placeholder filled
             for fn in ("function paint()", "function onclick(", "function bang()", "function jump("):
                 self.assertIn(fn, js)
+
+
+class ReviewB(unittest.TestCase):
+    """The review made fast and safe: one write for a batch, what was played, a bulk approve that shows its list and leaves taste
+    calls alone, caches for what the page asks every second, and the progress of a running job."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.td = tempfile.TemporaryDirectory()
+        cls.root = Path(cls.td.name)
+        cls.work = cls.root / "work"
+        os.environ["HYPNOMIX_APP_HOME"] = str(cls.work)
+        from hypnomix.app import server as S
+        cls.S = S
+        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), S.make_handler(0))
+        port = cls.srv.server_address[1]
+        cls.srv.RequestHandlerClass = S.make_handler(port)
+        cls.base = f"http://127.0.0.1:{port}"
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+        cls.td.cleanup()
+        os.environ.pop("HYPNOMIX_APP_HOME", None)
+
+    def setUp(self):
+        shutil.rmtree(self.work, ignore_errors=True)
+        self.S.JOB.update(status="idle", log=[], files=[], reason="", stopped=False, dir="", kind="", step="")
+        self.S.LIVE.update(dir="", cursor=-1)
+        self.S._SCAN_CACHE.clear()
+
+    def post(self, path, body):
+        return call(self.base, path, body, self.S.TOKEN)
+
+    def scan(self, name, findings, dec=None, ab=None, source="/nowhere/Song.als"):
+        d = self.work / "scan" / name
+        (d / "ab").mkdir(parents=True)
+        (d / "findings.json").write_text(json.dumps(dict(set=source, notes=[], findings=findings)))
+        (d / "scan.json").write_text(json.dumps(dict(set=source, mode="set")))
+        if dec is not None:
+            (d / "decisions.json").write_text(json.dumps(dec))
+        if ab is not None:
+            (d / "ab" / "ab.json").write_text(json.dumps(ab))
+        return d
+
+    def saved(self, d):
+        return json.loads((d / "decisions.json").read_text())
+
+    def tiny_set(self, path, tempo):
+        import gzip
+        with gzip.open(path, "wb") as f:
+            f.write(f'<Ableton><LiveSet><MainTrack><DeviceChain><Mixer><Tempo><Manual Value="{tempo}"/></Tempo></Mixer></DeviceChain></MainTrack></LiveSet></Ableton>'.encode())
+        return path
+
+    # ---- 2. a batch is one request and one write
+    def test_a_batch_of_decisions_is_one_request_and_one_write(self):
+        d = self.scan("Song", [F(f"smooth-{i}") for i in range(30)])
+        ids = [f"smooth-{i}" for i in range(30)]
+        writes = []
+        real = self.S.write_json_atomic
+        self.S.write_json_atomic = lambda p, o: (writes.append(Path(p).name), real(p, o))[1]
+        try:
+            code, r, _ = self.post("/api/decide", dict(dir=str(d), ids=ids, decision="approve", note="batch: like smooth-1", via="batch"))
+        finally:
+            self.S.write_json_atomic = real
+        self.assertEqual(code, 200)
+        self.assertEqual(sorted(r["ids"]), sorted(ids))
+        self.assertEqual(writes, ["decisions.json"])                                  # not 30 writes
+        dec = self.saved(d)
+        self.assertEqual({k: v["decision"] for k, v in dec.items()}, {i: "approve" for i in ids})
+        self.assertEqual(dec["smooth-3"]["via"], "batch")
+        self.assertEqual(r["entries"]["smooth-3"]["note"], "batch: like smooth-1")
+
+    def test_one_unknown_id_stops_the_whole_batch_with_nothing_recorded(self):
+        d = self.scan("Song", [F("smooth-1"), F("smooth-2")])
+        code, r, _ = self.post("/api/decide", dict(dir=str(d), ids=["smooth-1", "nope-9"], decision="approve"))
+        self.assertEqual(code, 400)
+        self.assertIn("nope-9", r["error"])
+        self.assertFalse((d / "decisions.json").exists())
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), ids="smooth-1", decision="approve"))[0], 400)
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), ids=["smooth-1"], decision="maybe"))[0], 400)
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), ids=["smooth-1"], decision="approve", amount=101))[0], 400)
+
+    def test_a_batch_keeps_an_unsettled_conflict_and_a_damaged_file_refuses_it(self):
+        d = self.scan("Song", [F("smooth-1"), F("smooth-2")], dec={"smooth-1": dict(decision="skip", conflicts=[dict(by="ann", decision="approve")])})
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), ids=["smooth-1", "smooth-2"], decision="approve"))[0], 200)
+        self.assertEqual(self.saved(d)["smooth-1"]["conflicts"][0]["by"], "ann")
+        (d / "decisions.json").write_text("{broken")
+        code, r, _ = self.post("/api/decide", dict(dir=str(d), ids=["smooth-1"], decision="approve"))
+        self.assertEqual(code, 409)
+        self.assertEqual((d / "decisions.json").read_text(), "{broken")                # nothing was written over it
+
+    def test_the_single_decision_still_works_and_says_what_it_recorded(self):
+        d = self.scan("Song", [F("smooth-1")])
+        code, r, _ = self.post("/api/decide", dict(dir=str(d), id="smooth-1", decision="change", note="softer", amount=40))
+        self.assertEqual(code, 200)
+        self.assertEqual((r["entry"]["decision"], r["entry"]["note"], r["entry"]["amount"]), ("change", "softer", 40))
+
+    # ---- 3. what was played
+    def test_playing_a_clip_is_remembered_with_the_decision_and_never_blocks_one(self):
+        ab = {"smooth-1": dict(a="a.wav", b="b.wav"), "order-1": dict(a="a.wav", b="b.wav")}
+        d = self.scan("Song", [F("smooth-1"), F("order-1", "order", "track-order", default="approve")], ab=ab)
+        self.assertEqual(self.post("/api/heard", dict(dir=str(d), id="smooth-1", which="a"))[1]["heard"], ["a"])
+        self.assertEqual(self.post("/api/heard", dict(dir=str(d), id="smooth-1", which="b"))[1]["heard"], ["a", "b"])
+        self.assertEqual(self.post("/api/heard", dict(dir=str(d), id="smooth-1", which="b"))[1]["heard"], ["a", "b"])       # idempotent
+        self.assertFalse((d / "decisions.json").exists())                             # an entry with no decision would turn off a default
+        self.assertEqual(self.post("/api/heard", dict(dir=str(d), id="order-1", which="a"))[0], 200)
+        self.assertFalse((d / "decisions.json").exists())
+        _, r, _ = call(self.base, "/api/review?dir=" + urllib.request.quote(str(d)))
+        self.assertEqual(r["heard"], {"smooth-1": ["a", "b"], "order-1": ["a"]})
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), id="smooth-1", decision="approve"))[1]["entry"]["heard"], ["a", "b"])
+        self.assertEqual(self.saved(d)["smooth-1"]["heard"], ["a", "b"])               # in the same file, with the decision
+        self.post("/api/heard", dict(dir=str(d), id="smooth-1", which="a"))
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), ids=["smooth-1"], decision="skip"))[1]["entries"]["smooth-1"]["heard"], ["a", "b"])
+
+    def test_a_play_can_be_added_after_the_decision_and_bad_ones_are_refused(self):
+        d = self.scan("Song", [F("smooth-1")], dec={"smooth-1": dict(decision="approve", note="")})
+        self.post("/api/heard", dict(dir=str(d), id="smooth-1", which="b"))
+        self.assertEqual(self.saved(d)["smooth-1"]["heard"], ["b"])
+        self.assertEqual(self.saved(d)["smooth-1"]["decision"], "approve")
+        self.assertEqual(self.post("/api/heard", dict(dir=str(d), id="smooth-1", which="c"))[0], 400)
+        self.assertEqual(self.post("/api/heard", dict(dir=str(d), id="nope", which="a"))[0], 400)
+        self.assertEqual(call(self.base, "/api/heard", dict(dir=str(d), id="smooth-1", which="a"))[0], 403)       # needs the page's token
+
+    def test_the_device_decision_keeps_what_was_heard(self):
+        d = self.scan("Song", [F("smooth-1")], ab={"smooth-1": dict(a="a.wav", b="b.wav")})
+        self.post("/api/heard", dict(dir=str(d), id="smooth-1", which="a"))
+        call(self.base, "/api/review?dir=" + urllib.request.quote(str(d)))
+        call(self.base, "/api/live/step", dict(delta=1))
+        call(self.base, "/api/live/decide", dict(decision="approve"))
+        self.assertEqual(self.saved(d)["smooth-1"]["heard"], ["a"])
+
+    # ---- 4. "Approve all low" is not allowed to take a taste call
+    def low_scan(self):
+        fs = [F("smooth-1"), F("smooth-2", where="2.1.00"),
+              F("tune-1", "tune", "pitch", applies="audio"), F("voices-1", "voices", "balance", applies="audio"),
+              F("motion-1", "motion", "move"), F("colour-1", "colour", "tone"), F("borrow-1", "borrow", "move"), F("variations-1", "variations", "v"),
+              F("taste-1", "devices", "x", taste=True),
+              F("order-1", "order", "track-order", default="approve"), F("order-2", "order", "vocal-stack"),
+              F("retire-1", "tidy", "retire-off", default="approve"), F("merge-1", "tidy", "consolidate"),
+              F("smooth-3", track="Lead", protected=True), F("eq-1", "audit", "eq", applies="manual"), F("q-1", "key", "q", applies="answer"),
+              F("mix-1", "measure", "loudness", "info", applies="info"), F("smooth-4", severity="medium"), F("smooth-5", severity="high"),
+              F("smooth-6")]
+        ab = {"smooth-1": dict(a="a.wav", b="b.wav"), "tune-1": dict(a="a.wav", b="b.wav")}
+        d = self.scan("Song", fs, dec={"smooth-6": dict(decision="skip")}, ab=ab)
+        self.post("/api/heard", dict(dir=str(d), id="smooth-1", which="a"))
+        return d
+
+    def test_approve_all_low_lists_what_it_would_approve_and_leaves_taste_and_tidy_steps_out(self):
+        d = self.low_scan()
+        code, r, _ = self.post("/api/decide-low", dict(dir=str(d), dry_run=True))
+        self.assertEqual(code, 200)
+        self.assertEqual(sorted(x["id"] for x in r["items"]), ["smooth-1", "smooth-2"])
+        self.assertEqual((r["n"], r["with_preview"], r["heard"]), (2, 1, 1))
+        row = next(x for x in r["items"] if x["id"] == "smooth-1")
+        self.assertEqual((row["track"], row["where"], row["fix"], row["preview"], row["heard"]), ("Vox", "1.1.00", "a fix", True, True))
+        self.assertEqual(r["left_out"], dict(taste=7, tidy=4, protected=1, by_hand=1))
+        self.assertEqual(self.saved(d), {"smooth-6": dict(decision="skip")})          # listing records nothing
+
+    def test_approve_all_low_records_only_what_it_listed_and_refuses_anything_else(self):
+        d = self.low_scan()
+        code, r, _ = self.post("/api/decide-low", dict(dir=str(d), ids=["smooth-1", "smooth-2", "tune-1", "order-1", "smooth-3", "smooth-4", "smooth-6"]))
+        self.assertEqual(code, 200)
+        self.assertEqual(sorted(r["ids"]), ["smooth-1", "smooth-2"])
+        self.assertEqual(sorted(r["refused"]), ["order-1", "smooth-3", "smooth-4", "smooth-6", "tune-1"])
+        dec = self.saved(d)
+        self.assertEqual({k: v["decision"] for k, v in dec.items()}, {"smooth-1": "approve", "smooth-2": "approve", "smooth-6": "skip"})
+        self.assertEqual(dec["smooth-1"]["via"], "bulk-low")
+        self.assertEqual(dec["smooth-1"]["heard"], ["a"])
+        r = self.post("/api/decide-low", dict(dir=str(d), dry_run=True))[1]               # what is left to approve in bulk: nothing
+        self.assertEqual((r["n"], r["items"]), (0, []))
+
+    def test_approve_all_low_is_asked_for_by_id_so_a_bare_call_only_lists(self):
+        d = self.low_scan()
+        self.assertEqual(self.post("/api/decide-low", dict(dir=str(d)))[1]["n"], 2)
+        self.assertEqual(self.saved(d), {"smooth-6": dict(decision="skip")})
+
+    def test_an_ardour_session_does_not_count_unwritable_edits_as_approvable(self):
+        d = self.work / "scan" / "Mix"
+        (d / "ab").mkdir(parents=True)
+        (d / "findings.json").write_text(json.dumps(dict(set="/nowhere/Mix.ardour", notes=[], findings=[
+            F("smooth-1", edit=dict(op="fade")), F("timing-1", "timing", "late", edit=dict(op="nudge"))])))
+        (d / "scan.json").write_text(json.dumps(dict(set="/nowhere/Mix.ardour", mode="ardour")))
+        r = self.post("/api/decide-low", dict(dir=str(d), dry_run=True))[1]
+        self.assertEqual([x["id"] for x in r["items"]], ["smooth-1"])
+        self.assertEqual(r["left_out"]["by_hand"], 1)
+
+    def test_approve_the_n_like_this_lists_first_and_then_uses_the_examples_amount(self):
+        fs = [F(f"smooth-{i}", size=2.0) for i in range(1, 5)] + [F("smooth-9", size=40.0)]
+        d = self.scan("Song", fs, dec={"smooth-4": dict(decision="skip")}, ab={"smooth-2": dict(a="a.wav", b="b.wav")})
+        self.post("/api/heard", dict(dir=str(d), id="smooth-2", which="b"))
+        code, r, _ = self.post("/api/decide-like", dict(dir=str(d), id="smooth-1", decision="approve", dry_run=True))
+        self.assertEqual(code, 200)
+        self.assertEqual(sorted(x["id"] for x in r["items"]), ["smooth-1", "smooth-2", "smooth-3"])
+        self.assertTrue(r["includes_example"])
+        self.assertEqual((r["with_preview"], r["heard"]), (1, 1))
+        self.assertEqual(self.saved(d), {"smooth-4": dict(decision="skip")})               # nothing recorded by the listing
+        code, r, _ = self.post("/api/decide-like", dict(dir=str(d), id="smooth-1", decision="approve", amount=60))
+        self.assertEqual(sorted(r["ids"]), ["smooth-1", "smooth-2", "smooth-3"])
+        dec = self.saved(d)
+        self.assertEqual([dec[i]["amount"] for i in r["ids"]], [60, 60, 60])
+        self.assertEqual(dec["smooth-2"]["heard"], ["b"])
+        self.assertEqual(r["entries"]["smooth-3"]["via"], "like:smooth-1")
+        self.assertNotIn("smooth-9", dec)
+        again = self.post("/api/decide-like", dict(dir=str(d), id="smooth-1", decision="skip", dry_run=True))[1]       # the example is decided now
+        self.assertFalse(again["includes_example"])
+        self.assertEqual(again["items"], [])
+        self.assertEqual(self.post("/api/decide-like", dict(dir=str(d), id="nope-1", decision="skip", dry_run=True))[0], 400)
+
+    # ---- 8. what the page asks every second is kept
+    def test_the_songs_list_does_not_parse_every_scan_again_until_one_changes(self):
+        ds = [self.scan(f"Song {i}", [F("smooth-1"), F("smooth-2")], source=f"/nowhere/S{i}.als") for i in range(5)]
+        n = []
+        real = self.S.inspect_scan
+        self.S.inspect_scan = lambda d: (n.append(str(d)), real(d))[1]
+        try:
+            self.assertEqual(len(self.S.scans()), 5)
+            first = len(n)
+            for _ in range(4):
+                self.S.scans()
+            self.assertEqual(len(n), first)                                                    # four more asks, no more parsing
+            self.assertEqual(self.post("/api/decide", dict(dir=str(ds[2]), id="smooth-1", decision="approve"))[0], 200)
+            del n[:]
+            rows = {r["name"]: r for r in self.S.scans()}
+            self.assertEqual(n, [str(ds[2])])                                                  # only the folder that changed
+            first = 0
+            self.assertEqual((rows["Song 2"]["approved"], rows["Song 1"]["approved"]), (1, 0))
+            shutil.rmtree(ds[0])
+            self.assertEqual(len(self.S.scans()), 4)
+            self.assertNotIn(str(ds[0]), self.S._SCAN_CACHE)
+        finally:
+            self.S.inspect_scan = real
+
+    def test_the_songs_list_still_notices_a_song_saved_after_the_scan(self):
+        src = self.root / "Song.als"
+        src.write_text("x")
+        d = self.scan("Song", [F("smooth-1")], source=str(src))
+        (d / "scan.json").write_text(json.dumps(dict(set=str(src), mode="set", set_mtime=src.stat().st_mtime)))
+        self.assertFalse(self.S.scans()[0]["stale"])
+        os.utime(src, (time.time() + 50, time.time() + 50))
+        self.assertTrue(self.S.scans()[0]["stale"])                                            # the song is looked at on every ask
+        src.unlink()
+        self.assertTrue(self.S.scans()[0]["source_missing"])
+
+    def test_the_command_list_is_sent_once_not_with_every_state(self):
+        _, st, _ = call(self.base, "/api/state")
+        self.assertNotIn("commands", st)
+        _, cm, _ = call(self.base, "/api/commands")
+        self.assertEqual(cm["rev"], st["commands_rev"])
+        self.assertGreater(len(cm["commands"]), 20)
+        self.assertEqual(len(json.dumps(st)) < len(json.dumps(cm)), True)
+
+    def test_a_set_is_unzipped_once_for_as_long_as_it_does_not_change(self):
+        import gzip
+        from hypnomix.session import automation as aa
+        als = self.tiny_set(self.root / "Big.als", 120)
+        n = []
+        real = aa.load
+        aa.load = lambda p: (n.append(p), real(p))[1]
+        try:
+            self.assertEqual(self.S.set_grid(str(als))[0], 120.0)
+            for _ in range(5):
+                self.S.set_grid(str(als))
+            self.assertEqual(len(n), 1)
+            self.tiny_set(als, 90)
+            os.utime(als, (time.time() + 5, time.time() + 5))
+            self.assertEqual(self.S.set_grid(str(als))[0], 90.0)                              # saved again: read again
+            self.assertEqual(len(n), 2)
+        finally:
+            aa.load = real
+        self.assertEqual(self.S.set_grid(str(self.root / "missing.als")), (None, 4))
+
+    def test_the_device_poll_and_the_review_do_not_read_the_set_every_time(self):
+        from hypnomix.session import automation as aa
+        als = self.tiny_set(self.root / "Song.als", 120)
+        d = self.scan("Song", [F("smooth-1", where="3.1.00"), F("smooth-2", where="bars 5-6")], source=str(als))
+        n = []
+        real = aa.load
+        aa.load = lambda p: (n.append(p), real(p))[1]
+        try:
+            call(self.base, "/api/review?dir=" + urllib.request.quote(str(d)))
+            for _ in range(5):
+                call(self.base, "/api/live/poll?since=-1")
+                call(self.base, "/api/review?dir=" + urllib.request.quote(str(d)))
+            call(self.base, "/api/live/step", dict(delta=1))
+            self.assertEqual(len(n), 1)
+        finally:
+            aa.load = real
+        _, p, _ = call(self.base, "/api/live/poll?since=-1")
+        self.assertEqual(p["current"]["id"], "smooth-1")
+        self.post("/api/decide", dict(dir=str(d), id="smooth-1", decision="skip"))             # a decision is seen by the device at once
+        self.assertEqual(call(self.base, "/api/live/poll?since=-1")[1]["current"]["decision"], "skip")
+
+    def test_a_commands_help_runs_once(self):
+        calls = []
+        real = self.S.subprocess.run
+        self.S.subprocess.run = lambda *a, **k: (calls.append(a[0]), type("R", (), dict(stdout="usage: hypnomix scan", stderr=""))())[1]
+        self.S._HELP.clear()
+        try:
+            for _ in range(3):
+                code, r, _ = call(self.base, "/api/help?cmd=scan")
+                self.assertEqual((code, r["help"]), (200, "usage: hypnomix scan"))
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(call(self.base, "/api/help?cmd=install")[0], 404)
+        finally:
+            self.S.subprocess.run = real
+            self.S._HELP.clear()
+
+    # ---- 6. how far a job has got
+    def running(self, step, log, **kw):
+        self.S.JOB.update(status="running", step=step, log=log, step_at=time.time() - kw.pop("elapsed", 10), t0=time.time() - 12, **kw)
+
+    SCAN_LOG = ["$ hypnomix scan Song.als", "scanning Song.als: names, files, clips, timing → /x/scan/Song", "  track roles from `name`: 1 vocal, 2 other",
+                "  names       3 findings  (2 s)", "  files       0 findings  (1 s)"]
+
+    def test_a_scan_says_how_many_checks_are_done_and_which_are_still_running(self):
+        self.running("Scanning (changes nothing)", self.SCAN_LOG, prior={})
+        p = self.S.job_progress()
+        self.assertEqual((p["kind"], p["done"], p["total"], p["pending"]), ("scan", 2, 4, ["clips", "timing"]))
+        self.assertIsNone(p["eta"])                                                            # a first scan: no honest estimate
+        self.assertNotIn("percent", p)
+
+    def test_the_estimate_comes_from_the_last_scans_own_seconds_and_says_when_it_is_over(self):
+        prior = dict(groups=dict(names=2, files=1, clips=30, timing=20), wall=45.0, names=["names", "files", "clips", "timing"], ab_wall=None)
+        self.running("Scanning (changes nothing)", self.SCAN_LOG, prior=prior, elapsed=10)
+        p = self.S.job_progress()
+        self.assertEqual((p["eta"], p["last_total"], p["over"]), (35, 45, False))
+        self.assertEqual(p["last"], dict(clips=30, timing=20))
+        self.running("Scanning (changes nothing)", self.SCAN_LOG, prior=prior, elapsed=60)
+        p = self.S.job_progress()
+        self.assertEqual((p["eta"], p["over"]), (0, True))
+        # a different set of groups (a re-scan that re-runs a few): from the groups' own seconds, over the 4 workers a scan uses
+        prior2 = dict(groups=dict(names=2, files=1, clips=30, timing=20), wall=None, names=None, ab_wall=None)
+        self.running("Scanning (changes nothing)", self.SCAN_LOG, prior=prior2, elapsed=5)
+        self.assertEqual(self.S.job_progress()["last_total"], 30)                               # the longest group bounds it
+        # a group that has never run has no past time: no estimate rather than a made-up one
+        self.running("Scanning (changes nothing)", self.SCAN_LOG, prior=dict(groups=dict(names=2, files=1, clips=30), wall=40.0, names=None, ab_wall=None))
+        self.assertIsNone(self.S.job_progress()["eta"])
+
+    def test_the_other_steps_show_what_their_output_allows(self):
+        self.running("Building before / after clips", ["rendering 3 track(s) with and without 2 nudge(s) …", "rendering 3 track(s) with and without 1 cut(s) …"],
+                     prior=dict(groups={}, wall=None, ab_wall=50.0), elapsed=20)
+        p = self.S.job_progress()
+        self.assertEqual((p["kind"], p["done"], p["total"], p["eta"], p["last_total"]), ("ab", 2, None, 30, 50))
+        self.running("Applying only what you approved", ["$ hypnomix fix X", "smooth      ok  (3 approved)", "check      structure OK", "timing      FAILED  (re-check did not run)"], expect=3)
+        p = self.S.job_progress()
+        self.assertEqual((p["kind"], p["done"], p["total"]), ("fix", 2, 3))
+        self.running("Something else", [], elapsed=7)
+        self.assertEqual(self.S.job_progress()["kind"], "other")
+        self.S.JOB["status"] = "idle"
+        self.assertIsNone(self.S.job_progress())
+
+    def test_a_scans_times_are_kept_for_the_next_estimate_and_a_do_nothing_rescan_does_not_erase_them(self):
+        d = self.work / "scan" / "Song"
+        d.mkdir(parents=True)
+        self.S.JOB.update(log=self.SCAN_LOG, walls={"Scanning (changes nothing)": 12.34, "Building before / after clips": 3.0})
+        self.S.save_times(d)
+        t = json.loads((d / "app-scan.json").read_text())["times"]
+        self.assertEqual((t["groups"], t["wall"], t["names"], t["ab_wall"]), (dict(names=2, files=1), 12.3, ["names", "files", "clips", "timing"], 3.0))
+        pr = self.S.prior_times(d)
+        self.assertEqual((pr["groups"], pr["wall"], pr["ab_wall"]), (dict(names=2.0, files=1.0), 12.3, 3.0))
+        self.S.JOB.update(log=["scanning Song.als: nothing changed → /x"], walls={"Scanning again (changes nothing)": 0.2})
+        self.S.save_times(d)
+        self.assertEqual(json.loads((d / "app-scan.json").read_text())["times"]["wall"], 12.3)
+        (d / "scan.json").write_text(json.dumps(dict(group_seconds=dict(mix=9))))               # a scan that writes its own seconds wins
+        self.assertEqual(self.S.prior_times(d)["groups"], dict(mix=9.0))
+
+    def test_the_old_per_group_files_give_a_first_estimate_for_a_scan_the_command_line_made(self):
+        d = self.work / "scan" / "Song"
+        d.mkdir(parents=True)
+        (d / "mix.json").write_text(json.dumps(dict(group="mix", seconds=8.2, findings=[])))
+        (d / "decisions.json").write_text("{}")
+        self.assertEqual(self.S.prior_times(d)["groups"], dict(mix=8.2))
+
+    def test_the_job_route_carries_the_progress_and_the_page_never_shows_a_percentage(self):
+        self.running("Scanning (changes nothing)", self.SCAN_LOG, prior={})
+        _, j, _ = call(self.base, "/api/job?since=0")
+        self.assertEqual(j["progress"]["kind"], "scan")
+        from hypnomix.app import ui
+        self.assertNotIn("%", ui.PAGE[ui.PAGE.index("function progressHTML"):ui.PAGE.index("function jobView")])
+
+    # ---- 1, 5, 7, 9: the page
+    def test_the_review_screen_is_served_and_wired_into_the_page(self):
+        code, h, body = RawGet(self.base, "/review.js")
+        self.assertEqual((code, h["content-type"]), (200, "text/javascript; charset=utf-8"))
+        js = body.decode()
+        for want in ("'keydown'", "'j'", "'k'", "']'", "'['", "' '", "'?'", "abSwitch", "approveAllLow", "By hand in your DAW", "api/heard",
+                     "never played", "hx.filter.", "hx.cur.", "decide-low", "dry_run: true"):
+            self.assertIn(want, js)
+        self.assertIn('src="/review.js"', RawGet(self.base, "/")[2].decode())
+
+    def test_one_player_per_card_switches_between_a_and_b_in_place(self):
+        js = (Path(self.S.__file__).with_name("review.js")).read_text()
+        self.assertEqual(js.count("<audio"), 1)                                                  # one element in a card, not two
+        self.assertIn("au.currentTime", js)
+        self.assertIn("au.dataset[side]", js)
+
+    def test_a_decision_patches_a_card_and_never_redraws_the_list(self):
+        js = (Path(self.S.__file__).with_name("review.js")).read_text()
+        body = js[js.index("function decideOne"):js.index("function batchDecide")]
+        self.assertNotIn("innerHTML", body)
+        for name in ("function patchCard", "function patchMany"):
+            seg = js[js.index(name):js.index(name) + 1400]
+            self.assertNotIn("#rvlist').innerHTML", seg)
+            self.assertNotIn("getElementById('rvlist').innerHTML", seg)
+        from hypnomix.app import ui
+        self.assertNotIn("reviewView()", ui.PAGE.replace("m.innerHTML = reviewView(); rvMounted();", ""))      # only the opening draws the screen
+        self.assertNotIn("for (const id of ids) await post", js + ui.PAGE)                       # no request per id
+
+    def test_the_served_page_and_every_script_have_no_inline_event_handlers(self):
+        import re
+        pages = [RawGet(self.base, p) for p in ("/", "/review.js", "/chat.js", "/wiki.js", "/teacher.js", "/setup.js", "/update.js", "/diskcare.js")]
+        for code, h, body in pages:
+            self.assertEqual(code, 200)
+            text = body.decode()
+            self.assertEqual(re.findall(r"""<[a-z][^>]*\son[a-z]+\s*=""", text), [])
+            self.assertNotIn("javascript:", text)
+            self.assertNotIn("eval(", text)
+        self.assertEqual(re.findall(r"<script(?![^>]*\ssrc=)[^>]*>", pages[0][2].decode()).__len__(), 1)       # one inline script, the nonce'd one
+
+    def test_every_script_still_parses_when_node_is_there(self):
+        import re
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        from hypnomix.app import ui
+        app = Path(ui.__file__).parent
+        files = {p.name: p for p in app.glob("*.js")}
+        self.assertIn("review.js", files)
+        inline = self.root / "inline.js"
+        inline.write_text(re.search(r"<script>(.*?)</script>", ui.PAGE, re.S).group(1).replace("__TOKEN__", "x"))
+        for name, path in list(files.items()) + [("the page's own script", inline)]:
+            r = subprocess.run([node, "--check", str(path)], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, f"{name}: {r.stderr}")
+
+    def test_the_page_is_a_list_with_headings_live_regions_and_a_message_region_instead_of_alerts(self):
+        from hypnomix.app import ui
+        page = ui.PAGE
+        js = (Path(self.S.__file__).with_name("review.js")).read_text()
+        for want in ('id="msg" role="alert"', 'id="sr"', 'aria-live', 'role="status"', ':focus-visible', 'prefers-reduced-motion', 'class="skiplink"', 'aria-label="Main"',
+                     'id="jobprog" role="status" aria-live="polite"', 'role="log"'):
+            self.assertIn(want, page)
+        for want in ('role="list"', 'role="listitem"', '<h2 id="sh-', '<h3 class="sevhead', '<h4 class="title"', 'aria-pressed', 'aria-label="Keyboard shortcuts"',
+                     'id="rvcount" role="status" aria-live="polite"', 'aria-label="Hear A', 'aria-label="Hear B', 'role="dialog" aria-modal="true"'):
+            self.assertIn(want, js)
+        import re
+        self.assertIsNone(re.search(r"(?:^|[}\n,])\.skip[{:,]", page, re.M))                    # the decision buttons are class "skip" too: the skip link must not share it
+        self.assertNotIn("alert(", js)
+        self.assertEqual([l for l in page.split("\n") if "alert(" in l and "window.alert" not in l and "showMsg" not in l], [])
+        self.assertNotIn("confirm(", js)
+        self.assertEqual(page.count("window.alert = "), 1)                                       # the other tabs' alert() lands in the message region too
+
+    def test_every_text_colour_has_at_least_4_5_to_1_against_its_background_in_both_schemes(self):
+        import re
+        from hypnomix.app import ui
+        css = ui.PAGE[:ui.PAGE.index("</style>")]
+        light = dict(re.findall(r"--([\w-]+):(#[0-9a-fA-F]{3,6})", css[css.index(":root{"):css.index("@media (prefers-color-scheme:dark)")]))
+        dark_block = css[css.index("@media (prefers-color-scheme:dark)"):]
+        dark = dict(light, **dict(re.findall(r"--([\w-]+):(#[0-9a-fA-F]{3,6})", dark_block[:dark_block.index("}}")])))
+
+        def lum(h):
+            h = h.lstrip("#")
+            h = "".join(c * 2 for c in h) if len(h) == 3 else h
+            r, g, b = (int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+            f = lambda c: c / 12.92 if c <= .03928 else ((c + .055) / 1.055) ** 2.4
+            return .2126 * f(r) + .7152 * f(g) + .0722 * f(b)
+
+        def ratio(a, b):
+            la, lb = sorted((lum(a), lum(b)), reverse=True)
+            return (la + .05) / (lb + .05)
+        for name, t in (("light", light), ("dark", dark)):
+            for fg in ("ink", "mute", "hi", "med", "low", "info", "ok", "skip", "chg", "accent"):
+                for bg in ("bg", "card"):
+                    self.assertGreaterEqual(ratio(t[fg], t[bg]), 4.5, f"{name}: --{fg} on --{bg}")
+            for bg in ("ok", "skip", "chg", "accent"):                                           # the text on a filled button
+                self.assertGreaterEqual(ratio(t["accent-ink"], t[bg]), 4.5, f"{name}: --accent-ink on --{bg}")
+
+
+def RawGet(base, path):
+    import http.client
+    host, port = base[len("http://"):].split(":")
+    c = http.client.HTTPConnection(host, int(port), timeout=5)
+    c.request("GET", path)
+    r = c.getresponse()
+    data = r.read()
+    out = (r.status, dict((k.lower(), v) for k, v in r.getheaders()), data)
+    c.close()
+    return out
 
 
 if __name__ == "__main__":
