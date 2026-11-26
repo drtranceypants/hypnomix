@@ -112,24 +112,34 @@ var cmdTask = new Task(askCmd, this);
 for (var i = 0; i < NV; i++) v.push(0);
 
 function bang() {                         // live.thisdevice: the Live API is ready
+    if (dead) return;
     st.ready = true;
     try { readParams(); } catch (e) { st.err = "params: " + e; }
     refresh();
     slow.interval = 1000; slow.repeat();
     cmdTask.interval = 500; cmdTask.repeat();
 }
-function notifydeleted() { slow.cancel(); cmdTask.cancel(); }
+var dead = false, reqs = [];             // once Live frees the device nothing may touch it again (a late timer,
+function notifydeleted() {                // redraw or HTTP answer into a freed jsui crashes Live)
+    dead = true;
+    slow.cancel(); cmdTask.cancel(); try { initTask.cancel(); } catch (e) { }
+    for (var i = 0; i < reqs.length; i++) { try { reqs[i].abort(); } catch (e) { } }
+    reqs = [];
+}
+function redraw() { if (!dead) mgraphics.redraw(); }
+function track_req(r) { reqs.push(r); if (reqs.length > 8) reqs.shift(); return r; }
 // when the script is reloaded inside a device that is already running, live.thisdevice does not fire again
 var initTask = new Task(function () {
-    if (st.ready) return;
+    if (st.ready || dead) return;
     try { var me = new LiveAPI("this_device"); if (me.id && me.id != "0") bang(); } catch (e) { }
 }, this);
 initTask.schedule(1500);
-function loadbang() { mgraphics.redraw(); }
+function loadbang() { redraw(); }
 function now() { return new Date().getTime(); }
 function str(x) { return (x instanceof Array) ? x.join(" ") : String(x); }
 
 function refresh() {
+    if (dead) return;
     if (!st.ready) return;
     try {
         var t = new LiveAPI("this_device canonical_parent");
@@ -147,7 +157,7 @@ function refresh() {
         try { st.sig = signature(); loadCard(); } catch (e) { st.err = "signature: " + e; }
     }
     sendMeta();
-    mgraphics.redraw();
+    redraw();
 }
 
 function signature() {                    // the song, recognised by its track names (the same rule as hypnomix's own)
@@ -171,19 +181,20 @@ function readParams() {                   // the menus' saved values, straight f
     }
 }
 function word(name, v) { var m = MENUS[name]; return m ? m[Math.max(0, Math.min(m.length - 1, Math.round(v)))] : v; }
-function param(name, v) { st.params[name.replace(/^hm_/, "")] = word(name, v); sendMeta(); mgraphics.redraw(); }
+function param(name, v) { st.params[name.replace(/^hm_/, "")] = word(name, v); sendMeta(); redraw(); }
 function chords() { st.chords = arrayfromargs(arguments).join(" "); sendMeta(); saveCard(); }
 function sendMeta() {
+    if (dead) return;
     if (!st.ready) return;
     var pr = st.params;
     if (st.err) { pr = JSON.parse(JSON.stringify(st.params)); pr._error = st.err; }
     outlet(0, ["/hm/meta", st.id, st.name, MODE == "main" ? 1 : 0, st.sig, JSON.stringify(pr), st.chords]);
 }
 function post(path, body, done) {
-    var r = new XMLHttpRequest();
+    var r = track_req(new XMLHttpRequest());
     r.open("POST", BASE + path);
     r.onreadystatechange = function () {
-        if (this.readyState != 4) return;
+        if (dead || this.readyState != 4) return;
         var d = null;
         try { d = JSON.parse(this.responseText); } catch (e) { d = null; }
         if (done) done(d);
@@ -192,10 +203,10 @@ function post(path, body, done) {
 }
 function loadCard() {                     // chords typed earlier are kept by the app, not in the set
     if (st.card || !st.sig) return;
-    var r = new XMLHttpRequest();
+    var r = track_req(new XMLHttpRequest());
     r.open("GET", BASE + "/api/probe/card?sig=" + st.sig);
     r.onreadystatechange = function () {
-        if (this.readyState != 4) return;
+        if (dead || this.readyState != 4) return;
         var d = null;
         try { d = JSON.parse(this.responseText); } catch (e) { d = null; }
         if (!d) return;
@@ -205,9 +216,10 @@ function loadCard() {                     // chords typed earlier are kept by th
     r.send();
 }
 function saveCard() { if (st.sig) post("/api/probe/card", {sig: st.sig, chords: st.chords, params: st.params}); }
-function flash(t) { st.flash = t; st.flashUntil = now() + 4000; mgraphics.redraw(); }
+function flash(t) { st.flash = t; st.flashUntil = now() + 4000; redraw(); }
 
 function record() {                       // Main: record the master as it plays, then the app reviews it before export
+    if (dead) return;
     if (MODE != "main" || !st.ready) return;
     if (!st.rec) {
         post("/api/master/record", {state: "start", sig: st.sig, params: st.params, chords: st.chords}, function (d) {
@@ -228,7 +240,7 @@ function record() {                       // Main: record the master as it plays
             flash(d && d.job ? "Reviewing in the hypnomix app…" : "Stopped (the app did not answer)");
         });
     }
-    mgraphics.redraw();
+    redraw();
 }
 function onclick(x, y) { if (MODE == "main" && y > H - 34 && x < 200) record(); }
 
@@ -248,6 +260,7 @@ function sr(x) {                          // dspstate~: Live's sample rate; set 
 function val(i, x) { if (i >= 0 && i < NV) v[i] = x; }
 
 function blk() {                          // after every 100 ms block: send it
+    if (dead) return;
     if (!st.ready) return;
     if (!st.song) st.song = new LiveAPI("live_set");
     var song = st.song;
@@ -263,23 +276,24 @@ function blk() {                          // after every 100 ms block: send it
     st.lk = ms > 0 ? -0.691 + 10 * Math.log(ms) / Math.LN10 : -120;
     var p = Math.max(v[2], v[3]);
     st.pk = p > 0 ? 20 * Math.log(p) / Math.LN10 : -120;
-    if (st.sent % 3 == 0) mgraphics.redraw();
+    if (st.sent % 3 == 0) redraw();
 }
 
 function askCmd() {                       // the app may set a gain (loudness matching in the A/B)
+    if (dead) return;
     if (st.busy && now() - st.busyAt < 3000) return;
     st.busy = true; st.busyAt = now();
-    var r = new XMLHttpRequest();
+    var r = track_req(new XMLHttpRequest());
     r.open("GET", BASE + "/api/probe/cmd?id=" + st.id + "&name=" + encodeURIComponent(st.name) + "&main=" + (st.main ? 1 : 0));
     r.onreadystatechange = function () {
-        if (this.readyState != 4) return;
+        if (dead || this.readyState != 4) return;
         st.busy = false;
         var d = null;
         try { d = JSON.parse(this.responseText); } catch (e) { d = null; }
         if (!d) return;
         st.ok = now();
         var g = parseFloat(d.gain_db || 0);
-        if (Math.abs(g - st.gain) > 0.01) { st.gain = g; outlet(1, "g", Math.pow(10, g / 20)); mgraphics.redraw(); }
+        if (Math.abs(g - st.gain) > 0.01) { st.gain = g; outlet(1, "g", Math.pow(10, g / 20)); redraw(); }
     };
     r.send();
 }

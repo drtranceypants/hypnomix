@@ -232,7 +232,15 @@ function bang() {
     fillMenu([STOCK.name]);
     refreshList();
 }
+var dead = false, reqs = [];             // once Live frees the device nothing may touch it again
+function notifydeleted() {
+    dead = true;
+    try { initTask.cancel(); } catch (e) { }
+    for (var i = 0; i < reqs.length; i++) { try { reqs[i].abort(); } catch (e) { } }
+    reqs = [];
+}
 var initTask = new Task(function () {
+    if (dead) return;
     if (st.ready) return;
     try { var me = new LiveAPI("this_device"); if (me.id && me.id != "0") bang(); } catch (e) { }
 }, this);
@@ -246,10 +254,10 @@ function fillMenu(list) {
     outlet(1, "set", st.pick);
 }
 function get(path, done) {
-    var r = new XMLHttpRequest();
+    var r = new XMLHttpRequest(); reqs.push(r); if (reqs.length > 8) reqs.shift();
     r.open("GET", BASE + path);
     r.onreadystatechange = function () {
-        if (this.readyState != 4) return;
+        if (dead || this.readyState != 4) return;
         var d = null;
         try { d = JSON.parse(this.responseText); } catch (e) { d = null; }
         done(d);
@@ -257,10 +265,10 @@ function get(path, done) {
     r.send();
 }
 function post(path, body, done) {
-    var r = new XMLHttpRequest();
+    var r = new XMLHttpRequest(); reqs.push(r); if (reqs.length > 8) reqs.shift();
     r.open("POST", BASE + path);
     r.onreadystatechange = function () {
-        if (this.readyState != 4) return;
+        if (dead || this.readyState != 4) return;
         var d = null;
         try { d = JSON.parse(this.responseText); } catch (e) { d = null; }
         if (done) done(d);
@@ -555,6 +563,7 @@ function measured(b) {                     // BS.1770 gating over 400 ms blocks 
     return n2 ? -0.691 + 10 * Math.log(s2 / n2) / Math.LN10 : -120;
 }
 function blk() {
+    if (dead) return;
     var m = st.match;
     if (!m) return;
     if (!st.song) st.song = new LiveAPI("live_set");
