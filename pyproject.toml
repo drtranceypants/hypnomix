@@ -1,6 +1,6 @@
 [project]
 name = "hypnomix"
-version = "0.1.0"
+version = "0.1.1"
 description = "A mixing and mastering engineer for Ableton Live and REAPER: automix stems, master, align vocals, match clips, check releases. Built to be driven by Claude Code."
 readme = "README.md"
 license = { text = "MIT" }

@@ -121,7 +121,20 @@ def usage():
     return "\n".join(lines)
 
 
+def _utf8_output():
+    """On Windows a piped or redirected stdout is cp1252, which can't print ✓ ✗ → … (doctor, scan reports)."""
+    for stream in (sys.stdout, sys.stderr):
+        enc = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        if enc != "utf8" and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv=None):
+    if sys.platform == "win32":
+        _utf8_output()
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] in ("-h", "--help", "help"):
         print(usage()); return

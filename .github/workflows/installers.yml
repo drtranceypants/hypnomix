@@ -79,10 +79,17 @@ jobs:
       - name: Smoke test (silent install, the app answers, uninstall)
         shell: pwsh
         run: |
-          $setup = Get-ChildItem packaging/dist/*-setup.exe | Select-Object -First 1
-          Start-Process $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/TASKS=", "/DIR=$env:RUNNER_TEMP\hx" -Wait
-          & "$env:RUNNER_TEMP\hx\python\python.exe" -m hypnomix.cli doctor
-          & "$env:RUNNER_TEMP\hx\bin\ffmpeg.exe" -hide_banner -version | Select-Object -First 1
+          $setup = (Get-ChildItem packaging/dist/*-setup.exe | Select-Object -First 1).FullName
+          Set-Location $env:RUNNER_TEMP          # away from the checkout, so python -m imports the INSTALLED hypnomix
+          Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/TASKS=", "/DIR=$env:RUNNER_TEMP\hx" -Wait
+          $env:PATH = "$env:RUNNER_TEMP\hx\bin;" + $env:PATH     # as the Start menu launcher sets it
+          $doc = & "$env:RUNNER_TEMP\hx\python\python.exe" -m hypnomix.cli doctor 2>&1 | Out-String
+          Write-Host $doc
+          # doctor exits 1 here because Live's remote script isn't installed on the runner; check the rows that matter
+          if ($doc -notmatch "Python packages\s+all present") { throw "packages missing in the installed app" }
+          if ($doc -notmatch "ffmpeg\s+.*\\hx\\bin\\ffmpeg") { throw "the installed app doesn't find its own ffmpeg" }
+          & "$env:RUNNER_TEMP\hx\python\python.exe" -c "import hypnomix, sys; p = hypnomix.__file__; print(p); sys.exit(0 if 'hx' in p else 1)"
+          if ($LASTEXITCODE) { throw "hypnomix was imported from somewhere other than the install folder" }
           Start-Process "$env:RUNNER_TEMP\hx\python\pythonw.exe" -ArgumentList "`"$env:RUNNER_TEMP\hx\launcher.pyw`""
           $ok = $false
           foreach ($i in 1..120) {
@@ -93,6 +100,7 @@ jobs:
           Write-Host "app answered on 8791"
           & "$env:RUNNER_TEMP\hx\python\pythonw.exe" "$env:RUNNER_TEMP\hx\launcher.pyw" --stop
           Start-Process "$env:RUNNER_TEMP\hx\unins000.exe" -ArgumentList "/VERYSILENT" -Wait
+          exit 0
       - uses: actions/upload-artifact@v4
         with:
           name: windows-x64
