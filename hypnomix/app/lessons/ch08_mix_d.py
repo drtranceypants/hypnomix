@@ -29,7 +29,7 @@ STEPS = [
                 ["Fade of a move", "a short ramp (tens of ms to a second), not a jump", "a sudden step is heard as a click or a pump"]],
       how={"live": ["Press **A** to turn automation mode on in the Arrangement; in the track's lane choosers pick the **Mixer** device and the **Track Volume** control.",
                     "Press **B** for draw mode and draw a gentle line, or click to add points and drag them. Press B again to go back to normal editing."],
-           "reaper": ["Click the track's **Env** button (or use the action 'Show track volume envelope') to show the volume envelope.",
+           "reaper": ["Click the track's **Env** button and choose (tick) **Volume** to show the volume envelope.",
                       "Click on the envelope to add points and drag them; keep each move to a few dB."],
            "ardour": ["Click the track's **A** button (automation) and choose **Fader**. Set the automation mode, then add points on the line with the mouse."]},
       listen="Play a section with the rides on, then off, at the same overall loudness. The rides should be hard to hear as moves, but "
@@ -89,7 +89,7 @@ STEPS = [
  dict(id="mix-references", title="Reference songs", daws=ALL,
       say=["A **reference** is a finished song, in the style of yours, that you love and trust. You play it next to your mix to "
            "check your ears. After an hour of mixing, your ears have moved. A reference brings them back to a fixed point.",
-           "Pick two or three songs. Put each on its **own track** in your project, so they don't pass through your plug-ins. "
+           "Pick two or three songs. Put each on its **own track** in your project with no plug-ins on it, and send that track around the master (the steps below show how), so it doesn't pass through your plug-ins, the master's included. "
            "Then **match the level**: turn the reference down until it is as loud as your mix, then switch between them. "
            "A louder song always seems better. That is a trick of the ear, not a fact about the mix.",
            "Listen to four things: the **low end** (how much, how tight), the **vocal level** against the band, the "
@@ -106,14 +106,14 @@ STEPS = [
                 ["Switching", "short sections of the same part (a chorus against a chorus), a few seconds at a time", "your ears forget quickly"],
                 ["Plug-ins on the reference track", "none", "you want to hear it as it is"]],
       how={"live": ["Drag the reference file from your computer into the Arrangement, on an empty spot, so Live makes a new audio track.",
-                    "If the clip is warped, switch **Warp** off in the clip so it plays unchanged. Lower the track's fader until the loudness matches."],
-           "reaper": ["Use Insert → **Media file...** (or drag the file in) to put it on a new track.", "Lower that track's fader until the loudness matches; leave its FX list empty."],
-           "ardour": ["Use Session → **Import** to add the file on a new track.", "Lower that track's fader until the loudness matches; add no plug-ins."]},
+                    "If the clip is warped, switch **Warp** off in the clip so it plays unchanged. Show the track's In/Out section, set the reference track's **Audio To** to **Ext. Out** and choose the same output pair your master uses (usually 1/2), so it skips the master's devices. Lower the track's fader until the loudness matches."],
+           "reaper": ["Use Insert → **Media file...** (or drag the file in) to put it on a new track.", "Lower that track's fader until the loudness matches; leave its FX list empty. To keep it out of the master's FX, click the track's **Route** button, untick **Master send**, and add a hardware output send to the same outputs your master uses (usually 1/2)."],
+           "ardour": ["Use Session → **Import** to add the file on a new track.", "Lower that track's fader until the loudness matches; add no plug-ins. To keep it out of the master's plug-ins, click the strip's output button (it reads Master), open its routing grid, untick Master, and tick the same interface output ports the Master bus uses."]},
       listen="At the same loudness, switch between the reference and your mix a few seconds at a time. Ask in turn: is my bass the same weight? "
              "Is my vocal as clear? Is the top as bright? Is it as wide?",
       hear=["loudness-bias"],
       mistakes=["Comparing at different volumes: a reference that is 2 dB louder will beat any mix. Turn it down first.",
-                "Running the reference through your master plug-ins: it no longer sounds like the record. Keep it on its own track and the master clean.",
+                "Running the reference through your master plug-ins: it no longer sounds like the record. Keep it on its own track with no plug-ins, and send that track around the master.",
                 "Copying the reference's sound note for note: your song is different. Use it for the question, not the answer."],
       **{"try": dict(do="Import one song you love in your style on its own track. Match its loudness to your mix by ear, then compare only the low end: switch back and forth on a chorus.",
                      success="You can say in one sentence whether your bass is lighter, heavier or the same, and what you'd change, if anything.")},
@@ -137,7 +137,7 @@ STEPS = [
            "`--render` writes the phone, earbud, car and mono versions so you can listen; `--preview` writes what the MP3 and AAC "
            "encoders (and a Spotify-style normalisation) hand back, so you can hear it. `hypnomix qc -h` runs the release checks "
            "(format, silence, true peak, loudness, phase) on a finished file."],
-      terms=[["Mono", "the left and right channels added into one. Phones held sideways, small Bluetooth speakers and some PAs play it."],
+      terms=[["Mono", "the left and right channels added into one. Phones with a single speaker, small Bluetooth speakers, shop systems and some PAs play it."],
              ["Translation", "how well a mix keeps its balance on other speakers and in other places."],
              ["Codec", "the way a file is squeezed for streaming (MP3, AAC). It can add small peaks."],
              ["Streaming normalisation", "a service turning your song up or down so everything plays at a similar loudness."]],
@@ -146,7 +146,7 @@ STEPS = [
                 ["Small speakers", "a phone or laptop speaker, at a normal level", "can you still hear the bass line and the words?"],
                 ["Earbuds and car", "a pair you know well; a drive if you can", "tests harshness and low-end boom"]],
       how={"live": ["Add **Utility** on the master (after everything else) and switch its **Mono** button on to hear the mix in mono. Remove or switch it off before you bounce."],
-           "reaper": ["Put a mono (sum to mono) control at the end of the master's FX chain: REAPER's own utility effects include one, or use the master's own channel setting. Switch it off before you bounce."],
+           "reaper": ["In the Mixer, click the **Mono** button on the master strip to hear the mix in mono, and click it again to go back to stereo (or put a mono-sum plug-in at the end of the master's FX chain). Switch it off before you bounce."],
            "ardour": ["Use the Monitor section's mono button if your session has one turned on, or add a mono (sum to mono) plug-in at the end of the master's plug-in box. Switch it off before you bounce."]},
       listen="Switch between stereo and mono at the same loudness. The vocal and the bass should stay; if something vanishes or "
              "gets thin, that part is relying on phase or width.",

@@ -18,7 +18,7 @@ STEPS = [
            "You pass it the file, and you can give a loudness target with `--target` or a destination with `--for streaming`, `--for cd` or `--for vinyl`. "
            "Run `hypnomix qc -h` to see the options. hypnomix proposes, you decide: it only reads the file and writes nothing over your original."],
       terms=[["Master", "the finished, mastered stereo file you release. Keep it apart from the mix."],
-             ["Instrumental", "the song without the lead vocal. Used for playlists, videos, and as a backup if someone wants to sing over it."],
+             ["Instrumental", "the song with no vocals at all. Used for playlists, videos, and as a backup if someone wants to sing over it."],
              ["Lyric sheet", "the words of the song as plain text, checked for spelling."],
              ["Preview", "a small MP3 of the song for sharing before release. Never the file you deliver."]],
       settings=[["Master WAV", "16-bit / 44.1 kHz, or 24-bit at your session's sample rate: whichever the distributor asks for", "most services accept both; the distributor's page is the rule"],
@@ -151,18 +151,18 @@ STEPS = [
            "belongs to whoever made it, often the artist or the producer who paid for it. Two people can own the two halves.",
            "**Splits** are the agreed shares of who owns what. Agree them **in writing before release**: who wrote what, who produced, who gets what share of the song and the recording. "
            "A short email that everyone replies 'agreed' to is better than a memory. Disagreements after a song earns money are the most common and the most avoidable problem.",
-           "**Cover songs** (someone else's song, recorded by you) need a licence. **Samples** (a piece of someone else's recording) need clearance of **both** the recording and the song. "
+           "**Cover songs** (someone else's song, recorded by you) usually need a licence, often from the writers or their publisher (a 'mechanical licence' in some places). The rules differ by country and some distributors can arrange it, so check yours and ask a qualified person if unsure. **Samples** (a piece of someone else's recording) need clearance of **both** the recording and the song. "
            "**Royalty-free loops** and sample packs are not free of rules: read the licence for what you may do (usually it covers using them in a song, not reselling them as loops). "
            "A **collecting society** in your country collects some royalties for writers, and you register with it as a writer; ask your distributor or look up the society for your country."],
       terms=[["Copyright", "the legal right of the maker of a song or a recording to decide how it is copied, shared and sold."],
              ["Composition", "the song itself: its melody and lyrics, apart from any one recording."],
              ["Split", "the agreed share of ownership or income that each person gets."],
-             ["Cover song", "your recording of a song someone else wrote. It needs a licence."],
+             ["Cover song", "your recording of a song someone else wrote. It usually needs a licence."],
              ["Sample", "a piece of an existing recording used in a new song. It needs clearance."],
              ["Clearance", "permission, usually written, from the owners of a recording and a song to use them."],
              ["Collecting society", "an organisation that collects royalties for its members, in general from public performances and broadcasts."]],
       settings=[["Splits", "agreed in writing before release", "avoids disputes once money arrives"],
-                ["Cover songs", "get the licence before you release", "releasing without one can get the song removed"],
+                ["Cover songs", "get any licence you need before you release", "releasing without one can get the song removed"],
                 ["Samples", "clearance for both the recording and the song", "each has a different owner"],
                 ["Royalty-free loops", "read the licence for what you may do", "'free' rarely means 'unlimited'"],
                 ["Collecting society", "register as a writer in your own country", "so writer royalties can reach you"]],

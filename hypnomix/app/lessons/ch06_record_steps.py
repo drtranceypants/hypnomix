@@ -19,7 +19,7 @@ STEPS = [
                 ["Round trip", "about 10 ms or less", "beyond this most players feel the delay"]],
       how={"live": ["On the track, find the **Monitor** buttons in its I/O section: **In** always lets the input through, **Auto** lets it through while the track is armed, **Off** never does.",
                     "With the interface's own direct monitoring on, set the track to **Off** so you don't hear yourself twice. Otherwise use **Auto**.",
-                    "To change the buffer: Settings → Audio, and the buffer size there."],
+                    "To change the buffer: open Live's Preferences (called Settings in Live 12), go to Audio, and change the buffer size there."],
            "reaper": ["Click the speaker (monitor) icon next to the track's arm button to switch monitoring on and off. Right-clicking the arm button also lists the record monitoring choices.",
                       "With direct monitoring on the interface, leave the track's monitoring off so you don't hear yourself twice.",
                       "To change the buffer: Options → Preferences → Audio → Device."],
@@ -54,7 +54,7 @@ STEPS = [
                 ["Reverb on the voice", "a little, in the headphones only", "a touch of room feels better to sing into"],
                 ["Overall headphone level", "comfortable and well below pain, never loud", "loud headphones leak into the mic and damage hearing"]],
       how={"live": ["Make a **return track** with the voice effects you want, and use the track's **Sends** to feed it.",
-                    "The cue mix goes to the performer through a separate output pair (your interface's headphone output), set in Settings → Audio."],
+                    "The cue mix goes to the performer through a separate output pair (your interface's headphone output). Switch that pair on in Live's Preferences (called Settings in Live 12) → Audio → Output Config, then set the return track's **Audio To** to that pair."],
            "reaper": ["Add a bus (a track) for the headphone mix and use each track's **Sends** to feed it, then route that bus to the headphone output of your interface."],
            "ardour": ["Make a bus and send each track to it with an aux send, then route the bus to the headphone output of your interface."]},
       listen="Put the headphones on yourself and sing a line. Do you hear the beat, your own pitch and a bit of the track "
@@ -258,7 +258,7 @@ STEPS = [
       terms=[["Comp list", "a list of which take to use for each section when building one best performance."],
              ["Take naming", "a short label on each take (such as Vox_V1_T3) so you can find it later."]],
       how={"live": ["Rename each take clip (select it and press Cmd+R / Ctrl+R) and keep unused takes in the take lanes."],
-           "reaper": ["Select an item and press F2 to rename the take; keep unused takes in the item."],
+           "reaper": ["Right-click the item → Item properties and type a name in the take name box; keep unused takes in the item."],
            "ardour": ["Double-click a region's name to rename it, and keep older layers until the song is done."]},
       listen="Play your favourite take and the one `hypnomix takes` ranked best. If they differ, listen to both again without "
              "looking at the screen. Trust what you feel, and use the ranking as a second opinion.",

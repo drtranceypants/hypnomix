@@ -9,14 +9,14 @@ CHAPTER = dict(id="master", levels=("101", "az"), title="Mastering", sub="what i
             "it's turned into an MP3 or AAC.",
             "It isn't where a song gets fixed. If the vocal is too quiet, go back to the mix: mastering moves everything at "
             "once. Good mastering is small moves, a dB here and there."],
-       terms=[["LUFS", "how loud a song feels on average. Spotify, YouTube and Apple turn songs to about -14 LUFS (Apple -16), so going louder buys nothing."],
+       terms=[["LUFS", "how loud a song feels on average. Many streaming services play songs back at around -14 LUFS when their loudness normalisation is on (Apple Music's Sound Check is around -16), so going much louder mostly buys nothing. These figures differ and change, so check each service's own guidance."],
               ["True peak (dBTP)", "the real highest point after the file is turned back into sound. Keep it at -1 dBTP or lower."],
               ["Limiter", "a very fast compressor that stops anything going over a ceiling."], ["Reference track", "a finished song you love, to compare with."]]),
   dict(id="prepare", title="Prepare the mix", daws=ALL,
        say=["Take off anything you put on the master while mixing to make it loud, check the master peaks around -6 dB, and "
             "export the whole song as a **24-bit WAV** from the very start to the end of the last ring-out. That bounce is "
             "what you master (or what hypnomix masters for you)."],
-       how={"live": ["File → Export Audio/Video: Rendered Track **Master**, the whole song selected, WAV, 24-bit, sample rate as the set, Normalize off, Dither off."],
+       how={"live": ["File → Export Audio/Video: Rendered Track **Master** (called **Main** in Live 12), the whole song selected, WAV, 24-bit, sample rate as the set, Normalize off, Dither off."],
             "reaper": ["File → Render: Source **Master mix**, Bounds Entire project, WAV 24-bit."],
             "ardour": ["Session → Export → Export to Audio File(s): WAV, 24-bit, Normalize off."]}),
   dict(id="chain", title="A good mastering chain", daws=ALL,
@@ -29,10 +29,10 @@ CHAPTER = dict(id="master", levels=("101", "az"), title="Mastering", sub="what i
        settings=[["EQ", "low cut 25 Hz; shelves and bells within ±1 dB", "gentle overall tone"], ["Glue compressor", "2:1, attack 30 ms, auto release, 1-3 dB", "holds the mix together"],
                  ["Bass mono", "below 120 Hz", "a solid low end on every system"], ["Limiter ceiling", "-1 dBTP", "safe after MP3 / AAC"],
                  ["Limiter gain", "until about -14 LUFS (streaming)", "no more than about 3 dB of limiting on average"]],
-       how={"live": ["On the **Master** track: EQ Eight, Glue Compressor, Utility (Bass Mono on, 120 Hz) and Limiter, in that order.",
+       how={"live": ["On the **Master** track (called **Main** in Live 12): EQ Eight, Glue Compressor, Utility (Bass Mono on, 120 Hz) and Limiter, in that order.",
                      "Or put the hypnomix **HypnomixMain** device on the master and press **Build chain** (see Wiki → the mastering chain)."],
             "reaper": ["On the master: ReaEQ, ReaComp, then **ReaLimit** (ceiling -1).", "With Hypnomix Main on the master, its **Build chain** button does it, bass mono included."],
-            "ardour": ["On the master strip: ACE EQ, ACE Compressor, and a limiter (x42 Digital Peak Limiter, bundled with Ardour's own downloads).",
+            "ardour": ["On the master strip: ACE EQ, ACE Compressor, and a limiter plug-in last (for example the free x42 Digital Peak Limiter, if it is installed on your system).",
                        "Or let hypnomix master the exported WAV: the next step."]},
        action={d: dict(kind="chain") for d in LR}),
   dict(id="loud", title="Loudness, A/B and the reference", daws=ALL,
@@ -43,7 +43,7 @@ CHAPTER = dict(id="master", levels=("101", "az"), title="Mastering", sub="what i
             "it feels. hypnomix's `match` lists the differences for you."],
        how={"live": ["HypnomixMain's **Match target** turns the limiter until the master hits the target, and its A/B is level-matched."],
             "reaper": ["Hypnomix Main's **Match target** does the same on REAPER's master."],
-            "ardour": ["Use a loudness meter on the master (Window → Loudness Assistant), or master the WAV with hypnomix."]}),
+            "ardour": ["Use a loudness meter on the master (Session → Loudness Assistant…), or master the WAV with hypnomix."]}),
   dict(id="deliver", title="Check it and export", daws=ALL,
        say=["Before you send it out, run hypnomix's checks on the master: `qc` (no clipping, the right loudness and peaks, "
             "silence at the ends) and `translate` (how it sounds on a phone, in mono, as an MP3). Then export the final WAV "

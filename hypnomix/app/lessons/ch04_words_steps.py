@@ -20,7 +20,7 @@ STEPS = [
                 ["Sample rate", "48 kHz (or 44.1 kHz)", "match what the song will use; keep it for the whole project"],
                 ["First buffer size", "128 samples", "low enough to record without a noticeable delay"],
                 ["Buffer when mixing", "512 samples or more", "gives the computer time for plug-ins"]],
-      how={"live": ["Open Settings → Audio (Options → Preferences → Audio on Windows).",
+      how={"live": ["Open the Audio tab of Live's Settings (called Preferences in Live 11): the Live menu on a Mac, the Options menu on Windows.",
                     "Set the Audio Device to your interface (the driver type first, if Live asks for one), then check the Sample Rate and Buffer Size.",
                     "Make a new audio track, set its input in the track's In/Out section, arm it, and watch the meter while you speak."],
            "reaper": ["Open Options → Preferences → Audio → Device.",

@@ -28,8 +28,8 @@ STEPS = [
                 ["Bit depth, recording and mixing", "24 bit", "the noise floor is far below anything audible, so you can record with room to spare"],
                 ["Bit depth, final CD-style file", "16 bit, with dither", "only the last export, never the working files"],
                 ["96 kHz and above", "not needed to start", "bigger files and a heavier load for a difference few people can hear"]],
-      how={"live": ["Live's sample rate is the audio device's: Settings → Audio (Options → Preferences → Audio on Windows) → Sample Rate. Set it before you open or start the song.",
-                    "Settings → Record/Warp/Launch has the file type and bit depth for new recordings: choose WAV and 24 bit if they are not already.",
+      how={"live": ["Live's sample rate is the audio device's. Open Live's Settings (called Preferences in Live 11), found under the Live menu on a Mac or the Options menu on Windows. Go to the **Audio** tab and set **Sample Rate**. Set it before you open or start the song.",
+                    "The **Record, Warp & Launch** tab of the same window (Record/Warp/Launch in Live 11) has the file type and bit depth for new recordings: choose WAV and 24 bit if they are not already.",
                     "The bit depth of an exported file is chosen in the export window: File → Export Audio/Video."],
            "reaper": ["Open the project's settings (Project → Project settings, or Alt+Enter) and check the project sample rate there; Options → Preferences → Audio → Device holds the interface's own rate.",
                       "The recording format (WAV, 24 bit) is in the same project settings window, in its Media section."],
@@ -56,8 +56,9 @@ STEPS = [
            "Analogue gear overloads more gently. Tape and tubes squash the peaks gradually, and some people like the "
            "result. Digital clipping has no such softness: the wave hits the wall and stops. That is why the habit is "
            "to leave **headroom**, the gap between your loudest peak and 0 dBFS.",
-           "While recording at 24 bit, aim for peaks around **-18 to -6 dBFS**. That sounds quiet, but at 24 bit the noise "
+           "While recording at 24 bit, aim for peaks around **-12 to -6 dBFS** on your loudest part. That sounds quiet, but at 24 bit the noise "
            "floor is so low that nothing is lost, and you never come near clipping if the singer suddenly gets louder. "
+           "Quieter than that is also safe at 24 bit, so there is no need to chase level. "
            "Watch the meter: if it turns **red**, or a clip indicator lights, a peak has reached the ceiling. Turn the "
            "input gain down and record again.",
            "Inside a DAW the mixing maths is usually **floating-point**, which has an enormous range. A track can go over "
@@ -69,7 +70,7 @@ STEPS = [
              ["Headroom", "the space between your loudest peak and 0 dBFS."],
              ["Peak", "the highest point a sound reaches. Meters show peaks."],
              ["Floating point", "a number format with a huge range, used inside a DAW's mixer. An over on one track won't clip until the output, but plug-ins and converters can still clip."]],
-      settings=[["Recording peaks (24 bit)", "-18 to -6 dBFS", "far from the ceiling, and the noise floor is still far below the sound"],
+      settings=[["Recording peaks (24 bit)", "-12 to -6 dBFS", "far from the ceiling, and the noise floor is still far below the sound"],
                 ["Track peaks while mixing", "below about -6 dBFS", "leaves room for plug-ins and for the sum of all tracks"],
                 ["Master peaks before mastering", "-6 dBFS or lower", "the mastering stage needs room to work"]],
       listen="Play the 'limiter-clip' demo, which sets hard clipping against a limiter at the same loudness. Hard clipping adds a "
@@ -78,7 +79,7 @@ STEPS = [
                 "Setting the level on the quiet verse. Set it on the loudest part of the song, then check the quiet part still sounds fine.",
                 "Ignoring a red light because 'it's only for a moment'. A single flattened peak can be heard, and it stays in the file.",
                 "Believing a track meter that goes over 0 is always safe inside the DAW. It may be fine on the track and clip at a plug-in or the master."],
-      **{"try": dict(do="Arm a track and sing or play your loudest part at full effort while you watch the meter. Adjust the input gain until the loudest peaks sit between -18 and -6 dBFS.",
+      **{"try": dict(do="Arm a track and sing or play your loudest part at full effort while you watch the meter. Adjust the input gain until the loudest peaks sit between -12 and -6 dBFS.",
                      success="The meter never turns red on the loudest part, and the recording still sounds clear, not thin.")},
       quiz=[dict(q="What happens to a peak that hits 0 dBFS during recording?", options=["The DAW lowers it automatically", "The top of the wave is flattened and can't be repaired", "It is saved and can be restored with a plug-in"], answer=1,
                  why="Digital clipping throws the peak away. There is nothing stored to restore."),
@@ -108,12 +109,12 @@ STEPS = [
              ["Round-trip latency", "the full delay from input to headphones, including the converters and the driver."],
              ["Dropout", "a crackle or gap when the computer can't keep up with a small buffer."],
              ["Driver", "the program that lets the DAW talk to your interface."]],
-      settings=[["Buffer when recording", "64-128 samples", "about 1.5-3 ms each way at 48 kHz: you hear yourself without a noticeable delay"],
+      settings=[["Buffer when recording", "64-128 samples", "about 1.3-2.7 ms each way at 48 kHz (plus the converters and driver): you hear yourself without a noticeable delay"],
                 ["Buffer when mixing", "512-1024+ samples", "gives the computer time, so large projects stay clean"],
                 ["If you hear crackles", "raise the buffer one step", "the computer needs more time per batch"],
                 ["If recording feels late", "lower the buffer one step", "less delay, at the cost of more load"]],
-      how={"live": ["Open Settings → Audio (Options → Preferences → Audio on Windows).",
-                    "Choose your interface as the Audio Device, then change **Buffer Size**. Live shows the resulting input and output latency beneath it.",
+      how={"live": ["Open Live's Settings (Preferences in Live 11), under the Live menu on a Mac or the Options menu on Windows, and go to the **Audio** tab.",
+                    "Choose your interface as the Audio Device, then change **Buffer Size**. On Windows with an ASIO driver, click **Hardware Setup** and set the buffer in the interface's own control panel instead. Live shows the resulting input and output latency beneath it.",
                     "Close the window and play: crackles mean raise it; a late-feeling take means lower it."],
            "reaper": ["Open Options → Preferences → Audio → Device.",
                       "Choose your interface, and set the block size (buffer) the driver offers; the same page reports the resulting latency.",
@@ -121,7 +122,7 @@ STEPS = [
            "ardour": ["Open Window → Audio/MIDI Setup.",
                       "Choose your interface and set the **Buffer size** (and the sample rate).",
                       "Apply or Start, then play to test: crackles mean raise it."]},
-      listen="Record a clap against the click with a very large buffer, then a small one. With the large buffer you hear a clear "
+      listen="First make sure you are hearing yourself through the DAW (the track armed and the DAW's input monitoring on), with your interface's direct-monitor switch off. Then record a clap against the click with a very large buffer, then a small one. With the large buffer you hear a clear "
              "gap between your clap and its echo in the headphones; with the small buffer it feels immediate.",
       mistakes=["Mixing with the recording buffer. A busy project then crackles; raise the buffer when you move to mixing.",
                 "Recording with a 1024-sample buffer and fighting the delay in your headphones. Drop to 128 or lower first.",

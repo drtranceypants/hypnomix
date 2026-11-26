@@ -21,7 +21,7 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="hypnomix in y
             "devices** measure inside Live and follow the review; they need Max for Live (Suite, or the add-on) and the "
             "app running."],
        how={"live": ["Setup → Ableton Live copies the AbletonOSC script into your User Library (or `hypnomix install`). Restart Live.",
-                     "Live → Settings → Link, Tempo & MIDI → Control Surface: **AbletonOSC**.",
+                     "Open Live's settings window (called Settings in Live 12 and Preferences in Live 11; it is in the Live menu on a Mac and the Options menu on Windows), go to the tab for Link, Tempo and MIDI, and under Control Surface choose **AbletonOSC**.",
                      "Keep the hypnomix app open while you work: the devices talk to it."]},
        action={"live": dict(kind="devices")}),
   dict(id="hm-connect-reaper", title="Connect hypnomix to REAPER", daws=("reaper",),
@@ -33,12 +33,14 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="hypnomix in y
        action={"reaper": dict(kind="devices")}),
   dict(id="hm-connect-ardour", title="hypnomix with Ardour", daws=("ardour",),
        say=["hypnomix reads Ardour 3 to 9 sessions (tracks, buses, regions with Ardour's layering, fades, gain envelopes, "
-            "plug-ins, automation), renders each track itself, and runs the same first-pass checks. It can't write a new "
-            "session or drive the open Ardour yet: session changes come back as a list for you to make, and audio fixes "
-            "(tuning, de-hiss, de-ess) as repaired files to bring in.",
-            "The reader hasn't been checked against a running Ardour yet: if a render sounds different from Ardour's export, say so."],
-       how={"ardour": ["Save the session. On the Songs tab, choose the session folder (or its .ardour file) and Scan.",
-                       "Ardour can stay open: nothing is written next to your session."]}),
+            "plug-ins, automation), renders each track itself, and runs the same first-pass checks. Apply writes one new "
+            "snapshot next to your session, inside its folder, with the fades, region gain, volume dips and fader, pan and "
+            "mute moves you approved. Track names and order, vocal stacks, timing and sidechain stay a list for you to make "
+            "by hand, and audio fixes (tuning, de-hiss, de-ess) come back as repaired files to bring in. It can't drive the open Ardour yet.",
+            "The reader and the new snapshot haven't been checked in a running Ardour yet: open the snapshot, and if anything "
+            "looks or sounds different from what hypnomix listed, say so."],
+       how={"ardour": ["Save the session. On the Songs tab, choose the session folder (or its .ardour file) and press Start the first pass.",
+                       "Ardour can stay open while you scan: a scan writes nothing next to your session. Apply writes a new snapshot beside it: open that one in Ardour when it is done."]}),
   dict(id="hm-devices-live", title="The devices in Live", daws=("live",),
        say=["Three pass-through Max for Live devices (audio untouched), under User Library → Presets → Audio Effects → Max "
             "Audio Effect → Hypnomix:",
@@ -58,12 +60,12 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="hypnomix in y
             "card (genre, key, scale, limiter character, target, ceiling, amount) and the buttons for the mastering chain "
             "and Record and review. The **Hypnomix panel** (`hypnomix reaper review`) steps through the app's review "
             "inside REAPER with A / B / Blind."],
-       how={"reaper": ["`hypnomix reaper probes insert \"Song.rpp\"` writes \"Song (probes).rpp\" with a probe on every track and Main on the master (or Add FX → JS → Hypnomix Probe by hand).",
+       how={"reaper": ["`hypnomix reaper probes insert \"Song.rpp\"` writes \"Song (probes).rpp\" with a probe on every track and Main on the master (or open the track's FX window, press Add, type Hypnomix in the search box and pick Hypnomix Probe).",
                        "With the bridge running and the app open, the app's Live tab shows every probe while REAPER plays; Record → play → Stop makes a review from what was heard.",
                        "When the bridge starts it gives each probe a slot number, so REAPER may ask to save once."]}),
   dict(id="hm-scan", title="The first pass: scan and review", daws=ALL,
        say=["On the **Songs** tab choose the saved set, project or session (or a folder of stems from any DAW), add a bounce of the "
-            "mix if you have one (loudness, release checks, the key) and Scan. Every check runs in parallel and nothing "
+            "mix if you have one (loudness, release checks, the key) and press Start the first pass. Every check runs in parallel and nothing "
             "changes. **Deep scan** also renders every track for frequency fights and mic phase.",
             "The review lists findings by severity. **Approve**, **Skip** or **Change** (with a note) each; *Approve all "
             "low* is there for the small ones. Checks that didn't run are listed at the top: no finding there means nothing."],
@@ -79,31 +81,30 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="hypnomix in y
             "Y in random order; your picks are kept and shown in the review). The A/B set is only for listening: Apply always "
             "writes from your original."],
        how={"live": ["In the review: Build A/B set for Live. Close the original, open \"Song (A-B).als\", put the Hypnomix device on any track."],
-            "reaper": ["`hypnomix abset scan/Song`, open \"Song (A-B).rpp\", then `hypnomix reaper review` for the Hypnomix panel."]}),
+            "reaper": ["`hypnomix abset \"hypnomix-out/scan/Song\"` (the folder the scan wrote; the app's Songs tab shows where yours is), open \"Song (A-B).rpp\", then `hypnomix reaper review` for the Hypnomix panel."]}),
   dict(id="hm-apply", title="Apply, history and undo", daws=ALL,
        say=["**Apply** writes only the approved fixes: a new set or project next to the original (close it in the DAW "
             "first), or repaired copies in the scan's fixed folder for audio. Every applied version is kept; undo writes "
             "another new version, it never deletes. Teach it as you go: what you skip and change shapes the next proposals."],
        how={"live": ["Close the set in Live, Apply, then open \"Song (fixed).als\"."], "reaper": ["Close the project tab, Apply, then open the new .rpp (tuned vocals arrive as new takes)."],
-            "ardour": ["Apply lists the session changes to make by hand; repaired audio lands in the scan's fixed folder."]}),
+            "ardour": ["Close the session in Ardour, Apply, then open the new snapshot (Song (fixed).ardour) from the same session folder. It holds the fades, gain, dips and fader, pan and mute moves you approved; names, order, stacks and timing come back as a list to do by hand, and repaired audio lands in the scan's fixed folder."]}),
   dict(id="hm-tracking", title="Tracking helpers", daws=ALL,
        say=["Before you record, `hypnomix soundcheck` listens to an interface input and tells you which way to turn the "
             "gain (peaks -12 to -6 dBFS in 24-bit), and flags noise, hum and DC. After recording, `takes` ranks whole "
-            "takes and lists the best one per section, `vocalign` sits doubles and harmonies with the lead (gently: halfway "
-            "toward the group, never forced onto the lead), and `clipmatch` evens out takes recorded on different days."],
+            "takes and lists the best one per section, `vocalign` lines doubles and harmonies up with each other, gently: with two or more parts nobody is forced onto the lead, only the words clearly off the group move most of the way and the rest barely move, and `clipmatch` evens out takes recorded on different days."],
        how={"live": ["`hypnomix live arm`, `live input`, `live record 17 8 3` punch-record through AbletonOSC (three passes = three take lanes).",
-                     "Live 12's take lanes + `takes` for the comp; Hypnomix Align for stacks."],
+                     "Live's take lanes (Live 11 and 12) + `takes` for the comp; Hypnomix Align for stacks."],
             "reaper": ["Record takes as usual; export them from the same start and run `hypnomix takes`."],
             "ardour": ["Export the takes from the same start and run `hypnomix takes`; `vocalign` makes aligned copies to import."]},
        action={d: dict(kind="level") for d in ALL}),
   dict(id="hm-mixing", title="Mixing helpers", daws=ALL,
        say=["`stems` shows what each part contributes and its role; `masking` finds parts fighting over the same "
             "frequencies (your priority wins); `prep` and `automix` make many moves at once, so run them with `--plan` and "
-            "review each move. `chain strips` loads your DAW's own EQ, compressor and utility with the recipe's settings, "
-            "and `motion` offers effect moves for repetitive sections, learned from your own automation."],
+            "review each move. `chain strips` (in Live or REAPER) loads your DAW's own EQ, compressor and utility with the recipe's settings, "
+            "and, in a Live set, `motion` offers effect moves for repetitive sections, learned from your own automation."],
        how={"live": ["`hypnomix chain strips recipe.json --dry-run` shows the plan; drop --dry-run to load EQ Eight, Compressor and Utility on each track."],
-            "reaper": ["`hypnomix chain strips` builds the same strips from ReaEQ and ReaComp."],
-            "ardour": ["Run them on exported stems; set the moves by hand in Ardour."]}),
+            "reaper": ["`hypnomix chain strips recipe.json --reaper --dry-run` shows the plan; without --dry-run it builds the same strips in the open REAPER from ReaEQ and ReaComp. recipe.json is written by `hypnomix automix`."],
+            "ardour": ["Run `stems`, `masking`, `prep` and `automix` on exported stems; set the moves by hand in Ardour (`motion` needs a Live set, and `chain strips` needs Live or REAPER)."]}),
   dict(id="hm-master", title="The mastering chain", daws=ALL,
        say=["On the master device, **Build chain** puts your DAW's own plug-ins before it: Tone (EQ, low cut 25 Hz, "
             "everything else at 0 dB), Glue (2:1, slow attack, never more than 3 dB), Tame and Warmth (switched off until "
@@ -126,8 +127,8 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="hypnomix in y
        app=dict(view="tools", label="Open the Tools tab")),
   dict(id="hm-ai", title="Working with an AI (optional)", daws=ALL,
        say=["Everything above works with no AI. If you'd like one: the **Assistant** tab runs the same loop by chat with your "
-            "own key (Gemini's free tier, Claude, OpenRouter, OpenAI) or a model on your computer, and asks before anything "
-            "writes. An agent app (Claude Code, Codex, Cursor) works through whole songs from the AI agent folder, with the "
+            "own key from an AI service (some have a free tier) or a model on your computer, and asks before anything "
+            "writes. A desktop AI coding assistant works through whole songs from the AI agent folder, with the "
             "first-pass, mix, mastering and tracking skills. Setup → How you work switches between them."],
        app=dict(view="chat", label="Open the Assistant")),
  ])

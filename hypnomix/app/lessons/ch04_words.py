@@ -32,7 +32,7 @@ CHAPTER = dict(id="words", levels=("101", "az"), title="The words and the screen
               ["Return track", "a shared effect, like one reverb, that many tracks send a bit of themselves to."]],
        how={"live": ["Open Live and make a new set: File → New Live Set.", "Press Tab a few times to flip between Session and Arrangement.",
                      "Press Shift+Tab to show or hide the Device View.", "Turn on View → Mixer and View → In/Out in the Arrangement View: you'll use both.",
-                     "Live → Settings → Audio (Options → Preferences on Windows): choose your audio interface for both Input and Output."]}),
+                     "Open the Audio tab of Live's Settings (called Preferences in Live 11): the Live menu on a Mac, the Options menu on Windows. Choose your audio interface for both input and output."]}),
   dict(id="screen-reaper", title="A tour of REAPER's screen", daws=("reaper",),
        say=["REAPER keeps it all in one window: the **track control panel** on the left (each track's name, arm button, volume "
             "and FX), the **arrange view** in the middle (time runs left to right), the **transport** below it, and the "
@@ -43,7 +43,7 @@ CHAPTER = dict(id="words", levels=("101", "az"), title="The words and the screen
               ["Master", "the master track: everything ends up here. View → Master track shows it if it's hidden."],
               ["Actions", "every command in REAPER is an action, findable with ? (Actions → Show action list)."]],
        how={"reaper": ["Make a new project: File → New project.",
-                       "Options → Settings (Preferences) → Audio → Device: choose your audio interface.",
+                       "Options → Preferences → Audio → Device: choose your audio interface.",
                        "Ctrl+T (Cmd+T on a Mac) adds a track; double-click its name to rename it.",
                        "Ctrl+M / Cmd+M shows the mixer."]}),
   dict(id="screen-ardour", title="A tour of Ardour's screen", daws=("ardour",),

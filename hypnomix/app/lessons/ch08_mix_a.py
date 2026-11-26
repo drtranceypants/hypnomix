@@ -48,7 +48,7 @@ STEPS = [
            "Aim for each track's peaks to land around -18 to -10 dBFS while you mix. That leaves room for ten, twenty or "
            "forty tracks to add together without the master running out of space. A good picture is a bucket: each track "
            "pours water in, and the bucket must not overflow.",
-           "The master should peak around -6 dBFS before mastering. That leaves 3 to 6 dB of room for whoever masters the "
+           "The master should peak around -6 dBFS before mastering (lower is fine). That leaves about 6 dB of room, or more, for whoever masters the "
            "song, which may be you. A quiet mix is not a weak mix: you can always make it louder at the end, and you can never "
            "un-clip it.",
            "Set the level into a plug-in with the track's **clip gain** or a trim control, not just the fader. The fader sits after "
@@ -60,7 +60,7 @@ STEPS = [
              ["Trim", "a small gain control at the start of a track's signal path, ahead of its plug-ins."],
              ["Peak meter", "shows the loudest instant of the signal, which is what decides whether it clips."]],
       settings=[["Each track's peaks", "-18 to -10 dBFS", "leaves room for the tracks to add up, and keeps plug-ins in their comfortable range"],
-                ["Master peaks before mastering", "about -6 dBFS (3-6 dB of headroom)", "room for mastering; lower is fine, higher is not"],
+                ["Master peaks before mastering", "about -6 dBFS (6 dB of headroom, or more)", "room for mastering; lower is fine, higher is not"],
                 ["Master fader", "0 dB", "turn the tracks down instead of the master"],
                 ["Plug-in input and output", "output the same level as the input when the effect is on", "so on versus off is a fair comparison"],
                 ["Loud track fix", "clip gain or trim down first, then use the fader", "the plug-ins then see a sensible level"]],
@@ -74,13 +74,13 @@ STEPS = [
                       "Watch each strip's peak display while the loudest part plays, and keep the master fader at 0 dB."]},
       listen="Turn each plug-in on and off and check the level does not jump. Then play the loudest part of the song and look at "
              "the master's peak: it should sit near -6 dBFS with no red.",
-      mistakes=["Leaving every track near 0 dBFS and pulling the master down: the sum clips inside plug-ins before the fader. Lower the tracks with clip gain or trim.",
+      mistakes=["Leaving every track near 0 dBFS and pulling the master down: the hot signals overload the plug-ins that react to level (compressors, saturators) and leave you no room to raise anything. Lower the tracks with clip gain or trim.",
                 "Using only the fader to fix a hot track: the plug-ins before it still see the loud signal. Lower the level at the start of the track.",
                 "Letting an effect add 6 dB of output and then judging it as better: it is only louder. Match the output so on and off sound equally loud."],
       **{"try": dict(do="Play the loudest chorus and note the highest peak on each track and on the master. Lower any track that peaks above about -10 dBFS with clip gain, until the master peaks near -6 dBFS.",
                      success="The master peaks around -6 dBFS with no red clip lights, and the song sounds the same, only quieter.")},
       quiz=[dict(q="Where should the master channel's peaks sit before mastering?", options=["At 0 dBFS, as loud as possible", "Around -6 dBFS", "Around -30 dBFS"], answer=1,
-                 why="About -6 dBFS leaves 3 to 6 dB of headroom for mastering. You can raise the level later, but you cannot repair a clipped mix."),
+                 why="About -6 dBFS leaves 6 dB of headroom for mastering. You can raise the level later, but you cannot repair a clipped mix."),
             dict(q="Why use clip gain or trim instead of only the fader?", options=["The fader is less accurate", "The fader comes after the plug-ins, so they still hear the loud signal", "Clip gain makes the track louder"], answer=1,
                  why="Plug-ins sit before the fader. Lowering the level at the start of the chain changes what they hear, which changes how they behave.")],
       more=["step:dig-clipping-headroom", "step:mix-static", "mixing-mastering"]),

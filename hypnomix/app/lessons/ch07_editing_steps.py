@@ -16,7 +16,7 @@ STEPS = [
              ["Take lane", "a row under a track that holds one take, so all takes can be seen and compared."],
              ["Section (of a comp)", "the stretch you choose one take for: usually a line or a phrase."]],
       how={"live": ["Right-click the track's name → **Show Take Lanes** (in a version that has take lanes). Each recorded pass sits in its own lane.",
-                    "Click a take lane's phrase to make it the part the track plays, or select a stretch and press Enter to put it into the comp. Listen by soloing the track and looping the section.",
+                    "Click and drag across a stretch of a take lane to select it, then press Enter to copy it into the main lane: that is your comp. Click a take lane's speaker button to hear that take on its own. Listen by soloing the track and looping the section.",
                     "Keep the other lanes; they cost nothing."],
            "reaper": ["Record with each pass kept as a take, or put the takes into separate items. Right-click the item and use the take options to show all takes in lanes (the wording differs between REAPER versions).",
                       "Split the item at each join (**S**) and choose which take plays in each piece. Do not delete the unused takes."],
@@ -55,7 +55,7 @@ STEPS = [
              ["Crossfade", "one clip fading out while the next fades in, so a join is smooth."],
              ["Consonant", "the short, sharp start of a word, like the 'b' in 'baby' or the 's' in 'sorrow'. Easily cut off by a fade."]],
       how={"live": ["In the Arrangement, hover near the top-left or top-right corner of a clip and drag the small fade handle to set the fade length.",
-                    "For a join between two clips, fade out the first and fade in the second so they overlap in time with the same shape.",
+                    "For a join between two clips, select a range of time that covers the join and choose Create > Create Crossfade, or drag the fade handle of one clip over the edge of the clip next to it.",
                     "Zoom in until you see the waveform to check that a start or end doesn't sit on a loud sample."],
            "reaper": ["Drag the small fade handle at an item's top-left or top-right corner to set its fade.",
                       "Where two items overlap, REAPER crossfades them if auto-crossfade is on (Options menu); drag the overlap to set its length."],
@@ -94,8 +94,8 @@ STEPS = [
       terms=[["Clip gain", "the level of one clip, set before the track's effects and fader."],
              ["Dynamic range (of a part)", "the distance between its loudest and quietest parts."],
              ["Level ride", "turning a level up or down by hand through a part, with automation, a fader or clip gain."]],
-      how={"live": ["Click the clip, and in the Clip View open the **Sample** box.",
-                    "Drag the **Gain** control in the Sample box (the clip's gain). Set it per clip, or split the clip to change a single word."],
+      how={"live": ["Click the clip. In the Clip View, find the clip's **Gain** slider, next to the Transpose control (in the Audio tab in Live 11, in the Audio Utilities panel in Live 12).",
+                    "Drag the clip's **Gain** slider. Set it per clip, or split the clip to change a single word."],
            "reaper": ["Click an item; its **item volume** is the small knob or the volume handle on the item, and the **Volume** field in Item Properties (F2) sets the same.",
                       "Split an item (**S**) around a word to give only that word its own volume."],
            "ardour": ["Right-click the region and use its gain options (Gain → Boost Gain / Cut Gain, or Normalize) to change its level.",
@@ -124,7 +124,7 @@ STEPS = [
            "Never snap everything to the grid. A song where every hit is rigidly on the grid sounds stiff and loses its life. The feel lives "
            "between the beats, so move the outliers and leave the rest.",
            "`hypnomix timing` finds hits that are out of time with the band and nudges only those, using warp markers in a new set. "
-           "`hypnomix tighten` is the gentler quantise: it pulls a take's hits part of the way toward the click. Both write a new set, and the original stays as it was."],
+           "`hypnomix tighten` is for a take that really is loose: it pulls only the hits that are well away from the click (more than 8 ms by default), and only part of the way (half by default), and leaves hits that are already close exactly where they are. It is optional: listen before you keep it. Both write a new set with `--apply`, and the original stays as it was."],
       terms=[["Feel", "the small, human timing pushes and lay-backs that make a performance groove."],
              ["Nudge", "moving a note or clip a very small amount in time."],
              ["Warp marker", "a pin on a clip's waveform that fixes one moment to a position in time, so the audio between pins stretches."],
@@ -135,7 +135,7 @@ STEPS = [
                     "In the Clip View's waveform, double-click a transient to add a warp marker; drag the marker to move that moment. Add one marker before and one after, so only a small stretch is affected.",
                     "To move a whole clip a tiny amount, drag it with snap off (hold Cmd on Mac, Alt on Windows, while dragging)."],
            "reaper": ["Turn off snapping (the magnet button) and drag the item, or split (**S**) around the note and drag the piece.",
-                      "For a stretch, use stretch markers on the item (the item's context menu has them; names differ by version) so only a small stretch changes."],
+                      "For a stretch, use stretch markers on the item (right-click the item and look for the stretch marker entries, or run the action 'Item: Add stretch marker at cursor' from the Actions list), then drag the marker so only a small stretch changes."],
            "ardour": ["Set the grid mode to **No Grid**, then drag the region a little with the Grab tool.",
                       "To change a phrase's length, use Ardour's stretch or time-stretch option on the region."]},
       settings=[["Typical nudge", "1-20 ms", "enough to fix a flam; more starts to change the feel"],
@@ -182,9 +182,9 @@ STEPS = [
                 "Fully correcting every note: the voice loses its life. Start light and add only where needed.",
                 "Tuning in solo only: a note that seems out alone is often fine against the chord. Check in the mix.",
                 "Tuning over the original file: keep the untuned take and work on a copy."],
-      **{"try": dict(do="Find one sung note that sounds a little sharp or flat in the mix. Measure the song's key with `hypnomix key`, then tune just that note with `hypnomix tune` (or by hand), and compare with the original.",
+      **{"try": dict(do="Find one sung note that sounds a little sharp or flat in the mix. Measure the song's key with `hypnomix key`, then run `hypnomix tune` on that vocal and find the note in the notes file it writes (or tune just that note by hand), and compare with the original.",
                      success="You hear the note settle but still hear the singer, not a machine.")},
-      quiz=[dict(q="What does a gentle tuning leave alone?", options=["The vibrato, slides and scoops", "Every note's exact pitch", "The singer's volume"], answer=0,
+      quiz=[dict(q="Which part of a sung note does gentle tuning deliberately leave as it was sung?", options=["The vibrato, slides and scoops", "The note's centre pitch", "Any note that is 20 cents or more off"], answer=0,
                  why="Gentle tuning moves each note's centre and keeps the movement inside the note, which is the expression."),
             dict(q="Which is the right first step before tuning?", options=["Hard-tune the whole take", "Add reverb", "Find the song's key"], answer=2,
                  why="A note can only be tuned to the right place if you know the key. `hypnomix key` finds it and says when it is unsure.")],
@@ -197,7 +197,7 @@ STEPS = [
            "**Noise** between phrases (hiss, hum, a fan) is different: it adds nothing. You can cut it with a gate, or edit the silence "
            "between phrases. But don't gate so hard that the room tone switches on and off. The room has a sound, and the sound should "
            "not jump when the singer stops.",
-           "Fix noise before it reaches the mix if you can: a quieter room, a lower gain, a different mic position. Editing only helps what is left.",
+           "Fix noise before it reaches the mix if you can: a quieter room, a mic closer to the voice, and a healthy recording level (loudest peaks around -12 to -6 dBFS). Editing only helps what is left.",
            "`hypnomix breaths` turns breaths down, not off: it finds them, reports first, and each breath is turned down 8 dB by default with short fades "
            "so it still sounds human. It writes a new file and never overwrites. `hypnomix dehiss` reduces steady hiss on one track and adds a gentle gate; "
            "use `--gate 0` on parts that must keep their room tone. For a rough demo with hum or steady background noise, `hypnomix cleanup` is the rescue tool."],
@@ -206,7 +206,7 @@ STEPS = [
              ["Hiss", "a steady, high-frequency noise from electronics or a tape-like source."],
              ["Hum", "a steady low tone, often 50 or 60 Hz and its multiples, from electrical interference."],
              ["Noise floor", "the level of the constant background noise in a recording."]],
-      how={"live": ["Lower a breath by hand: split the clip around it and turn that clip's **Gain** (Clip View, Sample box) down a few dB.",
+      how={"live": ["Lower a breath by hand: split the clip around it and turn that clip's **Gain** slider (in the Clip View) down a few dB.",
                     "A **Gate** (Audio Effects → Gate) set gently will close between phrases; keep its **Floor** or release soft so the room doesn't chop."],
            "reaper": ["Split the item around the breath (**S**) and lower that piece's volume a few dB.",
                       "Add **ReaGate** (Cockos) to the track and open it just above the noise; use a slow release so the tail fades."],
@@ -238,7 +238,7 @@ STEPS = [
            "the vocal is.",
            "Remove unused tracks only after you have saved an archive copy of the whole project. Nothing is lost then, and the clean "
            "project is easier to work in.",
-           "Four hypnomix commands help with a Live set. `hypnomix name` proposes a name for every track by how it sounds. `hypnomix order` "
+           "Three hypnomix commands help with a Live set. `hypnomix name` proposes a name for every track by how it sounds. `hypnomix order` "
            "puts tracks in working order (drums, bass, keys and guitar, vocals, other) and puts vocal-stack clips on the track for their pitch. "
            "`hypnomix tidy` retires switched-off tracks, after writing an archive copy, and puts clips of one instrument on one track. "
            "Each of `order` and `tidy` writes a new set; the original stays as it was. `hypnomix name` only prints names unless you add `--apply`, which renames in the open set (and `--undo` puts them back)."],

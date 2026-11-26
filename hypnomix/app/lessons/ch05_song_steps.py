@@ -27,7 +27,7 @@ STEPS = [
              ["Scale", "a set of notes in order that a song draws its melody and chords from."]],
       how={"live": ["Click the tempo field at the top left and type the BPM, or click **TAP** in time with your foot.",
                     "The time signature fields sit just to the right of the tempo field: set the top number and the bottom number."],
-           "reaper": ["Double-click the BPM box in the transport bar and type the tempo, or tap **TAP** (or press T) in time.",
+           "reaper": ["Double-click the tempo number in the transport bar and type the BPM, or click the **BPM** button in the transport in time with the music to tap the tempo.",
                       "For a time signature other than 4/4, add a tempo/time signature marker on the ruler (Insert menu) and set the signature there."],
            "ardour": ["Double-click the tempo marker at the start of the Tempo ruler to set the BPM; the meter marker beside it sets the time signature."]},
       settings=[["Tempo (BPM)", "70-90 slow, 90-120 medium, 120-140 upbeat", "a rough guide only; the song's own feel decides"],
@@ -93,10 +93,10 @@ STEPS = [
       more=["step:song-arrangement", "step:tempo"]),
 
  dict(id="song-arrangement", title="Arrangement: every part has a job", daws=ALL,
-      say=["A busy song is not a good arrangement. In a good one each part has a job, and no two parts are doing the "
-           "same one. The **groove** (drums and bass) keeps the time. The **harmony** (guitar, keys, pads) fills in the "
-           "chords. The **hook** (the vocal, a lead line) is the part people hum. If two parts do the same job, one of "
-           "them is probably not needed.",
+      say=["A busy song is not a good arrangement. In a good one each part has a job, and no part is there by "
+           "accident. The **groove** (drums and bass) keeps the time. The **harmony** (guitar, keys, pads) fills in the "
+           "chords. The **hook** (the vocal, a lead line) is the part people hum. If two parts do the same job by accident, one of "
+           "them is probably not needed; a layer you add on purpose to make a part fuller is the exception.",
            "Leave **space**. Silence and sparse bars make the next loud bar feel loud. Think in **build and release**: "
            "strip a part away before the chorus, then let everything back in on the first beat. The chorus should feel "
            "bigger than the verse, and the way to do that is to add parts, an extra layer, a wider sound, a harmony "
@@ -178,7 +178,7 @@ STEPS = [
            "most pop and rock.",
            "Then make it breathe. Vary the **velocity**: a hi-hat has a stronger hit on the beat and a softer one in between. Add "
            "a few very quiet **ghost notes** on the snare. Vary the **fills**, the short busy bars before a change, so each "
-           "is a little different. Leave out the kick on the last beat before a change, so the next bar's first beat hits harder.",
+           "is a little different. Before a change, leave out the kick (or stop all the drums) for the last beat or two of the bar, so the first beat of the next section hits harder.",
            "Never copy and paste a single bar 16 times with nothing changed: the ear hears it. Change a note or two every "
            "few bars. The beat hypnomix writes in `step:drums` is built like this: kick, snare on 2 and 4, eighth-note hi-hats, with small differences in how hard each hit lands.",
            "Humanise with **velocity**, not by moving every note off the grid. Random timing shifts on everything sound sloppy, not human."],

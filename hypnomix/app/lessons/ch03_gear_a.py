@@ -7,7 +7,7 @@ STEPS = [
            "to your headphones and speakers. Inside are the parts that matter: **preamps** that lift quiet signals, **converters** "
            "that turn sound into numbers (and back into sound), and amplifiers for the headphones. The computer's own sound "
            "socket has none of these done well, which is why a basic interface is the first thing worth buying.",
-           "Look at the sockets. **Inputs** take microphones (XLR), instruments (the Hi-Z jack from the last lesson) or line-level gear. "
+           "Look at the sockets. **Inputs** take microphones (XLR), instruments (the Hi-Z jack, explained in the cables and levels lesson) or line-level gear. "
            "Many have a **combo** socket that takes either an XLR or a jack. **Outputs** go to your speakers (the monitor outputs) "
            "and a headphone socket with its own volume knob. It connects by USB or Thunderbolt: USB is plenty for a few channels; "
            "Thunderbolt is for larger boxes with many inputs.",
@@ -30,7 +30,7 @@ STEPS = [
                 ["Connection", "USB for most home studios; Thunderbolt only for many channels", "USB is simpler and cheaper, and enough for a small number of channels"],
                 ["Phantom power", "a switch for +48 V (see the pickup patterns lesson)", "most condenser microphones need it"],
                 ["Headphone output", "its own volume knob; start with it low", "headphones can be much louder than speakers"]],
-      how={"live": ["Open **Live → Settings → Audio** (**Options → Preferences → Audio** on Windows). Choose your interface as the Audio Input Device and the Audio Output Device."],
+      how={"live": ["Open the **Audio** tab of Live's Settings (called Preferences in Live 11): it is in the **Live** menu on a Mac and the **Options** menu on Windows. Choose your interface as the audio input and output device. On Windows, pick the interface's ASIO driver as the Driver Type first, then the interface as the Audio Device."],
            "reaper": ["Open **Options → Preferences → Audio → Device**. Choose your audio system (on a Mac, Core Audio; on Windows, ASIO if your interface offers it), then your interface."],
            "ardour": ["Open **Window → Audio/MIDI Setup**. Choose the audio system, your interface as the device for input and output, then start the engine."]},
       listen="Play a song through the interface's headphone output, then through the computer's own headphone socket. The interface is usually cleaner, "
@@ -55,8 +55,7 @@ STEPS = [
            "A **ribbon** microphone hangs a thin strip of metal in a magnet. It sounds warm and smooth, with a soft top end that flatters "
            "bright sources such as brass, guitar amps and some voices. It is delicate: a strong gust of air, such as a plosive or a blast, can "
            "stretch the ribbon, and some ribbons can be damaged by phantom power. Check the manual first.",
-           "Condensers come with a small or a large diaphragm. **Small-diaphragm** ones are usually more even, and hear sound from the sides "
-           "much like sound from the front: good for acoustic guitar, hi-hats and overheads. **Large-diaphragm** ones are usually fuller and "
+           "Condensers come with a small or a large diaphragm. **Small-diaphragm** ones are usually more even, and keep a more natural tone for sound that arrives from the side, with less loss of brightness: good for acoustic guitar, hi-hats and overheads. **Large-diaphragm** ones are usually fuller and "
            "closer sounding: a common choice for voice. Price isn't the point: a modest mic in the right place usually beats an expensive one in the wrong place."],
       terms=[["Dynamic microphone", "a rugged microphone that needs no power and handles loud sources."],
              ["Condenser microphone", "a sensitive microphone with a very light diaphragm. It needs power and hears fine detail."],
@@ -66,7 +65,7 @@ STEPS = [
              ["Plosive", "a burst of air from a sound like P or B that can overload a microphone."]],
       settings=[["Loud sources: amp, snare, kick, loud singer", "dynamic", "it handles high levels and picks up less of the room"],
                 ["Voice, acoustic guitar, piano", "condenser", "it hears detail and air, in a quiet room"],
-                ["Overheads, hi-hats", "small-diaphragm condenser", "an even sound from every direction"],
+                ["Overheads, hi-hats", "small-diaphragm condenser", "an even, natural tone, even for sound that arrives from the side"],
                 ["Bright or harsh sources: brass, some amps", "ribbon, or a dynamic", "a soft top end smooths them"]],
       listen="If you can, record the same voice or guitar on two different kinds of mic, level-matched. Listen for the top end and for how much of the room comes through.",
       mistakes=["Choosing by price: the mic that suits the source and the room beats the expensive one that doesn't.",
@@ -74,7 +73,7 @@ STEPS = [
                 "Singing or blowing into a ribbon: breath and plosives can damage it. Keep it back, and use a pop filter on voice."],
       **{"try": dict(do="Write down the microphones you have or could borrow, and for each one say whether it is dynamic, condenser or ribbon. Look at the label, the manual or the maker's page. Then choose the best one for a voice in your room.",
                      success="Each microphone has a kind written next to it, and you can say why you picked one for voice.")},
-      quiz=[dict(q="Which kind of microphone is the usual choice for a loud guitar amp?", options=["A ribbon, because it is smooth", "A large-diaphragm condenser, because it is the most detailed", "A dynamic, because it handles loud sound and needs no power"], answer=2,
+      quiz=[dict(q="Which kind of microphone needs no power and copes best with very loud sounds, like a close guitar amp?", options=["A ribbon, because it is smooth", "A large-diaphragm condenser, because it is the most detailed", "A dynamic, because it handles loud sound and needs no power"], answer=2,
                  why="Dynamic microphones are rugged and cope with high levels. Condensers can overload, and ribbons are delicate."),
             dict(q="Which kind of microphone can be damaged by phantom power or a loud gust of air?", options=["A ribbon", "A dynamic", "A small-diaphragm condenser"], answer=0,
                  why="Some ribbons, especially older ones, can be harmed by phantom power, and a hard blast can stretch the ribbon. Check the manual.")],
@@ -89,7 +88,7 @@ STEPS = [
            "and the back at whatever you want to hear less. Close to a cardioid, the bass gets bigger, an effect called **proximity effect**; "
            "the lesson on a quiet recording room covers it (`step:gear-quiet`).",
            "A condenser microphone needs power for its electronics. Most get it from the interface as **phantom power**, "
-           "+48 V sent down the same cable. Plug the microphone in first, with the gain down, then switch +48 V on, and wait a few seconds. "
+           "+48 V sent down the same cable. Turn your speakers and headphones down first. Plug the microphone in with the gain down, then switch +48 V on, wait a few seconds, and only then raise the volume. "
            "Switch it off before you unplug. Dynamic microphones don't need it. Some ribbons can be damaged by it, so read the manual of any ribbon before you switch it on."],
       terms=[["Pickup pattern", "the shape of where a microphone hears: its sensitivity around it. Also called the polar pattern."],
              ["Cardioid", "a heart-shaped pattern that hears the front and rejects the back."],
@@ -106,12 +105,12 @@ STEPS = [
       mistakes=["Facing the microphone the wrong way, so its back points at the singer: it sounds distant and dull.",
                 "Switching on phantom power before the microphone is plugged in, or leaving it on while unplugging: this can make a loud bang in the headphones.",
                 "Switching phantom power on for a ribbon without checking: some are damaged by it."],
-      **{"try": dict(do="Plug in a microphone with the gain down, with phantom power off, and find which end or side you speak into. If it is a condenser, switch phantom power on, wait a few seconds, then raise the gain. Switch it off before unplugging.",
+      **{"try": dict(do="Plug in a microphone with the gain down, with phantom power off, and find which end or side you speak into. If it is a condenser, take your headphones off or turn them right down, switch phantom power on, wait a few seconds, then raise the gain slowly. Turn the headphones down and switch it off before unplugging.",
                      success="You know your microphone's front, you can say whether it needs phantom power, and you did the switching in the right order.")},
       quiz=[dict(q="A cardioid microphone hears best...", options=["From every direction equally", "From the sides", "From the front, and least from the back"], answer=2,
                  why="Cardioid means heart-shaped: sensitive in front, less at the sides and very little behind."),
             dict(q="What is the safe order for phantom power?", options=["On before you plug in, off after you unplug", "Plug in, then switch it on; switch it off, then unplug", "Leave it on all the time"], answer=1,
-                 why="Switching it with the microphone connected can cause a loud thump, and for some ribbons can harm them."),
+                 why="Plugging a microphone in or unplugging it while phantom power is on can cause a loud thump and, for some ribbons, damage. So connect first, switch +48 V on with the volume down, and switch it off before you unplug."),
             dict(q="Which microphone type can most easily be damaged by phantom power?", options=["A dynamic", "A large-diaphragm condenser", "A ribbon, some of them"], answer=2,
                  why="Some ribbons, especially older ones, can be damaged. Condensers are built for it and dynamics ignore it.")],
       more=["step:gear-mic-kinds", "step:gear-quiet", "step:gear-interface"]),
@@ -130,7 +129,7 @@ STEPS = [
              ["Instrument level (Hi-Z)", "the signal from a guitar or bass pickup. It wants an instrument input or a DI box."],
              ["Line level", "the strong signal from keyboards, drum machines and gear outputs. It needs no preamp gain."],
              ["Balanced / unbalanced", "a balanced cable cancels the noise it picks up; an unbalanced one doesn't."],
-             ["XLR, TRS, TS", "the plugs: XLR is the three-pin mic plug, TRS a jack with two rings (balanced or stereo), TS a jack with one ring (a guitar lead)."],
+             ["XLR, TRS, TS", "the plugs: XLR is the three-pin mic plug, TRS a jack with a tip, one ring and a sleeve (balanced, or stereo for headphones), TS a jack with only a tip and a sleeve (an unbalanced guitar lead)."],
              ["DI box", "a box that turns an instrument's signal into a balanced, mic-like one, so a long cable doesn't hurt it."],
              ["Preamp", "the circuit that lifts a quiet signal to a level the converter can use. Its knob is the input gain."]],
       settings=[["Microphone", "an XLR mic input, gain up slowly from zero", "mic signals are tiny; the preamp lifts them"],
@@ -140,10 +139,10 @@ STEPS = [
                 ["Guitar leads", "unbalanced, as short as practical", "a long lead picks up hum and loses top end"]],
       listen="Record a few seconds of the same guitar into an instrument input and into a mic input. The right input sounds "
              "fuller and clearer; the wrong one sounds thin or buzzy.",
-      mistakes=["Plugging a keyboard into a mic input, then turning the gain down so far that the signal gets noisy.",
+      mistakes=["Plugging a keyboard into a mic input and turning the gain up: the signal is already strong, so the preamp overloads and the sound turns crunchy. Use a line input instead.",
                 "Running a 10-metre guitar lead when a short lead and a DI box would stay clean.",
-                "Leaving a phantom-power switch on when plugging in or unplugging a mic: switch it off first (see the next lesson)."],
-      **{"try": dict(do="Look at the back and front of your interface and find the mic, instrument and line inputs. Plug in one thing at the matching input and set its gain so the loudest sound reaches about halfway on the meter.",
+                "Leaving a phantom-power switch on when plugging in or unplugging a mic: switch it off first (see the pickup patterns and phantom power lesson)."],
+      **{"try": dict(do="Look at the back and front of your interface and find the mic, instrument and line inputs. Plug in one thing at the matching input and set its gain so the loudest sound peaks around -12 to -6 dBFS on the meter, well below the top and never touching it.",
                      success="You can say which input each of your sources uses and why, and the meter peaks well below the top.")},
       quiz=[dict(q="You plug a keyboard into a mic input and it sounds crunchy. What is the likely cause?", options=["The keyboard is out of tune", "A line-level signal went into a preamp that lifted it further", "The cable is too short"], answer=1,
                  why="A keyboard already puts out a strong line-level signal. Use a line input, or turn the gain right down."),
@@ -170,7 +169,7 @@ STEPS = [
       settings=[["Recording", "closed-back headphones", "the click and the backing track don't leak into the microphone"],
                 ["Mixing, first choice", "speakers in a treated room, or open-back headphones", "a natural balance and less ear fatigue"],
                 ["Checking", "both, plus a phone or a car", "if the mix works in all of them, it will work almost anywhere"],
-                ["Listening level", "low to moderate, with a loud blast now and then", "the ear tires when loud, and then you hear less"]],
+                ["Listening level", "low to moderate; turn it up only briefly to check, and never to a level that is uncomfortable, especially on headphones", "the ear tires when loud, and then you hear less"]],
       listen="Play a song you know on speakers, then on headphones, at the same loudness. Notice how the bass, the width and the vocal position change, and what you would need to remember about your own pair.",
       mistakes=["Mixing only on headphones and adding too much bass or width, because both sound different on speakers: check on speakers or another system.",
                 "Using open-back headphones to record: the sound leaks into the microphone. Use closed-back.",

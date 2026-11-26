@@ -28,7 +28,7 @@ CHAPTER = dict(id="mix", levels=("101", "az"), title="Mixing, one effect at a ti
        listen="Switch the EQ off and on at the same loudness: better should mean clearer, not just louder.",
        how={"live": ["Browser → Audio Effects → **EQ Eight**, drag it onto the track (or onto its Device View).",
                      "Band 1: click its type and choose the low cut, then drag its dot to about 100 Hz.", "Click a dot and drag up or down for gain; Alt+drag (Option+drag) changes Q."],
-            "reaper": ["Click the track's **FX** button → Cockos → **ReaEQ**.", "Right-click band 1's type → High pass, frequency about 100 Hz.",
+            "reaper": ["Click the track's **FX** button → Cockos → **ReaEQ**.", "Click band tab 1 and set its **Type** drop-down to High pass, with the frequency at about 100 Hz.",
                        "Drag the other bands' dots up or down; the scroll wheel on a dot changes its width."],
             "ardour": ["Double-click in the strip's plug-in box → **ACE EQ** (a-EQ in older Ardour)."]},
        fx={"live": dict(device="EQ Eight", set=[["disp", ["1 Frequency A"], 100], ["raw", ["1 Filter Type A"], 1], ["raw", ["1 Filter On A"], 1],
@@ -60,9 +60,9 @@ CHAPTER = dict(id="mix", levels=("101", "az"), title="Mixing, one effect at a ti
             "hypnomix's first pass also finds harsh S's and can soften them in a new copy of the recording, if you'd rather "
             "fix it at the source."],
        settings=[["Frequency", "5-8 kHz (find where the S's bite)", "female voices often higher, male lower"], ["Reduction", "3-6 dB, only on the S's", "more makes a lisp"]],
-       how={"live": ["Live has no separate de-esser: use a **Compressor**, open its Sidechain section, turn on **EQ**, choose a band-pass around 6 kHz, and set the threshold so only the S's trigger it.",
+       how={"live": ["Live has no separate de-esser: use a **Compressor**, open its Sidechain section, turn on **EQ**, set its Freq to about 6 kHz and shape it (with the filter-type, Gain and Q controls) so the S range stands out in what the compressor listens to, and set the threshold so only the S's trigger it.",
                      "Press the headphone button in the sidechain EQ to hear what it's listening to."],
-            "reaper": ["FX → **ReaXcomp**: keep one band, set it to about 5-9 kHz, and lower its threshold until only the S's turn down."]}),
+            "reaper": ["FX → **ReaXcomp**: it splits the sound into bands (the numbered tabs). Drag the thin vertical lines between the bands (or set each band's top frequency) so that one band covers only about 5-9 kHz, where the S's are. Leave the other bands doing nothing: set their Ratio to 1:1 (or their Threshold all the way up). Then lower the threshold of the S band until only the S's turn down, and use **Solo current band** to hear that slice of the sound."]}),
   dict(id="reverb", title="Reverb on a send: a shared space", daws=ALL,
        say=["**Reverb** is the sound of a room: it puts a dry recording somewhere. Instead of a reverb on every track, put one "
             "on a **return** (send) track and send a little of each track to it, so everything sounds like it's in the "
@@ -102,7 +102,7 @@ CHAPTER = dict(id="mix", levels=("101", "az"), title="Mixing, one effect at a ti
        say=["Once you have several drum or backing-vocal tracks, put them in a **group** (a bus): their sound comes together "
             "on one track, with one fader and one set of effects. Turning the whole drum kit down a little becomes one move."],
        how={"live": ["Select the tracks (click the first, Shift+click the last) and press Cmd+G (Ctrl+G).", "The group track's fader now sets all of them; you can fold it with its triangle."],
-            "reaper": ["Select the tracks, right-click → **Move tracks to new folder** (or make a track and drag the others into it): the folder track is the bus."]}),
+            "reaper": ["Select the tracks, then use the **Track** menu → **Move tracks to folder** and pick a new folder (or run the action 'Track: Move tracks to new folder' from the Actions list): the folder track is the bus."]}),
   dict(id="automation", title="Automation: the mix moves", daws=LR,
        say=["Real mixes move: the vocal comes up a little in the chorus, the reverb swells at the end. **Automation** records "
             "those moves, so a fader or knob follows a line you draw over time.",

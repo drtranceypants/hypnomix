@@ -61,7 +61,7 @@ STEPS = [
              ["Sound Check", "Apple's name for its loudness normalisation setting."],
              ["Reference level", "the loudness a service plays songs at, for example about -14 LUFS."],
              ["Headroom", "the space between your loudest peak and the maximum. A master with no headroom can't be turned up by a service without distortion."]],
-      settings=[["Quiet acoustic, jazz, classical", "-18 to -14 LUFS integrated", "the dynamics are the music; a service won't turn it up much and you don't need to squash it"],
+      settings=[["Quiet acoustic, jazz, classical", "-18 to -14 LUFS integrated", "the dynamics are the music; services turn it up little or not at all, and you don't need to squash it"],
                 ["Pop, rock, singer-songwriter", "-14 to -10 LUFS integrated", "close to the services' level, with room for punch"],
                 ["Dense and loud genres", "-10 to -8 LUFS only if you know why", "services will turn it down; you gain density, not volume"],
                 ["True-peak ceiling", "-1 dBTP", "safe after the service's own encoding (next lessons)"],
@@ -78,7 +78,7 @@ STEPS = [
       quiz=[dict(q="A service plays loud songs down to -14 LUFS. What do you gain by delivering a master at -8 LUFS?", options=["Nothing in volume, and less punch", "A louder song on that service", "More bass"], answer=0,
                  why="It is turned down to the same level as everyone else, so you keep only the squashing."),
             dict(q="Which master has the most reason to sit well below -14 LUFS?", options=["A dense rock track", "A quiet solo piano piece", "A club track"], answer=1,
-                 why="Dynamic music loses its shape when it is pushed up, and the services won't turn it up by much.")],
+                 why="Dynamic music loses its shape when it is pushed up. Services turn quiet songs up only as far as the peaks allow (and some do not turn them up at all), so a dynamic song stays quieter and you don't need to squash it.")],
       hear=["loudness-bias"],
       more=["step:mst-units", "step:mst-codec", "hypnomix translate", "mastering"]),
 
@@ -109,7 +109,7 @@ STEPS = [
                 ["Number of limiters", "one, last", "stacked limiters add distortion"]],
       how={"live": ["Audio Effects → **Limiter**, last device on the **Master**. Set the **Ceiling** to -1 dB and raise **Gain** while the loudest part plays.",
                     "Watch its gain-reduction meter. Don't assume it measures true peak: leave -1 dB and check the result with a loudness meter or `hypnomix measure`."],
-           "reaper": ["On the master add **ReaLimit** last in the chain. Set its ceiling to -1 dB and lower its threshold (or raise its input) while the loudest part plays. Watch its gain-reduction display."],
+           "reaper": ["On the master add **ReaLimit** last in the chain. Set its **Ceiling** to -1 dB and lower its **Threshold** while the loudest part plays. Watch its gain-reduction display."],
            "ardour": ["On the master strip add a limiter last in the chain (x42 Digital Peak Limiter, if you have it). Set the ceiling to -1 dB and push it while the loudest part plays. If it has a true-peak mode, switch it on."]},
       listen="Switch between the limiter at 2 dB and at 6 dB of gain reduction, level-matched. Listen for the kick and the vocal ducking together at 6 dB, and for a flatter, less open feel.",
       mistakes=["Going for 8 dB of gain reduction to reach a loudness number: you hear pumping. Lower the target or fix the mix.",
@@ -165,7 +165,7 @@ STEPS = [
            "Three rules. Dither **once**, as the very last step. Dither **only** when reducing the bit depth, for example to 16-bit "
            "for a CD or a distributor that asks for it. And if you are staying at 24-bit, you don't need to add it.",
            "Never dither twice. Dither on top of dither adds noise for no gain, so turn it off on any copy that will be processed again. "
-           "`hypnomix master` writes an optional 16-bit/44.1 kHz CD copy (`--cd`) from the unrounded master, so it is dithered once; `--dither tpdf|shaped|off` sets the type."],
+           "`hypnomix master` writes an optional 16-bit/44.1 kHz CD copy (`--cd`) from the unrounded master, so that copy is dithered once. `--dither tpdf|shaped|off` sets the type and applies to every file it writes: the 24-bit master gets a tiny TPDF dither too by default (far below hearing at 24-bit). If you will process or convert that 24-bit file again, run with `--dither off`."],
       terms=[["Bit depth", "how many steps each sample can take. 16-bit has 65,536; 24-bit has over 16 million."],
              ["Dither", "a tiny amount of noise added before rounding to a smaller bit depth, so rounding errors become a quiet hiss instead of distortion."],
              ["TPDF", "triangular probability density function: the standard kind of dither noise. A safe default."],
@@ -177,7 +177,7 @@ STEPS = [
       how={"live": ["File → **Export Audio/Video**. Choose a 16-bit file and set the dither option the dialog offers (triangular if listed). For a 24-bit file leave dither off."],
            "reaper": ["File → **Render**. For a 16-bit file, tick the dither option in the dialog (a noise-shaping option sits next to it). For 24-bit leave it off."],
            "ardour": ["Session → **Export → Export to Audio File(s)**. In the format's settings choose a 16-bit sample format and a dithering type (triangular); for 24-bit choose none."]},
-      listen="Turn a quiet fade-out up loud on a 16-bit export with no dither, then with dither. Without: grainy. With: a soft hiss.",
+      listen="Turn a quiet fade-out up loud on a 16-bit export with no dither, then with dither. Without: grainy. With: a soft hiss. The demo exaggerates rounding with only 6 bits and has no dither in it: the gritty noise that follows the notes is the kind of distortion dither hides. (Its aliasing example is a different problem; ignore it here.)",
       mistakes=["Dithering on every export, including copies you will master later: dither the final file only.",
                 "Dithering twice: once in the master chain and again in the export dialog. Pick one place.",
                 "Choosing 16-bit for a file that stays at home: keep 24-bit and convert once, at the end."],
@@ -222,8 +222,8 @@ STEPS = [
       more=["step:rel-metadata", "step:deliver", "hypnomix qc", "hypnomix measure"]),
 
  dict(id="mst-versions", title="Instrumental, a cappella and other versions", daws=ALL,
-      say=["Many songs need more than one version. The **instrumental** has no lead vocal. The **TV track** is the instrumental with the backing "
-           "vocals left in. The **a cappella** is the vocals alone. A **clean** version has any explicit words changed or removed. "
+      say=["Many songs need more than one version. The **instrumental** has no vocals at all. The **TV track** is the same mix with only the lead vocal removed, so the backing "
+           "vocals stay in. The **a cappella** is the vocals alone. A **clean** version has any explicit words changed or removed. "
            "Licensing and sync work often ask for them, and so do DJs and singers who want to perform to a track.",
            "Make each version from the project, not from the finished master. Mute or solo the right tracks, then export through the **same master chain** with the same settings, "
            "so the songs sound as if they belong together. Set each version to about the **same loudness** as the main one: "
@@ -234,8 +234,8 @@ STEPS = [
            "If you only have a finished stereo file, `hypnomix rebalance` can turn the vocals down in it using separation, or with stems you already have. "
            "Its help calls separation imperfect: small moves of 1 to 3 dB are safest, and a rescue like this will never be as clean as a real instrumental from your project. "
            "If a song contains samples, each version carries the same clearance issues. This is not legal advice: check with a qualified person."],
-      terms=[["Instrumental", "a version with no lead vocal, and usually no backing vocals."],
-             ["TV track", "the instrumental with the backing vocals left in, so a show can use it under speech."],
+      terms=[["Instrumental", "a version with no vocals at all. (A TV track keeps the backing vocals.)"],
+             ["TV track", "the same mix with only the lead vocal removed, so the backing vocals stay in and a show can use it under speech."],
              ["A cappella", "the vocals alone, with no music."],
              ["Clean version", "a version with explicit words changed or removed, for radio and some platforms."],
              ["Stems", "grouped sub-mixes of a song (drums, bass, vocals, other) exported separately."]],
@@ -243,16 +243,16 @@ STEPS = [
                 ["Master chain", "the same settings as the main", "makes the versions consistent"],
                 ["File name", "Song Title (Version).wav", "anyone can tell what's inside"],
                 ["Rescue with rebalance", "vocals down 1-3 dB at most as a first try", "bigger moves also move leakage and artefacts"]],
-      how={"live": ["Mute the lead-vocal tracks (or solo the ones you want), then File → **Export Audio/Video** with the same master chain active and the settings you used for the main version."],
-           "reaper": ["Mute the lead-vocal tracks, then File → **Render** with the same master chain and the same settings as the main version."],
-           "ardour": ["Mute the lead-vocal tracks, then Session → **Export → Export to Audio File(s)** with the master chain on and the main version's settings."]},
+      how={"live": ["Mute all the vocal tracks (or solo the ones you want), then File → **Export Audio/Video** with the same master chain active and the settings you used for the main version."],
+           "reaper": ["Mute all the vocal tracks, then File → **Render** with the same master chain and the same settings as the main version."],
+           "ardour": ["Mute all the vocal tracks, then Session → **Export → Export to Audio File(s)** with the master chain on and the main version's settings."]},
       listen="Play the main version, then the instrumental, at the same volume. They should sit at one loudness, and apart from the missing vocal the instrumental should not sound duller or thinner.",
-      mistakes=["Making the instrumental by turning down the lead vocal's fader a little: the vocal still bleeds through. Mute it.",
+      mistakes=["Making the instrumental by turning down the vocals' faders a little: the vocals still bleed through. Mute them.",
                 "Sending the a cappella with the vocal reverb and delay baked in, or missing, without asking: ask what the person wants.",
                 "Letting the instrumental come out several dB quieter: match it to the main version."],
       **{"try": dict(do="Export an instrumental of one of your songs through the same master chain, then play it against the main version at one volume. If the project isn't to hand, run `hypnomix rebalance -h` and read how it treats a stereo file.",
-                     success="The instrumental sits at the same loudness as the main version, and it has no lead vocal in it.")},
-      quiz=[dict(q="What is a TV track?", options=["A video of the song", "The a cappella", "The instrumental with the backing vocals left in"], answer=2,
+                     success="The instrumental sits at the same loudness as the main version, and it has no vocals in it.")},
+      quiz=[dict(q="What is a TV track?", options=["A video of the song", "The a cappella", "The mix with only the lead vocal removed, so the backing vocals stay in"], answer=2,
                  why="It lets a show lay speech over the music while keeping the song's feel."),
             dict(q="When you export an instrumental, where should it sit in loudness?", options=["About the same as the main version", "Well below the main version", "As loud as the limiter allows"], answer=0,
                  why="Consistency across versions makes them usable side by side. Match them by ear and with a meter.")],
