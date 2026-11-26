@@ -383,10 +383,11 @@ def listen_tool(inp):
 
 def system_prompt():
     guide = ""
-    for nm in ("AGENTS.md",):
-        f = Path(__file__).resolve().parents[2] / nm
+    for f in (Path(__file__).resolve().parents[2] / "AGENTS.md",          # a git checkout
+              Path(__file__).with_name("wiki") / "docs" / "AGENTS.md"):    # installed (pip, the installers)
         if f.exists():
             guide = f.read_text()
+            break
     return ("You are the assistant inside the hypnomix app, a free mixing and mastering toolkit for people who record "
             "real instruments and voices. You help one musician with their own songs, in plain words, briefly.\n\n"
             "How you work here: you cannot type in a terminal; you act only through the tools you are given. "

@@ -1,4 +1,4 @@
-"""Draw the app icon (a fader on a paper-pink tile) and write an .icns. Usage: icon.py OUT.icns"""
+"""Draw the app icon (a fader on a paper-pink tile) and write an .icns (or a Windows .ico). Usage: icon.py OUT.icns|OUT.ico"""
 import subprocess, sys, tempfile
 from pathlib import Path
 
@@ -28,6 +28,10 @@ def draw(n):
 
 
 out = Path(sys.argv[1])
+if out.suffix.lower() == ".ico":                    # Windows installer: one .ico with every size
+    draw(256).save(out, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    print("icon", out)
+    sys.exit(0)
 with tempfile.TemporaryDirectory() as td:
     iconset = Path(td) / "Hypnomix.iconset"
     iconset.mkdir()

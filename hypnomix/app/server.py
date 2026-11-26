@@ -464,6 +464,11 @@ def make_handler(port):
                     r = WK.handle_get(u.path, q, self.headers)
                     if r:
                         return self.send(*r)
+                if u.path in ("/setup.js", "/api/setup/state"):    # the guided setup (first run, and the Setup button)
+                    from hypnomix.app import setup as SU
+                    r = SU.handle_get(u.path, q)
+                    if r:
+                        return self.send(*r)
                 if u.path.startswith("/api/chat/") or u.path == "/chat.js":   # the Assistant tab
                     from hypnomix.app import chat as CH
                     r = CH.handle_get(u.path, q)
@@ -555,6 +560,11 @@ def make_handler(port):
                 if u.path.startswith("/api/wiki/"):        # the Wiki tab: edit, publish, live copy on or off
                     from hypnomix.app import wiki as WK
                     r = WK.handle_post(u.path, body)
+                    if r:
+                        return self.send(*r)
+                if u.path.startswith("/api/setup/"):       # the guided setup: save a key and test it, Live, the command
+                    from hypnomix.app import setup as SU
+                    r = SU.handle_post(u.path, body)
                     if r:
                         return self.send(*r)
                 if u.path.startswith("/api/chat/"):        # the Assistant tab (needs the page's token, like the rest)

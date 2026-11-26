@@ -8,3 +8,7 @@ __pycache__/
 *.mp3
 
 macapp/dist/
+
+# installer builds (packaging/)
+packaging/build/
+packaging/dist/

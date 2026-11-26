@@ -32,7 +32,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     }
 
     // ---- the server
+    // the installer's copy: Python, hypnomix and ffmpeg inside the app (packaging/mac/build_dmg.sh)
+    var bundled: String? {
+        guard let res = Bundle.main.resourcePath else { return nil }
+        let py = "\(res)/python/bin/python3"
+        return FileManager.default.isExecutableFile(atPath: py) ? py : nil
+    }
+
     func pythonPath() -> String? {
+        if let b = bundled { return b }
         var candidates: [String] = []
         if let saved = UserDefaults.standard.string(forKey: "HypnomixPython") { candidates.append(saved) }
         if let baked = Bundle.main.object(forInfoDictionaryKey: "HypnomixPython") as? String, !baked.isEmpty { candidates.append(baked) }
@@ -46,9 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         let p = Process()
         p.executableURL = URL(fileURLWithPath: py)
         p.arguments = ["-m", "hypnomix.cli", "app", "--no-open", "--port", "\(port)"]
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")   // ffmpeg, rubberband
-        p.environment = env
+        p.environment = serverEnv()
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
         do { try p.run() } catch {
@@ -59,12 +65,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         waitForServer()
     }
 
+    func serverEnv() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        var path = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")   // ffmpeg, rubberband
+        if bundled != nil, let res = Bundle.main.resourcePath {
+            path = "\(res)/bin:" + path                   // the bundled ffmpeg first
+            env["PYTHONDONTWRITEBYTECODE"] = "1"          // compiled at build time; never write inside the signed app
+            env["PYTHONNOUSERSITE"] = "1"                 // the user's own pip packages stay out of it
+        }
+        env["PATH"] = path
+        return env
+    }
+
     func waitForServer() {
         tries += 1
         isUp { up in
             if up { self.web.load(URLRequest(url: home)); return }
             if self.tries > 60 || self.server?.isRunning == false {
-                self.message("hypnomix did not start. In Terminal, run: hypnomix app   and read what it says.")
+                self.message(self.bundled != nil
+                    ? "hypnomix did not start. Quit and open it again; if it still fails, download the installer again from hypnomix.bradfieldenterprises.org."
+                    : "hypnomix did not start. In Terminal, run: hypnomix app   and read what it says.")
                 return
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.waitForServer() }
@@ -117,6 +137,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         let a = NSAlert(); a.messageText = msg
         a.addButton(withTitle: "OK"); a.addButton(withTitle: "Cancel")
         done(a.runModal() == .alertFirstButtonReturn)
+    }
+    // links with target=_blank (the setup's "get a key" links): the browser, not a new window
+    func webView(_ w: WKWebView, createWebViewWith c: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures f: WKWindowFeatures) -> WKWebView? {
+        if let u = action.request.url { NSWorkspace.shared.open(u) }
+        return nil
     }
     // links that leave the app open in the browser
     func webView(_ w: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

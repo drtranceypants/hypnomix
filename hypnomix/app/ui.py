@@ -58,7 +58,7 @@ animation:sp 1s linear infinite;vertical-align:-1px;margin-right:6px}@keyframes 
 </style></head><body>
 <header><span class="brand">hypnomix</span>
 <nav><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
-<button class="tab" data-view="chat">Assistant</button><button class="tab" data-view="wiki">Wiki</button><button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button></nav>
+<button class="tab" data-view="chat">Assistant</button><button class="tab" data-view="wiki">Wiki</button><button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button><button class="tab" data-setup title="How you work with hypnomix: AI provider, keys, Ableton Live">Setup</button></nav>
 <span class="live" id="live"></span></header>
 <main id="main"></main>
 <script>
@@ -325,7 +325,7 @@ document.addEventListener('change', e => {
 document.addEventListener('play', e => { document.querySelectorAll('audio').forEach(a => { if (a !== e.target) a.pause(); }); }, true);
 render();
 setInterval(() => { refresh(); pollJob(); pollProbe(); }, 1000);
-</script><script src="/chat.js"></script><script src="/wiki.js"></script></body></html>
+</script><script src="/chat.js"></script><script src="/wiki.js"></script><script src="/setup.js"></script></body></html>
 """
 
 from hypnomix.workflow.review import OVERSIGHT_CSS as _OC, OVERSIGHT_JS as _OJ   # noqa: E402

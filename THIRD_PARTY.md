@@ -17,3 +17,11 @@ matplotlib (PSF-based) · python-osc (Unlicense) · noisereduce (MIT).
 Optional extras install separately and keep their own licences: matchering (GPL-3.0),
 audio-separator (MIT), basic-pitch (Apache-2.0), google-genai (Apache-2.0),
 pedalboard (GPL-3.0; the `plugins` extra, used by `hypnomix plugrender` to host VST3 and AU plug-ins).
+
+## In the installers (packaging/)
+The Mac .dmg and Windows setup .exe also carry, unchanged, each under its own licence:
+- CPython (PSF License), as built by [python-build-standalone](https://github.com/astral-sh/python-build-standalone)
+  (MIT / Apache-2.0), with the packages above and the `assistant` and `critique` extras (anthropic, openai: MIT / Apache-2.0)
+- an FFmpeg program (`bin/ffmpeg`) from [imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg)'s builds. FFmpeg is
+  LGPL/GPL software run as a separate program; its source is at https://ffmpeg.org/download.html and the build scripts
+  at https://github.com/imageio/imageio-binaries

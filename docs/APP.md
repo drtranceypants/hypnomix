@@ -21,12 +21,20 @@ you use it; Ctrl-C stops it.
 | Apply | writes only what you approved into one new set next to the original (`fix --approved`), then shows the log: what was applied, what changed, what is no longer measured |
 | Preferences | the questions asked once: targets, protected tracks, what is deliberate |
 | Tools | every other command with its help and a form: tempo, variations, mastering, and the rest |
+| Setup | the guided setup (it opens by itself the first time): how you work (just the app, an AI key, a model on this computer, or a desktop AI app such as Claude Code), the key and a connection test, the Ableton Live connection, and for desktop AI apps a `hypnomix` command plus an agent folder. Costs and pros and cons for each: [Setting up, and choosing an AI](guides/09-setup-and-ai.md) |
 | Wiki | lessons, how-to guides, every command and the FAQ, with screenshots and videos, searchable and offline. The same articles as the website's [/wiki/](https://hypnomix.bradfieldenterprises.org/wiki/); the app shows the website's copy when it is newer. In a git checkout, **Edit** opens the article's file and **Publish** commits and pushes the wiki: the website rebuilds within about 10 minutes and every app follows |
 
 It is a web server on this computer only. It refuses requests from other sites, only reads and writes scans
 inside its own folder (`~/Documents/Hypnomix`; change with `--home`), and never overwrites a set.
 
-## Optional: your own Mac app
+## The installed app (Mac and Windows)
+
+The installers on the [download page](https://hypnomix.bradfieldenterprises.org) install the same app with its own
+Python and ffmpeg inside it. On a Mac it is `Hypnomix.app` (a window of its own; quitting it stops it). On Windows
+the Start menu's **hypnomix** opens it in your browser and **Quit hypnomix** stops it. Your songs' scans are kept in
+`~/Documents/Hypnomix` either way, and an update just installs over the old version.
+
+## Optional: your own Mac app (from a source install)
 
 If you would rather have an icon in the Dock than a browser tab, build `Hypnomix.app`: a small window around
 the same web app that starts it when you open the app and stops it when you quit.

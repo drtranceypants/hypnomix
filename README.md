@@ -219,7 +219,22 @@ See [docs/WORKFLOW.md](docs/WORKFLOW.md); what's coming, including Logic Pro and
 
 ## Install
 
-Needs macOS (Windows should work for the file tools and Live control but is untested), Python 3.9+, ffmpeg, and Ableton Live 11 or 12 for the Live features. The file tools work without Live.
+**The easy way: download the installer.** It carries its own Python and ffmpeg, so there is nothing else to set up.
+
+| | download |
+|---|---|
+| Mac with Apple silicon (M1 and later) | [Hypnomix-mac-arm64.dmg](https://github.com/drtranceypants/hypnomix/releases/latest/download/Hypnomix-mac-arm64.dmg): open it, drag Hypnomix to Applications |
+| Mac with an Intel chip | [Hypnomix-mac-intel.dmg](https://github.com/drtranceypants/hypnomix/releases/latest/download/Hypnomix-mac-intel.dmg) |
+| Windows 10 / 11 (64-bit) | [Hypnomix-windows-setup.exe](https://github.com/drtranceypants/hypnomix/releases/latest/download/Hypnomix-windows-setup.exe): installs for you only, no administrator needed |
+
+The installers are not yet signed, so the first time macOS or Windows asks you to allow it (the download page at
+[hypnomix.bradfieldenterprises.org](https://hypnomix.bradfieldenterprises.org) shows how). On first open the Mac app offers to copy the
+AbletonOSC remote script into Live (on Windows it is a box to tick in the installer); then restart Live and pick **Control Surface: AbletonOSC**. The installed app is the app only: for the
+command line and Claude Code, install from source as below. The app's guided setup and the four ways to work
+with AI (just the app, an AI key, a local model, a desktop AI app), with costs: [Setting up, and choosing an AI](docs/guides/09-setup-and-ai.md).
+Building the installers yourself: [packaging/README.md](packaging/README.md).
+
+**From source** (the command line, Claude Code, and every extra). Needs macOS (Windows should work for the file tools and Live control but is untested), Python 3.9+, ffmpeg, and Ableton Live 11 or 12 for the Live features. The file tools work without Live.
 
 ```bash
 git clone https://github.com/drtranceypants/hypnomix && cd hypnomix

@@ -1,0 +1,130 @@
+# Builds the one-click installers: a .dmg for Apple silicon and Intel Macs, and a Windows setup .exe.
+# Run it by hand (Actions → installers → Run workflow) to get them as downloadable build artifacts, or push a
+# version tag (git tag v0.1.0 && git push origin v0.1.0) to also attach them to a GitHub release. The website's
+# download buttons point at https://github.com/drtranceypants/hypnomix/releases/latest/download/<file>.
+#
+# Optional repository secrets for signing (without them the installers are unsigned and people allow them once):
+#   MACOS_CERT_P12, MACOS_CERT_PASSWORD   a Developer ID Application certificate, base64-encoded .p12
+#   MACOS_SIGN_ID                          e.g. "Developer ID Application: Name (TEAMID)"
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   for notarisation (an app-specific password)
+name: installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write        # build provenance: anyone can check a download was built here from this source
+  attestations: write
+
+jobs:
+  mac:
+    runs-on: macos-14
+    env:
+      HAS_CERT: ${{ secrets.MACOS_CERT_P12 != '' }}
+      HAS_NOTARY: ${{ secrets.APPLE_APP_PASSWORD != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Import the signing certificate
+        if: ${{ env.HAS_CERT == 'true' }}
+        env:
+          P12: ${{ secrets.MACOS_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          kc="$RUNNER_TEMP/build.keychain"
+          security create-keychain -p ci "$kc"
+          security set-keychain-settings -lut 21600 "$kc"
+          security unlock-keychain -p ci "$kc"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$kc"
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+      - name: Save notarisation credentials
+        if: ${{ env.HAS_NOTARY == 'true' }}
+        run: |
+          xcrun notarytool store-credentials hypnomix --apple-id "${{ secrets.APPLE_ID }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" --password "${{ secrets.APPLE_APP_PASSWORD }}"
+          echo "HYPNOMIX_NOTARY_PROFILE=hypnomix" >> "$GITHUB_ENV"
+      - name: Build
+        env:
+          HYPNOMIX_SIGN_ID: ${{ secrets.MACOS_SIGN_ID }}
+        run: packaging/mac/build_dmg.sh ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-${{ matrix.arch }}
+          path: packaging/dist/*.dmg
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Inno Setup (if the runner image lacks it)
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc.exe -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+      - name: Build
+        shell: pwsh
+        run: ./packaging/windows/build.ps1
+      - name: Smoke test (silent install, the app answers, uninstall)
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem packaging/dist/*-setup.exe | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/TASKS=", "/DIR=$env:RUNNER_TEMP\hx" -Wait
+          & "$env:RUNNER_TEMP\hx\python\python.exe" -m hypnomix.cli doctor
+          & "$env:RUNNER_TEMP\hx\bin\ffmpeg.exe" -hide_banner -version | Select-Object -First 1
+          Start-Process "$env:RUNNER_TEMP\hx\python\pythonw.exe" -ArgumentList "`"$env:RUNNER_TEMP\hx\launcher.pyw`""
+          $ok = $false
+          foreach ($i in 1..120) {
+            try { if ((Invoke-WebRequest http://127.0.0.1:8791/api/state -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200) { $ok = $true; break } } catch {}
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $ok) { Get-Content "$env:LOCALAPPDATA\Hypnomix\server.log" -ErrorAction SilentlyContinue; throw "the app did not answer" }
+          Write-Host "app answered on 8791"
+          & "$env:RUNNER_TEMP\hx\python\pythonw.exe" "$env:RUNNER_TEMP\hx\launcher.pyw" --stop
+          Start-Process "$env:RUNNER_TEMP\hx\unins000.exe" -ArgumentList "/VERYSILENT" -Wait
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: packaging/dist/*-setup.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Stable names for the website's download buttons
+        run: |
+          cd dist
+          for f in *-mac-arm64.dmg;  do cp "$f" Hypnomix-mac-arm64.dmg; done
+          for f in *-mac-x86_64.dmg; do cp "$f" Hypnomix-mac-intel.dmg; done
+          for f in *-windows-x64-setup.exe; do cp "$f" Hypnomix-windows-setup.exe; done
+          sha256sum Hypnomix-*.dmg Hypnomix-*.exe > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - name: Build provenance (gh attestation verify FILE -R drtranceypants/hypnomix)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/Hypnomix-*"
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "hypnomix $GITHUB_REF_NAME" \
+              --notes "Installers: Mac (Apple silicon or Intel) and Windows. See the README's Install section."
+          gh release upload "$GITHUB_REF_NAME" dist/* -R "$GITHUB_REPOSITORY" --clobber

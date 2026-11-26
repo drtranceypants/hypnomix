@@ -1,0 +1,229 @@
+---
+title: Setting Up, and Choosing an AI
+subtitle: Install the app on a Mac or Windows PC, then pick how you work: on your own, with an AI key, with a model on your own computer, or with a desktop AI app
+wiki_id: setup-ai
+teaser: The installers, the guided setup, and the four ways to work (just the app, an AI key such as Gemini's free tier, a free model on your own computer, or Claude Code), with costs, pros and cons, and step-by-step setup for each.
+---
+
+# Setting up
+
+There are two ways to install hypnomix. The **installer** is for most people: download it, open it, done. It
+carries its own Python and ffmpeg, and the first time the app opens a short **guided setup** asks how you want to
+work. The **source install** (the Getting Started guide and the README) is for people who use a terminal, want every optional
+extra, or want the Claude Code skills that ship in the repository.
+
+## Install the app
+
+1. Go to **hypnomix.bradfieldenterprises.org/download**, pick your computer (Mac with Apple silicon, Mac with an
+   Intel chip, or Windows 10/11), tick the box to agree to the terms, and download.
+2. **Mac**: open the `.dmg` and drag **Hypnomix** onto **Applications**. **Windows**: run the setup `.exe`. It
+   installs for you only and doesn't need administrator rights.
+3. Open it. The installers are not signed by Apple or Microsoft yet, so the first time your computer says it can't
+   check who made it. The download page shows how to open it anyway, step by step. In short:
+   - **macOS 15 and later**: click **Done**, then **System Settings → Privacy & Security → Open Anyway**.
+   - **macOS 12–14**: right-click the app, choose **Open**, then **Open**.
+   - **Windows**: on "Windows protected your PC", click **More info → Run anyway**.
+4. The guided setup opens. It takes about two minutes, and you can run it again any time with the **Setup**
+   button at the top of the app.
+
+Not sure which Mac you have? Apple menu → **About This Mac**: "Chip: Apple M…" is Apple silicon, "Processor:
+Intel" is Intel.
+
+> The download page also links to the public virus-scan reports for every installer, their SHA-256 checksums,
+> and GitHub's record of the build. You can check a download is exactly what the public source code built.
+
+## The guided setup
+
+| step | what it asks |
+|---|---|
+| How you work | just the app, an AI key, a model on your computer, or a desktop AI app (compared below) |
+| Connect | for an AI key: which company, your key, a test. For a local model: Ollama or LM Studio, and a test. For a desktop app: a `hypnomix` command and an agent folder |
+| Ableton Live | copies the AbletonOSC remote script into Live's User Library, on your click |
+| Done | where to start |
+
+## Choosing how to work with AI
+
+hypnomix doesn't need an AI. Every tool works from the app's buttons. An AI adds a helper that explains each
+finding in plain words, answers your questions, runs the scans and checks for you, and works through a whole song
+with you. **Whichever way you choose, nothing that changes a set happens without your OK**, and hypnomix never
+overwrites your original.
+
+| | Just the app | AI key in the Assistant | Model on your computer | Desktop AI app |
+|---|---|---|---|---|
+| Cost | free | Gemini free tier $0; otherwise pay per use (table below) | free | Claude Pro $20/month; Max $100 or $200 |
+| Account needed | none | with the AI company | none | Claude (or your agent's) |
+| What leaves your computer | nothing | text reports go to the AI company; audio only if you allow a listen | nothing | text reports go to the AI company |
+| Computer needed | any | any | 16 GB of memory for a good model | any |
+| Best for | learning the tools, full control | most people: help inside the app | privacy, no budget | whole songs, batches, the most capable help |
+
+### What an AI key costs per song
+
+Rough estimates for **one song from scan to approved fixes**, about 40 assistant steps: around 1.2 million input
+tokens (most of it the same context sent again, which Claude bills at a discount) and 20 thousand output tokens.
+A short question costs a fraction of this. A long session with many re-scans costs more. List prices, checked
+2026-11-25:
+
+| model | price per million tokens (input / output) | one song, roughly |
+|---|---|---|
+| Google Gemini Flash, free tier | free, with daily limits | $0 |
+| Google Gemini Flash, paid tier | $0.75 / $3.75 (introductory; $1.50 / $7.50 from 2027) | about $0.97 (about $1.95 from 2027) |
+| Claude Haiku 5.5 | $0.10 / $0.50 | about $0.04 |
+| Claude Sonnet 5.5 | $2 / $10 | about $0.79 |
+| Claude Opus 5.5 | $4 / $20 | about $1.58 |
+| OpenRouter, OpenAI and others | see each model's page | varies |
+
+The Assistant tab counts the tokens of every conversation and shows the cost as you go (exactly for Claude; for
+other companies it shows the tokens, and their own page has the price). Every company lets you set a monthly
+spending limit. Set one.
+
+## Just the app
+
+Nothing to set up. On the **Songs** tab choose a song's Live set (or a folder of stems), click **Scan**, and go
+through the review: each finding has a before and after to hear, and **Approve**, **Skip** or **Change**. Then
+**Apply** writes only what you approved into a new set next to the original. The **Wiki** tab has a short lesson
+with a video for each step.
+
+**Pros**: free, private, every tool. **Cons**: you read the reports and make every call on your own.
+
+## An AI key in the Assistant
+
+The **Assistant** tab is a chat inside the app. You bring a key from an AI company; the key is saved on your
+computer only (`~/.hypnomix/ai.json`, readable by you alone) and is sent only to that company.
+
+**Pros**: help right inside the app, pay only for what you use (or nothing on Gemini's free tier), and Gemini can
+also be the *Listener*, hearing a bounce for notes by ear. **Cons**: an account and a key, the text reports go to that company,
+and costs add up with the bigger models on long sessions.
+
+### Google Gemini (recommended to start: free tier)
+
+1. Open **aistudio.google.com/apikey** (Google AI Studio) and sign in with any Google account.
+2. Click **Create API key**. If it asks for a project, let it create one.
+3. Copy the key. It starts with `AIza`.
+4. In hypnomix: **Setup → An AI key → Google Gemini**, paste the key, keep the model `gemini-flash-latest`, and
+   click **Save and test**. It should say how many models it can reach.
+5. Leave **Also make it the Listener** ticked if you'd like notes by ear. The Assistant asks before each listen
+   and sends only a reduced mono copy (about 1 to 5 cents a listen on the paid tier). Which Gemini model hears
+   best, and how to give the Listener a key of its own: the wiki article "The Assistant and the Listener".
+
+The free tier needs no card and has daily limits. If you hit them, the Assistant says "too many requests": wait,
+or set up billing in AI Studio for the paid tier. On the **free tier Google may use what you send to improve its
+products**; the paid tier doesn't. Don't use the free tier for songs you need kept private before release.
+
+### Claude (Anthropic)
+
+1. Open **console.anthropic.com**, sign up or sign in.
+2. Under **Billing**, add credit (prepaid). Set a monthly limit there too.
+3. Under **Settings → API keys**, click **Create Key** and copy it (it starts with `sk-ant-`).
+4. In hypnomix: **Setup → An AI key → Claude**, paste it, choose a model and **Save and test**.
+
+Which model: **Sonnet 5.5** is the everyday choice. **Opus 5.5** thinks harder and costs about twice as much.
+**Haiku 5.5** is very cheap and fine for quick questions, but makes more mistakes on long jobs.
+
+A Claude Pro or Max subscription doesn't include API keys. To use your subscription, choose **a desktop AI app**
+instead (below).
+
+### OpenRouter and OpenAI
+
+**OpenRouter** (openrouter.ai): one key reaches models from many companies. Add credit, create a key under
+**Keys** (it starts with `sk-or-`), paste it. It can also do Listening. **OpenAI** (platform.openai.com): add
+credit under Billing, create a key under API keys. Groq, Mistral and any other OpenAI-compatible service are in
+the Assistant tab's settings.
+
+## A model on your own computer
+
+An open-source model runs on your computer, and the Assistant talks to it. It's free, private and works offline.
+It's slower, and small models make more mistakes when they run tools. The Assistant still asks before anything
+changes a set.
+
+| your computer's memory | try |
+|---|---|
+| 8 GB | `qwen3:8b` (about 5 GB download); lighter, less reliable on long jobs: one request at a time |
+| 16 GB or more | `gpt-oss:20b` (about 14 GB download), an open-weight model built for tool use |
+
+### Ollama
+
+1. Download Ollama from **ollama.com/download** and open it. It runs in the menu bar (Mac) or system tray
+   (Windows).
+2. In Terminal (Mac) or PowerShell (Windows), get a model that can run tools:
+
+```
+ollama pull gpt-oss:20b
+```
+
+3. Give it room to think: in Ollama's **Settings**, drag the context length to **64k**. The Assistant reads long
+   reports, and Ollama's default is too short.
+4. In hypnomix: **Setup → A model on this computer → Ollama**, model `gpt-oss:20b` (or `qwen3:8b`), **Test the
+   connection**.
+
+To drive hypnomix with a free open-source *agent* instead of the Assistant (OpenCode, in a terminal), see the
+wiki's "Run your own AI, free and offline".
+
+### LM Studio
+
+1. Download LM Studio from **lmstudio.ai** and open it.
+2. Search for a model with tool use (gpt-oss 20B, or Qwen3 8B with 8 GB of memory), download it and load it
+   with a context length of 64k.
+3. Open the **Developer** tab and switch on **Start server** (port 1234).
+4. In hypnomix: **Setup → A model on this computer → LM Studio**, **Test the connection**.
+
+## A desktop AI app
+
+An AI agent such as **Claude Code** runs hypnomix commands, reads the reports and works through a whole song with
+you, in a chat beside the app. This is the strongest option for long, many-step work (a whole song, a batch, your
+own requests), at a flat monthly price. hypnomix is built and tested with Claude Code. Codex, Cursor and other
+agents that read `AGENTS.md` work too.
+
+**Pros**: the most capable help, a flat price, works with every optional extra. **Cons**: a subscription with
+usage limits; the work happens in the agent's chat, not inside the app.
+
+### Set it up
+
+1. Get **Claude** from **claude.com/download**. The desktop app includes Claude Code in its **Code** tab. Claude
+   Code needs a **Pro** plan ($20/month) or **Max** ($100 or $200/month for heavy use). Prefer the terminal?
+   Install Claude Code from claude.com/product/claude-code.
+2. In hypnomix: **Setup → A desktop AI app → Make the command and folder**. This makes:
+   - a `hypnomix` command that runs the app's own copy (Mac: `~/.local/bin/hypnomix`; Windows: in your user's
+     WindowsApps folder, which is already on your PATH)
+   - a folder **Documents/Hypnomix/AI agent** with `CLAUDE.md`, `AGENTS.md` and `GUIDE.md`: the instructions
+     the agent reads first.
+3. Mac only, once: if the setup says `hypnomix` isn't on your PATH yet, run the line it shows in Terminal, then
+   open a new Terminal window.
+
+### Use it
+
+- **Claude desktop app**: open the **Code** tab, choose the **AI agent** folder, and say: *"Read CLAUDE.md, run
+  hypnomix doctor, then scan my song"*, and drag the song's `.als` file in.
+- **Terminal**: `cd` into the AI agent folder and run `claude`.
+- **Other agents**: open the AI agent folder in them.
+
+Keep the hypnomix app open alongside: the review page's A/B players are the quickest way to hear what the agent
+proposes. For the Claude Code skills in the repository (the first-pass workflow with its parallel scanners) and
+every optional extra, use the source install (the Getting Started guide).
+
+## Connecting Ableton Live
+
+The setup's **Ableton Live** step copies the AbletonOSC remote script into Live's User Library (a different copy
+already there is backed up first). Then **restart Live** and choose **Settings → Link, Tempo & MIDI → Control
+Surface: AbletonOSC**. Scanning set files works without it; reading and controlling the open set needs it.
+REAPER and Ardour need nothing installed: see the guide "hypnomix in REAPER".
+
+## When something doesn't work
+
+| what you see | what to do |
+|---|---|
+| "refused the key" | the key was copied wrong or deleted: make a new one and paste it again |
+| "too many requests (or no credit left)" | on a free tier, wait or add billing; on a paid account, add credit |
+| "doesn't know that model name" | in the Assistant tab's settings, click **List models** and pick one |
+| "Can't reach Ollama" | open the Ollama app (or `ollama serve`) and try again |
+| `hypnomix: command not found` (Mac) | run the PATH line from the setup, then open a new Terminal window |
+| the app doesn't open (Mac) | System Settings → Privacy & Security → Open Anyway (see Install the app) |
+| Windows: no "Run anyway" button | Smart App Control blocks unsigned installers: use the source install, or wait for a signed version |
+
+## Privacy, in one place
+
+- The app runs on your computer and talks only to your own computer (`127.0.0.1`).
+- Your audio never leaves the computer unless you turn on Listening and click **Send it** for a listen.
+- With an AI key or a desktop AI app, the text reports and your messages go to that AI company, under its terms.
+- With a local model, nothing leaves your computer.
+- Your keys are stored in `~/.hypnomix/ai.json`, readable only by you. Delete a key from the Assistant tab's
+  settings, or delete that file.
