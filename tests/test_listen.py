@@ -81,6 +81,15 @@ class Listener(unittest.TestCase):
         self.assertIn("0.1 min", ask[0]["text"])
         self.assertIn("vocal level?", ask[0]["text"])
 
+    def test_a_wrong_folder_for_the_scans_own_bounce_is_forgiven(self):
+        """The model rebuilt ~ from another home: the file name matches the scan's bounce, so that one is used."""
+        song = self._song()
+        scan = Path(self.d.name) / "scan"; scan.mkdir()
+        (scan / "scan.json").write_text(json.dumps({"mix": str(song)}))
+        with mock.patch("hypnomix.app.server.scan_dir", return_value=scan):
+            self.assertEqual(CH.scan_bounce("scan", Path("/elsewhere/Song.wav")), song)
+            self.assertIsNone(CH.scan_bounce("scan", Path("/elsewhere/Other.wav")))
+
     def test_estimate(self):
         e = L.estimate(self._song(), "gemini", "gemini-4-carbon")
         self.assertAlmostEqual(e["seconds"], 4.0, delta=0.1)

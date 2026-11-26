@@ -331,6 +331,21 @@ def tool(name, inp):
         return f"error: {e}"
 
 
+def scan_bounce(scan_dir, wanted):
+    """The bounce a scan was run with, when the path the model gave doesn't exist but names that file (or no file):
+    models sometimes rebuild a ~ path from other paths they have seen and land in the wrong folder."""
+    from hypnomix.app import server as S
+    try:
+        info = json.loads((S.scan_dir(scan_dir) / "scan.json").read_text())
+    except (KeyError, ValueError, OSError):
+        return None
+    for k in ("mix", "ref"):
+        m = Path(str(info.get(k) or ""))
+        if m.is_file() and (not wanted.name or wanted.name == m.name):
+            return m
+    return None
+
+
 def listen_tool(inp):
     """One listen: switched on, a real song, the person's click, then the notes (also saved next to the scan)."""
     from hypnomix.ears import critique as L
@@ -340,7 +355,9 @@ def listen_tool(inp):
     if lp not in L.LISTENERS:
         return ("Listening is off. Tell the person they can set up a Listener in the Assistant tab (Set up a listener: "
                 "Google Gemini or OpenRouter, with that service's key); until then, work from hypnomix's measurements.")
-    f = Path(str(inp.get("audio") or "")).expanduser()
+    f = Path(str(inp.get("audio") or "").strip().strip("\"'")).expanduser()
+    if not f.is_file() and inp.get("dir"):
+        f = scan_bounce(inp["dir"], f) or f
     if not f.is_file() or f.suffix.lower() not in (".wav", ".mp3", ".aif", ".aiff", ".flac", ".m4a", ".ogg"):
         return "that is not an audio file on this computer: ask the person to attach the bounce (Attach audio…)"
     provider, _, model, key = L.listener(lp)
