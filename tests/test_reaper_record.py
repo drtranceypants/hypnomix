@@ -49,6 +49,8 @@ class MainStates(unittest.TestCase):
         lua = (root / "bridge.lua").read_text()
         for k in range(1, 7):
             self.assertIn(f"rr_state == {k} ?", main)
+        self.assertIn("!rr_down && rr_was && rr_armed && rr_in ?", main)      # a press counts on release
+        self.assertIn("or reaper.time_precise() - rec.began > 3 then", lua)  # playback gets time to start
         self.assertIn("if rec.last - rec.start < 1.0 then reaper.gmem_write(GM_STATE, 5); return false end", lua)
 
 

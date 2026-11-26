@@ -423,12 +423,12 @@ end
 -- listen as usual; on stop the app renders the master for exactly the stretch that played (`render_master`) and
 -- reviews it. The events go to the app's relay with `probe_blocks rec=1` (one reader: the app that owns the probes).
 local GM_PRESS, GM_STATE, GM_SECS = 8, 9, 10
-local rec = { on = false, start = 0, last = 0, began = 0, presses = nil, events = {}, fed = 0 }
+local rec = { on = false, start = 0, last = 0, began = 0, seen = false, presses = nil, events = {}, fed = 0 }
 
 local function rec_begin()
   local playing = reaper.GetPlayState() & 1 == 1
   rec.start = playing and reaper.GetPlayPosition() or reaper.GetCursorPosition()
-  rec.last, rec.on, rec.began = rec.start, true, reaper.time_precise()
+  rec.last, rec.on, rec.began, rec.seen = rec.start, true, reaper.time_precise(), playing
   if not playing then reaper.OnPlayButton() end
   reaper.gmem_write(GM_STATE, 1); reaper.gmem_write(GM_SECS, 0)
   rec.events[#rec.events + 1] = { ev = "start", pos = rec.start }
@@ -458,11 +458,12 @@ local function rec_poll()
   if p ~= rec.presses then rec.presses = p; rec_toggle() end
   if rec.on then
     if reaper.GetPlayState() & 1 == 1 then
+      rec.seen = true
       local pos = reaper.GetPlayPosition()
       if pos > rec.last then rec.last = pos end         -- loop playback wraps back: keep the furthest point
       reaper.gmem_write(GM_SECS, rec.last - rec.start)
-    elseif reaper.time_precise() - rec.began > 0.5 then
-      rec_finish(false)                                 -- REAPER was stopped (or reached the end)
+    elseif (rec.seen and reaper.time_precise() - rec.began > 0.5) or reaper.time_precise() - rec.began > 3 then
+      rec_finish(false)                                 -- REAPER was stopped (or reached the end, or never started)
     end
   end
 end

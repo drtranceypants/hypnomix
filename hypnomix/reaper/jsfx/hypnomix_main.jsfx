@@ -59,7 +59,12 @@ rr_pressed > 0 && time_precise() - rr_pressed > 1.5 ? (
   gfx_drawstr("Plays from the edit cursor while every probe listens");
 );
 rr_down = mouse_cap & 1;
-rr_down && !rr_was && mouse_x >= rr_x && mouse_x < rr_x + rr_w && mouse_y >= rr_y && mouse_y < rr_y + rr_h ? (
+rr_in = mouse_x >= rr_x && mouse_x < rr_x + rr_w && mouse_y >= rr_y && mouse_y < rr_y + rr_h;
+rr_down && !rr_was ? rr_armed = rr_in;
+// a press counts on RELEASE over the button (like any button): REAPER does not start playing while the mouse is
+// still held down in an FX window (measured in 7.86), so acting on mouse-down left a held click with no playback
+!rr_down && rr_was && rr_armed && rr_in ? (
   gmem[8] += 1; rr_pressed = time_precise(); rr_from = rr_state;
 );
+!rr_down ? rr_armed = 0;
 rr_was = rr_down;
