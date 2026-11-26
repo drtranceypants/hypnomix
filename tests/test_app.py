@@ -127,8 +127,12 @@ class Device(unittest.TestCase):
             self.assertEqual(int.from_bytes(raw[i + 4:i + 8], "little"), len(raw) - i - 8)
             head, patch = D.read_amxd(out / "Hypnomix.amxd")
             kinds = [b["box"].get("text") or b["box"]["maxclass"] for b in patch["patcher"]["boxes"]]
-            self.assertEqual(kinds, ["plugin~", "plugout~", "live.thisdevice", "jsui"])   # audio still passes through
-            self.assertEqual(len(patch["patcher"]["lines"]), 2)
+            for k in ("plugin~", "plugout~", "live.thisdevice", "jsui"):               # audio still passes through
+                self.assertIn(k, kinds)
+            self.assertIn("Float", kinds)                                             # the floating-panel toggle
+            sub = next(b["box"]["patcher"] for b in patch["patcher"]["boxes"] if b["box"].get("text") == "p hypnomix_panel")
+            self.assertEqual([b["box"].get("jsarguments") for b in sub["boxes"] if b["box"]["maxclass"] == "jsui"], [["float"]])
+            self.assertEqual(len(patch["patcher"]["lines"]), 11)
             js = (out / "hypnomix_device.js").read_text()
             self.assertIn("127.0.0.1:8791", js)
             self.assertNotIn("__", js.replace("__PORT__", ""))                            # every placeholder filled

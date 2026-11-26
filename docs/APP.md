@@ -63,11 +63,15 @@ onto any track. Audio passes through it untouched. With the app running and a re
 - **Approve / Skip** record your decision, exactly like a click in the app. Nothing is applied from Live
 - **Show in Live** buttons in the app do the same jump through the device
 - **Brace off** leaves your loop brace where it is
+- **Float** (top right of the device) opens the same panel in a small floating window. Use it while stepping:
+  a jump selects the finding's track, so Live shows that track's clip where the device was, and the floating
+  panel stays in view. Click Float again to close it
 
 Applying still happens in the app, into a new set, with the original closed. The device never edits the set
 it sits in.
 
-It needs Max for Live (Live Suite, or the add-on). It is built from the blank Max Audio Effect inside your
+It needs Max for Live (Live Suite, or the add-on). Loaded in Live 12 Suite on a real set (2026-11-25): it
+connects, follows the review, jumps Live to each finding and opens the floating panel. It is built from the blank Max Audio Effect inside your
 own copy of Live plus one script file; keep the two files in the same folder.
 
 ## For an AI agent

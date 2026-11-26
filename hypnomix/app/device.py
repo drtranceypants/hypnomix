@@ -15,6 +15,8 @@ finding you are on and has these buttons:
   Approve / Skip record your decision (saved exactly like a click in the app; nothing is applied from here)
   Brace on/off   whether the Arrangement loop brace is moved around the spot
   App            open the full review (with the before / after players) in your browser
+  Float          (top right) the same panel in a small floating window. Use it while stepping: a jump selects
+                 the finding's track, and Live then shows that track's clip where this device was
 
 In an A/B set (`hypnomix abset SCAN_DIR`, opened in Live instead of the original) a second row appears:
 
@@ -29,8 +31,9 @@ Live" buttons in the app do the same through this device.
 The device is built from the blank "Max Audio Effect" that ships inside your own copy of Live, plus one
 script file. The two files must stay in the same folder.
 
-Not yet verified by loading it in Live on a second machine: if it shows an error, the Max window (right-click
-the device title → Open Max Window) says which line.
+Loaded in Live 12 Suite on a real set: it connects, follows the review, jumps and floats. Not yet tried on a
+second machine: if it shows an error, the Max window (right-click the device title → Open Max Window) says
+which line.
 """
 import argparse, glob, json, sys
 from pathlib import Path
@@ -52,24 +55,45 @@ var st = {ready: false, seq: -1, cur: null, lastOk: 0, flash: "", flashUntil: 0,
           ab: {id: "", spec: null, state: "A", blind: null, heard: {}}};
 var buttons = [];
 var task = new Task(tick, this);
+// The same script runs twice: in the device, and in the floating panel (jsarguments "float"). Only one of the
+// two moves Live: the floating one while Float is on, the device's own otherwise. Buttons work in both.
+var IS_FLOAT = typeof jsarguments != "undefined" && jsarguments.length > 1 && jsarguments[1] == "float";
+var floatOn = false;
+function floating(v) { floatOn = v ? true : false; redraw(); }
+function active() { return IS_FLOAT == floatOn; }
+
+// Live frees the device when the set closes or the track is deleted. A timer tick or an answer from the app that
+// arrives after that must not touch the freed panel (that crashed Live once): everything checks `dead` first.
+var dead = false, pending = [];
+function redraw() { if (!dead) mgraphics.redraw(); }
 
 function bang() {                      // live.thisdevice: the Live API is ready now
     st.ready = true;
     task.interval = 400;
     task.repeat();
 }
-function loadbang() { mgraphics.redraw(); }
-function notifydeleted() { task.cancel(); }
+function loadbang() { redraw(); }
+function notifydeleted() {
+    dead = true;
+    task.cancel();
+    for (var i = 0; i < pending.length; i++) { try { pending[i].onreadystatechange = null; pending[i].abort(); } catch (e) { } }
+    pending = [];
+}
 
 function now() { return new Date().getTime(); }
 function connected() { return now() - st.lastOk < 2500; }
-function flash(text) { st.flash = text; st.flashUntil = now() + 3500; mgraphics.redraw(); }
+function flash(text) { st.flash = text; st.flashUntil = now() + 3500; redraw(); }
 
 function request(method, path, body, done) {
+    if (dead) return;
     var r = new XMLHttpRequest();
+    pending.push(r);
     r.open(method, BASE + path);
     r.onreadystatechange = function () {
         if (this.readyState != 4) return;
+        var k = pending.indexOf(this);
+        if (k >= 0) pending.splice(k, 1);
+        if (dead) return;
         var data = null;
         try { data = JSON.parse(this.responseText); } catch (e) { data = null; }
         if (data) st.lastOk = now();
@@ -79,17 +103,18 @@ function request(method, path, body, done) {
 }
 
 function tick() {
+    if (dead) return;
     if (st.busy && now() - st.busyAt < 3000) return;
     st.busy = true; st.busyAt = now();
     request("GET", "/api/live/poll?since=" + st.seq, null, function (d) {
         st.busy = false;
-        if (!d) { mgraphics.redraw(); return; }
+        if (!d) { redraw(); return; }
         var first = st.seq < 0;
-        if (d.cmd && !first && d.seq > st.seq) run(d.cmd);
+        if (d.cmd && !first && d.seq > st.seq && active()) run(d.cmd);
         st.seq = d.seq;
         st.cur = d.current;
-        abFollow();
-        mgraphics.redraw();
+        if (active()) abFollow();
+        redraw();
     });
 }
 
@@ -133,7 +158,7 @@ function jump(c) {
 }
 
 function step(delta, undecided) {
-    request("POST", "/api/live/step", {delta: delta, undecided: undecided}, function (d) { if (d) st.cur = d; mgraphics.redraw(); tick(); });
+    request("POST", "/api/live/step", {delta: delta, undecided: undecided}, function (d) { if (d) st.cur = d; redraw(); tick(); });
 }
 function decide(what) {
     request("POST", "/api/live/decide", {decision: what}, function (d) { if (d) { st.cur = d; flash(what == "approve" ? "Approved" : "Skipped"); } });
@@ -179,7 +204,7 @@ function setAB(state) {
     request("POST", "/api/ab/state", {id: c.id, state: state}, function (d) {
         if (d && d.diff !== null && d.diff !== undefined) flash((st.ab.blind ? "" : state + " · ") + "levels matched (" + (d.diff > 0 ? "+" : "") + d.diff + " dB)");
     });
-    mgraphics.redraw();
+    redraw();
 }
 function abFollow() {                     // moving to another finding puts the last one back to A
     var c = st.cur;
@@ -204,7 +229,7 @@ function choose(which) {
               (d && d.n > 1 ? "  (B " + d.b + " of " + d.n + " times)" : ""));
     });
     st.ab.blind = null;
-    mgraphics.redraw();
+    redraw();
 }
 function match() {
     var on = !(st.cur && st.cur.match);
@@ -265,7 +290,7 @@ function paint() {
         button("Open app", 8, 70, false, "app");
         return;
     }
-    text(c.song + "  ·  " + c.n + " of " + c.of + "  ·  " + c.left + " open", 78, y, mute, 10, false);
+    text(c.song + "  ·  " + c.n + " of " + c.of + "  ·  " + c.left + " open" + (active() ? "" : IS_FLOAT ? "  (off)" : "  ·  floating"), 78, y, mute, 10, false);
     y = 36;
     text(String(c.severity || "").toUpperCase(), 8, y, SEV[c.severity] || mute, 9, true);
     text((c.track || "") + "   " + (c.where || ""), 58, y, ink, 11, true);
@@ -313,7 +338,7 @@ function act(a) {
     else if (a == "next") step(1, false);
     else if (a == "open") step(1, true);
     else if (a == "approve" || a == "skip") decide(a);
-    else if (a == "brace") { st.brace = !st.brace; mgraphics.redraw(); }
+    else if (a == "brace") { st.brace = !st.brace; redraw(); }
     else if (a == "app") max.launchbrowser(BASE + "/");
     else if (a == "A" || a == "B") setAB(a);
     else if (a == "X" || a == "Y") setAB(st.ab.blind[a]);
@@ -352,8 +377,53 @@ def build_patch(patch):
                          "numoutlets": 1, "outlettype": [""], "parameter_enable": 0,
                          "patching_rect": [160.0, 70.0, float(W), float(H)], "presentation": 1,
                          "presentation_rect": [0.0, 0.0, float(W), float(H)]}})
-    p["boxes"] = keep
-    p["lines"] = list(p["lines"]) + [{"patchline": {"destination": ["obj-21", 0], "source": ["obj-20", 0]}}]
+    def box(i, text, rect, nin, outs, **kw):
+        return {"box": dict({"id": i, "maxclass": "newobj", "numinlets": nin, "numoutlets": len(outs), "outlettype": outs,
+                             "patching_rect": rect, "text": text}, **kw)}
+    def line(a, ao, b, bi=0):
+        return {"patchline": {"source": [a, ao], "destination": [b, bi]}}
+    # Float: a toggle (a device parameter, so it is saved with the set) opens the same panel in a floating window
+    toggle = {"box": {"id": "obj-22", "maxclass": "live.text", "mode": 1, "text": "Float", "texton": "Float", "fontsize": 9.0,
+                      "numinlets": 1, "numoutlets": 2, "outlettype": ["", ""], "parameter_enable": 1,
+                      "patching_rect": [640.0, 34.0, 44.0, 15.0], "presentation": 1,
+                      "presentation_rect": [float(W - 48), 4.0, 44.0, 15.0],
+                      "saved_attribute_attributes": {"valueof": {"parameter_enum": ["off", "on"], "parameter_longname": "Float",
+                                                                 "parameter_shortname": "Float", "parameter_type": 2,
+                                                                 "parameter_mmax": 1, "parameter_initial_enable": 1,
+                                                                 "parameter_initial": [0]}}, "varname": "Float"}}
+    sub = {"fileversion": 1, "appversion": p.get("appversion", {}), "classnamespace": "box",
+           "rect": [560.0, 470.0, float(W), float(H)], "toolbarvisible": 0, "enablehscroll": 0, "enablevscroll": 0,
+           "gridonopen": 2, "statusbarvisible": 0, "default_fontsize": 12.0,
+           "boxes": [
+               {"box": {"id": "obj-1", "maxclass": "jsui", "filename": "hypnomix_device.js", "jsarguments": ["float"], "border": 0,
+                        "numinlets": 1, "numoutlets": 1, "outlettype": [""], "parameter_enable": 0,
+                        "patching_rect": [0.0, 0.0, float(W), float(H)]}},
+               box("obj-2", "live.thisdevice", [10.0, 200.0, 83.0, 22.0], 1, ["bang", "int", "int"]),
+               box("obj-3", "r ---hypnomixfloat", [110.0, 200.0, 110.0, 22.0], 0, [""]),
+               box("obj-4", "loadbang", [10.0, 240.0, 58.0, 22.0], 1, ["bang"]),
+               {"box": {"id": "obj-5", "maxclass": "message", "numinlets": 2, "numoutlets": 1, "outlettype": [""],
+                        "patching_rect": [10.0, 270.0, 400.0, 22.0],
+                        "text": "window flags float, window flags nogrow, window flags nozoom, window flags nominimize, title hypnomix, window exec"}},
+               box("obj-6", "thispatcher", [10.0, 300.0, 69.0, 22.0], 1, ["", ""], save=["#N", "thispatcher", ";", "#Q", "end", ";"]),
+               {"box": {"id": "obj-7", "maxclass": "inlet", "comment": "", "index": 1, "numinlets": 0, "numoutlets": 1,
+                        "outlettype": [""], "patching_rect": [240.0, 200.0, 30.0, 30.0]}}],
+           "lines": [line("obj-2", 0, "obj-1"), line("obj-3", 0, "obj-1"), line("obj-4", 0, "obj-5"), line("obj-5", 0, "obj-6")]}
+    extra = [toggle,
+             box("obj-23", "prepend floating", [640.0, 60.0, 98.0, 22.0], 1, [""]),
+             box("obj-24", "s ---hypnomixfloat", [640.0, 90.0, 110.0, 22.0], 1, []),
+             box("obj-25", "r ---hypnomixfloat", [300.0, 34.0, 110.0, 22.0], 0, [""]),
+             box("obj-26", "sel 1 0", [770.0, 60.0, 46.0, 22.0], 3, ["bang", "bang", ""]),
+             {"box": {"id": "obj-27", "maxclass": "message", "numinlets": 2, "numoutlets": 1, "outlettype": [""],
+                      "patching_rect": [770.0, 90.0, 37.0, 22.0], "text": "open"}},
+             {"box": {"id": "obj-28", "maxclass": "message", "numinlets": 2, "numoutlets": 1, "outlettype": [""],
+                      "patching_rect": [815.0, 90.0, 39.0, 22.0], "text": "close"}},
+             box("obj-29", "pcontrol", [770.0, 120.0, 55.0, 22.0], 1, [""]),
+             box("obj-30", "p hypnomix_panel", [770.0, 150.0, 104.0, 22.0], 1, [], patcher=sub)]
+    p["boxes"] = extra + keep            # the toggle is listed first: it sits in front of the panel
+    p["lines"] = list(p["lines"]) + [line("obj-20", 0, "obj-21"), line("obj-25", 0, "obj-21"),
+                                     line("obj-22", 0, "obj-23"), line("obj-23", 0, "obj-24"), line("obj-22", 0, "obj-26"),
+                                     line("obj-26", 0, "obj-27"), line("obj-26", 1, "obj-28"),
+                                     line("obj-27", 0, "obj-29"), line("obj-28", 0, "obj-29"), line("obj-29", 0, "obj-30")]
     p["openinpresentation"] = 1
     p["devicewidth"] = float(W)
     p["description"] = "hypnomix: review findings from inside Live and jump to each one"
