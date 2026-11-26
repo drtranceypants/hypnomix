@@ -130,7 +130,8 @@ track. It offers clip-gain raises up to the track's usual level, never closer th
 ## Level line to line: vocallevel
 
 Does the vocal stay at an even level from one lyric line to the next, and do the upper harmonies sit just under
-the melody? `vocallevel` checks both, line by line (a line is one phrase of the lead singer's track). The first
+the melody? `vocallevel` checks both, line by line (a line is one phrase of the whole vocal stack, any part
+singing, so a line only the harmonies sing counts too; `--lines-from TRACK` takes the lines from one track). The first
 pass runs it for you; run it again before every final export, because restored comps, re-tuned notes and fader
 moves made since the scan can change it.
 
@@ -142,8 +143,8 @@ hypnomix vocallevel "Song.als" --heard "solo exports/" --apply "Song (levels).al
 
 | check | what it flags |
 |---|---|
-| upper | a part pitched above the melody that is louder than the melody minus 1.5 dB on a line (`--upper-under`); parts below the melody are never flagged |
-| jump | a line where the whole stack is 1.5 dB or more louder or quieter than the lines around it (`--jump`) |
+| upper | a part pitched above the melody that is louder than the melody minus 1.5 dB on a line (`--upper-under`); parts below the melody are never flagged, and lines where the melody is silent or more than 6 dB under its usual level are skipped (the harmonies carry them) |
+| jump | a line where the whole stack (every part summed, as heard) is 1.5 dB or more louder or quieter than the lines around it (`--jump`) |
 
 `--melody` names the part the others are measured against: the lead as heard. If the track called "Lead" is
 turned well down and a lower harmony carries the tune, name that harmony. `--heard` (solo exports) measures what
@@ -151,9 +152,16 @@ you actually hear; `--renders` is a quicker first look, and differences read lar
 aren't applied.
 
 `--apply` writes the fixes as volume automation on a **new** set: each upper part lowered on the lines where it
-is over, then the stack's lines evened out on the vocal group's volume. Changes ramp in the gaps between lines,
-existing automation is kept, and the song's last two lines are never raised (`--keep-ending`), because an ending
-that dies away is usually on purpose.
+is over, then the stack's lines evened out on the vocal group's volume. The automation is always gentle:
+
+- every change is a smooth S-curve about 1.2 s long (a raised-cosine shape, a point every 0.1 s), centred in the
+  gap between lines, so two close lines blend instead of stepping; the output reports the steepest move in dB/s
+- a line is moved at most 3 dB either way and an upper part lowered at most 4 dB on a line; a bigger gap is
+  reported as "capped" for you to check by ear (it's usually an arrangement choice or a comp problem)
+- a group that also holds non-vocal tracks (say strings filed in a "Vocals" group) is never automated, since the
+  strings would ride every vocal line; the line evening goes on each vocal track instead
+- existing automation is kept and offset, and the song's last two lines are never raised (`--keep-ending`),
+  because an ending that dies away is usually on purpose
 
 ## Polish: deess and breaths
 
