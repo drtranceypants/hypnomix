@@ -1,7 +1,6 @@
 ---
 title: Getting Started
 subtitle: What hypnomix is, how it thinks, and your first hour with it
-file: 1 - Getting Started
 ---
 
 # Welcome

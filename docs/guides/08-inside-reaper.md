@@ -1,7 +1,6 @@
 ---
 title: hypnomix in REAPER
 subtitle: Scan a REAPER project, approve the fixes, and build a mastering chain from REAPER's own plug-ins
-file: 8 - hypnomix in REAPER
 wiki_id: reaper
 ---
 

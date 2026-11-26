@@ -1,7 +1,6 @@
 ---
 title: Inside Live, Faster Reviews
 subtitle: Measure while you play, tell hypnomix what things are, A/B every fix in Live, and decide 100 findings without losing control
-file: 7 - Inside Live and Faster Reviews
 ---
 
 # Inside Live

@@ -1,7 +1,6 @@
 ---
 title: Timing, Tempo & Motion
 subtitle: Tidy what distracts, keep the groove, and keep long loops alive
-file: 5 - Timing Tempo and Motion
 ---
 
 # A grid is a tool, not a target

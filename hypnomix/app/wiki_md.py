@@ -1,8 +1,8 @@
-"""The PDF guides (docs/guides/NN-*.md) as wiki articles, so one Markdown file feeds the PDF, the app and the site.
+"""The guides (docs/guides/NN-*.md) as wiki articles, so one Markdown file feeds the app and the site.
 
 A guide's front matter gives the article its title (title:), subtitle (subtitle:), and optionally its id
 (wiki_id:, else the file name without its number) and home page summary (teaser:). The Markdown is the small
-subset the guides use (build.py makes the PDFs from the same files): headings, paragraphs, lists, tables,
+subset the guides use: headings, paragraphs, lists, tables,
 ```bash blocks, > Tip: / > Careful: notes, `code`, **bold**, *italics* and [links](url).
 """
 import html
@@ -220,10 +220,6 @@ def article(path):
     meta, text = front(Path(path).read_text())
     body = to_html(text)
     num = re.match(r"^(\d+)-", Path(path).name)
-    pdf = meta.get("file")
-    if pdf:
-        body += (f'\n<p class="note-box">This guide is also a PDF: <i>hypnomix {html.escape(pdf)}</i>, in '
-                 f"<code>docs/guides/pdf/</code> of your hypnomix folder.</p>")
     plain = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", body))).strip()
     aid = guide_id(path, meta)
     from hypnomix.app.wiki import SITE
@@ -233,7 +229,7 @@ def article(path):
 
 
 def commands_article():
-    """The command reference (PDF guide 9), built from hypnomix's own command list each time, so it never lags."""
+    """The command reference, built from hypnomix's own command list each time, so it never lags."""
     from hypnomix import cli
     lines = ["Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full options and examples. "
              "Commands that change a Live set or a REAPER project always write a new one next to the original.", ""]

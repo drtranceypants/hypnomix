@@ -1,7 +1,6 @@
 ---
 title: The First Pass
 subtitle: Preferences → scan → review → fix → verify, the safe way to clean up a song
-file: 2 - The First Pass
 ---
 
 # The loop

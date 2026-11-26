@@ -1,7 +1,6 @@
 ---
 title: Vocal Production
 subtitle: Tuning, harmony balance, comp edges, hiss, breaths and esses, without losing the singer
-file: 4 - Vocal Production
 ---
 
 # The voice first

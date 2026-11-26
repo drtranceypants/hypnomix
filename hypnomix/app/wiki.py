@@ -1,9 +1,9 @@
 """The hypnomix wiki: one set of articles for the app's Wiki tab and the website's /wiki/ page.
 
 Source: one file per article in hypnomix/app/wiki/articles/ ("NN-id.html": NN sets the order), an HTML
-fragment under a short header, and the images and videos it shows in hypnomix/app/wiki/assets/. The PDF guides
+fragment under a short header, and the images and videos it shows in hypnomix/app/wiki/assets/. The guides
 (docs/guides/NN-*.md) are articles too, in the Guides group, read straight from their Markdown (wiki_md.py), so
-one file feeds the PDF, the app and the website:
+one file feeds the app and the website:
 
     <!--
     title: The first pass
@@ -81,7 +81,7 @@ def parse(path):
 
 
 def guides_dir(root=None):
-    """The PDF guides' Markdown: docs/guides in a checkout, or the copy bundled with an installed hypnomix."""
+    """The guides' Markdown: docs/guides in a checkout, or the copy bundled with an installed hypnomix."""
     root = Path(root) if root else HERE
     for d in (root.resolve().parents[2] / "docs" / "guides", root / "guides", root / "docs" / "guides"):
         if d.is_dir():

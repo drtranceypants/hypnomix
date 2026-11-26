@@ -1,7 +1,6 @@
 ---
 title: Vocal Alignment
 subtitle: Doubles and harmonies that land together, sit with the guide, and fill the stereo field
-file: 3 - Vocal Alignment
 ---
 
 # Tight stacks, human feel

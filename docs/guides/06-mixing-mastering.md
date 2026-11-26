@@ -1,7 +1,6 @@
 ---
 title: Mixing, Mastering & Release
 subtitle: From stems to a master that survives phones, cars and every streaming service
-file: 6 - Mixing Mastering and Release
 ---
 
 # Balance, tone, dynamics, space
