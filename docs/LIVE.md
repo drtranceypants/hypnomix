@@ -24,13 +24,18 @@ Main changes level only while you A/B with loudness matching on).
 
 ## 1. Put the probes in
 
-Drag HypnomixProbe onto the last slot of one track and HypnomixMain onto Main, and save. Then:
+No dragging needed. Tick **Live devices** when you start the first pass in the app (it's on by default for a Live
+set), or run:
 
 ```bash
-hypnomix probe insert "Song.als"        # → "Song (probes).als": a probe on every track, return and group
+hypnomix probe insert "Song.als"        # → "Song (hypnomix devices).als"
+hypnomix scan "Song.als" --devices      # or the same as part of the first pass
 ```
 
-Every copy starts at "auto". Open the new set.
+The new set has HypnomixProbe last on every track, group and return, and the Hypnomix review device and HypnomixMain
+on Main; your set is not touched, and a copy made earlier is never overwritten ("… 2", "… 3"). Every probe starts at
+"auto". Install the devices once first (`hypnomix device` and `hypnomix probe device`), then open the new set.
+`--probes-only` puts just the probes in (one on Main too). A probe you already placed is copied as it is.
 
 ## 2. Tell it what things are
 

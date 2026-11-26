@@ -4,7 +4,8 @@
   hypnomix probe device                write HypnomixProbe.amxd, HypnomixMain.amxd + hypnomix_probe.js into your Live
                                        User Library
   hypnomix probe cards SET.als         what you told hypnomix in Live (track roles, the song card), read from the set
-  hypnomix probe insert SET.als        a NEW set with the probe at the end of every track, return and Main
+  hypnomix probe insert SET.als        a NEW set with the probe on every track and return, and the review device and
+                                       HypnomixMain on Main (no need to place one first; --probes-only for probes alone)
   hypnomix probe status                which tracks are sending, with their loudness right now
   hypnomix probe listen [--secs 60]    record what the probes measure while you play (or --bars 33-48 --play)
   hypnomix probe report CAPTURE.json   turn a capture into a review: findings.json + REVIEW.md
@@ -1083,8 +1084,58 @@ def report(capture, out_dir, set_path="", bpb=4, target_name=None, mix=None):
 
 
 # ---------------------------------------------------------------- putting probes into a new set
-def insert(set_path, out=None, include_returns=True):
-    """Copy the probe from the track where you put it once into every track, return and Main, in a NEW set."""
+LIBRARY = Path("~/Music/Ableton/User Library").expanduser()
+DEVICES = Path("Presets/Audio Effects/Max Audio Effect/Hypnomix")     # where `hypnomix device` / `probe device` write
+
+# How Live saves a Max for Live audio effect that comes from a file (copied from a set Live saved with the Hypnomix
+# device in it): a reference to the .amxd and nothing else. Live loads the device from the file when the set opens,
+# so its parameters start at their defaults (a probe at "auto", which is what a fresh probe should be).
+MX_TEMPLATE = """<MxDeviceAudioEffect Id="0"><LomId Value="0" /><LomIdView Value="0" /><IsExpanded Value="true" />
+<BreakoutIsExpanded Value="false" /><On><LomId Value="0" /><Manual Value="true" /><AutomationTarget Id="0">
+<LockEnvelope Value="0" /></AutomationTarget><MidiCCOnOffThresholds><Min Value="64" /><Max Value="127" />
+</MidiCCOnOffThresholds></On><ModulationSourceCount Value="0" /><ParametersListWrapper LomId="0" /><Pointee Id="0" />
+<LastSelectedTimeableIndex Value="0" /><LastSelectedClipEnvelopeIndex Value="0" /><LastPresetRef><Value /></LastPresetRef>
+<LockedScripts /><IsFolded Value="false" /><ShouldShowPresetName Value="true" /><UserName Value="" /><Annotation Value="" />
+<SourceContext><Value><BranchSourceContext Id="0"><OriginalFileRef><FileRef Id="0">{fileref}</FileRef></OriginalFileRef>
+<BrowserContentPath Value="" /><LocalFiltersJson Value="" /><PresetRef />
+<BranchDeviceId Value="device:ableton:audiofx:MxDeviceAudioEffect?n=Max%20Audio%20Effect" /></BranchSourceContext>
+</Value></SourceContext><MpePitchBendUsesTuning Value="true" /><ViewData Value="{{}}" />
+<OverwriteProtectionNumber Value="3076" /><AudioOutputsListWrapper LomId="0" /><AudioInputsListWrapper LomId="0" />
+<MidiOutputsListWrapper LomId="0" /><MidiInputsListWrapper LomId="0" /><PatchSlot><Value><MxPatchRef Id="0"><FileRef>
+{fileref}</FileRef><LastModDate Value="{mtime}" /><SourceContext /><SampleUsageHint Value="0" /></MxPatchRef></Value>
+</PatchSlot><ParameterList><ParameterList /></ParameterList><FileDropList><FileDropList /></FileDropList>
+<IdRefList><IdRefList /></IdRefList><BlobSlot><Value><MxDBlob Id="1"><Blob /><HasData Value="true" /></MxDBlob></Value>
+</BlobSlot><Routables><InRoutings><MxDInRoutable Id="0"><Routable><Target Value="AudioIn/None" />
+<UpperDisplayString Value="No Output" /><LowerDisplayString Value="" /><MpeSettings><ZoneType Value="0" />
+<FirstNoteChannel Value="1" /><LastNoteChannel Value="15" /></MpeSettings><MpePitchBendUsesTuning Value="true" />
+</Routable><LomId Value="0" /></MxDInRoutable></InRoutings><OutRoutings><MxDOutRoutable Id="0"><Routable>
+<Target Value="AudioOut/None" /><UpperDisplayString Value="No Output" /><LowerDisplayString Value="" /><MpeSettings>
+<ZoneType Value="0" /><FirstNoteChannel Value="1" /><LastNoteChannel Value="15" /></MpeSettings>
+<MpePitchBendUsesTuning Value="true" /></Routable><LomId Value="0" /></MxDOutRoutable></OutRoutings><MidiInRoutings />
+<MidiOutRoutings /></Routables><MpeEnabled Value="false" /><MpeTuningEnabled Value="false" /></MxDeviceAudioEffect>"""
+
+
+def device_element(name, library=None):
+    """A fresh Live device entry for one of the hypnomix devices (HypnomixProbe, HypnomixMain, Hypnomix), pointing at
+    the .amxd in the User Library. Raises FileNotFoundError when the device isn't installed there."""
+    import xml.etree.ElementTree as ET
+    from xml.sax.saxutils import quoteattr
+    lib = Path(library).expanduser() if library else LIBRARY
+    f = lib / DEVICES / f"{name}.amxd"
+    if not f.exists():
+        raise FileNotFoundError(f"{f} is not there: run `hypnomix device` and `hypnomix probe device` once to install "
+                                "the devices into your Live User Library")
+    rel = (DEVICES / f"{name}.amxd").as_posix()
+    fileref = (f'<RelativePathType Value="6" /><RelativePath Value={quoteattr(rel)} /><Path Value={quoteattr(str(f))} />'
+               '<Type Value="2" /><LivePackName Value="" /><LivePackId Value="" /><OriginalFileSize Value="0" />'
+               '<OriginalCrc Value="0" /><SourceHint Value="" />')
+    return ET.fromstring(MX_TEMPLATE.format(fileref=fileref, mtime=int(f.stat().st_mtime)))
+
+
+def insert(set_path, out=None, include_returns=True, main=False, review=False, library=None):
+    """A NEW set with HypnomixProbe on every track and return. The probe is copied from one you already put in the set,
+    or made fresh from the installed device when there is none. main=True puts HypnomixMain on Main (instead of a
+    probe), review=True the Hypnomix review device on Main too. Tracks that already have one are left as they are."""
     import copy, gzip
     import xml.etree.ElementTree as ET
     from hypnomix.session import automation as A
@@ -1104,17 +1155,45 @@ def insert(set_path, out=None, include_returns=True):
         if is_probe(d):
             proto = d
             break
-    if proto is None:
-        raise RuntimeError("no probe in this set yet: drag HypnomixProbe onto any one track, save the set, then run "
-                           "this again (Live writes the device's details into the set; hypnomix copies them)")
+    def is_review(d):
+        return d.tag.startswith("MxDevice") and any((e.get("Value") or "").endswith("/Hypnomix.amxd") or
+                                                    (e.get("Value") or "") == "Hypnomix.amxd" for e in d.iter()
+                                                    if e.tag in ("RelativePath", "Path"))
+    try:
+        if proto is None:
+            proto = device_element("HypnomixProbe", library)
+        made = {k: device_element(n, library) for k, n, want in (("main", "HypnomixMain", main), ("review", "Hypnomix", review))
+                if want}
+    except FileNotFoundError as e:
+        raise RuntimeError(str(e))
+    mains = list(root.iter("MainTrack")) + list(root.iter("MasterTrack"))
     lists = []
     for t in list(root.iter("AudioTrack")) + list(root.iter("MidiTrack")) + list(root.iter("GroupTrack")) + \
-            (list(root.iter("ReturnTrack")) if include_returns else []) + list(root.iter("MainTrack")) + list(root.iter("MasterTrack")):
+            (list(root.iter("ReturnTrack")) if include_returns else []) + ([] if main else mains):
         devs = t.find("./DeviceChain/DeviceChain/Devices")
         if devs is not None and not any(is_probe(d) or is_ours(d) for d in devs):
             lists.append(devs)
+    extra = []                                 # (Devices, element): the review device, then HypnomixMain last on Main
+    mdevs = next((t.find("./DeviceChain/DeviceChain/Devices") for t in mains), None)
+    if mdevs is not None:
+        if "review" in made and not any(is_review(d) for d in root.iter() if d.tag.startswith("MxDevice")):
+            extra.append((mdevs, made["review"]))
+        if "main" in made and not any(is_ours(d) for d in mdevs):
+            extra.append((mdevs, made["main"]))
     npi = root.find(".//NextPointeeId")
     nxt = int(npi.get("Value"))
+
+    def renumber(new, devs):
+        nonlocal nxt
+        for e in new.iter():
+            if (e.tag.endswith("Target") or e.tag == "Pointee") and (e.get("Id") or "").isdigit():
+                e.set("Id", str(nxt))
+                nxt += 1
+        used = [int(d.get("Id")) for d in devs if (d.get("Id") or "").isdigit()]
+        new.set("Id", str(max(used) + 1 if used else 0))
+        devs.append(new)
+    for devs, el in extra:
+        renumber(el, devs)
     for devs in lists:
         new = copy.deepcopy(proto)
         for e in new.iter():                  # each copy starts at "auto": what the first track was told is not copied
@@ -1123,19 +1202,19 @@ def insert(set_path, out=None, include_returns=True):
                 dflt, m = e.find("./Default"), e.find("./Timeable/Manual")
                 if dflt is not None and m is not None:
                     m.set("Value", dflt.get("Value"))
-        for e in new.iter():
-            if (e.tag.endswith("Target") or e.tag == "Pointee") and (e.get("Id") or "").isdigit():
-                e.set("Id", str(nxt))
-                nxt += 1
-        used = [int(d.get("Id")) for d in devs if (d.get("Id") or "").isdigit()]
-        new.set("Id", str(max(used) + 1 if used else 0))
-        devs.append(new)
+        renumber(new, devs)
     npi.set("Value", str(nxt))
-    out = Path(out) if out else src.with_name(src.stem + " (probes).als")
+    if out:
+        out = Path(out)
+    else:                                     # never over a copy made earlier (it may have been edited since)
+        tag = "hypnomix devices" if (main or review) else "probes"
+        out, k = src.with_name(f"{src.stem} ({tag}).als"), 2
+        while out.exists():
+            out, k = src.with_name(f"{src.stem} ({tag} {k}).als"), k + 1
     if out.resolve() == src.resolve():
         raise RuntimeError("refusing to overwrite the set: choose another --out")
     A.save(tree, src, out)
-    return out, len(lists)
+    return out, len(lists) + len(extra)
 
 
 # ---------------------------------------------------------------- CLI
@@ -1166,10 +1245,12 @@ def main():
     d = sub.add_parser("device", help="write the probe device into your Live User Library")
     d.add_argument("--out")
     d.add_argument("--template")
-    i = sub.add_parser("insert", help="a new set with the probe on every track (copied from the one you placed)")
+    i = sub.add_parser("insert", help="a new set with the hypnomix devices on every track (no need to place one first)")
     i.add_argument("set")
     i.add_argument("--out")
     i.add_argument("--no-returns", action="store_true")
+    i.add_argument("--probes-only", action="store_true", help="only the probes (a probe on Main too); no HypnomixMain, "
+                   "no review device")
     s = sub.add_parser("status", help="which tracks are sending, loudness right now")
     l = sub.add_parser("listen", help="record the probes while Live plays, then write a review")
     l.add_argument("--secs", type=float, default=0, help="stop after this many seconds (default: when Live stops)")
@@ -1210,16 +1291,19 @@ def main():
             sys.exit(str(e))
         print(f"wrote {od / 'HypnomixProbe.amxd'}\n      {od / 'HypnomixMain.amxd'}\n      {od / 'hypnomix_probe.js'}\n"
               f"      {od / 'hypnomix_master.js'}   (keep them together)")
-        print("In Live: drag HypnomixProbe onto the LAST slot of a track (and one onto Main), or put it on one track, "
-              "save, and run `hypnomix probe insert SET.als` for every track.")
+        print("Then `hypnomix probe insert SET.als` (or the first pass with Live devices ticked) writes a copy of the "
+              "set with the devices on every track; or drag HypnomixProbe onto the LAST slot of a track yourself.")
         return
     if a.cmd == "insert":
         try:
-            out, n = insert(a.set, a.out, not a.no_returns)
+            full = not a.probes_only
+            out, n = insert(a.set, a.out, not a.no_returns, main=full, review=full)
         except RuntimeError as e:
             sys.exit(str(e))
         from hypnomix.session import check as C
-        print(f"wrote {out}: probe added to {n} tracks (returns and Main included). The original is unchanged.")
+        print(f"wrote {out}: {n} device(s) added (" + ("HypnomixProbe on every track and return, the review device "
+              "and HypnomixMain on Main" if full else "HypnomixProbe on every track, return and Main") +
+              "). The original is unchanged. Open the new set in Live.")
         err, warn, _ = C.check(str(out), against=a.set)
         for e in err:
             print(f"CHECK ERROR: {e}")

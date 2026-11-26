@@ -68,7 +68,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;
 const get = (u) => fetch(u).then(r => r.json());
 const post = (u, body) => fetch(u, {method:'POST', headers:{'Content-Type':'application/json','X-Hypnomix':TOKEN},
   body: JSON.stringify(body || {})}).then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
-let S = {view:'home', state:null, form:{source:'', mix:'', key:'', like:'', deep:false}, review:null, logAt:0, logLines:[], tool:null};
+let S = {view:'home', state:null, form:{source:'', mix:'', key:'', like:'', deep:false, devices:true}, review:null, logAt:0, logLines:[], tool:null};
 
 __OVJS__
 function go(view, extra) { Object.assign(S, extra || {}); S.view = view; render(); window.scrollTo(0, 0); }
@@ -99,9 +99,10 @@ function homeView() {
       <button data-pick="like:audio">Choose…</button>${f.like ? '<button data-clear="like">Clear</button>' : ''}</div>
     <div class="row"><label for="key">Key <span class="note">(optional)</span></label><input type="text" id="key" placeholder='e.g. F# major: needed before any vocal tuning is applied' value="${esc(f.key)}"></div>
     <div class="row"><label for="deep">Deep scan</label><input type="checkbox" id="deep" ${f.deep ? 'checked' : ''}> <span class="note">also render every track: frequency fights and mic phase (slower)</span></div>
+    ${/\.als$/i.test(f.source || '') ? `<div class="row"><label for="devices">Live devices</label><input type="checkbox" id="devices" ${f.devices ? 'checked' : ''}> <span class="note">also write a copy of the set with the hypnomix devices on every track (probes, the review device, HypnomixMain on Main), next to yours</span></div>` : ''}
     ${!st.mac ? `<div class="row"><label for="src">Path</label><input type="text" id="src" placeholder="paste the path of a set or folder" value="${esc(f.source)}"></div>` : ''}
     <div class="row"><button class="primary" id="scan" ${f.source ? '' : 'disabled'}>Start the first pass</button>
-      <span class="note">Read-only. Close nothing: your set is not touched.</span></div>
+      <span class="note">Read-only. Close nothing: your set is not touched${/\.als$/i.test(f.source || '') && f.devices ? ' (the devices go into a new copy)' : ''}.</span></div>
   </div>
   <h2>Your songs</h2>${songs}
   <p class="note">Kept in ${esc(st.home)}</p>`;
@@ -212,7 +213,7 @@ async function prefsView() {
 
 // ---------------------------------------------------------------- live (probes)
 function liveRows(P) {
-  if (!P.tracks.length) return '<p class="note">No probes are sending. In Live: put <b>HypnomixProbe</b> last on each track and on Main (make it with <code>hypnomix probe device</code>; <code>hypnomix probe insert SET.als</code> copies it to every track), then press play.</p>';
+  if (!P.tracks.length) return '<p class="note">No probes are sending. In Live: put <b>HypnomixProbe</b> last on each track and on Main (install it with <code>hypnomix probe device</code>; <code>hypnomix probe insert SET.als</code>, or the first pass with Live devices ticked, writes a copy of the set with it on every track), then press play.</p>';
   const band = b => b.map(x => `<i style="height:${Math.max(1, Math.min(22, (x + 70) / 3))}px"></i>`).join('');
   return '<table><tr><td>Track</td><td>Told in Live</td><td>Loudness now</td><td class="num">short-term</td><td class="num">peak</td><td>tone (sub → air)</td><td class="num">L/R</td></tr>'
     + P.tracks.map(t => `<tr${t.live ? '' : ' style="opacity:.5"'}><td>${t.main ? '<b>Main</b>' : esc(t.name)}</td>
@@ -279,7 +280,7 @@ document.addEventListener('click', async e => {
     else if (ds.clear) { S.form[ds.clear] = ''; render(); }
     else if (b.id === 'scan') {
       const src = $('#src'); if (src && src.value) S.form.source = src.value;
-      S.form.key = $('#key').value; S.form.deep = $('#deep').checked;
+      S.form.key = $('#key').value; S.form.deep = $('#deep').checked; if ($('#devices')) S.form.devices = $('#devices').checked;
       await post('/api/scan', S.form); S.logLines = []; S.logAt = 0; S.lastStatus = 'running'; await refresh(); go('job');
     }
     else if (ds.open) await openReview(ds.open);

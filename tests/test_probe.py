@@ -133,13 +133,51 @@ class Insert(unittest.TestCase):
             self.assertEqual(len(ids), len(set(ids)))
             self.assertEqual(gzip.open(src).read().decode(), xml)   # original untouched
 
-    def test_needs_one_probe_placed_first(self):
+    def test_without_the_installed_devices_it_says_how_to_install(self):
         with tempfile.TemporaryDirectory() as d:
             src = Path(d) / "Song.als"
             with gzip.open(src, "wb") as fh:
                 fh.write(b'<Ableton><LiveSet><NextPointeeId Value="1"/><Tracks/></LiveSet></Ableton>')
-            with self.assertRaises(RuntimeError):
-                P.insert(src)
+            with self.assertRaisesRegex(RuntimeError, "hypnomix device"):
+                P.insert(src, library=Path(d) / "no library")
+
+    def test_every_device_from_the_library_with_no_probe_placed(self):
+        """The first-pass option: probes everywhere, the review device and HypnomixMain (last) on Main, made fresh."""
+        def tr(tid, kind="AudioTrack"):
+            return (f'<{kind} Id="{tid}"><Name><EffectiveName Value="T{tid}"/></Name>'
+                    f'<DeviceChain><DeviceChain><Devices/></DeviceChain></DeviceChain></{kind}>')
+        xml = (f'<Ableton><LiveSet><NextPointeeId Value="900"/><Tracks>{tr(1)}{tr(2, "MidiTrack")}{tr(3, "ReturnTrack")}'
+               f'</Tracks><MainTrack><DeviceChain><DeviceChain><Devices><Eq8 Id="0"/></Devices></DeviceChain>'
+               f'</DeviceChain></MainTrack></LiveSet></Ableton>')
+        with tempfile.TemporaryDirectory() as d:
+            lib = Path(d) / "User Library"
+            (lib / P.DEVICES).mkdir(parents=True)
+            for n in ("HypnomixProbe", "HypnomixMain", "Hypnomix"):
+                (lib / P.DEVICES / f"{n}.amxd").write_bytes(b"ampf")
+            src = Path(d) / "Song.als"
+            with gzip.open(src, "wb") as fh:
+                fh.write(xml.encode())
+            out, n = P.insert(src, main=True, review=True, library=lib)
+            self.assertEqual(out.name, "Song (hypnomix devices).als")
+            self.assertEqual(n, 5)                                  # 3 probes + review + HypnomixMain
+            root = ET.fromstring(gzip.open(out).read())
+            def names(devs):
+                return [Path(e.find(".//PatchSlot//FileRef/Path").get("Value")).stem if e.tag.startswith("MxDevice")
+                        else e.tag for e in devs]
+            for t in ("AudioTrack", "MidiTrack", "ReturnTrack"):
+                self.assertEqual(names(root.find(f".//{t}/DeviceChain/DeviceChain/Devices")), ["HypnomixProbe"])
+            self.assertEqual(names(root.find(".//MainTrack/DeviceChain/DeviceChain/Devices")),
+                             ["Eq8", "Hypnomix", "HypnomixMain"])
+            rel = root.find(".//MainTrack//PatchSlot//FileRef/RelativePath").get("Value")
+            self.assertEqual(rel, (P.DEVICES / "Hypnomix.amxd").as_posix())
+            ids = [e.get("Id") for e in root.iter() if e.tag in ("AutomationTarget", "Pointee")]
+            self.assertEqual(len(ids), len(set(ids)))
+            self.assertGreater(int(root.find(".//NextPointeeId").get("Value")), max(map(int, ids)))
+            self.assertEqual(gzip.open(src).read().decode(), xml)   # original untouched
+            again, n2 = P.insert(src, main=True, review=True, library=lib)
+            self.assertEqual(again.name, "Song (hypnomix devices 2).als")   # an earlier copy is never overwritten
+            third, n3 = P.insert(out, out=Path(d) / "Third.als", main=True, review=True, library=lib)
+            self.assertEqual(n3, 0)                                 # nothing doubled on a set that has them all
 
 
 if __name__ == "__main__":

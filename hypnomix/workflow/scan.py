@@ -1274,6 +1274,8 @@ def main():
     ap.add_argument("--jobs", type=int, default=4, help="parallel jobs (default 4)")
     ap.add_argument("--deep", action="store_true", help="a set: also render every track and check frequency fights "
                     "and mic phase between tracks (slower)")
+    ap.add_argument("--devices", action="store_true", help="a Live set: also write a NEW set next to it with the "
+                    "hypnomix Max for Live devices on every track (probes, the review device and HypnomixMain on Main)")
     ap.add_argument("--merge", metavar="DIR", help="only rebuild findings.json + REVIEW.md from DIR")
     ap.add_argument("--quick", action="store_true", help="only the checks that read the set itself (files, intent, "
                     "structure): no rendering or audio analysis, seconds")
@@ -1363,6 +1365,25 @@ def main():
     with ThreadPoolExecutor(max_workers=max(1, min(a.jobs, len(groups) or 1))) as ex:
         list(ex.map(run, groups))
     finish(od, since)
+    if a.devices:
+        add_devices(als)
+
+
+def add_devices(als, out=None):
+    """After the first pass: a NEW set next to the original with the hypnomix devices on every track (the probe on
+    every track and return, the review device and HypnomixMain on Main). The scanned set is not touched."""
+    if Path(als).suffix.lower() != ".als":
+        print("\n--devices: only for a Live set; skipped")
+        return None
+    from hypnomix.app import probe as PR
+    try:
+        path, n = PR.insert(als, out, True, main=True, review=True)
+    except RuntimeError as e:
+        print(f"\n--devices: not added: {e}")
+        return None
+    print(f"\nhypnomix devices: {n} added in a new set → {path}\n  open it in Live to measure while you play and review "
+          "inside Live (the original set is unchanged)")
+    return path
 
 
 def finish(od, since=None):

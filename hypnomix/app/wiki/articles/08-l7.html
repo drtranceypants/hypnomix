@@ -9,8 +9,8 @@ group: Training
     <figure class="shot"><img src="/wiki/assets/device-main.png" alt="The HypnomixMain device on Main: genre, key, scale, limiter, loudness target, ceiling, amount, chords and Record and review" loading="lazy" width="1280">
       <figcaption>HypnomixMain, on Main: the song card (left) and the mastering chain (right). The tuning and harmony tools use your key, scale and chords instead of guessing. Mastering uses your target, ceiling, character and amount.</figcaption></figure>
     <ol class="steps">
-      <li>Drag <b>HypnomixProbe</b> onto the last slot of one track and <b>HypnomixMain</b> onto Main. Save the set.</li>
-      <li>Run <code>hypnomix probe insert "Song.als"</code>. It writes a new set with a probe on every track, return and group (each starting at "auto").</li>
+      <li>Start the first pass with <b>Live devices</b> ticked (on by default for a Live set), or run <code>hypnomix probe insert "Song.als"</code>. Either writes a new set, "Song (hypnomix devices).als", with <b>HypnomixProbe</b> on every track, group and return and the review device and <b>HypnomixMain</b> on Main, each starting at "auto". No dragging; your set isn't touched.</li>
+      <li>Open the new set in Live.</li>
       <li>Set the menus where you know better than a guess. They're Live parameters, so they're saved in your set, and the next <code>scan</code> reads them. Leave "auto" anywhere you're happy for hypnomix to work it out by sound.</li>
     </ol>
     <div class="note-box">Modes such as Dorian or Mixolydian are tuned with the notes of their parent major key, so A Dorian is tuned to the notes of G major. Chords you type are kept by the app, matched to the song by its track names.</div>

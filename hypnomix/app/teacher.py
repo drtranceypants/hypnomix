@@ -419,7 +419,7 @@ CHAPTERS = [
             "track: follows the app's review, jumps Live to each finding, Approve / Skip, and A / B / Blind in an A/B set.",
             "**Hypnomix Align** aligns a vocal stack (timing, optionally pitch and formant) to a guide track from inside "
             "Live, writing warp markers into a new set. It's the newest device: keep your original and listen."],
-       how={"live": ["`hypnomix probe insert \"Song.als\"` writes \"Song (probes).als\" with a probe on every track, return and group, and Main on Main.",
+       how={"live": ["Tick Live devices when you start the first pass (or run `hypnomix probe insert \"Song.als\"`): it writes \"Song (hypnomix devices).als\" with a probe on every track, group and return, and the review device and HypnomixMain on Main. No dragging.",
                      "Set each probe's What it is (or leave auto), Priority and Protect; fill in the song card on HypnomixMain. They're Live parameters, so they're saved in the set and `scan` reads them.",
                      "The app's Live tab shows every probe while Live plays; Record → play → Stop makes a review from what was heard (frequency fights, the lead against the band, mono low end, loudness)."]}),
   dict(id="hm-devices-reaper", title="The JSFX in REAPER", daws=("reaper",),

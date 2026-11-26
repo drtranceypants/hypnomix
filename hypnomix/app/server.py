@@ -662,8 +662,12 @@ def make_handler(port):
                             argv += [f"--{k}", str(body[k])]
                     if body.get("deep"):
                         argv.append("--deep")
-                    run_job("scan", f"First pass: {src.name}", [("Scanning (changes nothing)", argv, True),
-                                                               ("Building before / after clips", ["ab", str(d)], False)], d)
+                    steps = [("Scanning (changes nothing)", argv, True),
+                             ("Building before / after clips", ["ab", str(d)], False)]
+                    if body.get("devices") and src.suffix.lower() == ".als":
+                        steps.append(("A copy of the set with the hypnomix devices on every track",
+                                      ["probe", "insert", str(src)], False))
+                    run_job("scan", f"First pass: {src.name}", steps, d)
                     return self.send(200, {"job": JOB["id"], "dir": str(d)})
                 if u.path == "/api/fix":
                     d = scan_dir(body["dir"])
