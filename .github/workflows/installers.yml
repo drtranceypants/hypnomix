@@ -150,8 +150,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # a draft: nobody gets it (the download page and the app's updater follow the latest published release)
+          # until scan-release finds every installer clean and publishes it
           gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
-            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "hypnomix $GITHUB_REF_NAME" \
+            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft --title "hypnomix $GITHUB_REF_NAME" \
               --notes "Installers: Mac (Apple silicon or Intel) and Windows. See the README's Install section."
           gh release upload "$GITHUB_REF_NAME" dist/* -R "$GITHUB_REPOSITORY" --clobber
 
@@ -161,4 +163,5 @@ jobs:
     uses: ./.github/workflows/scan-release.yml
     with:
       tag: ${{ github.ref_name }}
+      publish: true
     secrets: inherit

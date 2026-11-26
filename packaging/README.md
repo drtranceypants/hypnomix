@@ -25,6 +25,14 @@ The release also gets stable names (`Hypnomix-mac-arm64.dmg`, `Hypnomix-mac-inte
 so `https://github.com/drtranceypants/hypnomix/releases/latest/download/<name>` always points at the newest one. The
 Windows job installs the result silently, checks that the app answers, and uninstalls it.
 
+A tagged release starts as a **draft**, so nobody gets it yet. `.github/workflows/scan-release.yml` then scans the
+three installers with Microsoft Defender, ClamAV and VirusTotal (it waits for every engine's verdict), attaches
+`SECURITY-SCAN.md`, and only if nothing is flagged publishes the draft as the latest release, the one the download
+page and the app's updater follow. If anything is flagged, the release stays a draft and the run fails, naming the
+engine. Tags can't be moved, so cut the next version: machine-learning engines sometimes flag one particular build of
+unchanged code (v0.1.4's Apple silicon image got Microsoft's `Wacatac.B!ml`; two rebuilds of the same tag were clean).
+To publish a draft by hand after reading the report: `gh release edit vX.Y.Z --draft=false --latest`.
+
 ## Signing
 
 Unsigned installers work, but macOS Gatekeeper and Windows SmartScreen ask people to allow them once.

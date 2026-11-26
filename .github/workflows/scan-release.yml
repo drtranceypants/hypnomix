@@ -5,6 +5,13 @@
 #     a free account at virustotal.com → your profile → API key → GitHub repo Settings → Secrets → Actions → VT_API_KEY
 # The release gets SECURITY-SCAN.md (every engine's verdict, signature versions, the files' SHA-256) and a
 # summary in its notes. Runs after every tagged installer build, or by hand: Actions → scan-release → Run workflow.
+#
+# The gate: a tagged build makes a DRAFT release (installers.yml) and calls this with publish: true. Only when
+# Defender, ClamAV and every VirusTotal engine find nothing in all three installers is the draft published and made
+# the latest release (which the download page and the app's updater follow). Otherwise it stays a draft, nobody
+# gets it, and this run fails naming the engine. A machine-learning engine can flag one particular build of
+# unchanged code (v0.1.4's Apple silicon image: Microsoft's Wacatac.B!ml; two rebuilds of the same tag were clean),
+# so the usual fix is to cut the next version and let it be scanned again.
 name: scan-release
 
 on:
@@ -13,11 +20,18 @@ on:
       tag:
         description: "Release tag to scan (e.g. v0.1.1)"
         required: true
+      publish:
+        description: "Publish the draft and make it the latest release if every scan is clean"
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       tag:
         type: string
         required: true
+      publish:
+        type: boolean
+        default: false
     secrets:
       VT_API_KEY:
         required: false
@@ -103,29 +117,45 @@ jobs:
         run: |
           mkdir dist
           for f in $FILES; do gh release download "${{ inputs.tag }}" -R "${{ github.repository }}" -p "$f" -D dist; done
-      - name: Upload to VirusTotal
-        id: vt
-        if: env.HAS_VT == 'true'
-        uses: crazy-max/ghaction-virustotal@v4
-        with:
-          vt_api_key: ${{ secrets.VT_API_KEY }}
-          files: dist/*
-          request_rate: 4
-      - name: Report
+      - name: Upload to VirusTotal and wait for every engine's verdict
+        env:
+          VT: ${{ secrets.VT_API_KEY }}
         run: |
           {
             echo "## VirusTotal"; echo
             if [ "$HAS_VT" != "true" ]; then
               echo "Not run: the repository has no VT_API_KEY secret yet."
             else
-              echo "Reports (about 70 antivirus engines, plus sandbox behaviour where VirusTotal runs one). Each link shows the latest verdicts:"; echo
-              echo "${{ steps.vt.outputs.analysis }}" | tr ',' '\n' | while IFS='=' read -r file url; do
-                [ -n "$file" ] && echo "- \`$(basename "$file")\`: $url"
-              done
+              echo "About 70 antivirus engines, plus sandbox behaviour where VirusTotal runs one. Each link shows the latest verdicts:"; echo
             fi
           } > virustotal.md
+          [ "$HAS_VT" = "true" ] || exit 0
+          api() { sleep 16; curl -sS -H "x-apikey: $VT" "$@"; }      # the free API allows 4 requests a minute
+          bad=0
+          for f in dist/*; do
+            name=$(basename "$f"); sha=$(sha256sum "$f" | cut -d' ' -f1)
+            url=$(api https://www.virustotal.com/api/v3/files/upload_url | jq -r .data)
+            id=$(curl -sS -H "x-apikey: $VT" -F "file=@$f" "$url" | jq -r .data.id)
+            [ -n "$id" ] && [ "$id" != null ] || { echo "- \`$name\`: upload failed" >> virustotal.md; bad=1; continue; }
+            r=""; for i in $(seq 1 80); do                            # up to about 25 minutes for a big file
+              r=$(api "https://www.virustotal.com/api/v3/analyses/$id")
+              [ "$(echo "$r" | jq -r .data.attributes.status)" = completed ] && break
+            done
+            if [ "$(echo "$r" | jq -r .data.attributes.status)" != completed ]; then
+              v="analysis not finished in time"; bad=1
+            else
+              n=$(echo "$r" | jq '.data.attributes.stats | .malicious + .suspicious')
+              of=$(echo "$r" | jq '.data.attributes.stats | .malicious + .suspicious + .undetected + .harmless')
+              who=$(echo "$r" | jq -r '[.data.attributes.results[] | select(.category == "malicious" or .category == "suspicious") | "\(.engine_name): \(.result)"] | join("; ")')
+              if [ "$n" = 0 ]; then v="no engine flags it (0 / $of)"; else v="FLAGGED by $n / $of: $who"; bad=1; fi
+            fi
+            echo "$name: $v"
+            echo "- \`$name\`: $v · https://www.virustotal.com/gui/file/$sha" >> virustotal.md
+          done
           cat virustotal.md
+          exit $bad
       - uses: actions/upload-artifact@v4
+        if: always()
         with: { name: virustotal, path: virustotal.md }
 
   report:
@@ -150,3 +180,16 @@ jobs:
           summary=$(grep -E '^- `|^Not run|^Engine|^ClamAV' SECURITY-SCAN.md | head -20)
           printf '%s\n\n## Security scan\n\n%s\n\nFull report: SECURITY-SCAN.md (attached).\n' "$notes" "$summary" > notes.md
           gh release edit "${{ inputs.tag }}" -R "${{ github.repository }}" --notes-file notes.md
+      - name: Publish the release, only if every scan is clean
+        if: inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULTS: "defender=${{ needs.defender.result }} clamav=${{ needs.clamav.result }} virustotal=${{ needs.virustotal.result }}"
+        run: |
+          echo "$RESULTS"
+          if [ "$RESULTS" != "defender=success clamav=success virustotal=success" ]; then
+            echo "::error::Not published: a scan flagged an installer or did not finish ($RESULTS). The release stays a draft, so nobody gets it. See SECURITY-SCAN.md on the draft; usually the fix is to cut the next version."
+            exit 1
+          fi
+          gh release edit "${{ inputs.tag }}" -R "${{ github.repository }}" --draft=false --latest
+          echo "Published ${{ inputs.tag }} as the latest release."
