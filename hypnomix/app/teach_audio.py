@@ -15,9 +15,21 @@ import wave
 from functools import lru_cache
 from pathlib import Path
 
-import numpy as np
+class _Lazy:
+    """numpy and the DSP module, loaded the first time a demo is rendered. The lessons only need this module's list
+    of demos (ids, labels, what to listen for), and the website's wiki build runs on plain Python with no numpy."""
+    def __init__(self, name):
+        self._name, self._mod = name, None
 
-from hypnomix.core import dsp
+    def __getattr__(self, attr):
+        if self._mod is None:
+            import importlib
+            self._mod = importlib.import_module(self._name)
+        return getattr(self._mod, attr)
+
+
+np = _Lazy("numpy")
+dsp = _Lazy("hypnomix.core.dsp")
 
 SR = 44100
 SECONDS = 8.0

@@ -179,6 +179,9 @@ def guide_files(root=None):
     return sorted(f for f in d.glob("[0-9][0-9]-*.md") if not f.name.startswith("99")) if d else []
 
 
+COURSE_ERROR = []          # why the teacher-mode course articles could not be built, if they could not (wiki_build checks)
+
+
 def local(root=None):
     """Every article: the article files, with the guides placed before the Reference group."""
     root = Path(root) if root else HERE
@@ -225,8 +228,11 @@ def local(root=None):
             from hypnomix.app import teacher
             have = {a["id"] for a in arts}
             arts += [a for a in teacher.wiki_all() if a["id"] not in have]
-        except Exception:
+            COURSE_ERROR.clear()
+        except LookupError:
             pass
+        except Exception as e:                # the app's wiki must still open, but the site build must not ship without the course
+            COURSE_ERROR[:] = [f"{type(e).__name__}: {e}"]
         _CACHE.update(key=key, arts=wiki_md.link_files(organise(arts)))
     return _CACHE["arts"]
 

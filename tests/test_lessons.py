@@ -238,5 +238,27 @@ class AssistantNote(unittest.TestCase):
             self.assertNotIn("EQ Eight", note)
 
 
+class NoNumpy(unittest.TestCase):
+    def test_the_course_articles_build_on_plain_python(self):
+        """The website's wiki is built on a machine with no numpy: the course articles must not need it."""
+        import subprocess, sys
+        code = ("import sys\n"
+                "class Block:\n"
+                "    def find_spec(self, name, path=None, target=None):\n"
+                "        if name.split('.')[0] in ('numpy', 'scipy', 'soundfile', 'librosa'):\n"
+                "            raise ModuleNotFoundError(name)\n"
+                "sys.meta_path.insert(0, Block())\n"
+                "from hypnomix.app import wiki\n"
+                "arts = wiki.local()\n"
+                "arts = arts['articles'] if isinstance(arts, dict) else arts\n"
+                "ids = [a['id'] for a in arts]\n"
+                "assert not wiki.COURSE_ERROR, wiki.COURSE_ERROR\n"
+                "assert 'glossary' in ids and 'learn-live-mix' in ids and 'tour-reaper' in ids, len(ids)\n"
+                "print(len(ids))\n")
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr[-800:])
+        self.assertGreater(int(r.stdout.strip() or 0), 100)
+
+
 if __name__ == "__main__":
     unittest.main()

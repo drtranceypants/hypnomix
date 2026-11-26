@@ -227,6 +227,8 @@ def main():
     arts = W.local(src)
     if not arts:
         sys.exit(f"no articles in {src / 'articles'}")
+    if W.COURSE_ERROR:                     # never publish a wiki that silently lost the teacher-mode course
+        sys.exit(f"the teacher-mode course articles could not be built ({W.COURSE_ERROR[0]}): not building the site")
     tpl = Path(a.template).read_text()
     if "<!--WIKI-->" not in tpl:
         sys.exit("the template has no <!--WIKI--> marker")
