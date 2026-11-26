@@ -333,6 +333,20 @@ hypnomix fix "hypnomix-out/scan/Song (remix) (borrow)" --decide borrow-2=approve
 hypnomix fix "hypnomix-out/scan/Song (remix) (borrow)" --approved --out "Song (borrowed).als"
 ```
 
+## REAPER
+
+The same loop on a REAPER project; REAPER can stay open:
+
+```bash
+hypnomix scan "Song.rpp" --mix "Song mix.wav"
+hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).rpp"
+hypnomix reaper start && hypnomix chain master "Song mix.wav" --reaper --verify
+```
+
+`fix` writes fades, volume rides, word-edge fixes, track names and order into one new `.rpp`, and tuned vocals as
+new takes on the person's own items. Not yet for REAPER: timing nudges, vocal-stack item moves, sidechain checks.
+Details: `docs/guides/08-inside-reaper.md`.
+
 ## Other DAWs
 
 Export every track as a full-length file from the same start point, with processing off, then

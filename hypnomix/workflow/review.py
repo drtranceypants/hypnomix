@@ -166,6 +166,7 @@ __OVCSS__
 </main>
 <script>
 const DATA = __DATA__;
+const OUTEXT = /\.rpp$/i.test(DATA.set || '') ? '.rpp' : '.als';   // a REAPER scan is fixed into a new .rpp
 const served = location.protocol.startsWith('http');
 const KEY = 'hypnomix-review:' + DATA.set;
 let dec = Object.assign({}, DATA.decisions);
@@ -254,8 +255,8 @@ function render() {
   document.getElementById('batch').innerHTML = ovBatchHTML({ov: DATA.ov, dec, notes, esc, findings: DATA.findings}, itemHTML);
   document.getElementById('info').innerHTML = info.length ? '<h2 class="sub">Measurements (nothing to decide)</h2>' + info.map(itemHTML).join('') : '';
   document.getElementById('apply').innerHTML = served
-    ? 'Saved as you click. When you are done: <code>hypnomix fix "' + esc(DATA.dir) + '" --approved --out "&lt;Song&gt; (fixed).als"</code>'
-    : 'When you are done: Download decisions, then <code>hypnomix review "' + esc(DATA.dir) + '" --import ~/Downloads/decisions.json</code> and <code>hypnomix fix "' + esc(DATA.dir) + '" --approved --out "&lt;Song&gt; (fixed).als"</code>';
+    ? 'Saved as you click. When you are done: <code>hypnomix fix "' + esc(DATA.dir) + '" --approved --out "&lt;Song&gt; (fixed)' + OUTEXT + '"</code>'
+    : 'When you are done: Download decisions, then <code>hypnomix review "' + esc(DATA.dir) + '" --import ~/Downloads/decisions.json</code> and <code>hypnomix fix "' + esc(DATA.dir) + '" --approved --out "&lt;Song&gt; (fixed)' + OUTEXT + '"</code>';
 }
 __OVJS__
 ovBind(api);

@@ -193,6 +193,7 @@ which spots to compare between the old and new set. When the review is finished,
 |---|---|---|
 | Preferences, sound profile, the person's own standards | `prefs`, `profile`, `taste` (levels, pans, sends, chains from their finished songs), `voices --learn`, `motion --learn` | `~/.hypnomix/` only |
 | Find problems in a set | `scan`, `smooth`, `timing`, `distortion`, `sidechain`, `audit`, `refs`, `mine`, `automation list` | nothing |
+| A REAPER project (see `docs/REAPER.md`) | `project SONG.rpp`, `scan SONG.rpp`, `fix DIR --approved --out NEW.rpp`, `reaper start` (and `status`, `tracks`, `fx`, `params`), `chain master MIX.wav --reaper --verify` | a new `.rpp`; plug-ins on the open REAPER's master (undo steps) |
 | Find problems in recordings | `scan FOLDER`, `stems`, `masking`, `clicks`, `takes`, `align`, `measure`, `spectrogram` | nothing (reports) |
 | Judge a mix | `sections` (give `--bpm`), `match MIX REF`, `translate`, `qc`, `reference`, `punch`, `pitchcheck` | nothing (reports) |
 | Plan many moves for review | `prep --plan`, `automix --plan`, `master --plan` | nothing (findings) |
@@ -246,6 +247,10 @@ Present their output as "measured, please check by ear", and prefer `--report` b
   `timing`, `tighten`, `variations` and `borrow` before `breathe`: they need a constant tempo.
 
 ## Other DAWs (Logic Pro, Pro Tools, anything else)
+
+REAPER is supported directly (`scan`/`fix` on the `.rpp`, the bridge, `chain --reaper`: `docs/REAPER.md`), and
+Ardour sessions can be scanned. For the rest:
+
 
 Today: the file tools and `scan FOLDER`. Ask the person to export each track as a full-length file from the
 same start point, with processing off. Scan the folder, review as above, and `fix` writes repaired copies to

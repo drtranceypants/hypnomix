@@ -180,9 +180,9 @@ def front(text):
 def commands_md():
     sys.path.insert(0, str(HERE.parents[1]))
     from hypnomix import cli
-    out = ["---", "title: Command Reference", "subtitle: Every hypnomix command, by group, in one line each", "file: 8 - Command Reference", "---", "",
+    out = ["---", "title: Command Reference", "subtitle: Every hypnomix command, by group, in one line each", f"file: {len([g for g in HERE.glob('[0-9][0-9]-*.md') if not g.name.startswith('99')]) + 1} - Command Reference", "---", "",
            "# Every command", "", "Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full options and "
-           "examples. Commands that change a Live set always write a new set next to the original.", ""]
+           "examples. Commands that change a Live set or a REAPER project always write a new one next to the original.", ""]
     for group, cmds in cli.GROUPS:
         out += [f"## {group}", "", "| command | what it does |", "|---|---|"]
         out += [f"| `{n}` | {d} |" for n, _, d in cmds]

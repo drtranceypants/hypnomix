@@ -1,6 +1,6 @@
 # hypnomix
 
-**A mixing and mastering engineer for Ableton Live, driven by you or by Claude Code.**
+**A mixing and mastering engineer for Ableton Live and REAPER, driven by you or by Claude Code.**
 
 Hand it a folder of raw stems and get back a cleaned, balanced, mastered song, plus notes that explain every EQ cut, compressor setting and level in plain words. Or keep your hands on your own session: hypnomix sets exact fader dB and plug-in parameters in the open Live set, records A/B loops, and measures what each change did.
 
@@ -119,7 +119,8 @@ so the original take is one click away. Checked against REAPER 7.86's own render
 `hypnomix reaper start` runs a small bridge inside the REAPER that is open (nothing is installed; every change is
 one undo step), and `hypnomix chain master BOUNCE.wav --reaper --verify` builds the mastering chain on REAPER's
 master from stock plug-ins only (ReaEQ, ReaComp, ReaLimit, JS Mid/Side for a clean bass-mono), then has REAPER
-render the song and trims it to your loudness target and true-peak ceiling.
+render the song and trims it to your loudness target and true-peak ceiling. The REAPER guide:
+`docs/guides/08-inside-reaper.md`; how it works underneath: `docs/REAPER.md`.
 
 **Ardour:** the same for an Ardour session (Ardour 3 to 9): `hypnomix project "Song/"` lists tracks, buses,
 regions, plug-ins and automation, `--render` plays the regions the way Ardour layers them (upper regions cover

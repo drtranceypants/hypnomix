@@ -295,6 +295,15 @@ hypnomix profile build song1.wav song2.wav song3.wav song4.wav song5.wav
 
 `loop` and `audit` then flag anything outside your usual range.
 
+### In REAPER
+
+The same loop works on a REAPER project, with REAPER open: `hypnomix scan "Song.rpp"`, review, then
+`hypnomix fix DIR --approved --out "Song (fixed).rpp"` writes what you approved into a new project (fades, rides,
+word edges, track names and order; tuned vocals as new takes on your own items). For the master,
+`hypnomix reaper start` and `hypnomix chain master MIX.wav --reaper --verify` build the chain from REAPER's own
+plug-ins and land it on your loudness target. Every change in REAPER is one undo step. The full walk-through is
+guide 8, `docs/guides/08-inside-reaper.md`.
+
 ---
 
 ## 8. Numbers cheat sheet

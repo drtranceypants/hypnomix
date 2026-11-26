@@ -1,12 +1,12 @@
 ---
 title: Command Reference
 subtitle: Every hypnomix command, by group, in one line each
-file: 8 - Command Reference
+file: 9 - Command Reference
 ---
 
 # Every command
 
-Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full options and examples. Commands that change a Live set always write a new set next to the original.
+Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full options and examples. Commands that change a Live set or a REAPER project always write a new one next to the original.
 
 ## Engineer: stems in, song out
 
@@ -75,6 +75,7 @@ Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full optio
 
 | command | what it does |
 |---|---|
+| `reaper` | talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters |
 | `project` | look inside a REAPER, Ardour or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks |
 
 ## Session files (.als, Live closed or open)
