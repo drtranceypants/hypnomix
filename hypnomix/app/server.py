@@ -148,7 +148,8 @@ def locate(f, tempo, bpb):
     return None
 
 
-def review_payload(d):
+def review_payload(d, light=False):
+    """light: only what the Live device needs (it asks twice a second): no oversight extras, no fix log."""
     from hypnomix.workflow import review as R, prefs as P
     data, dec, ab = R.load(d)
     meta = json.loads((d / "scan.json").read_text()) if (d / "scan.json").exists() else {}
@@ -167,7 +168,7 @@ def review_payload(d):
                 findings=data["findings"], decisions=dec, ab=ab, prefs=P.summary(P.load()),
                 broken=[n for n in notes if "failed" in n or n.startswith("WARNING") or "did NOT run" in n],
                 fix_log=log[-6000:], suggested_out=(Path(source).stem + " (fixed).als") if is_set else "",
-                oversight=ov_payload(d, data["findings"]),
+                oversight={} if light else ov_payload(d, data["findings"]),
                 ab_live=ab_spec(d), blind=json.loads((d / "blind.json").read_text()) if (d / "blind.json").exists() else [])
 
 
@@ -199,7 +200,7 @@ def live_current():
     try:
         d = scan_dir(LIVE["dir"])
         act, dec = actionable(d)
-        payload = {f["id"]: f for f in review_payload(d)["findings"]}
+        payload = {f["id"]: f for f in review_payload(d, light=True)["findings"]}
     except Exception:
         return dict(text="That review is no longer there.", n=0, of=0)
     left = sum(1 for f in act if f["id"] not in dec)
@@ -620,7 +621,7 @@ def make_handler(port):
                     return self.send(200, {})
                 if u.path == "/api/live/jump":
                     d = scan_dir(body["dir"])
-                    f = next((x for x in review_payload(d)["findings"] if x["id"] == body["id"]), None)
+                    f = next((x for x in review_payload(d, light=True)["findings"] if x["id"] == body["id"]), None)
                     if not f or not f.get("jump"):
                         return self.send(400, {"error": "this finding has no place in the set to jump to"})
                     act, _ = actionable(d)

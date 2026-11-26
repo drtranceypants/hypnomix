@@ -997,7 +997,7 @@ def master_findings(wav, prefs, n0=0):
                       fix=f"Limiter gain {'up' if L < t_lufs else 'down'} by {abs(L - t_lufs):.1f} dB, then record again.",
                       value=round(L, 2)))
     for i, f in enumerate(F, 1):
-        f.update(id=f"master-{n0 + i}", tool="probe", group="live", applies="manual")
+        f.update(id=f"export-{n0 + i}", tool="probe", group="live", applies="manual")
     return F, dict(lufs=round(L, 2), true_peak=round(tp, 2), seconds=round(len(y) / sr, 1))
 
 
@@ -1035,6 +1035,9 @@ def report(capture, out_dir, set_path="", bpb=4, target_name=None, mix=None):
         notes.insert(0, f"Recorded master: {Path(mix).name}, {m['seconds']:.0f} s, {m['lufs']} LUFS, {m['true_peak']:+} dBTP. "
                         "It is what Live played (a real-time bounce): use it as the mix for `master`, `qc` and `translate`.")
     (od / "findings.json").write_text(json.dumps({"set": set_path, "notes": notes, "findings": F}, indent=1))
+    # as a group too, so a later `master --plan` (or any merge into this folder) keeps these findings
+    (od / "live.json").write_text(json.dumps({"group": "live", "set": set_path, "seconds": cap.get("ended", 0) - cap.get("started", 0),
+                                              "findings": F, "notes": notes}, indent=1))
     (od / "scan.json").write_text(json.dumps({"mode": "live", "capture": str(Path(capture).resolve()), "card": card,
                                               "mix": str(mix or ""), "set": set_path,
                                               "at": time.strftime("%Y-%m-%d %H:%M")}, indent=1))

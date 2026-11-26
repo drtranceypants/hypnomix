@@ -244,3 +244,23 @@ class ScanReadsCards(unittest.TestCase):
         finally:
             P.read_cards = orig
         self.assertEqual((a.key, a.lead_track), ("A minor", "Lead"))
+
+
+class ReportSurvivesMerge(unittest.TestCase):
+    def test_master_plan_into_the_same_folder_keeps_live_findings(self):
+        from hypnomix.workflow import scan as S
+        cap = capture([("Main", True, rows(lambda i: block(k=0.2, peak=1.2)))])
+        with tempfile.TemporaryDirectory() as d:
+            cf = Path(d) / "c.json"
+            cf.write_text(json.dumps(cap))
+            od = Path(d) / "scan"
+            F = P.report(cf, od)
+            (od / "master.json").write_text(json.dumps({"group": "master", "set": "", "seconds": 1,
+                                                        "findings": [dict(id="master-1", tool="master", kind="limiter",
+                                                                          severity="info", track="mix", where="",
+                                                                          problem="x", fix="y", applies="audio")],
+                                                        "notes": []}))
+            merged, _ = S.merge(od)
+            ids = {f["id"] for f in merged}
+            self.assertIn("master-1", ids)
+            self.assertTrue({f["id"] for f in F} <= ids)

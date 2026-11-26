@@ -67,7 +67,7 @@ GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "devices", "
 FOLDER_GROUPS = ["recordings", "stems"]
 AUDIO_EXT = (".wav", ".aif", ".aiff", ".flac")
 PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow"]         # written by `prep|automix|master --plan`
-ALL_GROUPS = list(dict.fromkeys(GROUPS + FOLDER_GROUPS + PLAN_GROUPS + ["recordings"]))
+ALL_GROUPS = list(dict.fromkeys(GROUPS + FOLDER_GROUPS + PLAN_GROUPS + ["recordings", "live"]))
 SEV = {"high": 0, "medium": 1, "low": 2, "info": 3}
 VOCAL_LABELS = ("Lead Vocal", "Vocal", "Harmony", "Backing Vocal")
 
