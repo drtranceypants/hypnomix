@@ -309,6 +309,57 @@ function C.add_track(a)
   return { index = n }
 end
 
+-- ------------------------------------------------------------------ teacher mode: starting a song
+function C.teach_tempo(a)
+  reaper.SetCurrentBPM(0, tonumber(a.bpm), true)
+  return { bpm = reaper.Master_GetTempo() }
+end
+
+function C.teach_click(a)         -- Options: Toggle metronome (40364)
+  local on = reaper.GetToggleCommandState(40364) == 1
+  if a.on ~= nil and (a.on == "1") ~= on then reaper.Main_OnCommand(40364, 0) end
+  return { on = reaper.GetToggleCommandState(40364) == 1 }
+end
+
+function C.teach_track(a)         -- a new track, armed: input = mono interface input N (1-based) or "midi"
+  local n = reaper.CountTracks(0)
+  reaper.InsertTrackAtIndex(n, true)
+  local tr = reaper.GetTrack(0, n)
+  if a.name then reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", a.name, true) end
+  if a.input == "midi" then
+    reaper.SetMediaTrackInfo_Value(tr, "I_RECINPUT", 6112)     -- 4096 + 63 * 32: every MIDI input, every channel
+  elseif a.input then
+    reaper.SetMediaTrackInfo_Value(tr, "I_RECINPUT", math.max(0, (tonumber(a.input) or 1) - 1))
+  end
+  reaper.SetMediaTrackInfo_Value(tr, "I_RECMON", tonumber(a.monitor or 1))
+  reaper.SetMediaTrackInfo_Value(tr, "I_RECARM", a.arm == "0" and 0 or 1)
+  reaper.TrackList_AdjustWindows(false)
+  return { index = n }
+end
+
+function C.teach_drums(a)         -- a track with ReaSynDr and a looped MIDI item: notes = "pitch,start,len,vel;..." in beats
+  local n = reaper.CountTracks(0)
+  reaper.InsertTrackAtIndex(n, true)
+  local tr = reaper.GetTrack(0, n)
+  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", a.name or "Drums", true)
+  local fx = reaper.TrackFX_AddByName(tr, "ReaSynDr (Cockos)", false, -1)
+  local beats = tonumber(a.beats or 16)
+  local it = reaper.CreateNewMIDIItemInProj(tr, 0, beats, true)
+  local tk = reaper.GetActiveTake(it)
+  local count = 0
+  for p, s, d, v in (a.notes or ""):gmatch("(%d+),([%d.]+),([%d.]+),(%d+)") do
+    local s0 = reaper.MIDI_GetPPQPosFromProjQN(tk, tonumber(s))
+    local s1 = reaper.MIDI_GetPPQPosFromProjQN(tk, tonumber(s) + tonumber(d))
+    reaper.MIDI_InsertNote(tk, false, false, s0, s1, 0, tonumber(p), tonumber(v), true)
+    count = count + 1
+  end
+  reaper.MIDI_Sort(tk)
+  reaper.GetSetMediaItemTakeInfo_String(tk, "P_NAME", a.name or "Drums", true)
+  reaper.SetMediaItemInfo_Value(it, "B_LOOPSRC", 1)
+  reaper.UpdateArrange()
+  return { index = n, fx = fx, notes = count }
+end
+
 function C.close_tab()
   local proj = reaper.EnumProjects(-1, "")
   if not opened_tabs()[tostring(proj)] then return nil, "the open tab was not made by hypnomix: not closing it" end
@@ -412,7 +463,8 @@ end
 
 function C.transport(a)
   if a.at then reaper.SetEditCurPos(tonumber(a.at), true, true) end
-  if a.go == "play" then reaper.OnPlayButton() elseif a.go == "stop" then reaper.OnStopButton() end
+  if a.go == "play" then reaper.OnPlayButton() elseif a.go == "stop" then reaper.OnStopButton()
+  elseif a.go == "record" then reaper.CSurf_OnRecord() end
   return { state = reaper.GetPlayState(), pos = reaper.GetPlayPosition() }
 end
 
@@ -760,7 +812,8 @@ local function align_draw()
   gfx.update()
 end
 
-local CHANGES = { jump = false, set_pins = true, remove_fx = true, add_track = true, add_fx = true, set_param = true, set_named = true, fx_enable = true, set_track = true }
+local CHANGES = { jump = false, set_pins = true, remove_fx = true, add_track = true, add_fx = true, set_param = true, set_named = true, fx_enable = true, set_track = true,
+                  teach_tempo = true, teach_click = true, teach_track = true, teach_drums = true }
 local running = true
 function C.quit() running = false; return { bye = true } end
 

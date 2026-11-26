@@ -201,6 +201,40 @@ class TrackHandler(AbletonOSCHandler):
             return (1, item.name, len(track.devices))
         self.osc_server.add_handler("/live/track/load_stock_device", create_track_callback(track_load_stock_device))
 
+        # hypnomix patch (teacher mode): load an instrument or a drum kit from Live's browser onto a track.
+        # params: category ("drums" or "instruments"), the name or part of it (case-insensitive; empty: the first
+        # drum kit). Folders are searched three levels deep.
+        def track_load_browser_item(track, params):
+            import Live
+            cat = str(params[0]) if params else "drums"
+            want = str(params[1]).lower() if len(params) > 1 else ""
+            browser = Live.Application.get_application().browser
+            root = browser.drums if cat == "drums" else browser.instruments
+
+            def ok(child):
+                n = child.name.lower()
+                return want in n if want else "kit" in n
+
+            def find(item, depth):
+                for child in item.children:
+                    if child.is_loadable and ok(child):
+                        return child
+                if depth < 3:
+                    for child in item.children:
+                        if child.is_folder:
+                            hit = find(child, depth + 1)
+                            if hit:
+                                return hit
+                return None
+
+            item = find(root, 0)
+            if item is None:
+                return (0, "not found: " + want)
+            self.song.view.selected_track = track
+            browser.load_item(item)
+            return (1, item.name, len(track.devices))
+        self.osc_server.add_handler("/live/track/load_browser_item", create_track_callback(track_load_browser_item))
+
         # hypnomix patch: what Live would display for a send at a given raw value (for exact-dB sends)
         def track_get_send_string_for(track, params):
             send = track.mixer_device.sends[int(params[0])]

@@ -68,6 +68,9 @@ PLACE = {"inside-live": DAW_LIVE, "live": DAW_LIVE, "reaper": DAW_REAPER, "reape
          "agents-doc": AI_AGENT, "claude": AI_AGENT}
 
 
+DAW_GROUP = {"live": DAW_LIVE, "reaper": DAW_REAPER, "ardour": DAW_ARDOUR, "other": DAW_OTHER}
+
+
 def organise(arts):
     """Order the groups (GROUP_ORDER), keeping each group's own order. A group not in the list stays with the
     article before it, so a new group lands where its files put it until it is given a place here."""
@@ -164,8 +167,9 @@ def local(root=None):
     docs = doc_files(root)
     skills = skill_files(root) + agent_files(root)
     cli = Path(__file__).resolve().parents[1] / "cli.py"
+    teach = Path(__file__).with_name("teacher.py")              # the teacher-mode courses are articles too
     key = (str(root), tuple((str(f), f.stat().st_mtime) for f in files + guides + docs + skills
-                            + ([cli] if cli.exists() else [])))
+                            + [x for x in (cli, teach) if x.exists()]))
     if _CACHE.get("key") != key:
         from hypnomix.app import wiki_md
         arts = [parse(f) for f in files]
@@ -194,6 +198,15 @@ def local(root=None):
                 arts = arts[:at] + [cmd] + arts[at:]
             except Exception:                                      # never let it take the wiki down
                 pass
+        try:                                  # teacher mode's courses, one per DAW and level (the real wiki only)
+            if root.resolve() != Path(__file__).with_name("wiki").resolve():
+                raise LookupError
+            from hypnomix.app import teacher
+            have = {a["id"] for a in arts}
+            arts += [a for a in (teacher.wiki_article(d, lv) for d in teacher.DAWS for lv in ("101", "tour"))
+                     if a["id"] not in have]
+        except Exception:
+            pass
         _CACHE.update(key=key, arts=wiki_md.link_files(organise(arts)))
     return _CACHE["arts"]
 
@@ -295,6 +308,11 @@ def index():
     if settings()["live"]:
         refresh_live()
     arts, about = current()
+    try:                                       # the DAW chosen in Setup: the Wiki puts its pages first
+        from hypnomix.app import setup as SU
+        about["daw"] = SU.load().get("daw", "")
+    except Exception:
+        about["daw"] = ""
     return {"about": about, "articles": [{k: a.get(k, "") for k in ("id", "group", "title", "sub", "no", "text", "url")}
                                          for a in arts]}
 

@@ -29,8 +29,10 @@ const css = `
 #su a{color:var(--accent)}#su .small{font-size:.85rem;color:var(--mute)}`;
 const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
 
-let U = null, step = 0, mode = '', prov = 'gemini', loc = 'ollama', key = '', model = '', listen = true, msg = null, busy = false, liveLog = '', cliDone = null;
-const STEPS = ['Welcome', 'How you work', 'Connect', 'Ableton Live', 'Extras', 'Done'], LAST = STEPS.length - 1;
+let U = null, step = 0, mode = '', daw = '', teach = '', prov = 'gemini', loc = 'ollama', key = '', model = '', listen = true, msg = null, busy = false, liveLog = '', cliDone = null;
+const DAWNAME = {live: 'Ableton Live', reaper: 'REAPER', ardour: 'Ardour'};
+const steps = () => ['Welcome', 'How you work', 'Your DAW', 'Connect', DAWNAME[daw] || 'Connect your DAW', 'Extras', 'Done'];
+const LAST = 6, EXTRAS = 5;
 let poll = null;
 const ext = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u.replace(/^https?:\/\//, ''))}</a>`;
 const list = (xs, cls) => `<ul class="${cls}">${xs.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
@@ -38,7 +40,7 @@ const list = (xs, cls) => `<ul class="${cls}">${xs.map(x => `<li>${esc(x)}</li>`
 async function open(force) {
   try { U = await get('/api/setup/state'); } catch (e) { return; }
   if (U.done && !force) return;
-  mode = U.mode || ''; step = force && U.done ? 1 : 0; msg = null; liveLog = ''; cliDone = null;
+  mode = U.mode || ''; daw = U.daw || ''; teach = U.teach_level || ''; step = force && U.done ? 1 : 0; msg = null; liveLog = ''; cliDone = null;
   const sp = U.settings.provider, saved = (U.settings.providers.find(p => p.id === sp) || {}).key_hint;
   prov = U.providers[sp] && saved ? sp : 'gemini';     // the recommended free start, unless a key is already saved
   if (sp === 'ollama' || sp === 'custom') loc = sp === 'ollama' ? 'ollama' : 'lmstudio';
@@ -50,10 +52,10 @@ window.openSetup = () => open(true);
 
 function draw() {
   const d = document.getElementById('su'); if (!d) return;
-  const body = [welcome, choose, connect, live, extras, done][step]();
-  const canNext = step !== 1 || mode;
+  const body = [welcome, choose, pickDaw, connect, dawStep, extras, done][step]();
+  const canNext = (step !== 1 || mode) && (step !== 2 || daw);
   d.innerHTML = `<div class="box" role="dialog" aria-modal="true" aria-label="hypnomix setup">
-    <div class="steps">${STEPS.map((s, i) => `<span class="${i === step ? 'on' : ''}">${i + 1}. ${s}</span>`).join('')}</div>
+    <div class="steps">${steps().map((s, i) => `<span class="${i === step ? 'on' : ''}">${i + 1}. ${s}</span>`).join('')}</div>
     ${body}
     <div class="nav"><div>${step > 0 ? '<button class="ghost" data-su="back">Back</button>' : ''}
       <button class="ghost" data-su="skip">${step === LAST ? 'Close' : 'Skip setup'}</button></div>
@@ -63,7 +65,8 @@ function draw() {
 function welcome() {
   return `<h2>Welcome to hypnomix</h2><p class="sub">Two minutes of setup. You can change any of it later with the <b>Setup</b> button.</p>
   <p>hypnomix finds the technical problems in a song (clicks, late hits, flat notes, hiss, clashing frequencies, loudness) and proposes a fix for each. You hear it, then approve or skip it. It never changes your original set.</p>
-  <p>First, how do you want to work: on your own in the app, or with an AI to explain things and do the clicking? Every way gives you the same tools.</p>`;
+  <p>First, how do you want to work: on your own in the app, or with an AI to explain things and do the clicking? Every way gives you the same tools.</p>
+  <p>On the next steps you can turn on <b>teacher mode</b>: a guided tour of hypnomix in your DAW if you already engineer, or a 101 crash course from an empty song to a finished master if you're new to audio.</p>`;
 }
 
 function choose() {
@@ -116,14 +119,47 @@ function connect() {
   <p class="small">The app stays useful alongside: review findings with the A/B players while the agent works. The optional extras (reference matching, your own plug-ins, stem separation) are on the <b>Extras</b> step.</p>`;
 }
 
+function pickDaw() {
+  return `<h2>Which DAW do you use?</h2><p class="sub">A DAW is the program you record and mix in. The Wiki and the lessons follow your choice; you can change it later.</p>
+  <div class="modes">${U.daws.map(d => `<button class="mode ${daw === d.id ? 'sel' : ''}" data-daw="${d.id}"><b>${esc(d.title)}</b><p>${esc(d.note)}</p></button>`).join('')}</div>
+  <h3 style="margin:20px 0 6px;font-size:1.05rem">Teacher mode</h3>
+  <p class="small" style="margin:0 0 8px">A guided course in the <b>Teacher</b> tab, in ${esc(DAWNAME[daw] || 'your DAW')}. No AI needed${mode === 'key' || mode === 'local' ? '; the Assistant can explain any step in more detail' : ''}. ${daw === 'live' || daw === 'reaper' ? `hypnomix can do the hands-on steps in ${DAWNAME[daw]} for you, asking first each time.` : daw === 'ardour' ? 'For Ardour it shows you where to click (hypnomix can\'t drive Ardour yet).' : 'Courses exist for Live, REAPER and Ardour.'}</p>
+  <div class="modes" style="grid-template-columns:1fr 1fr 1fr">${[
+    ['', 'No thanks', 'Straight to the app. You can start a course later from the Teacher tab.'],
+    ['tour', 'Show me hypnomix', `For people who already record and mix: hypnomix with ${DAWNAME[daw] || 'your DAW'}, the devices we've built for it, the song card, A/B inside the DAW, the mastering chain.`],
+    ['101', 'The 101 crash course', 'New to audio? The words and the screen, recording to a click (with a drum beat to play over, if you like), arming a track and setting the input gain, each effect as you add it, mastering, then the hypnomix tour.'],
+  ].map(([id, t, d]) => `<button class="mode ${teach === id ? 'sel' : ''}" data-teach="${id}" ${daw === 'other' && id ? 'disabled' : ''}><b>${t}</b><p>${esc(d)}</p></button>`).join('')}</div>`;
+}
+
+function dawStep() {
+  if (daw === 'reaper') {
+    const r = U.reaper;
+    return `<h2>REAPER</h2><p class="sub">Optional: lets hypnomix work in the open REAPER (the mastering chain, the review panel${teach ? ', and the lessons\' hands-on steps' : ''}). Reading and scanning projects works without it.</p>
+    ${r.running ? '<div class="msg ok">The bridge is running in REAPER.</div>' : `<p>The bridge is a script that runs inside REAPER while it's open. Nothing is installed and no REAPER setting changes; it stops when REAPER quits.</p>
+    <button class="act" data-su="reaper" ${busy || !r.found ? 'disabled' : ''}>${busy ? 'Starting…' : 'Start the bridge (opens REAPER if it\'s closed)'}</button>
+    ${r.found ? '' : '<div class="msg bad">REAPER wasn\'t found on this computer. Install it from reaper.fm, then come back.</div>'}`}${msgHtml()}
+    <p class="small">Next time, start it from a terminal with <code>hypnomix reaper start</code>, or from this step. See Wiki → hypnomix in REAPER.</p>`;
+  }
+  if (daw === 'ardour') return `<h2>Ardour</h2><p class="sub">Nothing to install.</p>
+    <p>hypnomix reads Ardour 3 to 9 sessions and scans them: on the Songs tab, choose the session folder (or its <code>.ardour</code> file). It can't change the open Ardour yet, so the changes you approve are listed for you to make.</p>
+    ${teach ? '<p>The Teacher tab shows you where to click in Ardour for every step.</p>' : ''}<p class="small">See Wiki → hypnomix with Ardour.</p>`;
+  if (daw === 'other') return `<h2>Your DAW</h2><p class="sub">Nothing to install.</p>
+    <p>Export every track as a WAV from the same start point (most DAWs call it "export stems" or "bounce tracks"), put them in one folder, and scan that folder on the Songs tab. Repaired audio comes back as new files.</p><p class="small">See Wiki → Any other DAW.</p>`;
+  return live();
+}
+
 function live() {
   const l = U.live;
+  if (l.installed && teach && !l.teach_ready) return `<h2>Ableton Live</h2><div class="msg ok">Connected: the AbletonOSC remote script is installed.</div>
+    <p>Teacher mode adds drum beats and new tracks in Live, which needs this version's copy of the script. Updating keeps a backup of the old one.</p>
+    <button class="act" data-su="live" ${busy ? 'disabled' : ''}>${busy ? 'Copying…' : 'Update the connection'}</button>${msgHtml()}
+    <p class="small">Then restart Live.</p>${liveLog ? `<pre>${esc(liveLog)}</pre>` : ''}`;
   if (l.installed) return `<h2>Ableton Live</h2><div class="msg ok">Connected: the AbletonOSC remote script is installed in Live's User Library.</div>
     <p>If Live doesn't answer yet: restart Live, then <b>Settings → Link, Tempo &amp; MIDI → Control Surface: AbletonOSC</b>.</p>${liveLog ? `<pre>${esc(liveLog)}</pre>` : ''}`;
   return `<h2>Connect to Ableton Live</h2><p class="sub">Optional: lets hypnomix read and control the open set. Scanning set files works without it.</p>
     <p>This copies the AbletonOSC remote script into Live's User Library${l.ableton ? '' : ' (no Ableton folder was found on this computer: it will be created)'}. A different copy already there is backed up first. Nothing else in Live changes.</p>
     <button class="act" data-su="live" ${busy ? 'disabled' : ''}>${busy ? 'Copying…' : 'Connect to Live'}</button>${msgHtml()}
-    <p class="small">Then restart Live and choose <b>Settings → Link, Tempo &amp; MIDI → Control Surface: AbletonOSC</b>. REAPER or Ardour? Nothing to install here: see Wiki → hypnomix in REAPER.</p>`;
+    <p class="small">Then restart Live and choose <b>Settings → Link, Tempo &amp; MIDI → Control Surface: AbletonOSC</b>.</p>`;
 }
 
 function extras() {
@@ -144,15 +180,15 @@ function extras() {
 
 async function refreshExtras() {
   try { U.extras = await get('/api/setup/extras'); } catch (_) { return; }
-  if (step === 4) draw();
+  if (step === EXTRAS) draw();
   clearTimeout(poll); poll = U.extras.extras.some(e => e.running) ? setTimeout(refreshExtras, 1500) : null;
 }
 
 function done() {
   const m = U.modes.find(x => x.id === mode);
-  const next = { app: 'Open the <b>Songs</b> tab and scan your first song.', key: 'Open the <b>Assistant</b> tab and say hello, or ask it to scan a song.',
+  const next = teach ? `Open the <b>Teacher</b> tab: ${teach === 'tour' ? `the tour starts with how hypnomix works and connecting it to ${esc(DAWNAME[daw] || 'your DAW')}` : `the first lesson is the words and the screen of ${esc(DAWNAME[daw] || 'your DAW')}`}. Go at your own pace; it remembers where you are.` : { app: 'Open the <b>Songs</b> tab and scan your first song.', key: 'Open the <b>Assistant</b> tab and say hello, or ask it to scan a song.',
     local: 'Open the <b>Assistant</b> tab and say hello, or ask it to scan a song.', desktop: 'Open your AI app in the AI agent folder and ask it to scan a song.' }[mode] || '';
-  return `<h2>You're set</h2><p class="sub">${m ? esc(m.title) : 'Setup'}${U.live.installed ? ' · Live connected' : ''}</p>
+  return `<h2>You're set</h2><p class="sub">${m ? esc(m.title) : 'Setup'}${daw ? ' · ' + esc((U.daws.find(d => d.id === daw) || {}).title || '') : ''}${daw === 'live' && U.live.installed ? ' · Live connected' : ''}${teach === 'tour' ? ' · teacher mode: the tour' : teach === '101' ? ' · teacher mode: the 101 course' : ''}</p>
     <p>${next}</p><p class="small">Change any of this later: the <b>Setup</b> button at the top, or the Assistant tab's settings. The Wiki's "Choosing how to work with AI" compares the options in more detail.</p>`;
 }
 
@@ -179,8 +215,10 @@ async function test() {
 
 document.addEventListener('click', async e => {
   if (!document.getElementById('su')) { const b = e.target.closest('[data-setup]'); if (b) open(true); return; }
-  const t = e.target.closest('[data-su],[data-mode],[data-prov],[data-loc],[data-extra]'); if (!t || !t.closest('#su')) return;
+  const t = e.target.closest('[data-su],[data-mode],[data-prov],[data-loc],[data-extra],[data-daw],[data-teach]'); if (!t || !t.closest('#su')) return;
   keep();
+  if (t.dataset.teach !== undefined) { teach = t.dataset.teach; post('/api/setup/daw', { teach_level: teach }).catch(() => {}); return draw(); }
+  if (t.dataset.daw) { daw = t.dataset.daw; if (daw === 'other') teach = ''; msg = null; post('/api/setup/daw', { daw, teach_level: teach }).catch(() => {}); return draw(); }
   if (t.dataset.mode) { mode = t.dataset.mode; model = ''; msg = null; return draw(); }
   if (t.dataset.prov) { prov = t.dataset.prov; model = ''; key = ''; msg = null; return draw(); }
   if (t.dataset.extra) {
@@ -198,15 +236,21 @@ document.addEventListener('click', async e => {
     try { cliDone = await post('/api/setup/cli', {}); U.cli = cliDone; msg = null; } catch (err) { msg = { ok: false, html: esc(err.message) }; }
     busy = false; return draw();
   }
+  if (a === 'reaper') {
+    busy = true; draw();
+    try { const r = await post('/api/setup/reaper', {}); U.reaper = r.reaper; msg = null; } catch (err) { msg = { ok: false, html: esc(err.message) }; }
+    busy = false; return draw();
+  }
   if (a === 'live') {
     busy = true; draw();
     try { const r = await post('/api/setup/live', {}); U.live = r.live; liveLog = r.log; msg = null; } catch (err) { msg = { ok: false, html: esc(err.message) }; }
     busy = false; return draw();
   }
   if (a === 'skip' || a === 'finish') {
-    try { await post('/api/setup/finish', { done: true, mode }); } catch (_) {}
+    try { await post('/api/setup/finish', { done: true, mode, daw, teach_level: teach }); } catch (_) {}
     close();
-    if (a === 'finish' && typeof go === 'function') go(mode === 'key' || mode === 'local' ? 'chat' : 'home');
+    if (typeof window.teachChanged === 'function') window.teachChanged();
+    if (a === 'finish' && typeof go === 'function') go(teach ? 'teach' : mode === 'key' || mode === 'local' ? 'chat' : 'home');
   }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('su')) close(); });

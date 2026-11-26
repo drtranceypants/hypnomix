@@ -80,8 +80,16 @@ function wikiBanner() {
     <span class="note">${a.unpublished.map(esc).slice(0, 4).join(', ')}${a.unpublished.length > 4 ? '…' : ''}</span></div>`;
 }
 
+// The DAW chosen in Setup comes first (after Start here); the other DAWs' pages move to the end of the list.
+const WDAW = {live: 'DAW: Ableton Live', reaper: 'DAW: REAPER', ardour: 'DAW: Ardour', other: 'DAW: any other'};
+function wikiOrdered() {
+  const all = W.index.articles, mine = WDAW[W.index.about.daw];
+  if (!mine) return all;
+  const rank = a => a.group === 'Start here' ? 0 : a.group === mine ? 1 : a.group.startsWith('DAW: ') ? 3 : 2;
+  return all.map((a, i) => [rank(a), i, a]).sort((x, y) => x[0] - y[0] || x[1] - y[1]).map(x => x[2]);
+}
 function wikiMatches() {
-  const q = W.q.trim().toLowerCase(), all = W.index.articles;
+  const q = W.q.trim().toLowerCase(), all = wikiOrdered();
   if (!q) return all.map(a => ({a, hit: ''}));
   const words = q.split(/\s+/);
   return all.filter(a => words.every(w => (a.title + ' ' + a.sub + ' ' + a.text).toLowerCase().includes(w)))
@@ -94,7 +102,11 @@ function wikiList() {
   if (!rows.length) return '<div class="none">Nothing matches. Try fewer words.</div>';
   let out = '', group = null;
   for (const {a, hit} of rows) {
-    if (a.group !== group) { group = a.group; out += `<h4>${esc(group)}</h4>`; }
+    if (a.group !== group) {
+      const mine = WDAW[W.index.about.daw], other = mine && a.group.startsWith('DAW: ') && a.group !== mine;
+      if (other && !(group || '').startsWith('DAW: ')) out += `<h4 style="margin-top:26px">Other DAWs</h4>`;
+      group = a.group; out += `<h4>${esc(group)}${a.group === mine ? ' · yours' : ''}</h4>`;
+    }
     const n = a.no ? a.no.replace(/^lesson\s*/i, '') : '';
     out += `<a data-wart="${esc(a.id)}" class="${a.id === W.id ? 'on' : ''}">${n ? `<small>${esc(n)}</small>` : ''}${esc(a.title)}${hit ? `<span class="hit">${esc(hit)}</span>` : ''}</a>`;
   }

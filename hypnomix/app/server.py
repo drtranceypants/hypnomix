@@ -497,6 +497,11 @@ def make_handler(port):
                     r = SU.handle_get(u.path, q)
                     if r:
                         return self.send(*r)
+                if u.path == "/teacher.js" or u.path.startswith("/api/teach/"):   # the Teacher tab (teacher mode)
+                    from hypnomix.app import teacher as TE
+                    r = TE.handle_get(u.path, q)
+                    if r:
+                        return self.send(*r)
                 if u.path.startswith("/api/chat/") or u.path == "/chat.js":   # the Assistant tab
                     from hypnomix.app import chat as CH
                     r = CH.handle_get(u.path, q)
@@ -593,6 +598,11 @@ def make_handler(port):
                 if u.path.startswith("/api/update/"):      # check now, download (checksum-verified), install
                     from hypnomix.app import update as UP
                     r = UP.handle_post(u.path, body)
+                    if r:
+                        return self.send(*r)
+                if u.path.startswith("/api/teach/"):       # the Teacher tab: progress, and hands-on steps (with an OK)
+                    from hypnomix.app import teacher as TE
+                    r = TE.handle_post(u.path, body)
                     if r:
                         return self.send(*r)
                 if u.path.startswith("/api/setup/"):       # the guided setup: save a key and test it, Live, the command

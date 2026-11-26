@@ -57,8 +57,8 @@ animation:sp 1s linear infinite;vertical-align:-1px;margin-right:6px}@keyframes 
 @media (max-width:560px){.ab{grid-template-columns:1fr}.row label{min-width:100%}}
 </style></head><body>
 <header><span class="brand">hypnomix</span>
-<nav><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
-<button class="tab" data-view="chat">Assistant</button><button class="tab" data-view="wiki">Wiki</button><button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button><button class="tab" data-setup title="How you work with hypnomix: AI provider, keys, Ableton Live">Setup</button></nav>
+<nav><button class="tab" data-view="teach" title="Teacher: make a song from scratch, step by step, in your DAW">Teacher</button><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
+<button class="tab" data-view="chat">Assistant</button><button class="tab" data-view="wiki">Wiki</button><button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button><button class="tab" data-setup title="How you work with hypnomix: AI provider, keys, your DAW, teacher mode">Setup</button></nav>
 <span class="live" id="live"></span></header>
 <main id="main"></main>
 <script>
@@ -267,6 +267,7 @@ async function render() {
   else if (S.view === 'tools') m.innerHTML = toolsView();
   else if (S.view === 'chat') { m.innerHTML = chatView(); chatPoll(true).catch(() => {}); }
   else if (S.view === 'wiki') { m.innerHTML = await wikiView(); wikiAfter(); }
+  else if (S.view === 'teach') m.innerHTML = await teachView();
   else if (S.view === 'live') { await pollProbe(); m.innerHTML = liveView(); }
   refresh();
 }
@@ -325,7 +326,7 @@ document.addEventListener('change', e => {
 document.addEventListener('play', e => { document.querySelectorAll('audio').forEach(a => { if (a !== e.target) a.pause(); }); }, true);
 render();
 setInterval(() => { refresh(); pollJob(); pollProbe(); }, 1000);
-</script><script src="/chat.js"></script><script src="/wiki.js"></script><script src="/setup.js"></script><script src="/update.js"></script></body></html>
+</script><script src="/chat.js"></script><script src="/wiki.js"></script><script src="/teacher.js"></script><script src="/setup.js"></script><script src="/update.js"></script></body></html>
 """
 
 from hypnomix.workflow.review import OVERSIGHT_CSS as _OC, OVERSIGHT_JS as _OJ   # noqa: E402

@@ -405,8 +405,17 @@ def system_prompt():
             "similar findings when you explain them, and record decisions in batches. "
             "listen lets a cloud model hear a bounce for notes by ear (when the person switched Listening on): use it "
             "when they ask how the song sounds or feels, or to check a finding by ear; weigh its notes against "
-            "hypnomix's measurements, which win on numbers, and never turn its notes into fixes they didn't approve.\n\n"
-            "Reference (written for terminal agents; here, use the tools instead of a shell):\n\n" + guide)
+            "hypnomix's measurements, which win on numbers, and never turn its notes into fixes they didn't approve."
+            + _teacher_note() +
+            "\n\nReference (written for terminal agents; here, use the tools instead of a shell):\n\n" + guide)
+
+
+def _teacher_note():
+    try:
+        from hypnomix.app import teacher
+        return teacher.assistant_note()
+    except Exception:
+        return ""
 
 
 # ---------------------------------------------------------------- the conversation

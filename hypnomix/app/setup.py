@@ -1,12 +1,14 @@
 """Guided setup: what the app shows the first time it opens (and again from the Setup button).
 
-It asks how you want to work, and sets that up:
+It asks how you want to work, which DAW you use (and whether you'd like teacher mode: hypnomix/app/teacher.py, a
+guided course: a tour of hypnomix in your DAW for people who already engineer, or a 101 crash course for people new to
+audio), and sets that up:
   app       just the app: you click through scan → review → apply. No AI, no account, free
   key       the app's Assistant with an AI service's key (Google Gemini's free tier, Claude, OpenRouter, OpenAI…)
   local     the Assistant with an open-source model on this computer (Ollama or LM Studio): free and private
   desktop   a desktop AI app runs hypnomix for you (Claude Code in the Claude app or a terminal, Codex, Cursor…)
 
-Then the connection to Ableton Live (`hypnomix install`, only on a click), and for desktop AI apps a `hypnomix`
+Then the connection to your DAW (Live: `hypnomix install`; REAPER: the bridge; only on a click), and for desktop AI apps a `hypnomix`
 command and a folder with the agent guide and the Claude Code skills; then the optional extras (hypnomix/extras.py),
 each installed only on a click. Keys are saved by the Assistant's own settings (~/.hypnomix/ai.json,
 readable by you alone). The setup's own answers are in ~/.hypnomix/setup.json.
@@ -19,7 +21,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 STATE = Path("~/.hypnomix/setup.json").expanduser()
-VERSION = 2                      # bump when the setup gains a step people who finished it should see
+VERSION = 3                      # bump when the setup gains a step people who finished it should see
 
 # one typical song through the Assistant: what the cost estimates assume
 TYPICAL = dict(input=1_200_000, repeated=0.9, output=20_000)
@@ -148,7 +150,34 @@ def live_status():
     except OSError:
         ok = False
     lib = I.remote_scripts_dir().parent.parent           # .../Ableton
-    return dict(installed=ok, where=str(dest), ableton=lib.exists())
+    try:
+        teach = ok and "load_browser_item" in (dest / "abletonosc/track.py").read_text(errors="ignore")
+    except OSError:
+        teach = False
+    return dict(installed=ok, where=str(dest), ableton=lib.exists(), teach_ready=teach)
+
+
+DAWS = [
+    dict(id="live", title="Ableton Live", note="the most depth: hypnomix reads, fixes and drives Live 11 and 12"),
+    dict(id="reaper", title="REAPER", note="reads and writes projects, and drives the open REAPER through its bridge"),
+    dict(id="ardour", title="Ardour", note="reads and scans sessions; you make the changes in Ardour (the least tested)"),
+    dict(id="other", title="Something else", note="Logic, Pro Tools, Studio One…: export your tracks and scan the folder"),
+]
+
+
+def reaper_status():
+    from hypnomix.reaper.client import Reaper, reaper_executable
+    try:
+        alive = Reaper().alive()
+    except Exception:
+        alive = False
+    return dict(found=bool(reaper_executable()), running=alive)
+
+
+def setup_reaper():
+    from hypnomix.reaper.client import Reaper
+    Reaper().start()
+    return dict(reaper=reaper_status())
 
 
 def shim_path():
@@ -237,11 +266,22 @@ def copy_skills(d, here):
     return skills, agents
 
 
+def _level(s):
+    lv = s.get("teach_level") or ("101" if s.get("teach") else "")
+    return lv if lv in ("tour", "101") else ""
+
+
+def _set_level(s, lv):
+    s["teach_level"] = lv if lv in ("tour", "101") else ""
+    s["teach"] = bool(s["teach_level"])
+
+
 def state_view():
     from hypnomix.app import chat as CH
     from hypnomix import extras as X
     s = load()
     return dict(done=bool(s.get("done")) and s.get("version", 0) >= VERSION, mode=s.get("mode", ""),
+                daw=s.get("daw", ""), teach_level=_level(s), daws=DAWS, reaper=reaper_status(),
                 platform="windows" if sys.platform == "win32" else "mac" if sys.platform == "darwin" else "linux",
                 bundled=bundled(), modes=modes(), providers=PROVIDER_GUIDES, local=LOCAL_GUIDES,
                 typical=TYPICAL, prices_checked=PRICES_CHECKED,
@@ -297,6 +337,20 @@ def handle_post(path, body):
         return connect(body)
     if path == "/api/setup/live":
         return 200, setup_live()
+    if path == "/api/setup/reaper":
+        from hypnomix.reaper.client import ReaperError
+        try:
+            return 200, setup_reaper()
+        except ReaperError as e:
+            return 400, dict(error=str(e), reaper=reaper_status())
+    if path == "/api/setup/daw":                      # saved at once, so the Wiki and the Teacher tab follow it
+        s = load()
+        if "daw" in body:
+            s["daw"] = str(body["daw"]) if body["daw"] in {d["id"] for d in DAWS} else ""
+        if "teach_level" in body:
+            _set_level(s, body["teach_level"])
+        save(s)
+        return 200, dict(daw=s.get("daw", ""), teach_level=_level(s))
     if path == "/api/setup/cli":
         return 200, make_cli()
     if path == "/api/setup/extra":
@@ -309,6 +363,10 @@ def handle_post(path, body):
         s = load()
         s.update(done=bool(body.get("done", True)), mode=str(body.get("mode") or s.get("mode") or ""), version=VERSION,
                  at=time.strftime("%Y-%m-%d %H:%M"))
+        if body.get("daw") in {d["id"] for d in DAWS}:
+            s["daw"] = body["daw"]
+        if "teach_level" in body:
+            _set_level(s, body["teach_level"])
         save(s)
         return 200, state_view()
     return None

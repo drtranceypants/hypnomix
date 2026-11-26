@@ -50,9 +50,11 @@ version in place and opens again. Your songs, settings and keys stay as they are
 | step | what it asks |
 |---|---|
 | How you work | just the app, an AI key, a model on your computer, or a desktop AI app (compared below) |
+| Your DAW | Ableton Live, REAPER, Ardour or something else (the Wiki puts your DAW's pages first), and **teacher mode**: no thanks, the tour of hypnomix in your DAW (for engineers), or the 101 crash course (for people new to audio). The wiki's Teacher mode page has both courses |
 | Connect | for an AI key: which company, your key, a test. For a local model: Ollama or LM Studio, and a test. For a desktop app: a `hypnomix` command and an agent folder |
-| Ableton Live | copies the AbletonOSC remote script into Live's User Library, on your click |
-| Done | where to start |
+| your DAW's step | Live: copies the AbletonOSC remote script into Live's User Library, on your click (and offers to update an older copy for teacher mode). REAPER: starts the bridge. Ardour or another DAW: nothing to install |
+| Extras | the optional extras, each on a click |
+| Done | where to start (the Teacher tab, with teacher mode on) |
 
 ## Choosing how to work with AI
 
@@ -220,7 +222,7 @@ proposes. The optional extras are on the setup's **Extras** step (below).
 ## Optional extras
 
 The installer leaves out three extras: two are GPL-3.0 (hypnomix itself stays MIT), and one is about a gigabyte.
-The setup's **Extras** step (after Ableton Live) installs any of them on a click:
+The setup's **Extras** step (after your DAW's step) installs any of them on a click:
 
 | Extra | Adds | Licence | Size |
 |---|---|---|---|

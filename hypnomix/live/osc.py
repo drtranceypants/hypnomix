@@ -375,6 +375,65 @@ class Live:
         self.send("/live/song/set/punch_out", 0)
         return bars * passes * bpb * 60 / tempo
 
+    # ---------- starting a song (teacher mode) ----------
+    def set_tempo(self, bpm):
+        self.send("/live/song/set/tempo", float(bpm))
+
+    def metronome(self, on=None):
+        """Switch the click on or off (None: just read it)."""
+        if on is not None:
+            self.send("/live/song/set/metronome", int(bool(on)))
+            time.sleep(0.05)
+        return bool(self.query("/live/song/get/metronome")[0])
+
+    def new_track(self, kind="audio", name=None):
+        """A new audio or MIDI track at the end of the list; returns its index."""
+        before = len(self.query("/live/song/get/track_names"))
+        self.send(f"/live/song/create_{'midi' if kind == 'midi' else 'audio'}_track", -1)
+        t0 = time.time()
+        while time.time() - t0 < 3:
+            names = self.query("/live/song/get/track_names")
+            if len(names) > before:
+                break
+            time.sleep(0.1)
+        else:
+            raise LiveError("Live didn't add the track")
+        tid = len(names) - 1
+        if name:
+            self.send("/live/track/set/name", tid, str(name))
+        self._tracks = None
+        return tid
+
+    def new_clip(self, track, slot, beats, name=None):
+        """An empty MIDI clip `beats` long in a Session View slot."""
+        tid = self.tid(track)
+        self.send("/live/clip_slot/create_clip", tid, int(slot), float(beats))
+        time.sleep(0.2)
+        if name:
+            self.send("/live/clip/set/name", tid, int(slot), str(name))
+
+    def add_notes(self, track, slot, notes):
+        """notes: (pitch, start beat, length in beats, velocity) each."""
+        tid, flat = self.tid(track), []
+        for p, s, d, v in notes:
+            flat += [int(p), float(s), float(d), int(v), False]
+        for i in range(0, len(flat), 5 * 64):              # small OSC packets
+            self.send("/live/clip/add/notes", tid, int(slot), *flat[i:i + 5 * 64])
+
+    def fire_clip(self, track, slot):
+        self.send("/live/clip/fire", self.tid(track), int(slot))
+
+    def load_browser_item(self, track, category="drums", name=""):
+        """A drum kit (category "drums", empty name: the first kit) or an instrument from Live's browser."""
+        try:
+            r = self.query("/live/track/load_browser_item", self.tid(track), category, name, timeout=4.0)
+        except LiveError:
+            raise LiveError("Live's AbletonOSC script is older than this hypnomix: run Setup → Ableton Live (or "
+                            "`hypnomix install`), then restart Live")
+        if not r[1]:
+            raise LiveError(f"Live's browser has no {category[:-1] if category.endswith('s') else category} called {name or 'Kit'!r}")
+        return r[2]
+
     # ---------- building chains (needs hypnomix's AbletonOSC patch) ----------
     def load_stock_device(self, track, name, timeout=4.0):
         """Load a stock Live device (browser name, e.g. "EQ Eight") at the end of a track's chain.
