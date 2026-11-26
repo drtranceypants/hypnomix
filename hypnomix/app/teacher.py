@@ -259,7 +259,7 @@ CHAPTERS = [
             "reaper": ["FX → **ReaComp**, after ReaEQ.", "The gain-reduction meter is the one on the right side of ReaComp."],
             "ardour": ["Plug-in box → **ACE Compressor**."]},
        fx={"live": dict(device="Compressor", set=[["disp", ["Ratio"], 3], ["disp", ["Attack"], 15], ["disp", ["Release"], 100], ["disp", ["Threshold"], -18]]),
-           "reaper": dict(device="ReaComp (Cockos)", set=[["shown", "Ratio", 3], ["shown", "Attack", 15], ["shown", "Release", 100], ["shown", "Thresh", -18]])},
+           "reaper": dict(device="ReaComp (Cockos)", set=[["shown", "Ratio", 3], ["shown", "Attack", 15], ["shown", "Release", 100], ["shown", "Threshold", -18]])},
        action={d: dict(kind="fx") for d in LR}),
   dict(id="deess", title="De-essing: soften the S's", daws=LR,
        say=["After EQ and compression, \"s\" and \"t\" sounds can get sharp. A **de-esser** is a compressor that only listens "
@@ -614,6 +614,11 @@ def beat(bars=4, feel="straight", seed=7):
     return sorted(out, key=lambda n: (n[1], n[0]))
 
 
+# ReaSynDr plays its four voices on notes 32-35 (kick, snare, a short tick, a tom; measured in REAPER 7.86), not
+# on General MIDI's 36 / 38 / 42, so REAPER's beat is written on its notes
+REASYNDR = {36: 32, 38: 33, 42: 34}
+
+
 def _live():
     from hypnomix.live.osc import Live
     return Live()
@@ -858,10 +863,11 @@ def _run_reaper(step, kind, a):
     if kind == "drums":
         bars = int(_num(a, "bars", 4, 1, 16))
         feel = "half-time" if a.get("feel") == "half-time" else "straight"
-        notes = beat(bars, feel)
+        notes = [(REASYNDR.get(p, p), st, d, v) for p, st, d, v in beat(bars, feel)]
         out = r.call("teach_drums", name="Drums", beats=bars * 4, notes=";".join(f"{p},{s:g},{d:g},{v}" for p, s, d, v in notes))
         by_hand = [] if (out.get("fx", -1) >= 0) else ["ReaSynDr didn't load: add a drum instrument to the Drums track (FX → Instruments)."]
-        return dict(done=f"Added a Drums track with ReaSynDr and a looped {bars}-bar {feel} beat ({out.get('notes', len(notes))} hits).", by_hand=by_hand)
+        return dict(done=f"Added a Drums track with ReaSynDr and a looped {bars}-bar {feel} beat ({out.get('notes', len(notes))} hits). "
+                         "ReaSynDr is a simple drum synth; for a real kit, load any drum plug-in on the track instead.", by_hand=by_hand)
     if kind == "track":
         name = str(a.get("name") or "Vocal")[:40]
         ch = int(_num(a, "input", 1, 1, 64))
@@ -887,7 +893,7 @@ def _run_reaper(step, kind, a):
         except ReaperError:
             added, by_hand = [], []
             for dev, sets in (("ReaEQ (Cockos)", [["named", "BANDTYPE0", "4"], ["shown", 0, 25]]),
-                              ("ReaComp (Cockos)", [["shown", "Ratio", 2], ["shown", "Attack", 30], ["shown", "Thresh", -12]]),
+                              ("ReaComp (Cockos)", [["shown", "Ratio", 2], ["shown", "Attack", 30], ["shown", "Threshold", -12]]),
                               ("ReaLimit (Cockos)", [["shown", "Ceiling", -1]])):
                 d, h = _fx_reaper(r, dict(device=dev, set=sets), "master")
                 added.append(dev.replace(" (Cockos)", ""))

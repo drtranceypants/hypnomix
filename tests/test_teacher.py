@@ -178,6 +178,7 @@ class Actions(unittest.TestCase):
         drums = next(a for c, a in r.calls if c == "teach_drums")
         self.assertEqual(drums["beats"], 4)
         self.assertEqual(drums["notes"].count(";") + 1, len(T.beat(1)))
+        self.assertEqual({n.split(",")[0] for n in drums["notes"].split(";")}, {"32", "33", "34"})   # ReaSynDr's notes
         self.assertIn(("teach_track", {"name": "Vox", "input": 3, "arm": 1, "monitor": 1}), r.calls)
         self.assertIn(("transport", "record"), r.calls)
         self.assertIn(("transport", "stop"), r.calls)
