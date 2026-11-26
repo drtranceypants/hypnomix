@@ -220,7 +220,7 @@ def verify(live, plan, ctx, bars=8, rounds=2):
             got = dsp.lufs(y, sr)
             tp = dsp.true_peak(y, sr)
         d = want - got
-        lines.append(f"  pass {r + 1}: Live plays {got:.1f} LUFS (true peak {tp:+.1f} dBTP), {d:+.1f} LU from target")
+        lines.append(f"  pass {r + 1}: Live plays {got:.1f} LUFS (true peak {tp:+.1f} dBTP), {d:+.1f} dB needed to reach the target")
         if abs(d) < 0.3 or not p:
             break
         gain += d
@@ -262,7 +262,7 @@ def build_strips(live, recipe, dry=False):
                 done.append(f"Compressor {dev['ratio']}:1 @ {dev['threshold_db']} dB")
             elif dev["device"] == "Utility":
                 did = b.device("Utility")
-                b.disp(did, ["Gain"], dev["gain_db"])
+                b.disp(did, ["Gain", "Output"], dev["gain_db"])     # Live 12 calls Utility's gain "Output"
                 done.append(f"Utility {dev['gain_db']:+.1f} dB")
         if not dry:
             if isinstance(t["pan"], (int, float)):
