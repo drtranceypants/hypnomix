@@ -18,7 +18,7 @@ try { W.id = localStorage.getItem('hypnomix.wiki') || null; } catch (e) {}
   .wiki aside .none{color:var(--mute);font-size:.9rem;padding:8px}
   .wa{min-width:0;line-height:1.6}.wa .no{color:var(--accent);font-size:.78rem;letter-spacing:.14em;text-transform:uppercase}
   .wa h1{font-size:1.9rem;margin:2px 0 4px}.wa > .sub{font-style:italic}
-  .wa h3{font-size:1.12rem;margin:26px 0 8px}.wa h4{margin:18px 0 6px}
+  .wa h3{font-size:1.12rem;margin:26px 0 8px;scroll-margin-top:64px}.wa h4{scroll-margin-top:64px}.wa h4{margin:18px 0 6px}
   .wa img,.wa video{max-width:100%;height:auto;border-radius:8px;border:1px solid var(--line);background:var(--card)}
   .wa figure{margin:16px 0}.wa figcaption{color:var(--mute);font-size:.88rem;margin-top:6px}
   .wa .pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}.wa .pair figure{margin:0}
@@ -131,6 +131,13 @@ function wikiOpen(id) {
   render().then(() => window.scrollTo(0, 0));
 }
 
+document.addEventListener('click', e => {      // a link to a section of the same article
+  const j = e.target.closest('a[data-jump]');
+  if (!j) return;
+  e.preventDefault();
+  const el = document.getElementById(j.dataset.jump);
+  if (el) el.scrollIntoView({block: 'start'});
+});
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-wart],a[data-wiki]');
   if (!t) return;

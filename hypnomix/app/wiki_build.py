@@ -37,7 +37,7 @@ STYLE = """<style>
 .wiki aside [hidden]{display:none!important}.wiki aside .hit{display:block;font-size:.8rem;opacity:.7}
 .wiki .wa{background:var(--card,#fff);padding:1.6rem 1.8rem;box-shadow:0 0 0 1px var(--line,#d9d2c4),5px 7px 0 rgba(59,47,43,.1);margin-bottom:2rem;min-width:0}
 .wiki .wa .no{font:600 .74rem var(--futura,Jost,sans-serif);letter-spacing:.2em;text-transform:uppercase;color:var(--wine,#8e3f3f)}
-.wiki .wa h2.wt{margin:.2rem 0 .3rem;text-align:left;font-size:clamp(1.4rem,3vw,2.1rem);overflow-wrap:anywhere}.wiki .wa > .sub{text-align:left;margin:0 0 1rem}
+.wiki .wa h3,.wiki .wa h4{scroll-margin-top:70px}.wiki .wa h2.wt{margin:.2rem 0 .3rem;text-align:left;font-size:clamp(1.4rem,3vw,2.1rem);overflow-wrap:anywhere}.wiki .wa > .sub{text-align:left;margin:0 0 1rem}
 .wiki .wa img,.wiki .wa video{max-width:100%;height:auto}.wiki .wa .pair{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .wiki .wa .steps,.wiki .wa .lead,.wiki .wa .note-box,.wiki .wa .warn-box,.wiki .wa .tablewrap{max-width:none}
 .wiki .wa .next{display:flex;justify-content:space-between;gap:1rem;margin-top:1.6rem;font-size:.95rem}
@@ -54,6 +54,9 @@ SCRIPT = """<script>
     return id && a.id === id; }
   const jump = () => box.scrollIntoView({block: 'start', behavior: 'instant'});
   window.addEventListener('hashchange', () => { if (show()) jump(); });
+  box.addEventListener('click', e => { const j = e.target.closest('a[data-jump]'); if (!j) return;
+    e.preventDefault(); const el = box.querySelector('.wa.on #' + CSS.escape(j.dataset.jump)) || document.getElementById(j.dataset.jump);
+    if (el) el.scrollIntoView({block: 'start'}); });
   if (show()) { if (document.readyState === 'complete') setTimeout(jump, 50); else window.addEventListener('load', () => setTimeout(jump, 50)); }
   const q = document.getElementById('wq'), none = box.querySelector('aside .none');
   q.addEventListener('input', () => { const w = q.value.toLowerCase().trim().split(/\\s+/).filter(Boolean); let n = 0;
@@ -170,7 +173,7 @@ def commit_time(root):
     d = W.docs_dir(root)
     if d is not None:
         paths.append(str(d / "[A-Z]*.md"))
-    paths += [str(f) for f in W.doc_files(root) if f.name in ("README.md", "AGENTS.md")]
+    paths += [str(f) for f in W.doc_files(root) if f.name in ("README.md", "GUIDE.md", "AGENTS.md")]
     cli = Path(root).resolve().parents[1] / "cli.py"             # the command reference is built from it
     if cli.exists():
         paths.append(str(cli))

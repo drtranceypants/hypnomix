@@ -23,6 +23,12 @@ def front(text):
     return meta, text
 
 
+def slug(t):
+    """GitHub's heading anchor: "1. The workflow at a glance" -> "1-the-workflow-at-a-glance"."""
+    t = re.sub(r"<[^>]+>", "", t).strip().lower()
+    return re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", t))
+
+
 def inline(s):
     s = html.escape(s, quote=False)
     s = re.sub(r"`([^`]+)`", lambda m: f"<code>{m.group(1)}</code>", s)
@@ -31,6 +37,8 @@ def inline(s):
 
     def link(m):
         text, url = m.group(1), html.unescape(m.group(2))
+        if url.startswith("#"):                       # a section of the same article: scroll to it
+            return f'<a href="#" data-jump="s-{html.escape(url[1:], quote=True)}">{text}</a>'
         ext = url.startswith(("http://", "https://"))
         return (f'<a href="{html.escape(url, quote=True)}"' + (' target="_blank" rel="noopener"' if ext else "")
                 + f">{text}</a>")
@@ -76,7 +84,8 @@ def to_html(text):
             lvl, t = len(m.group(1)), m.group(2).strip()
             if lvl > 1:                                   # the guide's own title is the article's title
                 intro = False
-                out.append(f'<h3 class="sub-h">{inline(t)}</h3>' if lvl == 2 else f"<h4>{inline(t)}</h4>")
+                sid = "s-" + slug(t)
+                out.append(f'<h3 class="sub-h" id="{sid}">{inline(t)}</h3>' if lvl == 2 else f'<h4 id="{sid}">{inline(t)}</h4>')
             i += 1
             continue
         if ln.startswith("|") and i + 1 < len(lines) and re.match(r"^\|[\s:|-]+\|\s*$", lines[i + 1]):
@@ -131,7 +140,7 @@ def to_html(text):
 
 
 DOCS_GROUP = "Docs"
-ROOT_FILES = ("README.md", "AGENTS.md")          # read from the top of the repo (bundled into wiki/docs/ when installed)
+ROOT_FILES = ("README.md", "GUIDE.md", "AGENTS.md")          # read from the top of the repo (bundled into wiki/docs/ when installed)
 REPO = "https://github.com/drtranceypants/hypnomix/blob/main/"
 
 

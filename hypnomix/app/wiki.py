@@ -165,7 +165,8 @@ def sources(top):
     d = docs_dir()
     if d is not None and str(d.resolve()).startswith(str(Path(top).resolve())):
         out.append(str(d.resolve().relative_to(Path(top).resolve())) + "/[A-Z]*.md")
-        out += [n for n in ("README.md", "AGENTS.md") if (Path(top) / n).exists()]
+        from hypnomix.app.wiki_md import ROOT_FILES
+        out += [n for n in ROOT_FILES if (Path(top) / n).exists()]
     return out
 
 

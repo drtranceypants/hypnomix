@@ -176,7 +176,7 @@ class WikiTest(unittest.TestCase):
         self.assertNotIn("<h1", h)
         self.assertIn('<p class="lead">Tight stacks are <b>expensive</b>, see <a href="https://example.com" '
                       'target="_blank" rel="noopener">the site</a>.</p>', h)
-        self.assertIn('<h3 class="sub-h">Three ways in</h3>', h)
+        self.assertIn('<h3 class="sub-h" id="s-three-ways-in">Three ways in</h3>', h)
         self.assertIn("<td><code>hypnomix vocalign</code></td>", h)
         self.assertIn('<span class="p">$</span> hypnomix vocalign "Lead.wav" "Double.wav"'
                       '<span class="c">   # align the double</span>', h)
@@ -214,6 +214,11 @@ class WikiTest(unittest.TestCase):
         self.assertIn("<hr>", d["html"])
         self.assertIn("<ul><li>one more</li></ul>", d["html"])
 
+    def test_section_links_scroll_within_the_article(self):
+        h = wiki_md.to_html("# T\n\n1. [The workflow, at a glance](#1-the-workflow-at-a-glance)\n\n## 1. The workflow, at a glance\n\nText.\n")
+        self.assertIn('<a href="#" data-jump="s-1-the-workflow-at-a-glance">The workflow, at a glance</a>', h)
+        self.assertIn('<h3 class="sub-h" id="s-1-the-workflow-at-a-glance">1. The workflow, at a glance</h3>', h)
+
     def test_links_between_files(self):
         arts = [{"id": "app-doc", "src": "docs/APP.md", "html": ""},
                 {"id": "readme", "src": "README.md",
@@ -229,7 +234,7 @@ class WikiTest(unittest.TestCase):
         """Each docs/*.md is listed in pyproject.toml, so an installed hypnomix has the same wiki."""
         root = Path(wiki.__file__).resolve().parents[2]
         toml = (root / "pyproject.toml").read_text()
-        for n in ("README.md", "AGENTS.md"):
+        for n in ("README.md", "GUIDE.md", "AGENTS.md"):
             self.assertIn(f'"{n}" = "hypnomix/app/wiki/docs/{n}"', toml)
         for f in sorted((root / "docs").glob("[A-Z]*.md")):
             self.assertIn(f'"docs/{f.name}" = "hypnomix/app/wiki/docs/{f.name}"', toml,
