@@ -41,3 +41,14 @@ The app opens its **guided setup** (`hypnomix/app/setup.py` + `setup.js`): how y
 AI key, a local model, or a desktop AI app such as Claude Code), the provider and key, a connection test, the
 Ableton Live connection (`hypnomix install`, on a click), and for desktop AI apps a `hypnomix` command plus an
 agent folder. On Windows the installer's "Set up Ableton Live" box also runs `hypnomix install`.
+
+## Updates
+
+`hypnomix/app/update.py` asks the GitHub API for the latest release (at most daily; `~/.hypnomix/update.json`),
+downloads this platform's stable-named asset into `~/.hypnomix/updates/`, and checks it against the release's
+`SHA256SUMS.txt`. Installing starts a helper outside the server: on a Mac it mounts the `.dmg`, quits the app,
+swaps `Hypnomix.app` in place and reopens it; on Windows it runs the setup with `/VERYSILENT` over the install
+(Inno Setup keeps the folder and tasks) and starts the launcher with `--quiet`. The helper logs to
+`~/.hypnomix/updates/update.log`. The Windows CI job tests an in-place update after its smoke test. For a local
+test beside a running copy, `HYPNOMIX_PORT` and `HYPNOMIX_UPDATE_URL` (a releases JSON) point the app elsewhere.
+

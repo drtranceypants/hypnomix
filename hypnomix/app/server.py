@@ -487,6 +487,11 @@ def make_handler(port):
                     r = WK.handle_get(u.path, q, self.headers)
                     if r:
                         return self.send(*r)
+                if u.path in ("/update.js", "/api/update/state"):  # updates: a new version is out, one-click install
+                    from hypnomix.app import update as UP
+                    r = UP.handle_get(u.path, q)
+                    if r:
+                        return self.send(*r)
                 if u.path in ("/setup.js", "/api/setup/state"):    # the guided setup (first run, and the Setup button)
                     from hypnomix.app import setup as SU
                     r = SU.handle_get(u.path, q)
@@ -583,6 +588,11 @@ def make_handler(port):
                 if u.path.startswith("/api/wiki/"):        # the Wiki tab: edit, publish, live copy on or off
                     from hypnomix.app import wiki as WK
                     r = WK.handle_post(u.path, body)
+                    if r:
+                        return self.send(*r)
+                if u.path.startswith("/api/update/"):      # check now, download (checksum-verified), install
+                    from hypnomix.app import update as UP
+                    r = UP.handle_post(u.path, body)
                     if r:
                         return self.send(*r)
                 if u.path.startswith("/api/setup/"):       # the guided setup: save a key and test it, Live, the command
@@ -711,6 +721,8 @@ def main():
     except OSError:
         sys.exit(f"port {a.port} is in use: is the hypnomix app already running? (http://127.0.0.1:{a.port})")
     start_probe_hub()
+    from hypnomix.app import update as UP
+    UP.check_in_background()                  # at most once a day, and only if it's switched on
     url = f"http://127.0.0.1:{a.port}/"
     print(f"hypnomix app: {url}   (this computer only; Ctrl-C to stop)\nsongs are kept in {work()}", flush=True)
     if not a.no_open:

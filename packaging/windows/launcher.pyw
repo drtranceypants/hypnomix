@@ -2,6 +2,7 @@
 
     pythonw launcher.pyw          start it, then open http://127.0.0.1:8791 in the default browser
     pythonw launcher.pyw --stop   stop it (the "Quit hypnomix" entry, and the uninstaller)
+    pythonw launcher.pyw --quiet  start it without opening a browser tab (after an update: the open tab reloads itself)
 
 The server runs with python.exe in a hidden console, so the programs it calls (ffmpeg) share that console
 instead of flashing windows of their own. Its pid is kept in %LOCALAPPDATA%\\Hypnomix\\server.pid."""
@@ -38,9 +39,11 @@ def stop():
         PID.unlink(missing_ok=True)
 
 
-def start():
+def start(show=True):
     if up():
-        webbrowser.open(URL); return
+        if show:
+            webbrowser.open(URL)
+        return
     STATE.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
     env["PATH"] = str(HERE / "bin") + os.pathsep + env.get("PATH", "")      # the bundled ffmpeg first
@@ -54,7 +57,9 @@ def start():
     PID.write_text(str(p.pid))
     for _ in range(240):                                 # the first start compiles a little: up to a minute
         if up():
-            webbrowser.open(URL); return
+            if show:
+                webbrowser.open(URL)
+            return
         if p.poll() is not None:
             break
         time.sleep(0.25)
@@ -62,4 +67,4 @@ def start():
 
 
 if __name__ == "__main__":
-    stop() if "--stop" in sys.argv else start()
+    stop() if "--stop" in sys.argv else start(show="--quiet" not in sys.argv)

@@ -21,6 +21,7 @@ you use it; Ctrl-C stops it.
 | Apply | writes only what you approved into one new set next to the original (`fix --approved`), then shows the log: what was applied, what changed, what is no longer measured |
 | Preferences | the questions asked once: targets, protected tracks, what is deliberate |
 | Tools | every other command with its help and a form: tempo, variations, mastering, and the rest |
+| Updates | the version at the top right: checks for a new version (once a day, or now), and in the installed app **Update now** downloads it, checks its fingerprint and installs it with one click. Source installs are told to `git pull` |
 | Setup | the guided setup (it opens by itself the first time): how you work (just the app, an AI key, a model on this computer, or a desktop AI app such as Claude Code), the key and a connection test, the Ableton Live connection, and for desktop AI apps a `hypnomix` command plus an agent folder. Costs and pros and cons for each: [Setting up, and choosing an AI](guides/09-setup-and-ai.md) |
 | Wiki | lessons, how-to guides, every command and the FAQ, with screenshots and videos, searchable and offline. The same articles as the website's [/wiki/](https://hypnomix.bradfieldenterprises.org/wiki/); the app shows the website's copy when it is newer. In a git checkout, **Edit** opens the article's file and **Publish** commits and pushes the wiki: the website rebuilds within about 10 minutes and every app follows |
 

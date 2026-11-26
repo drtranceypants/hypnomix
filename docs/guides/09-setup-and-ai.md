@@ -32,6 +32,18 @@ Intel" is Intel.
 > The download page also links to the public virus-scan reports for every installer, their SHA-256 checksums,
 > and GitHub's record of the build. You can check a download is exactly what the public source code built.
 
+## Updating
+
+The installed app tells you when a new version is out: a banner at the top says what's new, with **Update
+now**. The app downloads the new installer, checks its SHA-256 fingerprint against the one published with the
+release (a mismatch is deleted, never installed), and with **Install and restart** it closes, puts the new
+version in place and opens again. Your songs, settings and keys stay as they are.
+
+- It checks GitHub once a day at most. Click the version number at the top right to check now, or to switch
+  the daily check off.
+- **Later** hides the banner until the next version.
+- Installed from the source? The banner shows the command instead: `git pull && uv pip install -e .`
+
 ## The guided setup
 
 | step | what it asks |

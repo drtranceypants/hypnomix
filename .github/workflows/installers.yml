@@ -98,6 +98,24 @@ jobs:
           }
           if (-not $ok) { Get-Content "$env:LOCALAPPDATA\Hypnomix\server.log" -ErrorAction SilentlyContinue; throw "the app did not answer" }
           Write-Host "app answered on 8791"
+          # in-place update, as the app's Update button does it: a helper (started outside the server's process tree)
+          # runs the setup silently over this install, which stops the server, then starts hypnomix again
+          $log = "$env:USERPROFILE\.hypnomix\updates\update.log"
+          & "$env:RUNNER_TEMP\hx\python\python.exe" -m hypnomix.app.update install $setup | Out-Null
+          if ($LASTEXITCODE) { throw "the updater didn't start" }
+          $done = $false
+          foreach ($i in 1..360) {
+            if ((Test-Path $log) -and (Select-String -Path $log -Pattern "setup exit 0" -Quiet)) { $done = $true; break }
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $done) { Get-Content $log -ErrorAction SilentlyContinue; throw "the silent update didn't finish" }
+          $ok = $false
+          foreach ($i in 1..120) {
+            try { if ((Invoke-WebRequest http://127.0.0.1:8791/api/update/state -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200) { $ok = $true; break } } catch {}
+            Start-Sleep -Milliseconds 500
+          }
+          if (-not $ok) { Get-Content $log; Get-Content "$env:LOCALAPPDATA\Hypnomix\server.log" -ErrorAction SilentlyContinue; throw "hypnomix didn't come back after the update" }
+          Write-Host "updated in place and answering again"
           & "$env:RUNNER_TEMP\hx\python\pythonw.exe" "$env:RUNNER_TEMP\hx\launcher.pyw" --stop
           Start-Process "$env:RUNNER_TEMP\hx\unins000.exe" -ArgumentList "/VERYSILENT" -Wait
           exit 0

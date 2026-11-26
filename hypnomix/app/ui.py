@@ -325,7 +325,7 @@ document.addEventListener('change', e => {
 document.addEventListener('play', e => { document.querySelectorAll('audio').forEach(a => { if (a !== e.target) a.pause(); }); }, true);
 render();
 setInterval(() => { refresh(); pollJob(); pollProbe(); }, 1000);
-</script><script src="/chat.js"></script><script src="/wiki.js"></script><script src="/setup.js"></script></body></html>
+</script><script src="/chat.js"></script><script src="/wiki.js"></script><script src="/setup.js"></script><script src="/update.js"></script></body></html>
 """
 
 from hypnomix.workflow.review import OVERSIGHT_CSS as _OC, OVERSIGHT_JS as _OJ   # noqa: E402

@@ -3,7 +3,7 @@
 import Cocoa
 import WebKit
 
-let port = 8791
+let port = Int(ProcessInfo.processInfo.environment["HYPNOMIX_PORT"] ?? "") ?? 8791   // a test copy can run beside the real one
 let home = URL(string: "http://127.0.0.1:\(port)/")!
 
 final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate {
