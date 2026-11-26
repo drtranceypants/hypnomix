@@ -136,7 +136,7 @@ render the song and trims it to your loudness target and true-peak ceiling. The 
 **Ardour:** the same for an Ardour session (Ardour 3 to 9): `hypnomix project "Song/"` lists tracks, buses,
 regions, plug-ins and automation, `--render` plays the regions the way Ardour layers them (upper regions cover
 lower ones, with their own fade curves and gain envelopes), and `scan` runs the same checks as on an `.rpp`.
-Project changes are listed for you to make in Ardour for now.
+`hypnomix fix` writes approved region fades, gain, dips and fader/pan/mute moves into ONE new `.ardour` snapshot next to the original (written and re-read by hypnomix; not yet opened in Ardour); the rest is listed to do by hand.
 
 The scan runs every check below in parallel and writes one review list, most severe first. You (or an AI agent,
 item by item with you) approve what to fix; `fix` writes only those changes into **one new set** next to the

@@ -17,7 +17,9 @@ A command-line mixing and mastering toolkit (`hypnomix <command>`). Three kinds 
   XML, or the session folder) through the shared model in `hypnomix/project/` (`project`, and `scan` on either).
   Times are in seconds. The DAW can stay open: `scan` writes nothing next to the project, and `fix` on a REAPER
   scan writes ONE new `.rpp` (`workflow/fix_project.py`, edits in `project/rpp_edit.py`; tuned vocals become new
-  takes on the person's own items, never a rendered copy). The same model also reads `.als` sets; new tools that should work in both DAWs
+  takes on the person's own items, never a rendered copy); on an Ardour scan it writes ONE new `.ardour` snapshot beside the
+  original (`workflow/fix_ardour.py`, edits in `project/ardour_edit.py`: region fades and gain, gain-envelope dips, fader, pan,
+  mute; names, order, stacks, timing, sidechain, tuning stay by hand; written and re-read by hypnomix, NOT YET OPENED in Ardour). The same model also reads `.als` sets; new tools that should work in both DAWs
   belong there (`project.load(path)`), not on raw XML.
 - **REAPER tools:** `hypnomix reaper start|status|tracks|fx|params` talk to the open REAPER through
   `hypnomix/reaper/bridge.lua` (request files in `~/.hypnomix/reaper-bridge`, a fixed list of commands, never code;
@@ -257,7 +259,7 @@ Present their output as "measured, please check by ear", and prefer `--report` b
 ## Other DAWs (Logic Pro, Pro Tools, anything else)
 
 REAPER is supported directly (`scan`/`fix` on the `.rpp`, the bridge, `chain --reaper`: `docs/REAPER.md`), and
-Ardour sessions can be scanned. For the rest:
+Ardour sessions can be scanned and fixed into a new `.ardour` snapshot. For the rest:
 
 
 Today: the file tools and `scan FOLDER`. Ask the person to export each track as a full-length file from the

@@ -95,8 +95,8 @@ and the review loop is identical in every tier: the same findings, the same deci
 ```
             tier 0: audio          tier 1: read project        tier 2: drive the app
 Ableton     yes (scan FOLDER)      yes (.als)                  yes (write new .als; OSC)
-REAPER      yes                    yes (.rpp is text)          planned (write new .rpp)
-Ardour      yes                    yes (.ardour is XML)        planned (write new .ardour; Lua, OSC)
+REAPER      yes                    yes (.rpp is text)          done: `fix` writes a new .rpp; the bridge drives the open REAPER
+Ardour      yes                    yes (.ardour is XML)        `fix` writes a new .ardour (not yet opened in Ardour); Lua, OSC planned
 Pro Tools   yes                    planned (session text)      planned (scripting SDK)
 Logic Pro   yes                    experimental                control surface only
 ```
@@ -116,11 +116,18 @@ changes. It also hosts free plug-ins on every platform. Roughly a week once the 
 
 **Ardour (free and open source, Mac, Windows, Linux).** Reading works: `hypnomix/project/ardour.py` reads
 sessions from Ardour 3 to 9 (sample times before Ardour 7; superclock and beat times after), with region
-layering, fade curves, gain envelopes, multi-channel regions, buses and aux returns. Next, as for REAPER: write a
-**new** `.ardour` with approved changes (region gain, fades, fader and pan, mute), then drive the open session
+layering, fade curves, gain envelopes, multi-channel regions, buses and aux returns. Phase 2 is done:
+`hypnomix fix SCAN_DIR --approved --out "Song (fixed).ardour"` writes ONE **new** `.ardour` snapshot beside the
+original, inside the session folder (`workflow/fix_ardour.py`, edits in `project/ardour_edit.py`): region fades
+(with their curve), region gain, gain-envelope dips over spikes, the eased level at a comp cut, and fader, pan and
+mute; both time formats; refuses a changed session, an existing output and protected tracks; checked and read back.
+Track names and order, vocal stacks, timing, sidechain and tuning are still by hand for Ardour.
+**Written and re-read by hypnomix; not yet opened in Ardour.** To check in Ardour: the new snapshot opens without a
+warning; the audio is found; fades and gain are as written (the listed regions, fade lengths and curve, dips);
+the pan goes the way round expected (azimuth 0 is left); the trim is unchanged. Phase 3: drive the open session
 through its Lua scripting and OSC for `chain` with Ardour's own ACE plug-ins (EQ, compressor, expander, delay,
-reverb). Not yet checked against Ardour itself: open a session saved by Ardour 8 or 9, compare our renders with
-its own export, and confirm pan direction and the trim gain.
+reverb). Also not yet checked against Ardour: open a session saved by Ardour 8 or 9 and compare our renders with
+its own export.
 
 **Pro Tools.**
 - *Read:* the "session info as text" export (tracks, clips, markers) parsed into the session model: no app

@@ -1,18 +1,28 @@
 <!--
 title: hypnomix with Ardour
-sub: Ardour 3 to 9 · read and scan a session today; writing fixes back is next
+sub: Ardour 3 to 9 · read, scan, and write approved fixes into a new snapshot (not yet opened in Ardour)
 group: DAW: Ardour
-teaser: Point hypnomix at an Ardour session: it reads the tracks, buses, regions, fades and automation, renders them the way Ardour layers them, and runs the same first-pass checks as on a Live set. Changes are listed for you to make in Ardour for now.
+teaser: Point hypnomix at an Ardour session: it reads the tracks, buses, regions, fades and automation, renders them the way Ardour layers them, and runs the same first-pass checks as on a Live set. Approved fades, gain and dips are written into a new snapshot beside your session; the rest is listed for you to do in Ardour.
 -->
 <div class="prose paper">
       <p><b>What works today.</b> hypnomix reads sessions saved by <b>Ardour 3 to 9</b>: tracks and buses, regions (with the way Ardour layers them: upper regions cover lower ones), fade curves, gain envelopes, multi-channel regions, plug-ins and automation. It renders each track from the session without opening Ardour, and <code>scan</code> runs the same checks as on a REAPER project: missing files, clicks at region edges, level jumps at comp cuts, vocal pitch and doubles, plug-ins switched off, the source recordings, boosted noise and "is this deliberate?" questions.</p>
-      <p><b>What isn't there yet.</b> hypnomix doesn't write a new <code>.ardour</code> yet, so findings that change the session are listed as steps for you to do in Ardour. Findings that make new audio (tuning, de-hiss, de-ess) work as for any DAW: you get repaired files to bring in. Writing a new session with your approved changes, then driving the open session with Ardour's own plug-ins, is next on the <a data-wiki="next" href="#">roadmap</a>.</p>
-      <p><b>Not yet checked against Ardour itself.</b> The reader was tested on real Ardour 3, 8 and 9 session files, but not yet against a running Ardour: our renders haven't been compared with Ardour's own export, and pan direction and trim gain still need confirming. If something sounds different from Ardour, tell us.</p>
+      <p><b>Fixes are written into a new snapshot.</b> <code>hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).ardour"</code> writes <b>one new <code>.ardour</code></b> with the changes you approved, <i>next to your session file, inside the same session folder</i>. That is where Ardour keeps its own snapshots, and where it looks for the session's audio (<code>interchange/&lt;session&gt;/audiofiles</code>), so the new file finds the same recordings; nothing is copied or moved, and your original is never touched. It works on every Ardour version hypnomix reads (sample times before Ardour 7, superclock and beat times after).</p>
+      <p>What it can write: <b>region fades</b> in and out (as a curve; <code>shape=linear</code>, <code>power</code> or <code>slow</code> in the decision note; a fade that is already longer is left alone), <b>region gain</b>, a <b>dip over a spike</b> (a quick turn-down in the region's gain envelope, so your fader and automation stay yours), the eased level after a <b>comp cut</b> (a gain envelope on the region that starts a little quieter and returns to normal; <code>method=item</code> sets the region gain instead), and fader, pan and mute on a track. A fader, pan or mute that already plays automation is refused. Track names and order, vocal stacks, timing nudges and sidechain stay by hand for now, and so does tuning (those make new audio you bring in).</p>
+      <p><b>Safety.</b> It refuses when the session was saved after the scan, when the output exists, or on protected tracks. Each approved finding is found again by its region; one that is not there is skipped and said so. The new file is checked: same tracks, buses, regions, positions and lengths, ids unique, fade and envelope times well-formed, regions inside their files, and nothing outside the approved edits differs. A file that fails is renamed "(BROKEN, do not open)". Then <code>fix</code> reads it back, lists exactly what changed and measures the clips again.</p>
+      <p><b>Written and re-read by hypnomix; not yet opened in Ardour.</b> Ardour is not installed where this was built, so nothing has been opened in a running Ardour. The reader was tested on real Ardour 3, 8 and 9 session files; the writer on synthetic sessions in both time formats. Please check in Ardour, and tell us what you see:</p>
+      <ul>
+        <li>the new snapshot <b>opens without a warning</b> (Session &gt; Open, or the snapshot list);</li>
+        <li>the <b>audio is found</b> (no missing-files dialog);</li>
+        <li><b>fades and gain are as written</b>: the listed regions show the fade lengths and curve, the gain, and the envelope dips;</li>
+        <li><b>pan direction</b> is the way round you expect (azimuth 0 is left), if you approved a pan move;</li>
+        <li>the <b>trim</b> knob is where it was (the fader move leaves it alone).</li>
+      </ul>
+      <p>Findings that make new audio (tuning, de-hiss, de-ess) work as for any DAW. Driving the open session with Ardour's own plug-ins is next on the <a data-wiki="next" href="#">roadmap</a>. The reader's renders also haven't been compared with Ardour's own export.</p>
     </div>
     <div class="term" data-label="Ardour"><pre><span class="p">$</span> hypnomix project "Song/"               <span class="c"># what is in the session: tracks, buses, regions, plug-ins, automation</span>
 <span class="p">$</span> hypnomix project "Song/" --render      <span class="c"># render every track the way Ardour layers the regions</span>
 <span class="p">$</span> hypnomix scan "Song/"                  <span class="c"># the first pass: one review list (or point at Song.ardour)</span>
 <span class="p">$</span> hypnomix review "hypnomix-out/scan/Song" --serve   <span class="c"># play A and B, approve or skip</span></pre></div>
     <div class="prose paper">
-      <p>Ardour can stay open while you scan; nothing is written next to your session. Any way of driving hypnomix works with Ardour: <a data-wiki="setup" href="#">choose your setup</a>.</p>
+      <p>Ardour can stay open while you scan; nothing is written next to your session. A fix writes a new snapshot beside it; open that in Ardour when it is done. Any way of driving hypnomix works with Ardour: <a data-wiki="setup" href="#">choose your setup</a>.</p>
     </div>

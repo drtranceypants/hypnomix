@@ -10,6 +10,7 @@
   hypnomix fix SCAN_DIR --approve ID --from "Song (fixed 1).als" --out "Song (fixed 2).als"
                                                             one fix at a time, each on top of the last
   hypnomix fix SCAN_DIR --approved --out "Song (fixed).rpp"  a REAPER project: see workflow/fix_project.py
+  hypnomix fix SCAN_DIR --approved --out "Song (fixed).ardour"  an Ardour session: see workflow/fix_ardour.py
   hypnomix fix SCAN_DIR --decide smooth-3=approve@60        approve 60% of the proposed move (default 100)
   hypnomix fix SCAN_DIR --decide-like smooth-3=approve@60 [--dry-run] [--band 50]
                                                             the same decision for every undecided finding like
@@ -22,6 +23,13 @@ strength of each nudge; duck: ducking depth; tune: correction strength); device,
 fixes move each changed value that share of the way toward the proposed one (gains in dB). Kinds that can't be
 scaled (renames, track order, tidy, plans, borrowed loops, motion moves) say so and apply in full for any amount
 above 0; amount 0 applies nothing. Every apply run is logged for `hypnomix history` (versions, diff, undo).
+
+Ardour: the approved region fades (with their curve), region gain, gain-envelope dips over spikes, and the eased
+level at a comp cut are written into ONE new .ardour snapshot, saved next to the original inside the same session
+folder (that is where Ardour keeps its own snapshots, and where it looks for the session's audio, so the new file
+finds the same recordings; nothing is copied or moved). The original is never touched; the new file is read back and
+checked, and what changed is listed. Track names and order, vocal stacks, timing, sidechain and tuning stay by hand.
+Written and re-read by hypnomix; NOT YET OPENED IN ARDOUR (see the Ardour wiki article for what to check there).
 
 What happens to each approved finding (see REVIEW.md for the ids):
   set     written into ONE new set next to the original, in this order: distortion parameter fixes,
@@ -243,7 +251,7 @@ def main():
     ap.add_argument("--approved", action="store_true", help="apply every finding recorded as approved in decisions.json")
     ap.add_argument("--decide", default="", help="record decisions and exit: ID=approve|skip|change[,ID=...]")
     ap.add_argument("--note", default="", help="with --decide: the person's reason or requested change")
-    ap.add_argument("--out", help='new set to write, e.g. "Song (fixed).als" (same folder as the original)')
+    ap.add_argument("--out", help='new set to write, e.g. "Song (fixed).als", "Song (fixed).rpp" or "Song (fixed).ardour" (same folder as the original)')
     ap.add_argument("--from", dest="from_set", help="start from this set instead of the scanned one (to apply "
                     "fixes one at a time, each on top of the last); must be in the same folder")
     ap.add_argument("--key", help='confirmed song key for vocal tuning, e.g. "F# major", or "sections" to tune '
@@ -400,6 +408,9 @@ def main():
             sys.exit("the set was saved again after the scan, so the findings may not match it any more.\n"
                      "Re-scan it (recommended), or pass --stale-ok if the change cannot affect these findings.")
     reaper_ = orig is not None and orig.suffix.lower() == ".rpp"
+    ardour_ = orig is not None and orig.suffix.lower() == ".ardour"
+    if ardour_ and any(f.get("tool") == "tune" for f in audio_items):
+        sys.exit("tuning is not written into an Ardour session yet: untick the tune items (the other fixes can go ahead)")
     voices_in_set = bool(orig) and not reaper_ and any(f.get("tool") == "voices" for f in audio_items)
     tune_rpp = reaper_ and any(f.get("tool") == "tune" for f in audio_items)
     # tuning in a Live set also writes a new set (the comp clips play the tuned takes), so it needs --out too
@@ -408,7 +419,7 @@ def main():
         if not orig:
             sys.exit("this scan has no Live set: set changes cannot be applied")
         if not a.out:
-            sys.exit("approved set changes need --out NEW" + (".rpp" if reaper_ else ".als"))
+            sys.exit("approved set changes need --out NEW" + (".rpp" if reaper_ else ".ardour" if ardour_ else ".als"))
         out = Path(a.out)
         if not out.is_absolute():
             out = src.parent / out
@@ -421,7 +432,10 @@ def main():
     name_out = out
     if reaper_ and out is not None and out.suffix.lower() != ".rpp":
         sys.exit("a REAPER project is written as a new .rpp: give --out \"<Song> (fixed).rpp\"")
-    if orig and not reaper_ and (set_items or audio_items or name_items) and live_running():
+    if ardour_ and out is not None and out.suffix.lower() != ".ardour":
+        sys.exit("an Ardour session is written as a new snapshot: give --out \"<Session> (fixed).ardour\" "
+                 "(it is saved next to the original, inside the session folder)")
+    if orig and not reaper_ and not ardour_ and (set_items or audio_items or name_items) and live_running():
         print("NOTE: Live is running. Changes not saved in Live are not in the file being read, and the set "
               "must be closed in Live before the new one is opened.\n")
 
@@ -444,6 +458,15 @@ def main():
         failed += f2
         skipped_all += s2
         audio_items = [f for f in audio_items if f.get("tool") != "tune"]
+        set_items = []
+        out = wrote
+    if ardour_ and (set_items or name_items):    # Ardour: one pass into one new .ardour (fix_ardour.py)
+        from hypnomix.workflow import fix_ardour as FA
+        wrote, l2, f2, s2 = FA.run(sd, scan, src, out, set_items + name_items, dec, verify=not a.no_verify)
+        name_items = []
+        log += l2
+        failed += f2
+        skipped_all += s2
         set_items = []
         out = wrote
     if set_items:
@@ -913,6 +936,10 @@ def main():
     if out and str(out).lower().endswith(".rpp"):
         print("Open the new project in REAPER and A/B the changed spots against the original (tuned parts: switch "
               "takes on the items).")
+    elif out and str(out).lower().endswith(".ardour"):
+        print("Written and re-read by hypnomix; not yet opened in Ardour. Open the new snapshot (Session > Open, or "
+              "Session > Snapshot list) and check: it opens without a warning, the audio is found, fades and gain are "
+              "as listed, the pan is the way round you expect, and the trim.")
     elif out:
         print("Close the original in Live, open the new set, and A/B the changed spots against the original.")
     if failed:
