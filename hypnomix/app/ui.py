@@ -58,7 +58,7 @@ animation:sp 1s linear infinite;vertical-align:-1px;margin-right:6px}@keyframes 
 </style></head><body>
 <header><span class="brand">hypnomix</span>
 <nav><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
-<button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button></nav>
+<button class="tab" data-view="chat">Assistant</button><button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button></nav>
 <span class="live" id="live"></span></header>
 <main id="main"></main>
 <script>
@@ -265,6 +265,7 @@ async function render() {
   else if (S.view === 'review') m.innerHTML = reviewView();
   else if (S.view === 'prefs') m.innerHTML = await prefsView();
   else if (S.view === 'tools') m.innerHTML = toolsView();
+  else if (S.view === 'chat') { m.innerHTML = chatView(); chatPoll(true).catch(() => {}); }
   else if (S.view === 'live') { await pollProbe(); m.innerHTML = liveView(); }
   refresh();
 }
@@ -323,7 +324,7 @@ document.addEventListener('change', e => {
 document.addEventListener('play', e => { document.querySelectorAll('audio').forEach(a => { if (a !== e.target) a.pause(); }); }, true);
 render();
 setInterval(() => { refresh(); pollJob(); pollProbe(); }, 1000);
-</script></body></html>
+</script><script src="/chat.js"></script></body></html>
 """
 
 from hypnomix.workflow.review import OVERSIGHT_CSS as _OC, OVERSIGHT_JS as _OJ   # noqa: E402

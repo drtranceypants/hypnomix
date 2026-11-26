@@ -72,6 +72,27 @@ what you approved into a new set. Every other command is on its Tools screen wit
 any track in your Live set, shows the finding you are on, and moves Live to it: track selected, playhead and
 loop brace on the spot, clip open. See [docs/APP.md](docs/APP.md).
 
+### The Assistant: chat with an AI inside the app, your own key
+
+No Claude Code needed. Open the app's **Assistant** tab, choose a provider, paste a key, and talk about your
+song: "do a first pass on this set", "what does the review say about the vocals?", "apply what I approved".
+The assistant runs hypnomix for you and explains each finding.
+
+- **Any provider:** Claude (Anthropic), OpenAI, Google Gemini, OpenRouter (many models on one key), Groq,
+  Mistral, any other service with an OpenAI-compatible address, or a free model running on your own computer
+  in Ollama (no key at all). **List models** shows what your key can use.
+- **Your key and your audio stay with you:** the key is kept in `~/.hypnomix/ai.json` (readable by you only) and
+  sent only to the provider you chose. The assistant reads hypnomix's text reports, never the audio.
+- **Nothing changes without your click:** reading, scanning and measuring run straight away. Anything that
+  writes a set (an `--apply`, `fix --approved`, an `.als` output) shows the exact command with **Run it /
+  Don't**. Every write is still a new set next to the original.
+- **With the Live device loaded**, it can point Live at a finding (track selected, playhead and loop there).
+
+```
+pip install "hypnomix[assistant]"     # the two official SDKs it talks through
+hypnomix app                          # then open the Assistant tab
+```
+
 ## First pass on a new song
 
 ```

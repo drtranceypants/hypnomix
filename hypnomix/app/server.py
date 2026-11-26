@@ -11,6 +11,9 @@ What you can do in it:
   apply         writes only what you approved into ONE new set next to the original, then shows what changed
   preferences   the questions asked once: targets, protected tracks, what is deliberate
   tools         run any hypnomix command with a form, and read its report
+  assistant     chat with an AI (your own key: Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, or a free model
+                in Ollama on this computer) that runs hypnomix for you; anything that writes a set waits for your
+                click. Needs `pip install "hypnomix[assistant]"`
   Live          with the Max for Live device (`hypnomix device`) loaded in your set, "Show in Live" jumps Live
                 to the finding: the track is selected, the playhead and the loop brace move to the spot, and
                 the clip opens. The device also steps through the open questions from inside Live.
@@ -57,7 +60,7 @@ def run_job(kind, title, steps, sdir=""):
             JOB["step"] = label
             JOB["log"].append(f"$ hypnomix {' '.join(shlex.quote(a) for a in argv)}")
             try:
-                p = subprocess.Popen([sys.executable, "-m", "hypnomix.cli", *argv], cwd=str(work()), text=True,
+                p = subprocess.Popen([sys.executable, "-u", "-m", "hypnomix.cli", *argv], cwd=str(work()), text=True,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                 JOB["proc"] = p
                 for line in p.stdout:
@@ -421,6 +424,11 @@ def make_handler(port):
                     r = AL.handle_get(u.path, q)
                     if r:
                         return self.send(*r)
+                if u.path.startswith("/api/chat/") or u.path == "/chat.js":   # the Assistant tab
+                    from hypnomix.app import chat as CH
+                    r = CH.handle_get(u.path, q)
+                    if r:
+                        return self.send(*r)
                 if u.path == "/api/live/poll":            # the Max for Live device asks a few times a second
                     LIVE["seen"] = time.time()
                     since = int(q.get("since", -1))
@@ -499,6 +507,11 @@ def make_handler(port):
                     return self.send(200, {"capture": str(f)})
                 if self.headers.get("X-Hypnomix") != TOKEN:
                     return self.send(403, {"error": "open the app's own page to do this"})
+                if u.path.startswith("/api/chat/"):        # the Assistant tab (needs the page's token, like the rest)
+                    from hypnomix.app import chat as CH
+                    r = CH.handle_post(u.path, body)
+                    if r:
+                        return self.send(*r)
                 if u.path == "/api/pick":
                     return self.send(200, {"path": pick(body["kind"])})
                 if u.path == "/api/decide":

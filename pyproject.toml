@@ -22,6 +22,8 @@ dependencies = [
 reference = ["matchering>=2.0"]
 ml = ["audio-separator>=0.30", "basic-pitch>=0.4"]
 critique = ["google-genai>=1.0"]
+# the app's Assistant tab: bring your own key from Anthropic or any OpenAI-compatible provider
+assistant = ["anthropic>=1.0", "openai>=1.0"]
 # GPL-3.0: kept optional so hypnomix itself stays MIT. Hosts VST3 / AU plug-ins for `hypnomix plugrender`
 plugins = ["pedalboard>=0.9"]
 
