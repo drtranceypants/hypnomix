@@ -14,10 +14,9 @@ on:
   push:
     tags: ["v*"]
 
+# The build jobs run pip/uv installs, so they only get a read-only token. Only the jobs that publish get more.
 permissions:
-  contents: write
-  id-token: write        # build provenance: anyone can check a download was built here from this source
-  attestations: write
+  contents: read
 
 jobs:
   mac:
@@ -30,8 +29,8 @@ jobs:
       matrix:
         arch: [arm64, x86_64]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
       - name: Import the signing certificate
         if: ${{ env.HAS_CERT == 'true' }}
         env:
@@ -48,15 +47,20 @@ jobs:
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
       - name: Save notarisation credentials
         if: ${{ env.HAS_NOTARY == 'true' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          xcrun notarytool store-credentials hypnomix --apple-id "${{ secrets.APPLE_ID }}" \
-            --team-id "${{ secrets.APPLE_TEAM_ID }}" --password "${{ secrets.APPLE_APP_PASSWORD }}"
+          xcrun notarytool store-credentials hypnomix --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
           echo "HYPNOMIX_NOTARY_PROFILE=hypnomix" >> "$GITHUB_ENV"
       - name: Build
         env:
           HYPNOMIX_SIGN_ID: ${{ secrets.MACOS_SIGN_ID }}
-        run: packaging/mac/build_dmg.sh ${{ matrix.arch }}
-      - uses: actions/upload-artifact@v4
+          ARCH: ${{ matrix.arch }}
+        run: packaging/mac/build_dmg.sh "$ARCH"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mac-${{ matrix.arch }}
           path: packaging/dist/*.dmg
@@ -65,8 +69,8 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
       - name: Inno Setup (if the runner image lacks it)
         shell: pwsh
         run: |
@@ -119,7 +123,7 @@ jobs:
           & "$env:RUNNER_TEMP\hx\python\pythonw.exe" "$env:RUNNER_TEMP\hx\launcher.pyw" --stop
           Start-Process "$env:RUNNER_TEMP\hx\unins000.exe" -ArgumentList "/VERYSILENT" -Wait
           exit 0
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: windows-x64
           path: packaging/dist/*-setup.exe
@@ -129,8 +133,12 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [mac, windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write        # create the draft release and attach the installers
+      id-token: write        # build provenance: anyone can check a download was built here from this source
+      attestations: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           merge-multiple: true
@@ -143,7 +151,7 @@ jobs:
           sha256sum Hypnomix-*.dmg Hypnomix-*.exe > SHA256SUMS.txt
           cat SHA256SUMS.txt
       - name: Build provenance (gh attestation verify FILE -R drtranceypants/hypnomix)
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: "dist/Hypnomix-*"
       - name: Attach to the release
@@ -160,6 +168,8 @@ jobs:
   scan:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [release]
+    permissions:
+      contents: write        # scan-release reads the draft, attaches the report and publishes it
     uses: ./.github/workflows/scan-release.yml
     with:
       tag: ${{ github.ref_name }}

@@ -33,6 +33,16 @@ engine. Tags can't be moved, so cut the next version: machine-learning engines s
 unchanged code (v0.1.4's Apple silicon image got Microsoft's `Wacatac.B!ml`; two rebuilds of the same tag were clean).
 To publish a draft by hand after reading the report: `gh release edit vX.Y.Z --draft=false --latest`.
 
+VirusTotal is required for publishing: it needs a free API key stored as the repository secret `VT_API_KEY`. Without
+it the scan run fails with a message saying so, the report is still attached, and the release stays a draft. Add the
+secret, then run scan-release again from the Actions tab with the tag and "publish" ticked. The tag you give it must
+look like `v0.1.1` (an optional `-suffix` is allowed); anything else is refused.
+
+The workflows are locked down because they build and publish what people install: the build jobs get a read-only
+token, only the release job can write, and every action is pinned to an exact commit (the version is in the comment
+beside it). To update an action, look up the new release's commit and change both together. The optional Ableton
+connector in `.mcp.json` is likewise pinned to one version of `ableton-mcp`.
+
 ## Signing
 
 Unsigned installers work, but macOS Gatekeeper and Windows SmartScreen ask people to allow them once.
@@ -58,5 +68,17 @@ downloads this platform's stable-named asset into `~/.hypnomix/updates/`, and ch
 swaps `Hypnomix.app` in place and reopens it; on Windows it runs the setup with `/VERYSILENT` over the install
 (Inno Setup keeps the folder and tasks) and starts the launcher with `--quiet`. The helper logs to
 `~/.hypnomix/updates/update.log`. The Windows CI job tests an in-place update after its smoke test. For a local
-test beside a running copy, `HYPNOMIX_PORT` and `HYPNOMIX_UPDATE_URL` (a releases JSON) point the app elsewhere.
+test beside a running copy, `HYPNOMIX_PORT` and `HYPNOMIX_UPDATE_URL` (a releases JSON) point the app elsewhere; while
+`HYPNOMIX_UPDATE_URL` is set, `http://127.0.0.1` and `http://localhost` addresses are also accepted, nothing else.
+
+What the check protects against: a damaged download, and a file swapped on GitHub's download servers (the SHA-256 in
+`SHA256SUMS.txt` must match; the app hashes the file again right before it runs the helper, and the helper once more
+before it opens the image). Release names must be a plain version (ASCII digits and dots), and asset and checksum
+addresses must be https on github.com in that same release's download folder,
+`/drtranceypants/hypnomix/releases/download/<tag>/<file>`, with no encoded dots, slashes or `;` (redirects must stay on
+https and end on github.com or `*.githubusercontent.com`; the system proxy settings are used). On a Mac the helper
+runs `codesign --verify --deep --strict` on the new app and compares its `CFBundleShortVersionString` with the release
+version, and keeps the old app if either fails: that shows the bundle is whole and is the version claimed, not who made it. What it does **not** protect against: anyone who
+controls the GitHub release (they publish the installer and its checksum together), until installers are signed with
+a publisher key the app checks. Nothing in the updater touches quarantine attributes.
 
