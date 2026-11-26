@@ -80,6 +80,24 @@ class BreathsTest(unittest.TestCase):
             self.assertAlmostEqual(e["t"], t, delta=0.04)
             self.assertAlmostEqual(e["dur"], 0.4, delta=0.08)
 
+    def test_dark_recording_and_full_scale_silence(self):
+        """A dark microphone (nothing above 3 kHz) with a quiet room: the breaths are still found. A fixed
+        brightness threshold and whole-spectrum flatness both miss these (they found none on real takes)."""
+        rng = np.random.default_rng(5)
+        lp = butter(6, 3000, "lowpass", fs=SR, output="sos")
+        x = sosfiltfilt(lp, self.x) + 10 ** (-80 / 20) * sosfiltfilt(lp, rng.standard_normal(len(self.x)))
+        ev = breaths.analyse(x, SR)
+        self.assertEqual(len(ev), 2, ev)
+        for e, t in zip(ev, self.bt):
+            self.assertAlmostEqual(e["t"], t, delta=0.06)
+
+    def test_a_short_s_after_a_word_is_not_a_breath(self):
+        rng = np.random.default_rng(7)
+        ess = sosfiltfilt(butter(2, 2500, "highpass", fs=SR, output="sos"), rng.standard_normal(int(0.18 * SR)))
+        ess *= 10 ** (-22 / 20) * 0.3 / np.sqrt(np.mean(ess ** 2))
+        x = np.concatenate([vowel(SR), ess, np.zeros(int(0.5 * SR)), vowel(SR, 200)])
+        self.assertEqual(breaths.analyse(x, SR), [])
+
     def test_breaths_reduced(self):
         for t in self.bt:
             a, b = int((t + 0.06) * SR), int((t + 0.34) * SR)

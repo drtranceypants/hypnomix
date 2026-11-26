@@ -2,8 +2,10 @@
 """Breath control for ONE vocal file: breaths between phrases are turned down, not removed.
 
 How it finds breaths (same rules as the breath step inside `hypnomix prep`):
- - 10 ms frames; a breath is 150-900 ms of sound that is 14-45 dB below the vocal's loud parts,
-   noise-like (spectral flatness > 0.08) and airy (spectral centroid > 1200 Hz).
+ - 10 ms frames; a breath is 150-900 ms of sound that is 14-45 dB below the vocal's loud parts and clearly
+   above the room, with no pitch (a sung note repeats itself, air does not) and airier than this voice's own
+   singing. Short air (under a quarter second) straight after a sung sound is the end of a word and is left alone. Brightness is
+   judged against the file itself, so dark microphones and dark voices work too.
 How it fixes them:
  - Each breath is turned down by --reduce dB with short (~15 ms) fades in and out inside the breath,
    so it still sounds human. Everything outside the breaths is bit-identical.
@@ -12,8 +14,7 @@ Usage: hypnomix breaths IN.wav [OUT.wav] [--reduce 8] [--report] [--json OUT.jso
 OUT defaults to hypnomix-out/breaths/<name> (breaths).wav. Never overwrites: refuses if OUT is IN or exists.
 --report analyses only and writes nothing.
 """
-# Detection is copied from hypnomix/studio/prep.py `breaths` (that one needs librosa and returns audio
-# only); here it is rewritten with numpy/scipy and returns the events.
+# numpy/scipy only; returns the events. (`hypnomix prep` has an older breath step with fixed thresholds.)
 import argparse, json, sys
 from pathlib import Path
 import numpy as np, soundfile as sf
@@ -28,16 +29,30 @@ def mmss(t):
 
 
 def _features(m, sr, hop):
+    """Per 10 ms frame: level (dB), how periodic the sound is (0-1; a sung note is high, air is low), and how
+    much of the frame's energy sits in the upper part of THIS voice's own band (its "airiness").
+
+    Everything is measured inside the band the voice actually occupies. Measured over the whole spectrum,
+    noisiness comes out as zero on real recordings (the empty top of the spectrum swamps it), and a fixed
+    brightness threshold misses dark microphones and dark voices."""
     n_fft = hop * 4
     f, _, Z = stft(m, sr, nperseg=n_fft, noverlap=n_fft - hop, boundary="even", padded=True)
     P = np.abs(Z) ** 2 + 1e-20
-    flat = np.exp(np.mean(np.log(P), 0)) / np.mean(P, 0)
-    mag = np.abs(Z)
-    cent = (f[:, None] * mag).sum(0) / (mag.sum(0) + 1e-12)
-    e = uniform_filter1d(m ** 2, hop * 2)
-    lv = 10 * np.log10(e[::hop] + 1e-18)
-    n = min(len(lv), len(flat), len(cent))
-    return lv[:n], flat[:n], cent[:n]
+    lv = 10 * np.log10(P[f >= 80].sum(0))
+    loud = lv > np.percentile(lv, 90)
+    spec = 10 * np.log10(P[:, loud].mean(1) if loud.any() else P.mean(1))
+    band = (f >= 150) & (spec > spec[f >= 150].max() - 40)            # where the voice has energy
+    if band.sum() < 8:
+        band = (f >= 150) & (f <= 8000)
+    Pb = P[band]
+    cum = np.cumsum(10 ** (spec[band] / 10)); split = np.searchsorted(cum, cum[-1] * 0.85)   # top 15% of the voice's energy
+    split = int(np.clip(split, 1, band.sum() - 1))
+    air = 10 * np.log10(Pb[split:].sum(0) / Pb[:split].sum(0))
+    # periodicity: the strongest autocorrelation peak for a pitch between 70 and 500 Hz
+    r = np.fft.irfft(P * (f >= 80)[:, None], axis=0)
+    lo, hi = int(sr / 500), min(int(sr / 70), r.shape[0] // 2 - 1)
+    per = r[lo:hi].max(0) / (r[0] + 1e-20)
+    return lv, per, air
 
 
 def analyse(y, sr):
@@ -47,13 +62,25 @@ def analyse(y, sr):
     hop = int(0.01 * sr)
     if len(m) < hop * 20 or not np.any(m):
         return []
-    lv, flat, cent = _features(m, sr, hop)
+    lv, per, air = _features(m, sr, hop)
     top = np.percentile(lv, 95)
-    cand = (lv < top - 14) & (lv > top - 45) & (flat > 0.08) & (cent > 1200)
+    # the room: the level of the long silences (over a second). A take with no long silence has no room rule.
+    q = np.diff(np.concatenate([[0], (lv < top - 14).astype(int), [0]]))
+    long = [lv[a + 20:b - 20] for a, b in zip(np.flatnonzero(q == 1), np.flatnonzero(q == -1)) if b - a > 100]
+    floor = float(np.percentile(np.concatenate(long), 25)) if long else -np.inf
+    voiced = (lv > top - 12) & (per > 0.6)
+    if voiced.sum() < 20:
+        return []
+    air_voice = np.median(air[voiced])
+    # quieter than the singing but clearly above the room, not a pitched sound, and airier than the voice itself
+    cand = (lv < top - 14) & (lv > max(top - 45, floor + 6)) & (per < 0.45) & (air > air_voice + 3)
+    cand = uniform_filter1d(cand.astype(float), 5) > 0.5                      # bridge and trim 1-2 frame flickers
     d = np.diff(np.concatenate([[0], cand.astype(int), [0]]))
     ev = []
     for a, b in zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1)):
         if 15 <= b - a <= 90:
+            if b - a < 25 and voiced[max(0, a - 8):a].any():   # short air straight after a sung sound: the end of a word ("s", "f")
+                continue
             lvl = 10 * np.log10(np.mean(10 ** (lv[a:b] / 10))) - top
             ev.append({"t": round(a * hop / sr, 3), "dur": round((b - a) * hop / sr, 3), "level_db": round(float(lvl), 1)})
     return ev
