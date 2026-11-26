@@ -173,7 +173,8 @@ def report(m, prev, prof, title):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog="hypnomix loop", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--bar", type=int, default=1)
     ap.add_argument("--bars", type=int, default=8)
     ap.add_argument("--label", default="take")
@@ -184,6 +185,9 @@ def main():
     ap.add_argument("--secs", type=float, default=20)
     ap.add_argument("--device", default="BlackHole 2ch")
     ap.add_argument("--channels", type=int, default=2)
+    if len(sys.argv) <= 1:           # no arguments: show the usage instead of connecting to Live and playing bar 1
+        ap.print_help()
+        sys.exit(2)
     a = ap.parse_args()
 
     if a.ab and a.no_play:

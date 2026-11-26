@@ -77,7 +77,8 @@ def cache_dir():
     d = os.environ.get("HYPNOMIX_RENDER_CACHE")
     if d:
         return Path(d).expanduser()
-    return Path(os.environ.get("HYPNOMIX_HOME", "~/.hypnomix")).expanduser() / "cache" / "render"
+    from hypnomix.core.atomic import cache_root          # the same hypnomix home as every other cache (HYPNOMIX_HOME)
+    return cache_root() / "render"
 
 
 def cache_enabled(flag=None):

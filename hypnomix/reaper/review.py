@@ -2,7 +2,8 @@
 
   hypnomix reaper review          open the Hypnomix panel in REAPER and keep it in step with the app's review
 
-Needs the hypnomix app running with a review open (`hypnomix app`). The panel shows the finding you are on, and:
+Needs the hypnomix app running with a review open (`hypnomix app`; for an app on another port give --port N, or
+set HYPNOMIX_PORT). The panel shows the finding you are on, and:
 
   Prev / Next / Next open   step through the findings; REAPER selects the track and puts the time selection on the spot
   Approve / Skip            record your decision in the review (nothing is applied from here)
@@ -24,11 +25,28 @@ import urllib.request
 
 from hypnomix.reaper.client import Reaper, ReaperError
 
-APP = "http://127.0.0.1:8791"          # --port changes it
+DEFAULT_PORT = 8791
+APP = None                              # "http://127.0.0.1:<port>", set when the panel starts (see app_url)
+
+
+def app_port(given=None):
+    """The app's port: --port, else HYPNOMIX_PORT, else 8791 (read when the panel starts)."""
+    import os
+    if given:
+        return int(given)
+    try:
+        n = int(os.environ.get("HYPNOMIX_PORT", "").strip() or DEFAULT_PORT)
+        return n if 1 <= n <= 65535 else DEFAULT_PORT
+    except ValueError:
+        return DEFAULT_PORT
+
+
+def app_url():
+    return APP or f"http://127.0.0.1:{app_port()}"
 
 
 def app(path, body=None, timeout=5):
-    req = urllib.request.Request(APP + path, data=json.dumps(body).encode() if body is not None else None,
+    req = urllib.request.Request(app_url() + path, data=json.dumps(body).encode() if body is not None else None,
                                  headers={"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
 
@@ -139,10 +157,10 @@ def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(prog="hypnomix reaper review", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", type=int, default=8791, help="the hypnomix app's port (default 8791)")
+    ap.add_argument("--port", type=int, default=None, help="the hypnomix app's port (default: HYPNOMIX_PORT, else 8791)")
     a = ap.parse_args(argv)
     global APP
-    APP = f"http://127.0.0.1:{a.port}"
+    APP = f"http://127.0.0.1:{app_port(a.port)}"
     try:
         app("/api/live/poll?since=-1", timeout=2)
     except OSError:

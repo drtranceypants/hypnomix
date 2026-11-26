@@ -9,16 +9,17 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-import librosa, librosa.display
-import pyloudnorm as pyln
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 
 
 def render(path, outdir):
+    # the plotting libraries take seconds to load, so they load here and not when `hypnomix spectrogram -h` runs
+    import librosa, librosa.display
+    import pyloudnorm as pyln
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
     data, sr = sf.read(str(path), always_2d=True)
     mono = data.mean(axis=1).astype(np.float32)
     y = librosa.resample(mono, orig_sr=sr, target_sr=22050); sr2 = 22050
@@ -48,7 +49,8 @@ def render(path, outdir):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("files", nargs="+")
+    ap = argparse.ArgumentParser(prog="hypnomix spectrogram", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter); ap.add_argument("files", nargs="+")
     ap.add_argument("--out"); a = ap.parse_args()
     from hypnomix.core.paths import out
     outdir = out_at(a.out, "spectrograms"); outdir.mkdir(parents=True, exist_ok=True)

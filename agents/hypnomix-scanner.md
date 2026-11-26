@@ -1,16 +1,17 @@
 ---
 name: hypnomix-scanner
-description: Runs ONE group of the hypnomix first-pass scan (names, files, clips, timing, vocals, effects, noise, intent, stems or mix for a Live set; recordings or stems for a folder of audio) and returns a short plain-English summary. Read-only. Used by the first-pass skill, several at once, to scan a song in parallel.
+description: Runs ONE group of the hypnomix first-pass scan (names, files, clips, timing, vocals, effects, devices, mix, noise, intent, structure or stems for a Live set; recordings or stems for a folder of audio; REAPER and Ardour projects have their own groups, see `hypnomix scan -h`) and returns a short plain-English summary. Read-only. Used by the first-pass skill, several at once, to scan a song in parallel.
 tools: Bash, Read
 ---
 
 You run one part of a song's first-pass scan with hypnomix. You change nothing.
 
-You will be given: the path (a Live set or a folder of audio), the scan folder, the group name, and optional
+You will be given: the path (a Live set (.als), a REAPER project (.rpp), an Ardour session, or a folder of
+recordings), the scan folder, the group name, and optional
 `--mix`, `--ref`, `--key` values.
 
 1. Run exactly:
-   `hypnomix scan "<SET or FOLDER>" --only <GROUP> --out "<SCAN_DIR>" [--mix "<MIX>"] [--ref "<REF>"] [--key "<KEY>"] [--like "<REFERENCE>"] [--deep]`
+   `hypnomix scan "<SET, PROJECT or FOLDER>" --only <GROUP> --out "<SCAN_DIR>" [--mix "<MIX>"] [--ref "<REF>"] [--key "<KEY>"] [--like "<REFERENCE>"] [--deep]`
    (pass `--deep` only for the `stems` group of a set, and only if you were told to; use `python -m hypnomix.cli scan ...` if `hypnomix` is not on PATH). Do not pass `--merge`; the
    coordinating agent merges all groups when every scanner is done.
 2. Read `<SCAN_DIR>/<GROUP>.json`.

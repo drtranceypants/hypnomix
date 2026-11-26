@@ -2,11 +2,19 @@
 """Apply the findings a person approved after `hypnomix scan`, and nothing else.
 
   hypnomix fix SCAN_DIR --list                              every finding id, with its recorded decision
+  hypnomix fix SCAN_DIR --list --undecided --top 15         the next 15 findings nobody has decided yet
+  hypnomix fix SCAN_DIR --list --severity high --tool tune  narrow the list (--severity, --tool, --undecided,
+                                                            --top N, --offset N: page through a long scan)
+  hypnomix fix SCAN_DIR --show smooth-3                     one finding in full: everything REVIEW.md says about
+                                                            it, plus the explanation of its kind of fix
   hypnomix fix SCAN_DIR --decide ID=approve,ID=skip [--note "why"]
                                                             record the person's decisions (decisions.json)
   hypnomix fix SCAN_DIR --approved --out "Song (fixed).als" apply everything recorded as approved
   hypnomix fix SCAN_DIR --approve ID,ID,... --out "Song (fixed).als"
-                                                            same, naming the ids here (also recorded)
+                                                            same, naming the ids here (also recorded). --approve and
+                                                            --decide can be repeated and each takes a comma list
+  hypnomix fix SCAN_DIR --approved --no-defaults --out ...  only what was approved by name: leave out the clean-ups
+                                                            that are on by default (track order, switched-off tracks)
   hypnomix fix SCAN_DIR --approve ID --from "Song (fixed 1).als" --out "Song (fixed 2).als"
                                                             one fix at a time, each on top of the last
   hypnomix fix SCAN_DIR --approved --out "Song (fixed).rpp"  a REAPER project: see workflow/fix_project.py
@@ -16,6 +24,12 @@
                                                             smooth-3 (same tool, kind and track role, size within
                                                             +-50%); lists the matches first
   --as NAME                                                 who is deciding (default: prefs review.name)
+
+Before anything is written, fix prints every file it is about to create (the new set, the archive copy that
+tidy keeps, repaired audio, the log) and lists the clean-ups that are on by default: they are applied by
+--approved unless you skipped them, so skip them first or pass --no-defaults to opt out. At the end it prints
+"Not applied": every finding decided as "change" (with the note), every approved finding that has to be done by
+hand, and every approved finding that was no longer found, each with what to do next.
 
 Amounts: tools with a strength control get it scaled (smooth: share of each jump eased and fade length; timing:
 strength of each nudge; duck: ducking depth; tune: correction strength); device, sidechain, clip-gain and edge
@@ -45,11 +59,13 @@ Safety checks made here, in code (they stop the run rather than guess):
   - any failed step makes the exit code 1 and is listed under FAILED; nothing is reported as done that wasn't
 
 Close the set in Live first: Live would overwrite edits on its next save, and changes you have not saved
-in Live are not in the file this reads. Every run appends to SCAN_DIR/fix-log.md.
+in Live are not in the file this reads. Every run appends to SCAN_DIR/fix-log.md. Decisions, findings and the log are written whole or not at
+all; the version before is kept next to each as <name>.bak.
 """
 import argparse, json, re, shutil, subprocess, sys, time
 from pathlib import Path
 
+from hypnomix.core import atomic as AT
 from hypnomix.workflow import oversight as O
 
 ORDER = ["distortion", "devices", "sidechain", "duck", "smooth", "edges", "cliplevel", "timing", "motion", "borrow", "tidy", "order"]   # track names come last, after all of these
@@ -76,12 +92,19 @@ def fingerprint(f):
 
 
 def load_decisions(sd):
-    p = sd / "decisions.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    return AT.load_json(Path(sd) / "decisions.json", {})
 
 
 def save_decisions(sd, dec):
-    (sd / "decisions.json").write_text(json.dumps(dec, indent=1))
+    AT.write_json(Path(sd) / "decisions.json", dec)
+
+
+def flat(values):
+    """Repeated options, each maybe a comma list, as one list: ["a,b", "c"] -> ["a", "b", "c"]."""
+    out = []
+    for v in [values] if isinstance(values, str) else (values or []):
+        out += [x.strip() for x in str(v).split(",") if x.strip()]
+    return out
 
 
 def decision_of(dec, fid):
@@ -235,13 +258,136 @@ def take_scales(key_json, spans, out):
     return merged
 
 
+SEVERITIES = ("high", "medium", "low", "info")
+
+
+def list_rows(findings, dec, severity=None, tool=None, undecided=False, offset=0, top=None):
+    """The findings `--list` shows: filtered, then paged. Returns (rows, total matching)."""
+    rows = [f for f in findings
+            if (not severity or f.get("severity") == severity)
+            and (not tool or f.get("tool") == tool)
+            and (not undecided or (f["id"] not in dec and f.get("applies") not in ("info", "answer")))]
+    total = len(rows)
+    rows = rows[max(0, offset):]
+    return (rows[:top] if top else rows), total
+
+
+def list_line(f, dec):
+    e = dec.get(f["id"]) if isinstance(dec.get(f["id"]), dict) else {}
+    dd = (decision_of(dec, f["id"]) or "-") + (f"@{O.amount_of(e)}" if e.get("amount") is not None else "")
+    who = f" by {e['by']}" if e.get("by") else ""
+    conf = " CONFLICT" if e.get("conflicts") else ""
+    return (f"{f['n']:4d}  {f['id']:<22} [{f.get('severity')}] {f.get('applies'):<6} "
+            f"{dd:<12}{who}{conf} {'PROTECTED ' if f.get('protected') else ''}"
+            f"{f['tool']}: {f.get('track') or '-'} {f.get('where', '')}  {str(f.get('problem'))[:80]}")
+
+
+def describe_default(f, src):
+    """One plain phrase for a finding that is applied because it is on by default."""
+    kind = f.get("kind")
+    if kind == "track-order":
+        return "track order"
+    if kind == "retire-off":
+        n = len(f.get("retire") or [])
+        try:
+            from hypnomix.session import tidy as TD
+            arch = TD.archive_path(src).name if src else "<name> (archive, all takes).als"
+        except Exception:
+            arch = "<name> (archive, all takes).als"
+        return f"removes {n} switched-off track{'s' if n != 1 else ''}; a full copy is kept as '{arch}'"
+    if kind == "consolidate":
+        return f"puts one instrument's clips on one track: {f.get('track')}"
+    if kind == "vocal-stack":
+        return f"moves {f.get('where') or 'clips'} onto the track for their pitch"
+    return f"{f.get('tool')} {kind}"
+
+
+def planned_files(chosen, sd, src, out, orig, reaper_):
+    """Every file this run is about to create: [(path, what it is)]. Nothing is overwritten: all are new."""
+    sd = Path(sd)
+    rows = []
+    if out is not None:
+        rows.append((out, "the new project" if reaper_ else "the new set (the original is never touched)"))
+    if src and not reaper_ and any(f.get("tool") == "tidy" for f in chosen):
+        try:
+            from hypnomix.session import tidy as TD
+            rows.append((TD.archive_path(src), "a full copy of the set as it is now, written first so every take "
+                                               "stays reachable (when the tidy step runs)"))
+        except Exception:
+            pass
+    audio = [f for f in chosen if f.get("applies") == "audio"]
+    for tool in sorted({f["plan"]["tool"] for f in audio if f.get("plan")}):
+        rows.append((sd / "fixed" / tool, f"new audio files from the approved {tool} moves (a numbered folder if it exists)"))
+    if any(f.get("tool") == "voices" and not f.get("plan") for f in audio):
+        rows.append((sd / "fixed" / "voices", "balanced copies of the vocal parts (a numbered folder if it exists)"))
+    if any(f.get("run") for f in audio):
+        rows.append((sd / "fixed", "repaired copies of the recordings (the sources are never changed)"))
+    if any(f.get("tool") == "tune" for f in audio) and src:
+        rows.append((Path(src).parent / "Samples" / "Tuned", "one new tuned file per take (never over an existing one)"))
+    if any(f.get("applies") in ("set", "audio") for f in chosen):
+        rows.append((sd / "raw" / "recheck-*.json", "the measurements taken before and after, to check the result"))
+    rows.append((sd / "fix-log.md", "this run's log (added to the end)"))
+    rows.append((sd / "decisions.json", "the decisions (the version before is kept as decisions.json.bak)"))
+    if src and Path(src).suffix.lower() == ".als" and (out is not None or any(f.get("applies") == "set" for f in chosen)):
+        rows.append((sd / "history", "copies of the set before and after this run (for `hypnomix history`, undo)"))
+    seen, uniq = set(), []
+    for pth, what in rows:
+        if str(pth) not in seen:
+            seen.add(str(pth))
+            uniq.append((pth, what))
+    return uniq
+
+
+def not_applied(sd, findings, dec, manual_items, skipped, zero, default_ids=()):
+    """The "Not applied" section: what fix did NOT do, and what the person should do next. Returns lines."""
+    q = f'"{sd}"'
+    changed = [f for f in findings if decision_of(dec, f["id"]) == "change"]
+    L = []
+    if changed:
+        L += ["", f"  decided as \"change\" ({len(changed)}): hypnomix changes nothing for these until you decide again"]
+        for f in changed:
+            note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
+            L.append(f"  - {f['id']} {f.get('track') or ''} {f.get('where', '')}: "
+                     + (f'your note: "{note}"' if note else "no note recorded"))
+            L.append(f"      next: agree what the change is, then record it: hypnomix fix {q} --decide {f['id']}=approve "
+                     f'--note "..." (or {f["id"]}=skip to leave it)')
+    hand = [f for f in manual_items if f.get("applies") == "manual"]
+    info = [f for f in manual_items if f.get("applies") != "manual"]
+    if hand:
+        L += ["", f"  approved, but by hand ({len(hand)}): hypnomix cannot make these changes"]
+        for f in hand:
+            L.append(f"  - {f['id']} {f.get('track') or ''} {f.get('where', '')}: {str(f.get('fix'))[:300]}")
+            L.append("      next: make this change yourself in your DAW, then re-scan to check it is gone")
+    if info:
+        L += ["", f"  approved, but only a measurement ({len(info)}): nothing to apply"]
+        for f in info:
+            L.append(f"  - {f['id']} {f.get('track') or ''} {f.get('where', '')}: {str(f.get('fix'))[:300]}")
+    if skipped:
+        L += ["", f"  no longer found ({len(skipped)}): not applied, and never swapped for a neighbour"]
+        for f, why in skipped:
+            if f.get("id") in default_ids and why.startswith("no longer found"):
+                # an on-by-default clean-up that an earlier clean-up already did: say so, not "no longer found"
+                why = "nothing left to change here after the earlier clean-ups in this run"
+            L.append(f"  - {f['id']} {f.get('track') or ''} {f.get('where', '')}: {why}")
+        L.append(f"      next: re-scan the set (hypnomix scan ...), then decide again on what it finds now")
+    if zero:
+        L += ["", f"  approved at amount 0 ({len(zero)}): applies nothing"]
+        for f in zero:
+            L.append(f"  - {f['id']} {f.get('track') or ''} {f.get('where', '')}")
+        L.append(f"      next: record an amount above 0 (hypnomix fix {q} --decide ID=approve@50), or skip it")
+    n = len(changed) + len(manual_items) + len(skipped) + len(zero)
+    return ([f"Not applied ({n}):"] + L) if n else []
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix fix", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("scan_dir")
-    ap.add_argument("--approve", default="", help="comma-separated finding ids (or item numbers) to apply")
+    ap.add_argument("--approve", action="append", default=[], metavar="ID[,ID...]",
+                    help="finding ids (or item numbers) to apply; repeatable, each may be a comma list")
     ap.add_argument("--approved", action="store_true", help="apply every finding recorded as approved in decisions.json")
-    ap.add_argument("--decide", default="", help="record decisions and exit: ID=approve|skip|change[,ID=...]")
+    ap.add_argument("--decide", action="append", default=[], metavar="ID=DECISION[,ID=...]",
+                    help="record decisions and exit: ID=approve|skip|change; repeatable, each may be a comma list")
     ap.add_argument("--note", default="", help="with --decide: the person's reason or requested change")
     ap.add_argument("--out", help='new set to write, e.g. "Song (fixed).als" (same folder as the original)')
     ap.add_argument("--from", dest="from_set", help="start from this set instead of the scanned one (to apply "
@@ -254,6 +400,14 @@ def main():
     ap.add_argument("--stale-ok", action="store_true", help="apply although the set changed since the scan")
     ap.add_argument("--no-verify", action="store_true", help="skip the check of the new set after writing")
     ap.add_argument("--list", action="store_true", help="list findings and exit")
+    ap.add_argument("--severity", choices=SEVERITIES, help="with --list: only this severity")
+    ap.add_argument("--tool", help="with --list: only findings of this tool (smooth, timing, tune ...)")
+    ap.add_argument("--undecided", action="store_true", help="with --list: only findings with no decision yet")
+    ap.add_argument("--top", type=int, metavar="N", help="with --list: show only N findings")
+    ap.add_argument("--offset", type=int, default=0, metavar="N", help="with --list: skip the first N (to page)")
+    ap.add_argument("--show", metavar="ID", help="print one finding in full (id or item number) and exit")
+    ap.add_argument("--no-defaults", action="store_true", help="with --approved: apply only what was approved by "
+                    "name; leave out the clean-ups that are on by default (track order, switched-off tracks)")
     ap.add_argument("--decide-like", default="", metavar="ID=approve[@AMOUNT]",
                     help="the same decision for every undecided finding like ID (lists them first)")
     ap.add_argument("--band", type=float, default=50.0, help="with --decide-like: how close in size (percent, default 50)")
@@ -261,22 +415,30 @@ def main():
     ap.add_argument("--as", dest="by", metavar="NAME", help="who is deciding (default: prefs review.name)")
     a = ap.parse_args()
     sd = Path(a.scan_dir)
-    data = json.loads((sd / "findings.json").read_text())
-    scan = json.loads((sd / "scan.json").read_text()) if (sd / "scan.json").exists() else {}
+    data = AT.load_json(sd / "findings.json")
+    if not data or "findings" not in data:
+        sys.exit(f"no findings.json in {sd}: run `hypnomix scan` first")
+    scan = AT.load_json(sd / "scan.json", {})
     findings = data["findings"]
     dec = load_decisions(sd)
     by_key = {f["id"]: f for f in findings}
     by_key.update({str(f["n"]): f for f in findings})
 
+    if a.show:
+        if a.show not in by_key:
+            sys.exit(f"unknown id: {a.show}")
+        from hypnomix.workflow import scan as SC
+        print(SC.show_item(sd, by_key[a.show], findings, dec))
+        return
+
     if a.list:
-        for f in findings:
-            e = dec.get(f["id"]) if isinstance(dec.get(f["id"]), dict) else {}
-            dd = (decision_of(dec, f['id']) or '-') + (f"@{O.amount_of(e)}" if e.get("amount") is not None else "")
-            who = f" by {e['by']}" if e.get("by") else ""
-            conf = " CONFLICT" if e.get("conflicts") else ""
-            print(f"{f['n']:4d}  {f['id']:<22} [{f.get('severity')}] {f.get('applies'):<6} "
-                  f"{dd:<12}{who}{conf} {'PROTECTED ' if f.get('protected') else ''}"
-                  f"{f['tool']}: {f.get('track') or '-'} {f.get('where', '')}  {str(f.get('problem'))[:80]}")
+        rows, total = list_rows(findings, dec, a.severity, a.tool, a.undecided, a.offset, a.top)
+        for f in rows:
+            print(list_line(f, dec))
+        if a.severity or a.tool or a.undecided or a.top or a.offset:
+            nxt = a.offset + len(rows)
+            print(f"-- {len(rows)} of {total} matching finding(s)" + (f"; next page: --offset {nxt}" if nxt < total else "")
+                  + (f"; {len(findings)} in the scan" if total != len(findings) else ""))
         return
 
     key_json = sd / "raw" / "key.json"
@@ -287,7 +449,7 @@ def main():
         answers = scan.get("answers", []) + a.answer
         _, open_q = load_scales(key_json, answers)          # checks every answer against its question
         scan["answers"] = answers
-        (sd / "scan.json").write_text(json.dumps(scan, indent=1))
+        AT.write_json(sd / "scan.json", scan)
         print(f"answers saved: {', '.join(answers)}")
         print("still open: " + "; ".join(open_q) if open_q else "every key question is answered: tune with --key sections")
         if not (a.approve or a.approved):
@@ -326,7 +488,7 @@ def main():
         return
 
     if a.decide:
-        for item in a.decide.split(","):
+        for item in flat(a.decide):
             if "=" not in item:
                 sys.exit(f"expected ID=decision, got {item!r}")
             k, v = (x.strip() for x in item.split("=", 1))
@@ -347,19 +509,26 @@ def main():
         print(f"recorded. approve {n['approve']}, skip {n['skip']}, change {n['change']}; {left} still undecided")
         return
 
-    want = {x.strip() for x in a.approve.split(",") if x.strip()}
+    want = set(flat(a.approve))
     unknown = sorted(w for w in want if w not in by_key)
     if unknown:
         sys.exit(f"unknown ids: {', '.join(unknown)}")
     want = {by_key[w]["id"] for w in want}
+    dflt = set()
     if a.approved:
         want |= {k for k in dec if decision_of(dec, k) == "approve" and k in by_key}
         # on-by-default clean-up (track order, vocal stacks): included unless the person skipped it
         dflt = {f["id"] for f in findings if f.get("default") == "approve" and f["id"] not in dec}
-        if dflt:
-            print(f"on by default (skip them to opt out): {', '.join(sorted(dflt))}")
+        if a.no_defaults:
+            if dflt:
+                print(f"--no-defaults: left out the clean-ups that are on by default: {', '.join(sorted(dflt))}")
+            dflt = set()
         want |= dflt
     if not want:
+        waiting = [f for f in findings if decision_of(dec, f["id"]) == "change"]
+        if waiting:
+            print("Not applied: " + ", ".join(f["id"] for f in waiting) + " (decided as \"change\"): agree the change, "
+                  "then record it with --decide ID=approve --note \"...\" (or ID=skip)")
         sys.exit("nothing approved: pass --approve ID,ID,... or record decisions with --decide and use --approved")
     refused = sorted(w for w in want if decision_of(dec, w) in ("skip", "change"))
     if refused:
@@ -424,6 +593,17 @@ def main():
     if orig and not reaper_ and (set_items or audio_items or name_items) and live_running():
         print("NOTE: Live is running. Changes not saved in Live are not in the file being read, and the set "
               "must be closed in Live before the new one is opened.\n")
+
+    # say what is about to be written, and which clean-ups are only here because they are on by default
+    defaults_used = [f for f in chosen if f["id"] in dflt]
+    if defaults_used:
+        print("Also applied because they are on by default (skip them to opt out, or pass --no-defaults): "
+              + ", ".join(f"{f['id']} ({describe_default(f, src)})" for f in defaults_used))
+    files = planned_files(chosen, sd, src, out, orig, reaper_)
+    print("About to write (all new; nothing existing is overwritten):")
+    for pth, what in files:
+        print(f"  {pth}  <- {what}")
+    print()
 
     for f in chosen:  # an explicit --approve is a decision too
         if f["id"] not in dec:
@@ -874,22 +1054,11 @@ def main():
                 print(f"           {f['track']}'s comp clips now play the tuned takes in {Path(target).name}; "
                       "the original take files are untouched (A/B against the original set)")
 
-    if skipped_all:
-        print("\nskipped (not applied):")
-        log += ["### skipped (not applied)", ""]
-        for f, why in skipped_all:
-            line = f"- {f['id']} {f.get('track') or ''} {f.get('where', '')}: {why}"
-            print(line)
-            log.append(line)
-        log.append("")
-    if manual_items:
-        print("\nby hand (not changed automatically):")
-        log += ["### by hand", ""]
-        for f in manual_items:
-            line = f"- {f['id']} {f.get('track') or ''} {f.get('where', '')}: {str(f.get('fix'))[:300]}"
-            print(line)
-            log.append(line)
-        log.append("")
+    na = not_applied(sd, findings, dec, manual_items, skipped_all, zero,
+                     default_ids={f["id"] for f in defaults_used})
+    if na:
+        print("\n" + "\n".join(na))
+        log += ["### Not applied", "", "```"] + na + ["```", ""]
     if failed:
         print("\nFAILED (not done):")
         log += ["### FAILED (not done)", ""] + [f"- {x}" for x in failed] + [""]
@@ -907,8 +1076,7 @@ def main():
     except Exception as e:
         log.append(f"history: could not log this run ({e})")
         print(f"history: could not log this run ({e})")
-    with open(sd / "fix-log.md", "a") as fh:
-        fh.write("\n".join(log) + "\n")
+    AT.append_text(sd / "fix-log.md", "\n".join(log) + "\n")
     print(f"\nlog: {sd / 'fix-log.md'}")
     if out and str(out).lower().endswith(".rpp"):
         print("Open the new project in REAPER and A/B the changed spots against the original (tuned parts: switch "

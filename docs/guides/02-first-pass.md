@@ -60,7 +60,8 @@ What a set scan checks, in parallel groups:
 | effects | distortion in takes and device chains, sidechain ducking, every compressor and gate |
 | mix | loudness, true peak, release checks (needs `--mix`) |
 
-The result is `REVIEW.md` and `findings.json`, most severe first, each item with an id. If a check could not
+The result is `REVIEW.md` and `findings.json`, most severe first, each item with an id. `REVIEW.md` explains each
+kind of fix once, near the top ("Why these fixes"); each item holds only what is its own. If a check could not
 run, the review lists it under **Checks that did NOT run**: no findings from a check that didn't run means
 nothing.
 
@@ -101,6 +102,8 @@ stays in view while you step.
 hypnomix fix "hypnomix-out/scan/Song" --decide smooth-14=approve,timing-7=skip
 hypnomix fix "hypnomix-out/scan/Song" --decide tune-Lead=change --note "lighter on the verse"
 hypnomix fix "hypnomix-out/scan/Song" --list
+hypnomix fix "hypnomix-out/scan/Song" --list --undecided --top 15     # the next ones, on a long scan
+hypnomix fix "hypnomix-out/scan/Song" --show smooth-14                 # one finding in full
 ```
 
 > Tip: high-severity items, protected tracks and anything about taste are always asked one at a time.
@@ -112,6 +115,11 @@ Close the set in Live first. In the app: **Apply**. In the terminal:
 ```bash
 hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).als"
 ```
+
+Before it writes anything, fix prints every file it is about to create and which clean-ups are only there because
+they are on by default (track order, retiring switched-off tracks); skip them first, or add `--no-defaults`, to opt
+out. At the end it prints "Not applied": what you decided as "change", what has to be done by hand, and what was no
+longer found, each with what to do next.
 
 The order inside the new set: distortion settings → sidechain settings → clip fades and volume eases →
 warp-marker nudges → track order and stack clip moves → track names. To hear each change on its own, apply one

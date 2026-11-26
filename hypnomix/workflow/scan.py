@@ -19,6 +19,7 @@ Groups (each can run on its own with --only, so several agents can scan in paral
            vocal level line to line, upper parts under the melody vocallevel)
   effects  distortion in recordings and device chains,
            sidechain compressors, device-chain audit            (distortion, sidechain, audit)
+  devices  every Live device on every track, judged by what it does to that track's own audio   (devices)
   mix      loudness, true peak, release checks, translation     (measure, qc, translate; needs --mix)
   noise    takes whose big clip-gain boost lifts their noise floor into the mix
   intent   "is this deliberate?": every automated control, big clip gains, hard pans, switched-off tracks
@@ -45,7 +46,16 @@ Output folder (default hypnomix-out/scan/<song>/):
   <group>.json      normalised findings from that group (id, severity, track, where, problem, fix, applies)
   raw/              each tool's own output (text and JSON), renders of the vocal tracks
   findings.json     every finding, sorted most severe first
-  REVIEW.md         the same as a checklist for a human: one item at a time, nothing applied yet
+  REVIEW.md         the same for a human: first why each kind of fix is made (written once), then every item with
+                    only what is its own, nothing applied yet. Decisions are recorded with `hypnomix fix DIR
+                    --decide` or on the review page. On a long scan an agent reads `fix DIR --list --undecided
+                    --top 15` and then `fix DIR --show ID`, not the whole file
+  decisions.json    the person's decisions. A re-scan into the same folder keeps each decision on ITS finding (same
+                    tool, track, kind and place), never on its number; those that no longer match are counted and
+                    set aside in decisions-orphaned.json. A folder that holds the scan of another source is never
+                    reused: the next free "<name> (2)" is written instead
+  Everything a scan writes is under this folder, tools' own side files included (raw/tools/). Files are written
+  whole or not at all; the one before is kept as <name>.bak
 
 Each finding says how it is fixed:
   set     a change to the Live set that `hypnomix fix` can write into ONE new set (smooth, timing,
@@ -57,16 +67,16 @@ Each finding says how it is fixed:
 Tip: --ref should be the song's mix or instrumental (tuning and key for the vocal check). Without it
 the vocals are measured against their own average tuning, which under-corrects a flat singer.
 """
-import argparse, json, re, shutil, subprocess, sys, time
+import argparse, json, os, re, shutil, subprocess, sys, time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from hypnomix.core.paths import out_at
+from hypnomix.core import atomic as AT
 
 GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "devices", "mix", "noise", "intent", "structure", "stems"]
 FOLDER_GROUPS = ["recordings", "stems"]
 AUDIO_EXT = (".wav", ".aif", ".aiff", ".flac")
-PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow"]         # written by `prep|automix|master --plan`
+PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow", "album", "preflight"]         # written by `prep|automix|master|album|preflight --plan`
 ALL_GROUPS = list(dict.fromkeys(GROUPS + FOLDER_GROUPS + PLAN_GROUPS + ["recordings", "live"]))
 SEV = {"high": 0, "medium": 1, "low": 2, "info": 3}
 VOCAL_LABELS = ("Lead Vocal", "Vocal", "Harmony", "Backing Vocal")
@@ -86,6 +96,63 @@ def save(path, text):
 
 def strip_warnings(text):
     return "\n".join(l for l in text.splitlines() if "Warning" not in l and "warnings.warn" not in l)
+
+
+PLAIN_REASONS = [
+    (r"(max|min)\(\) arg is an empty sequence", "no notes or values were found to measure"),
+    (r"(zero-size array|empty (array|sequence|list))", "there was nothing in the audio to measure"),
+    (r"No such file or directory", "a file it needed was not found"),
+    (r"Permission denied", "a file could not be opened (permission denied)"),
+    (r"(ParseError|not well-formed|BadGzipFile|Not a gzipped)", "the file could not be read as a session"),
+]
+
+
+def plain_reason(text, limit=100):
+    """The short reason out of a tool's output: for a traceback, the message on its last line (no file names, no
+    line numbers); otherwise the last line that says anything."""
+    lines = [l.strip() for l in strip_warnings(str(text or "")).splitlines() if l.strip()]
+    if not lines:
+        return "no output"
+    last = lines[-1]
+    m = re.match(r"^(?:[\w.]+\.)?(\w*(?:Error|Exception|Interrupt))\s*:\s*(.+)$", last)
+    if m:
+        last = m.group(2)
+    last = re.sub(r"\s+", " ", last)
+    # a long path is just its file name; a few well-known Python messages say what they mean
+    last = re.sub(r"(?:[A-Za-z]:)?[\\/](?:[^\\/\s'\"]+[\\/])+([^\\/\s'\"]+)", r"\1", last)
+    for pat, plain in PLAIN_REASONS:
+        if re.search(pat, last):
+            return plain
+    if len(last) <= limit:
+        return last
+    cut = last[:limit - 1]
+    if " " in cut[limit // 2:]:
+        cut = cut[:cut.rfind(" ")]
+    return cut.rstrip(" ,;:(") + "…"
+
+
+def check_failed(od, label, out, means, raw):
+    """The note for a check that did not run: ONE plain sentence (which check, the short reason, what it means for
+    the review). The tool's whole output, traceback and all, goes to raw/<raw>, and the note names that file."""
+    try:
+        save(Path(od) / "raw" / raw, strip_warnings(str(out or "")))
+    except OSError:
+        pass
+    return f"{label}: failed ({plain_reason(out)}), {means}. Full output: raw/{raw}"
+
+
+def pref_wants(kind):
+    """What the person's preferences say about proposing this kind of fix: "off" (never propose), "gentle" or a
+    default. `kind` is "tune" or "timing" (prefs.wants(kind), when that helper exists, else the taste.* key)."""
+    from hypnomix.workflow import prefs as P
+    fn = getattr(P, "wants", None)
+    try:
+        if callable(fn):
+            return str(fn(kind) or "").lower()
+        key = {"tune": "taste.tuning", "timing": "taste.timing"}[kind]
+        return str(P.get(P.load(), key, "") or "").lower()
+    except Exception:
+        return ""
 
 
 # ---------------------------------------------------------------- track roles
@@ -131,7 +198,8 @@ def g_names(als, od, a):
     if not path.exists():
         roles(als, od)
     if not path.exists():
-        return [], ["names: did NOT run (hypnomix name failed; see raw/names.txt)"]
+        return [], ["names: failed (hypnomix name did not finish), so no track names are proposed and the "
+                    "other checks lack track roles. Full output: raw/names.txt"]
     rows = json.loads(path.read_text()).get("tracks", [])
     out, n = [], 0
     for r in rows:
@@ -160,7 +228,7 @@ def g_names(als, od, a):
             notes.append("order: track order and vocal stacks are ON by default (skip the order items to opt out, or "
                          "`hypnomix prefs set cleanup.order=off` for every song)")
         else:
-            notes.append(f"order: did NOT run ({txt.strip()[-200:]})")
+            notes.append(check_failed(od, "order", txt, "so no track-order proposals are listed", "order-error.txt"))
     off = lambda k: str(P.get(P.load(), k, "on")).lower() in ("off", "no", "false", "0")
     if off("cleanup.retire") and off("cleanup.consolidate"):
         notes.append("tidy: skipped (your preferences cleanup.retire=off, cleanup.consolidate=off)")
@@ -175,7 +243,8 @@ def g_names(als, od, a):
                          "matching tracks are ON by default (skip retire-1 / merge-N to opt out, or `hypnomix prefs set "
                          "cleanup.retire=off` / `cleanup.consolidate=off`)")
         else:
-            notes.append(f"tidy: did NOT run ({txt.strip()[-200:]})")
+            notes.append(check_failed(od, "tidy", txt, "so no clean-up of switched-off or doubled tracks is proposed",
+                                      "tidy-error.txt"))
     return out, notes + [f"names: {sum(1 for f in out if f['kind'] == 'track-name')} renames proposed, "
                  f"{sum(1 for f in out if f['kind'] == 'track-name-question')} tracks to ask about (findings keep the old names; "
                  "REVIEW.md shows the new ones; `fix` renames last)"]
@@ -190,7 +259,7 @@ def g_devices(als, od, a):
     code, out = hx(*args)
     save(od / "raw" / "devices.txt", strip_warnings(out))
     if not j.exists():
-        return [], [f"devices: did NOT run ({out.strip()[-200:]})"]
+        return [], [check_failed(od, "devices", out, "so no device settings were judged", "devices-error.txt")]
     d = json.loads(j.read_text())
     return d["findings"], [f"devices: {len(d['findings'])} Live device(s) checked; third-party plug-ins are skipped"] + \
         [f"devices: {n_}" for n_ in d.get("notes", [])[:6]]
@@ -212,7 +281,8 @@ def g_clips(als, od, a):
     code, out = hx("smooth", als, "--json", j)
     save(od / "raw" / "smooth.txt", strip_warnings(out))
     if not j.exists():
-        return [], [f"smooth failed: {out[-300:]}"]
+        return [], [check_failed(od, "clips (smooth)", out, "so clicks and level jumps at cuts were not checked",
+                                 "smooth-error.txt")]
     d = json.loads(j.read_text())
     notes = []
     if d["notes"].get("regular"):
@@ -230,7 +300,8 @@ def g_clips(als, od, a):
         notes.append(f"edges: {len(ef)} item(s) on vocal clip edges, {rec} clear-cut fade fix(es) recommended; "
                      "cuts are listen-only")
     else:
-        notes.append(f"edges: did NOT run ({txt.strip()[-200:]})")
+        notes.append(check_failed(od, "edges", txt, "so clip edges that cut into a word were not checked",
+                                  "edges-error.txt"))
     return found, notes
 
 
@@ -257,8 +328,13 @@ def g_timing(als, od, a, role):
     code, out = hx(*args)
     save(od / "raw" / "timing.txt", strip_warnings(out))
     if not j.exists():
-        return [], [f"timing failed: {out[-300:]}"]
+        return [], [check_failed(od, "timing", out, "so no timing nudges are proposed", "timing-error.txt")]
     d = json.loads(j.read_text())
+    if pref_wants("timing") == "off":        # "off = never propose": nothing is proposed, and the person is told why
+        n_t = sum(1 for f in d["findings"] if f.get("tool") == "timing")
+        return [f for f in d["findings"] if f.get("tool") != "timing"], [
+            f"timing proposals are off in your preferences (taste.timing; {n_t} hit(s) measured off the band's feel); "
+            "turn them back on with `hypnomix prefs set taste.timing=loose`"]
     notes = [f"timing: song looseness {d['looseness_ms']} ms across {len(d['tracks'])} instrument tracks "
              f"(the band's natural feel; only outliers are listed)"]
     if d.get("grid"):
@@ -297,7 +373,7 @@ def g_vocals(als, od, a, role):
     if lead:
         info = json.loads((od / "scan.json").read_text()) if (od / "scan.json").exists() else {}
         info["lead"] = lead
-        (od / "scan.json").write_text(json.dumps(info, indent=1))
+        AT.write_json(od / "scan.json", info)
     findings, notes = [], []
     kf, kq = key_map(als, od, a)
     findings += kq["findings"]
@@ -321,10 +397,12 @@ def g_vocals(als, od, a, role):
         save(od / "raw" / f"tune-{p.stem}.txt", strip_warnings(out))
         return t, j, out
 
+    tuning_off, off_notes = pref_wants("tune") == "off", 0
     with ThreadPoolExecutor(max_workers=a.jobs) as ex:
         for t, j, out in ex.map(one, files.items()):
             if not j.exists():
-                notes.append(f"tune failed on {t}: {out[-200:]}")
+                notes.append(check_failed(od, f"tuning check on {t}", out, "so that vocal has no pitch findings",
+                                          f"tune-{files[t].stem}-error.txt"))
                 continue
             d = json.loads(j.read_text())
             for f in d["findings"]:
@@ -332,17 +410,24 @@ def g_vocals(als, od, a, role):
                 f["key"], f["tuning_cents"] = d["key"], d["tuning_cents"]
                 f["flagged_notes"] = d["flagged"]
                 f["asked_notes"] = d.get("asked", [])
+                if tuning_off:                       # "off = never propose": counted, not listed
+                    off_notes += len(d["flagged"])
+                    continue
                 findings.append(f)
             if not a.ref and not any("tuning measured from the singer" in n for n in notes):
                 notes.append("vocals: tuning measured from the singers themselves; give --ref MIX.wav for a "
                              "reliable grid")
+    if tuning_off:
+        notes.append(f"tuning proposals are off in your preferences (taste.tuning; {off_notes} note(s) measured off "
+                     "pitch); turn them back on with `hypnomix prefs set taste.tuning=natural`")
     if lead in files and len(files) > 1:
         try:
             d_f, d_n = doubles(files, lead)
             notes += d_n
         except Exception as e:
             d_f = []
-            notes.append(f"doubles: failed ({e})")
+            notes.append(f"doubles: failed ({plain_reason(str(e))}), so doubles and harmonies were not compared "
+                         "with the lead in time")
         findings += d_f
     if len(files) > 2:     # a lead and two or more harmonies: clips of lower harmonies sitting far too low
         j = od / "raw" / "cliplevel.json"
@@ -354,7 +439,8 @@ def g_vocals(als, od, a, role):
         if j.exists():
             findings += json.loads(j.read_text())["findings"]
         else:
-            notes.append(f"clip levels of lower harmonies: did NOT run ({out.strip()[-160:]})")
+            notes.append(check_failed(od, "clip levels of lower harmonies", out,
+                                      "so harmony clips sitting too low were not checked", "cliplevel-error.txt"))
     if len(files) > 1:     # vocal level line to line, and upper parts under the melody (re-run before final exports)
         j = od / "raw" / "vocallevel.json"
         args = ["vocallevel", als, "--renders", rd, "--json", j, "--tracks", *files.keys()]
@@ -369,7 +455,8 @@ def g_vocals(als, od, a, role):
             notes.append("vocal levels: measured from renders x faders x automation (compressors not modelled); "
                          "before the final export re-run `hypnomix vocallevel SET --heard DIR` on solo exports")
         else:
-            notes.append(f"vocal levels: did NOT run ({out.strip()[-160:]})")
+            notes.append(check_failed(od, "vocal levels", out, "so the vocal level line to line was not checked",
+                                      "vocallevel-error.txt"))
     if files:              # the vocal reverb and delay: ducked while the singer sings?
         j = od / "raw" / "duck.json"
         args = ["duck", als, "--json", j, "--renders", rd]
@@ -380,12 +467,13 @@ def g_vocals(als, od, a, role):
         if j.exists():
             findings += json.loads(j.read_text())["findings"]
         else:
-            notes.append(f"vocal reverb/delay ducking: did NOT run ({out.strip()[-160:]})")
+            notes.append(check_failed(od, "vocal reverb/delay ducking", out, "so ducking was not checked",
+                                      "duck-error.txt"))
     if len(files) > 1:
         try:
             findings += harmony_question(files, lead, als)
         except Exception as e:
-            notes.append(f"harmony balance check: failed ({e})")
+            notes.append(f"harmony balance check: failed ({plain_reason(str(e))}), so no harmony balance question is asked")
     tuned = any(f.get("tool") == "tune" for f in findings)
     if tuned:
         first = next(f for f in findings if f.get("tool") == "tune")
@@ -406,7 +494,8 @@ def key_map(als, od, a):
     code, out = hx(*args)
     save(od / "raw" / "key.txt", strip_warnings(out))
     if not j.exists():
-        return None, {"findings": [], "notes": [f"key map: did NOT run ({out.strip()[-200:]}); tuning uses one key"]}
+        return None, {"findings": [], "notes": [check_failed(od, "key map", out, "so vocal tuning uses one key for the "
+                                                              "whole song", "key-error.txt")]}
     d = json.loads(j.read_text())
     secs, qs = d.get("sections", []), d.get("questions", [])
     main = d["key"]
@@ -517,7 +606,8 @@ def g_effects(als, od, a):
                                  problem=f["cause"], fix=f["fix"], applies="set" if pure else "manual",
                                  changes=f.get("changes", [])))
     else:
-        notes.append(f"distortion failed: {out[-300:]}")
+        notes.append(check_failed(od, "distortion", out, "so distortion in recordings and device chains was not "
+                                  "checked", "distortion-error.txt"))
 
     code, out = hx("sidechain", als, "--out", od / "raw" / "sidechain")
     out = strip_warnings(out)
@@ -693,27 +783,66 @@ def check_recording(path):
     return out, dict(peak_db=round(peak_db, 1), level_db=round(level, 1), floor_db=round(floor, 1))
 
 
+def check_one_file(p):
+    """One recording's checks. Never raises: an unreadable file becomes a finding."""
+    p = Path(p)
+    try:
+        return p, check_recording(p)
+    except Exception as e:
+        return p, ([("unreadable", "high", f"could not be read ({e})", "export it again as WAV", None)], {})
+
+
+def parallel_map(fn, items, jobs):
+    """fn over items, `jobs` at a time, results in order. Threads: a pool of worker processes was measured and
+    was SLOWER here (10 files, 4 jobs: 118-148 s against 60-86 s with threads), because each new process pays
+    for importing librosa and compiling its numba code again, and the native code in numpy and librosa lets go
+    of Python's lock often enough for threads to overlap."""
+    with ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
+        return list(ex.map(fn, list(items)))
+
+
+def measure_files(files, jobs):
+    """check_one_file on every file: [(path, (rows, facts))]."""
+    return parallel_map(check_one_file, files, jobs)
+
+
+def warm_one_file(p):
+    """Measure one unnamed file's sound once (what `hypnomix name` and the role guess need), so that the groups
+    that ask for it later read it from the cache. Never raises."""
+    try:
+        import soundfile as sf
+        from hypnomix.engineer import roles
+        from hypnomix.session.names import audio_features
+        if roles.by_name(Path(p).stem):          # the name already says what it is: nothing to measure
+            return False
+        y, sr = sf.read(str(p), dtype="float32", always_2d=True)
+        audio_features(y.mean(axis=1), sr)
+        return True
+    except Exception:
+        return False
+
+
+def warm_features(files, jobs):
+    """Measure every unnamed file in parallel before the folder's groups start. They run side by side and would
+    each measure the same files one after the other (7 s a file); this does it once, N at a time."""
+    if len(files) > 1:
+        parallel_map(warm_one_file, files, jobs)
+
+
 def g_recordings(folder, od, a):
     files = audio_files(folder)
     findings, notes, facts = [], [], {}
 
-    def one(p):
-        try:
-            return p, check_recording(p)
-        except Exception as e:
-            return p, ([("unreadable", "high", f"could not be read ({e})", "export it again as WAV", None)], {})
-
     n = 0
-    with ThreadPoolExecutor(max_workers=a.jobs) as ex:
-        for p, (rows, fact) in ex.map(one, files):
-            facts[p.name] = fact
-            for kind, sev, problem, fix, run in rows:
-                n += 1
-                f = dict(id=f"rec-{n}", tool=(run[0] if run else "recording"), kind=kind, severity=sev, track=p.name,
-                         where="", problem=problem, fix=fix, applies="audio" if run else "manual")
-                if run:
-                    f["run"] = [str(x) for x in run]
-                findings.append(f)
+    for p, (rows, fact) in measure_files(files, a.jobs):
+        facts[p.name] = fact
+        for kind, sev, problem, fix, run in rows:
+            n += 1
+            f = dict(id=f"rec-{n}", tool=(run[0] if run else "recording"), kind=kind, severity=sev, track=p.name,
+                     where="", problem=problem, fix=fix, applies="audio" if run else "manual")
+            if run:
+                f["run"] = [str(x) for x in run]
+            findings.append(f)
     code, out = hx("clicks", *files) if files else (0, "")
     save(od / "raw" / "clicks.txt", strip_warnings(out))
     save(od / "raw" / "recordings.json", json.dumps(facts, indent=1))
@@ -811,7 +940,8 @@ def g_stems_set(als, od, a):
     on = {re.sub(r'[\\/:*?"<>|]', "-", t) for t in tracks_on(als)}
     keep = [p for p in audio_files(rd)] if rd.exists() else []
     if len(keep) < 2:
-        return [], [f"stems: render failed or fewer than two tracks ({out[-200:]})"]
+        return [], [check_failed(od, "stems", out, "so frequency fights and mic phase between tracks were not checked "
+                                 "(it needs two or more rendered tracks)", "stems-error.txt")]
     stems, sr = M.load_stems(rd)
     stems = [(n, y) for n, y in stems if n in on]
     if len(stems) < 2:
@@ -979,15 +1109,148 @@ def told_in_live(als, a):
     return out
 
 
+# ---------------------------------------------------------------- decisions follow findings, never numbers
+WHERE_TOL_S = 0.5          # a finding that moved this far (seconds) is still the same finding
+WHERE_TOL_BARS = 0.3       # ... or this far in bars (one beat is 0.25)
+
+
+def _position(where):
+    """A `where` text as (unit, [numbers]): "1:23.4" is seconds, "bar 17.2" is bars (beat 2 = +0.25), anything
+    else is compared as text only."""
+    text = str(where or "").strip()
+    if not text:
+        return "", []
+    times = re.findall(r"(\d+):(\d+(?:\.\d+)?)", text)
+    if times:
+        return "s", [int(m) * 60 + float(sec) for m, sec in times]
+    if re.search(r"\bbars?\b", text, re.I):
+        return "bar", [int(b) + ((int(beat) - 1) / 4 if beat else 0.0)
+                       for b, beat in re.findall(r"(\d+)(?:\.(\d+))?", text)]
+    return "", []
+
+
+def _near(old_where, new_where):
+    """How far apart two positions are (0 = the same text), or None when they are not the same spot."""
+    if old_where == new_where:
+        return 0.0
+    (ua, pa), (ub, pb) = _position(old_where), _position(new_where)
+    if not ua or ua != ub or len(pa) != len(pb) or not pa:
+        return None
+    d = max(abs(x - y) for x, y in zip(pa, pb))
+    return d if d <= (WHERE_TOL_S if ua == "s" else WHERE_TOL_BARS) else None
+
+
+def _identity(f):
+    return (f.get("tool"), f.get("track") or "", f.get("kind") or "", f.get("device") or "")
+
+
+def _pair(olds, news):
+    """{old id: new id} for findings with the same tool, track, kind and device: the same position first, then the
+    nearest position within the tolerance. Ambiguous (the same position more often on one side) pairs with nobody."""
+    done, used, blocked = {}, set(), set()
+    by_where_o, by_where_n = {}, {}
+    for f in olds:
+        by_where_o.setdefault(f.get("where") or "", []).append(f)
+    for f in news:
+        by_where_n.setdefault(f.get("where") or "", []).append(f)
+    for w, os_ in by_where_o.items():
+        ns = by_where_n.get(w, [])
+        if not ns:
+            continue
+        if len(os_) == len(ns):
+            for o, n in zip(os_, ns):
+                done[o["id"]] = n["id"]
+                used.add(n["id"])
+        else:
+            blocked |= {o["id"] for o in os_} | {n["id"] for n in ns}
+    cand = []
+    for o in olds:
+        if o["id"] in done or o["id"] in blocked:
+            continue
+        for n in news:
+            if n["id"] in used or n["id"] in blocked:
+                continue
+            d = _near(o.get("where") or "", n.get("where") or "")
+            if d is not None:
+                cand.append((d, o["id"], n["id"]))
+    for d, oid, nid in sorted(cand):
+        if oid not in done and nid not in used:
+            done[oid] = nid
+            used.add(nid)
+    return done
+
+
+def remap_decisions(old_findings, new_findings, dec):
+    """The decisions in `dec` (keyed by the OLD ids) re-keyed by what each finding IS: same tool, track, kind and
+    position (within a small tolerance). A decision whose finding is gone, or cannot be told apart from its
+    neighbour, is dropped, never carried over by its number. Returns (kept by new id, dropped by old id)."""
+    news = {}
+    for f in new_findings:
+        news.setdefault(_identity(f), []).append(f)
+    olds = {}
+    for f in old_findings or []:
+        olds.setdefault(_identity(f), []).append(f)
+    mapping = {}
+    for key, group in olds.items():
+        mapping.update(_pair(group, news.get(key, [])))
+    old_by_id = {f["id"]: f for f in old_findings or []}
+    kept, dropped = {}, {}
+    for fid, d in dec.items():
+        nid = mapping.get(fid)
+        if nid and nid not in kept:
+            kept[nid] = d
+        else:
+            was = old_by_id.get(fid, {})
+            dropped[fid] = {"decision": d, "was": {k: was.get(k) for k in ("tool", "track", "kind", "where", "problem")}}
+    return kept, dropped
+
+
+def set_aside(od, dropped):
+    """Keep the decisions that no longer match a finding in decisions-orphaned.json (nothing is lost, nothing is
+    applied from it) and say how many."""
+    if not dropped:
+        return
+    p = Path(od) / "decisions-orphaned.json"
+    have = AT.load_json(p, {}) or {}
+    for fid, row in dropped.items():
+        key, n = fid, 1
+        while key in have and have[key] != row:
+            n += 1
+            key = f"{fid}#{n}"
+        have[key] = row
+    AT.write_json(p, have)
+    n = len(dropped)
+    print(f"{n} earlier decision{'s' if n != 1 else ''} no longer match{'es' if n == 1 else ''} a finding and "
+          f"{'were' if n != 1 else 'was'} set aside (decisions-orphaned.json)")
+
+
+def carry_decisions(od, old_findings, findings):
+    """A scan folder that already holds decisions: follow each decision to its finding by identity, set aside the
+    rest. Returns the number set aside."""
+    dp = Path(od) / "decisions.json"
+    if not dp.exists():
+        return 0
+    dec = AT.load_json(dp, {}) or {}
+    if not dec:
+        return 0
+    kept, dropped = remap_decisions(old_findings or [], findings, dec)
+    if kept != dec:
+        AT.write_json(dp, kept)
+    set_aside(od, dropped)
+    return len(dropped)
+
+
 # ---------------------------------------------------------------- merge + review
-def merge(od):
+def merge(od, remap=True):
     from hypnomix.workflow import prefs as P
     od = Path(od)
     prefs = P.load()
     protected = {t.lower() for t in (prefs.get("protect", {}).get("tracks") or [])}
     findings, notes, meta = [], [], {}
+    old_doc = AT.load_json(od / "findings.json", None, warn=False)           # what the folder held before this merge
+    old_findings = old_doc.get("findings") if isinstance(old_doc, dict) else None
     sjp = od / "scan.json"
-    told = (json.loads(sjp.read_text()).get("told") or {}) if sjp.exists() else {}
+    told = ((AT.load_json(sjp, {}) or {}).get("told") or {}) if sjp.exists() else {}
     protected |= {t.lower() for t in told.get("protect", [])}
     if told:
         notes.append("Told in Live (probe menus and the song card): " + "; ".join(
@@ -1015,30 +1278,135 @@ def merge(od):
         notes.insert(0, "WARNING: the group results in this folder come from different sets or folders: "
                      + "; ".join(sorted(map(str, sets))) + ". Scan again into an empty folder.")
     setp = sorted(map(str, sets))[0] if sets else ""
-    (od / "findings.json").write_text(json.dumps({"set": setp, "notes": notes, "findings": findings},
-                                                 indent=1, default=str))
+    if remap:
+        orphaned = carry_decisions(od, old_findings, findings)
+        if orphaned:
+            notes.append(f"{orphaned} earlier decision(s) no longer match a finding and were set aside "
+                         "(decisions-orphaned.json); nothing is applied from them")
+    AT.write_json(od / "findings.json", {"set": setp, "notes": notes, "findings": findings}, default=str)
     write_review(od, setp, findings, notes, meta, P.summary(prefs), prefs=prefs)
     return findings, notes
 
 
-def oversight_lines(f, ov, show):
-    """The "you usually / common practice / confidence / why" lines for one finding in REVIEW.md."""
-    e = ov["extras"].get(f["id"], {})
-    L = [f"- confidence: {e.get('confidence', 0.5):.0%} ({e.get('confidence_from', 'default')})"
-         + ("" if f.get("applies") in ("info", "answer") else
-            (" · amount: 0-100 (`--decide ID=approve@60`)" if e.get("scalable") else
-             f" · all or nothing ({e.get('scale_note')})"))]
-    if e.get("usually"):
-        L.append(f"- you usually: {e['usually']}")
-    if e.get("practice"):
-        L.append(f"- common practice: {e['practice']}")
-    if ov["teach"] and e.get("why"):
-        L.append(f"- why this technique: {e['why']}")
-    like = ov["like"].get(f["id"])
-    if like and f.get("applies") not in ("info", "answer"):
-        L.append(f"- {len(like)} more like this: `hypnomix fix DIR --decide-like {f['id']}=approve` (or skip; "
-                 "--dry-run lists them first)")
+def kind_of(f):
+    return (f.get("tool"), f.get("kind"))
+
+
+def kind_title(key):
+    tool, kind = key
+    return f"{tool} · {kind}" if kind and kind != tool else str(tool)
+
+
+def amount_text(e, f):
+    """How much of a fix can be applied, as one phrase ('' for a measurement or a question)."""
+    if f.get("applies") in ("info", "answer"):
+        return ""
+    return ("amount: 0-100 (`--decide ID=approve@60`)" if e.get("scalable")
+            else f"all or nothing ({e.get('scale_note')})")
+
+
+def kind_context(findings, ov):
+    """Per (tool, kind), what is the same for every item of it: why, common practice, the usual confidence, how
+    much can be applied. Written once ("Why these fixes") instead of under every item."""
+    from hypnomix.workflow import oversight as O
+    groups = {}
+    for f in findings:
+        groups.setdefault(kind_of(f), []).append(f)
+    out = {}
+    for key, items in groups.items():
+        ex = [ov["extras"].get(f["id"], {}) for f in items]
+        usual = {x.get("usually") or "" for x in ex}
+        out[key] = dict(items=items, why=ex[0].get("why"), practice=ex[0].get("practice"),
+                        conf=O.confidence({"tool": key[0], "kind": key[1]})[0],
+                        amount=amount_text(ex[0], items[0]),
+                        usually=next(iter(usual)) if len(usual) == 1 else "")
+    return out
+
+
+def kind_lines(key, k):
+    """The explanation of one kind of fix (REVIEW.md's "Why these fixes", and `fix --show`)."""
+    n = len(k["items"])
+    L = [f"**{kind_title(key)}** ({n} item{'s' if n != 1 else ''})"]
+    if k.get("why"):
+        L.append(f"- why this technique: {k['why']}")
+    if k.get("practice"):
+        L.append(f"- common practice: {k['practice']}")
+    applies = k["items"][0].get("applies")
+    if applies not in ("info", "answer"):
+        L.append(f"- confidence: {k['conf']:.0%} for this kind (an item says so when its own differs) · {k['amount']}")
+    if k.get("usually"):
+        L.append(f"- you usually: {k['usually']}")
     return L
+
+
+def item_lines(f, ov, show, kc=None):
+    """One finding as REVIEW.md writes it: only what is specific to this item (the explanation of its kind of fix
+    is in "Why these fixes"; `fix DIR --show ID` prints both)."""
+    where = f" @ {f['where']}" if f.get("where") else ""
+    also = f" (same audio again at {', '.join(f['also_at'][:5])})" if f.get("also_at") else ""
+    mark = " · NEW since the last scan" if f.get("new") else " · carried over from the last scan" if f.get("carried") else ""
+    L = [f"### {f.get('n', '')}. [{f.get('severity')}] {f['tool']}: {show(f.get('track')) if f['tool'] != 'name' else f.get('track')}{where}{also}"]
+    like = ov["like"].get(f["id"]) if ov else None
+    L.append(f"- id: `{f['id']}` · applies: **{f.get('applies')}**"
+             + (" · **PROTECTED track: ask again before changing**" if f.get("protected") else "") + mark
+             + (f" · {len(like)} like it" if like and f.get("applies") not in ("info", "answer") else ""))
+    if f.get("history"):
+        L.append(f"- history: {f['history']}")
+    L.append(f"- problem: {f.get('problem')}")
+    fix = str(f.get("fix", "")).strip()
+    L.append(f"- proposed fix: {fix}" if "\n" not in fix else "- proposed fix:\n\n```\n" + fix + "\n```")
+    if f.get("flagged_notes"):
+        L.append(f"- notes to check by ear: " + ", ".join(f"{x['time']} {x['sung']} ({x['cents']:+d}c)"
+                                                        for x in f["flagged_notes"][:12]))
+    if ov:
+        from hypnomix.workflow import oversight as O
+        e = ov["extras"].get(f["id"], {})
+        k = (kc or {}).get(kind_of(f))
+        c, src = O.confidence(f)
+        extra = []
+        if k is None or (src == "measured" and abs(c - k["conf"]) > 1e-9):     # only when it differs from the kind's usual
+            extra.append(f"confidence: {c:.0%} ({src})")
+        amt = amount_text(e, f)
+        if amt and (k is None or amt != k["amount"]):
+            extra.append(amt)
+        if extra:
+            L.append("- " + " · ".join(extra))
+        if e.get("usually") and (k is None or e["usually"] != k.get("usually")):
+            L.append(f"- you usually: {e['usually']}")
+    if f.get("applies") == "answer":
+        L.append(f"- answer needed: {f['notes'][0]} or {f['notes'][1]} or both (record: `hypnomix fix DIR --answer NOTE`)")
+    L.append("")
+    return L
+
+
+def names_map(od):
+    nj = Path(od) / "raw" / "names" / "names.json"
+    newname = {}
+    if nj.exists():
+        newname = {r["old"]: r["new"] for r in (AT.load_json(nj, {}) or {}).get("tracks", [])
+                   if r.get("new") and r.get("new") != r.get("old")}
+    return lambda t: f"{newname[t]} (now '{t}')" if t in newname else (t or "-")
+
+
+def show_item(od, f, findings, dec=None):
+    """`fix DIR --show ID`: one finding in full, as one block of text: the item as REVIEW.md writes it, the
+    decision recorded for it, the notes people left on it, and the explanation of its kind of fix."""
+    from hypnomix.workflow import prefs as P, review as RV
+    od = Path(od)
+    prefs = P.load()
+    ov = RV.oversight_payload(od, findings, prefs)
+    kc = kind_context(findings, ov)
+    L = item_lines(f, ov, names_map(od), kc)
+    d = (dec or {}).get(f["id"])
+    if d:
+        e = d if isinstance(d, dict) else {"decision": d}
+        amt = f"@{e['amount']}" if e.get("amount") is not None else ""
+        L.append(f"- decision: {e.get('decision')}{amt}" + (f" by {e['by']}" if e.get("by") else "")
+                 + (f' (note: "{e["note"]}")' if e.get("note") else ""))
+    for r in (ov.get("notes") or {}).get(f["id"], []):
+        L.append(f"- note from {r.get('by', '?')}: {r.get('text', '')}")
+    L += ["", "Why this kind of fix:"] + kind_lines(kind_of(f), kc[kind_of(f)])
+    return "\n".join(L)
 
 
 def write_review(od, setp, findings, notes, meta, pref_lines=(), prefs=None):
@@ -1050,12 +1418,7 @@ def write_review(od, setp, findings, notes, meta, pref_lines=(), prefs=None):
     except Exception as e:  # the review must still be written
         ov = None
         notes = list(notes) + [f"WARNING: oversight lines failed ({e})"]
-    nj = Path(od) / "raw" / "names" / "names.json"
-    newname = {}
-    if nj.exists():
-        newname = {r["old"]: r["new"] for r in json.loads(nj.read_text()).get("tracks", [])
-                   if r.get("new") and r.get("new") != r.get("old")}
-    show = lambda t: f"{newname[t]} (now '{t}')" if t in newname else (t or "-")
+    show = names_map(od)
     counts = {s: sum(1 for f in findings if f.get("severity") == s) for s in SEV}
     from hypnomix import project as PJ
     daw = PJ.daw_of(setp) if setp else None
@@ -1077,34 +1440,25 @@ def write_review(od, setp, findings, notes, meta, pref_lines=(), prefs=None):
         n = sum(1 for f in findings if f["group"] == g)
         if g in meta:
             L.append(f"| {g} | {n} | {meta[g] or 0:.0f} s |")
-    broken = [n for n in notes if "failed" in n or n.startswith("WARNING")]
+    broken = [n for n in notes if "failed" in n or "did NOT run" in n or n.startswith("WARNING")]
     notes = [n for n in notes if n not in broken]
     if broken:
         L += ["", "## Checks that did NOT run (so 'no findings' there means nothing)", ""] + [f"- {n}" for n in broken]
     if notes:
         L += ["", "## Notes", ""] + [f"- {n}" for n in notes]
     def item(f):
-        where = f" @ {f['where']}" if f.get("where") else ""
-        also = f" (same audio again at {', '.join(f['also_at'][:5])})" if f.get("also_at") else ""
-        mark = " · NEW since the last scan" if f.get("new") else " · carried over from the last scan" if f.get("carried") else ""
-        L.append(f"### {f.get('n', '')}. [{f.get('severity')}] {f['tool']}: {show(f.get('track')) if f['tool'] != 'name' else f.get('track')}{where}{also}")
-        L.append(f"- id: `{f['id']}` · applies: **{f.get('applies')}**"
-                 + (" · **PROTECTED track: ask again before changing**" if f.get("protected") else "") + mark)
-        if f.get("history"):
-            L.append(f"- history: {f['history']}")
-        L.append(f"- problem: {f.get('problem')}")
-        fix = str(f.get("fix", "")).strip()
-        L.append(f"- proposed fix: {fix}" if "\n" not in fix else "- proposed fix:\n\n```\n" + fix + "\n```")
-        if f.get("flagged_notes"):
-            L.append(f"- notes to check by ear: " + ", ".join(f"{x['time']} {x['sung']} ({x['cents']:+d}c)"
-                                                           for x in f["flagged_notes"][:12]))
-        if ov:
-            L.extend(oversight_lines(f, ov, show))
-        if f.get("applies") == "answer":
-            L.append(f"- answer: [ ] {f['notes'][0]}  [ ] {f['notes'][1]}  [ ] both   (record: `hypnomix fix DIR --answer NOTE`)")
-        elif f.get("applies") != "info":
-            L.append("- decision: [ ] approve  [ ] skip  [ ] change: ____  amount: ___%")
-        L.append("")
+        L.extend(item_lines(f, ov, show, kc))
+
+    kc = kind_context(findings, ov) if ov else None
+    if kc:
+        L += ["", "## Why these fixes", "",
+              f"Written once per kind of fix: the items below say only what is specific to each. DIR is `{od}`. Record "
+              "a decision with `hypnomix fix DIR --decide ID=approve|skip|change` (or `hypnomix review DIR --serve`); "
+              "there are no checkboxes in this file. \"N like it\" means N other findings of the same kind and similar "
+              "size: `hypnomix fix DIR --decide-like ID=approve --dry-run` lists them. In a long scan read "
+              "`hypnomix fix DIR --list --undecided --top 15`, then `--show ID` for one.", ""]
+        for key, k in kc.items():
+            L += kind_lines(key, k) + [""]
 
     budget = (ov or {}).get("budget")
     if budget:
@@ -1141,7 +1495,7 @@ def write_review(od, setp, findings, notes, meta, pref_lines=(), prefs=None):
               "*audio* items become new files; *manual* items are listed for you. Every finding is looked up again "
               "before anything changes, and the new project is checked and measured again afterwards. REAPER can stay "
               "open; open the new file when it is written."]
-        (od / "REVIEW.md").write_text("\n".join(L) + "\n")
+        AT.write_text(od / "REVIEW.md", "\n".join(L) + "\n", backup=False)
         return
     if rpp_:
         name, ext, swap = {"reaper": ("REAPER", ".rpp", "as new takes"),
@@ -1150,14 +1504,14 @@ def write_review(od, setp, findings, notes, meta, pref_lines=(), prefs=None):
               f"{name} project: *manual* items say what to change in {name}; *audio* items (tune, dehiss, deess, "
               f"breaths) become new files with `hypnomix fix` as for any project, and you swap them in {swap}. "
               f"Writing approved project changes into a new {ext} comes with a later hypnomix release."]
-        (od / "REVIEW.md").write_text("\n".join(L) + "\n")
+        AT.write_text(od / "REVIEW.md", "\n".join(L) + "\n", backup=False)
         return
     L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision',
           f'hypnomix fix "{od}" --approved --out "<Song> (fixed).als"   # apply only what was approved', "```",
           "Close the set in Live first. `fix` writes approved *set* changes in one new set next to the original; "
           "*audio* items become new files (originals untouched); *manual* items are listed for you. It looks every "
           "finding up again before changing anything and measures the result afterwards."]
-    (od / "REVIEW.md").write_text("\n".join(L) + "\n")
+    AT.write_text(od / "REVIEW.md", "\n".join(L) + "\n", backup=False)
 
 
 # ---------------------------------------------------------------- incremental (--since)
@@ -1172,7 +1526,7 @@ def incremental_plan(als, od, prev, groups, a):
     snap = prev / "raw" / Q.SNAPSHOT
     old_groups = {g: json.loads((prev / f"{g}.json").read_text()) for g in ALL_GROUPS if (prev / f"{g}.json").exists()}
     old_findings = json.loads((prev / "findings.json").read_text())["findings"]
-    old_dec = json.loads((prev / "decisions.json").read_text()) if (prev / "decisions.json").exists() else {}
+    old_dec = AT.load_json(prev / "decisions.json", {}) or {}
     if not snap.exists():
         print(f"--since: {prev} kept no copy of the set it scanned (an older scan): every group runs again")
         rows, rerun, why = [{"track": "(song)", "what": "no earlier copy to compare"}], list(groups), \
@@ -1217,7 +1571,7 @@ def incremental_plan(als, od, prev, groups, a):
         d["notes"] = [n for n in d["notes"] if not n.startswith(f"{g}: carried")] + [
             f"{g}: carried over from the scan in {prev.name}" + (" (its tracks changed since: run the full scan for this "
                                                                  "group)" if g in affected else "")]
-        (od / f"{g}.json").write_text(json.dumps(d, indent=1, default=str))
+        AT.write_text(od / f"{g}.json", json.dumps(d, indent=1, default=str), backup=False)
     return dict(dir=str(prev), rows=rows, rerun=rerun, why=why, old_groups=old_groups, old_findings=old_findings,
                 old_dec=old_dec)
 
@@ -1235,26 +1589,49 @@ def incremental_finish(od, since):
             f.pop("carried", None)
             if Q.fp(f) not in old_fp:
                 f["new"] = True
-        p.write_text(json.dumps(d, indent=1, default=str))
+        AT.write_text(p, json.dumps(d, indent=1, default=str), backup=False)
 
 
 def incremental_decisions(od, since):
-    """Decisions from the previous scan, re-keyed by what each finding is. Those whose finding is gone are kept
-    apart in decisions-stale.json (nothing is lost; nothing is applied from it)."""
-    from hypnomix.workflow import quick as Q
-    new = json.loads((od / "findings.json").read_text())["findings"]
-    dec, dropped = Q.remap_decisions(since["old_findings"], new, since["old_dec"])
+    """Decisions from the previous scan, re-keyed by what each finding is (the same rule as every re-scan). Those
+    whose finding is gone are kept apart in decisions-orphaned.json (nothing is lost; nothing is applied from it)."""
+    new = AT.load_json(od / "findings.json")["findings"]
+    dec, dropped = remap_decisions(since["old_findings"], new, since["old_dec"])
     if dec or (od / "decisions.json").exists():
-        (od / "decisions.json").write_text(json.dumps(dec, indent=1))
-    if dropped:
-        p = od / "decisions-stale.json"
-        old = json.loads(p.read_text()) if p.exists() else {}
-        old.update(dropped)
-        p.write_text(json.dumps(old, indent=1))
+        AT.write_json(od / "decisions.json", dec)
+    set_aside(od, dropped)
     return dec, dropped
 
 
 # ---------------------------------------------------------------- main
+def same_source(recorded, als):
+    try:
+        return Path(str(recorded)).expanduser().resolve() == Path(als).resolve()
+    except OSError:
+        return str(recorded) == str(als)
+
+
+def scan_folder(custom, als):
+    """The folder this scan writes into. A folder that already holds the scan of a DIFFERENT source ("Song.als" and
+    then an Ardour session also called "Song") is never mixed with it: its decisions, fix log and history would
+    be inherited by the wrong song. The next free "<name> (2)", "(3)" ... is used instead, and the person is told."""
+    from hypnomix.core import paths
+    als = Path(als)
+    base = Path(custom).expanduser() if custom else paths.OUT / "scan" / (als.name if als.is_dir() else als.stem)
+    cand, k = base, 1
+    while (cand / "scan.json").exists():
+        prev = (AT.load_json(cand / "scan.json", {}) or {}).get("set")
+        if not prev or same_source(prev, als):
+            break
+        k += 1
+        cand = base.with_name(f"{base.name} ({k})")
+    if cand != base:
+        print(f"{base} already holds a scan of a different source ({prev}); not mixing the two songs: "
+              f"writing to {cand}")
+    cand.mkdir(parents=True, exist_ok=True)
+    return cand
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix scan", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1298,7 +1675,10 @@ def main():
     folder = als.is_dir() and not reaper
     if folder and not audio_files(als):
         sys.exit(f"no audio files (wav, aif, flac) in {als}")
-    od = out_at(a.out, "scan", als.stem if not als.is_dir() else als.name)
+    od = scan_folder(a.out, als)
+    from hypnomix.core import paths as _paths
+    _paths.OUT = od / "raw" / "tools"                   # a scan writes only under its own folder: a tool that
+    os.environ["HYPNOMIX_OUT"] = str(_paths.OUT)        # defaults to hypnomix-out/ (audit does) lands here instead
     if reaper:
         from hypnomix.workflow import scan_project as SP
         mine = SP.GROUPS
@@ -1321,7 +1701,7 @@ def main():
     (od / "raw").mkdir(exist_ok=True)
     sj = od / "scan.json"
     if sj.exists():  # parallel --only runs share this file: keep what another run already recorded
-        old = json.loads(sj.read_text())
+        old = AT.load_json(sj, {}) or {}
         if old.get("set") == info["set"]:
             info = {k: (v if v is not None else old.get(k)) for k, v in info.items()}
     since = None
@@ -1330,7 +1710,7 @@ def main():
         groups = since["rerun"]
         info["since"] = str(Path(a.since).expanduser().resolve())
     info["quick"] = bool(a.quick)
-    sj.write_text(json.dumps(info, indent=1))
+    AT.write_json(sj, info)
     if not folder and not reaper:
         from hypnomix.workflow.quick import keep_snapshot
         keep_snapshot(als, od)              # the next `--since` compares against this copy
@@ -1338,6 +1718,8 @@ def main():
     if reaper:
         SP.run(a, als, od, groups)
         return finish(od)
+    if folder:
+        warm_features(audio_files(als), a.jobs)
     role = roles(als, od) if {"names", "timing", "vocals", "devices"} & set(groups) else {}
     if role:
         vox = [t for t, r in role.items() if is_vocal(r["label"])]
@@ -1355,10 +1737,16 @@ def main():
         try:
             f, notes = fn()
         except Exception as e:  # one failing check must not sink the scan
-            f, notes = [], [f"{g}: failed ({e})"]
+            import traceback
+            try:
+                save(od / "raw" / f"{g}-error.txt", traceback.format_exc())
+            except OSError:
+                pass
+            f, notes = [], [f"{g}: failed ({plain_reason(str(e) or e.__class__.__name__)}), so this group has no "
+                            f"findings, which does not mean it is clean. Full output: raw/{g}-error.txt"]
         secs = time.time() - t0
-        (od / f"{g}.json").write_text(json.dumps({"group": g, "set": str(als), "seconds": secs,
-                                                  "findings": f, "notes": notes}, indent=1, default=str))
+        AT.write_text(od / f"{g}.json", json.dumps({"group": g, "set": str(als), "seconds": secs, "findings": f,
+                                                    "notes": notes}, indent=1, default=str), backup=False)
         print(f"  {g:<8} {len(f):4d} findings  ({secs:.0f} s)")
         return g
 
@@ -1389,11 +1777,9 @@ def add_devices(als, out=None):
 def finish(od, since=None):
     if since:
         incremental_finish(od, since)
-    findings, notes = merge(od)
+    findings, notes = merge(od, remap=not since)          # --since remaps from the previous scan's own findings below
     if since:
-        dec, dropped = incremental_decisions(od, since)
-        if dropped:
-            print(f"  {len(dropped)} decision(s) whose finding is gone kept in decisions-stale.json")
+        incremental_decisions(od, since)
         n_new = sum(1 for f in findings if f.get("new"))
         n_car = sum(1 for f in findings if f.get("carried"))
         print(f"\nincremental: {len(since['rows'])} change(s) since {since['dir']}; re-ran {', '.join(since['rerun']) or 'no groups'}; "
@@ -1403,7 +1789,7 @@ def finish(od, since=None):
     counts = {s: sum(1 for f in findings if f.get("severity") == s) for s in SEV}
     print(f"\n{len(findings)} findings ({counts['high']} high, {counts['medium']} medium, {counts['low']} low, "
           f"{counts['info']} info). Nothing was changed.\nreview: {od / 'REVIEW.md'}")
-    broken = [n for n in notes if "failed" in n]
+    broken = [n for n in notes if "failed" in n or "did NOT run" in n]
     if broken:
         print(f"\n{len(broken)} check(s) did NOT run: tell the person, and do not call those areas clean:")
         for n in broken:

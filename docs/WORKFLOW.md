@@ -50,7 +50,18 @@ Saved in `~/.hypnomix/preferences.json`. Every scan reads it:
 - **protect.notes**: things that are deliberate. They are printed at the top of every review so nobody
   "fixes" your fade or your long delay.
 - **review**, **taste**, **tools**: how you like to review, how strict tuning and timing should be, your DAW
-  and the free plug-ins you have.
+  and the free plug-ins you have. `review.max_questions=N` asks N fixes one by one and batches the rest (0 asks
+  everything). `review.style`, `review.explain` and `targets.delivery` are read by AI agents and the Assistant,
+  who follow them when they run the review with you; the scan itself does not change. `taste.tuning` and
+  `taste.timing` (`off`, or gentle or tight) tell a scan how far to go; `off` means that kind of fix is not proposed.
+- **cleanup**: the tidy steps of the first clean-up, all on by default: `cleanup.order`, `cleanup.retire`,
+  `cleanup.consolidate` (`on` or `off`). They are also in the app's Preferences tab.
+- **tools.daw** is `live`, `reaper`, `ardour` or `other`, the same choice as the app's Setup page: until you
+  answer in Preferences, Setup's answer is used, so the two never disagree.
+
+Every answer is checked when it is saved: `hypnomix prefs set targets.lufs=abc` is refused with "targets.lufs must
+be a number from -40 to -1", and a choice that is not on the list names the choices that are. Nothing in the
+command is saved unless every answer in it is good; the app's Preferences tab uses the same check.
 - **learned**: after each review, `hypnomix prefs learn DIR` counts what you approved and skipped per kind of
   finding. The next review shows it ("in past reviews you skipped 9 of 10 like this"). It is advice for the
   reviewer. Nothing is ever applied because of it.
@@ -145,6 +156,12 @@ hypnomix fix "hypnomix-out/scan/Song" --decide tune-Lead=change --note "lighter 
 hypnomix fix "hypnomix-out/scan/Song" --list        # every finding with its decision
 ```
 
+On a long scan, do not read every finding at once. `--list` narrows and pages: `--undecided`, `--severity high|medium|low`,
+`--tool NAME`, `--top N`, `--offset N` (for example `--list --undecided --top 15`), and `--show ID` prints one finding in
+full: everything `REVIEW.md` says about it plus the explanation of its kind of fix. `--decide` and `--approve` can be
+repeated and each takes a comma list. `REVIEW.md` writes the explanation of each kind of fix once, under "Why these
+fixes", and each item only what is its own; it has no checkboxes (decisions go through `--decide` or the review page).
+
 Always asked one at a time: high severity, PROTECTED tracks, and anything about taste.
 
 ## 3. Fix (only what was approved)
@@ -158,7 +175,12 @@ hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).als"
 
 Order inside the new set: distortion parameter fixes → sidechain settings → clip fades and volume eases →
 warp-marker nudges → track order and vocal-stack clip moves → track names. Items marked "on by default"
-(track order) are applied by `--approved` unless you recorded skip. To hear each change before the next, apply one id per run and chain them with
+(track order, retiring switched-off tracks, merging one instrument's tracks, vocal-stack moves) are applied by
+`--approved` unless you recorded skip; `--no-defaults` applies only what was approved by name. Before it writes
+anything, `fix` prints which defaults it is adding and every file it is about to create (the new set, the
+"(archive, all takes)" copy that tidy keeps, repaired audio, the log). At the end it prints "Not applied": what you
+decided as "change" (with your note), what you approved that has to be done by hand, and what was no longer found,
+each with what to do next. To hear each change before the next, apply one id per run and chain them with
 `--from "Song (fixed 1).als" --out "Song (fixed 2).als"`.
 
 What `fix` checks itself, and stops on:
@@ -278,7 +300,16 @@ Every scan keeps a copy of the set it read (`raw/scanned.als`). `--since` compar
 groups those changes can affect (a clip edit: clips, timing or vocals, noise; a device change: effects, devices; a
 fader or pan: intent; tempo or added tracks: everything) and carries the rest over (marked carried; carried
 groups whose tracks changed are marked stale). New findings are marked new; decisions follow their findings by
-what they are, and decisions whose finding is gone are kept in `decisions-stale.json`. `watch` only reads the set.
+what they are, and decisions whose finding is gone are kept in `decisions-orphaned.json`. `watch` only reads the set.
+
+Every re-scan into a folder that already holds decisions does the same, not only `--since`: a decision follows its
+finding (same tool, track, kind and position, within half a second or about a beat), never its number, so
+"smooth-1 = approve" can not end up on a different clip after the set changed. Decisions that no longer match are
+counted ("3 earlier decisions no longer match a finding and were set aside") and kept in `decisions-orphaned.json`;
+nothing is applied from them. A scan never writes into the folder of a different source: "Song.als" and then an
+Ardour session also called "Song" get "Song" and "Song (2)". Decisions, findings, the scan record and the log are
+written whole or not at all, and the version before is kept next to each as `<name>.bak`; a file cut off by a crash
+is read from its backup, with a warning.
 
 ### Render cache
 

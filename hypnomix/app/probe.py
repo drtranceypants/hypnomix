@@ -31,7 +31,8 @@ Live's own Export is still how you make the final file: no Live API can start an
 
 How it works. The probe is a small Max for Live audio effect. Put it LAST on a track: it hears the track after
 all of its devices and plug-ins (before the fader; the fader and pan are read and added). Ten times a second it
-sends what it measured to the hypnomix app on this computer (UDP, 127.0.0.1 only):
+sends what it measured to the hypnomix app on this computer (UDP, 127.0.0.1 only, port 8792; a second copy of
+the app sets HYPNOMIX_PROBE_PORT to its own port before it makes its devices and starts):
 
   loudness   K-weighted mean square per channel (BS.1770 filters at Live's sample rate): momentary,
              short-term and integrated loudness are worked out from it
@@ -60,8 +61,38 @@ import argparse, glob, json, math, os, re, sys, threading, time
 from collections import deque
 from pathlib import Path
 
-PORT_UDP = 8792
-PORT_APP = 8791
+DEFAULT_UDP, DEFAULT_APP = 8792, 8791
+
+
+def _port(var, default):
+    """A port number from the environment variable `var` (read when asked, so a second app instance started with
+    its own value works), else the default. Anything that is not a port number is ignored."""
+    try:
+        n = int(str(os.environ.get(var, "")).strip() or default)
+        return n if 1 <= n <= 65535 else default
+    except ValueError:
+        return default
+
+
+def probe_port():
+    """The UDP port the probes send to and the hub listens on: HYPNOMIX_PROBE_PORT, default 8792. A second app
+    instance needs its own (the probe devices and the REAPER relay are generated with the same value)."""
+    return _port("HYPNOMIX_PROBE_PORT", DEFAULT_UDP)
+
+
+def app_port():
+    """The port of the hypnomix app the devices talk to: HYPNOMIX_PORT, default 8791 (what `app --port N` uses)."""
+    return _port("HYPNOMIX_PORT", DEFAULT_APP)
+
+
+def port_in_use_text(port, err):
+    """The status text when the probe hub cannot bind its port: which port, and how to change it."""
+    return (f"UDP port {port} is in use ({err}); close the other program using it, or give this copy its own port: set "
+            f"HYPNOMIX_PROBE_PORT to another number before starting the app (and open the probe devices made by that "
+            f"copy; they send to the same port). It is tried again every few seconds")
+
+
+PORT_UDP, PORT_APP = probe_port(), app_port()     # at import; the functions above are what the code below asks
 NV = 20                                   # values per block, in this order:
 FIELDS = ["kL", "kR", "pL", "pR", "rL", "rR", "mid", "side", "lr", "lowL", "lowR", "lowLR"] + [f"b{i}" for i in range(8)]
 BANDS = [("sub", 20, 60), ("bass", 60, 120), ("upper bass", 120, 250), ("low-mid", 250, 500),
@@ -414,7 +445,7 @@ def build_patch(patch, mode="track"):
     jsbox["patching_rect"] = [400.0, 60.0, float(JW), float(H)]
     del jsbox["text"]
     P.wire(thisdev, 0, js, 0)
-    udp = P.add(f"udpsend 127.0.0.1 {PORT_UDP}", 1, 0, [], x=400, y=140)
+    udp = P.add(f"udpsend 127.0.0.1 {probe_port()}", 1, 0, [], x=400, y=140)
     P.wire(js, 0, udp, 0)
     route = P.add("route k1 k2 g chords rec", 1, 6, ["", "", "", "", "", ""], x=600, y=140)
     P.wire(js, 1, route, 0)
@@ -559,13 +590,13 @@ def build(out, tpl=None):
     write_amxd(out / "HypnomixMain.amxd", head, build_patch(_copy.deepcopy(patch), "main"))
     (out / "hypnomix_probe.js").write_text(script())
     from hypnomix.app import masterchain as MC
-    (out / "hypnomix_master.js").write_text(MC.script(PORT_APP))
+    (out / "hypnomix_master.js").write_text(MC.script(app_port()))
     return out
 
 
 def script():
     menus = {n: list(spec) for m in CONTROLS.values() for n, _, k, spec, _, _ in m if k == "menu"}
-    return (JS.replace("__APP__", str(PORT_APP)).replace("__W__", str(JW)).replace("__H__", str(H))
+    return (JS.replace("__APP__", str(app_port())).replace("__W__", str(JW)).replace("__H__", str(H))
             .replace("__NV__", str(NV)).replace("__MENUS__", json.dumps(menus))
             .replace("__LABELS__", json.dumps({lab: n for m in CONTROLS.values() for n, lab, _, _, _, _ in m})))
 
@@ -689,13 +720,19 @@ class Hub:
                 c["blocks"].append([round(b[0] - self.capture["started"], 3), round(b[1], 4), b[2], round(b[3], 2),
                                     round(b[4], 3)] + [float(f"{x:.6g}") for x in b[5]])
 
-    def start(self, port=PORT_UDP):
+    def start(self, port=None):
+        port = port or probe_port()
+        self.port = port
         from pythonosc.dispatcher import Dispatcher
         from pythonosc.osc_server import ThreadingOSCUDPServer
         d = Dispatcher()
         d.map("/hm/probe", lambda addr, *a: self.on_block(*a))
         d.map("/hm/meta", lambda addr, *a: self.on_meta(*a))
-        self.server = ThreadingOSCUDPServer(("127.0.0.1", port), d)
+        try:
+            self.server = ThreadingOSCUDPServer(("127.0.0.1", port), d)
+        except OSError as e:
+            raise OSError(f"{e.strerror or e} on port {port}; the environment variable HYPNOMIX_PROBE_PORT "
+                          "changes the port (the devices made afterwards send to it)") from e
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         try:                              # REAPER's probes (JSFX) arrive through the hypnomix bridge, not UDP
             from hypnomix.reaper.probes import feed
@@ -1221,7 +1258,7 @@ def insert(set_path, out=None, include_returns=True, main=False, review=False, l
 def app_up():
     import urllib.request
     try:
-        urllib.request.urlopen(f"http://127.0.0.1:{PORT_APP}/api/probe/status", timeout=1).read()
+        urllib.request.urlopen(f"http://127.0.0.1:{app_port()}/api/probe/status", timeout=1).read()
         return True
     except Exception:
         return False
@@ -1229,7 +1266,7 @@ def app_up():
 
 def app_call(path, body=None):
     import urllib.request
-    req = urllib.request.Request(f"http://127.0.0.1:{PORT_APP}{path}", data=json.dumps(body or {}).encode() if body is not None else None,
+    req = urllib.request.Request(f"http://127.0.0.1:{app_port()}{path}", data=json.dumps(body or {}).encode() if body is not None else None,
                                  headers={"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=10).read())
 

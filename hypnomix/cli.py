@@ -3,6 +3,7 @@
 Run `hypnomix` for the command list, `hypnomix <command> -h` for each command's help.
 """
 import importlib
+import os
 import sys
 
 GROUPS = [
@@ -18,6 +19,9 @@ GROUPS = [
         ("align", "hypnomix.engineer.align", "phase/polarity/time offset between mics on one source"),
         ("translate", "hypnomix.engineer.translate", "mono, phone, earbuds, car, streaming normalisation, codec clipping; --preview to hear MP3 / AAC / as streaming plays it"),
         ("qc", "hypnomix.engineer.qc", "release checks: format, silence, true peak, loudness, phase (exit 1 on fail)"),
+        ("album", "hypnomix.engineer.album", "an EP or album as a whole: which songs sit apart in level, tone and width, the gap between each pair, order options; ALBUM.md, report first (--plan: trims, tilts and silence as findings)"),
+        ("release", "hypnomix.engineer.release", "master → the folder you upload: 24-bit and 16-bit WAV, MP3 320, AAC 256 (FLAC if you like) with tags and cover, and a report with the true peak after decoding; --check first"),
+        ("versions", "hypnomix.engineer.versions", "instrumental, a cappella, TV mix and radio edit from your own exported stems (no separation); checks the stems add up to the mix; --check first"),
     ]),
     ("Studio: recording real instruments", [
         ("prep", "hypnomix.studio.prep", "raw takes → mix-ready stems: clicks, clipping, plosives, breaths, hiss, silence, fades"),
@@ -43,6 +47,7 @@ GROUPS = [
         ("stems", "hypnomix.ears.stems", "who owns which band (and a resonance) in a folder of stems"),
         ("reference", "hypnomix.ears.reference", "what it would take to sound like a reference  [extra: reference]"),
         ("match", "hypnomix.ears.match", "mix vs a reference as a list of proposals: tone by band, dynamics, width, loudness"),
+        ("compare", "hypnomix.ears.compare", "this bounce against the previous one: aligned, in plain words (loudness, tone by band, width, each section) with level-matched A/B clips of where they differ most"),
         ("tonal", "hypnomix.ears.tonal", "tonal-balance targets from your own masters or chosen references; where a mix sits outside the range, with EQ proposals and a plot"),
         ("harsh", "hypnomix.ears.harsh", "harshness report: sustained 2-6 kHz build-ups with timestamps (master --harsh tames only those)"),
         ("sections", "hypnomix.ears.sections", "find the song's sections; loudness and vocal balance per section (give --bpm)"),
@@ -59,6 +64,7 @@ GROUPS = [
     ]),
     ("Projects: REAPER (.rpp), Ardour (.ardour) and Live (.als)", [
         ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, probes, the A/B review panel, the Align panel"),
+        ("preflight", "hypnomix.session.preflight", "sanity of the files before any work: mixed sample rates or bit depths, stems of different length, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel; report first"),
         ("project", "hypnomix.project.show", "look inside a REAPER, Ardour or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
     ]),
     ("Session files (.als, Live closed or open)", [
@@ -90,6 +96,7 @@ GROUPS = [
         ("profile", "hypnomix.session.profile", "build your sound profile from songs you love"),
     ]),
     ("Workflow: scan a song, review, fix", [
+        ("demo", "hypnomix.studio.demo", "a 40-second demo song with labelled problems (click, level jump, hiss, clipping, a drifting harmony, late hits) to try scan, ab and fix on nothing of your own; a folder of stems or a REAPER project"),
         ("scan", "hypnomix.workflow.scan", "first pass: run every check on a set or a folder of recordings, change nothing, write REVIEW.md"),
         ("fix", "hypnomix.workflow.fix", "apply only the findings you approved, into ONE new set (original untouched)"),
         ("taste", "hypnomix.workflow.taste", "your tastes and standards from your own finished songs: levels, pans, sends, chains, vocals (TASTE.md); --library studies every set on this computer: style plus where to improve"),
@@ -133,6 +140,31 @@ def _utf8_output():
 
 
 def main(argv=None):
+    """Run a command. A file that cannot be read as audio ends with one plain line and exit code 2, no traceback
+    (set HYPNOMIX_DEBUG=1 to see the traceback)."""
+    try:
+        return _main(argv)
+    except Exception as e:
+        msg = None if os.environ.get("HYPNOMIX_DEBUG") else _audio_read_message(e)
+        if msg is None:
+            raise
+        print(msg, file=sys.stderr)
+        sys.exit(2)
+
+
+def _audio_read_message(e):
+    """The plain message for "this file cannot be read as audio", or None when `e` is something else (a real bug)."""
+    name = type(e).__name__
+    if name == "AudioReadError":
+        return str(e)
+    if name == "LibsndfileError" and str(e).startswith("Error opening "):   # a command that opens the file itself
+        path, _, why = str(e)[len("Error opening "):].partition(": ")
+        gone = "no such file" if not os.path.exists(path.strip("'\"")) else "not an audio file hypnomix can decode"
+        return f"can't read {path} as audio: {gone}"
+    return None
+
+
+def _main(argv=None):
     if sys.platform == "win32":
         _utf8_output()
     argv = sys.argv[1:] if argv is None else argv

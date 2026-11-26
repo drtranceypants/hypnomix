@@ -23,11 +23,28 @@ def live_prefs_dir():
     return sorted(vers, key=key)[-1] if vers else None
 
 
+# What the copy leaves out; the "is it up to date" check must skip exactly the same things (plus Finder's
+# .DS_Store), or Live's own files inside the installed copy (it writes logs/ there) look like a difference.
+COPY_IGNORE = ("__pycache__", "*.pyc", "logs")
+
+
+def _files(root):
+    """{relative path: absolute path} of the files a fresh copy would hold."""
+    skip = shutil.ignore_patterns(*COPY_IGNORE, ".DS_Store")
+    out = {}
+    for d, dirs, names in os.walk(root):
+        gone = set(skip(d, dirs + names))
+        dirs[:] = sorted(x for x in dirs if x not in gone)
+        for n in names:
+            if n not in gone:
+                full = Path(d) / n
+                out[str(full.relative_to(root))] = full
+    return out
+
+
 def _same_tree(a, b):
-    c = filecmp.dircmp(a, b, ignore=["__pycache__", ".DS_Store"])
-    if c.left_only or c.right_only or c.diff_files:
-        return False
-    return all(_same_tree(Path(a) / d, Path(b) / d) for d in c.common_dirs)
+    fa, fb = _files(a), _files(b)
+    return fa.keys() == fb.keys() and all(filecmp.cmp(fa[k], fb[k], shallow=False) for k in fa)
 
 
 INSTALL_HELP = """usage: hypnomix install [--dry-run] [--plugin-params]
@@ -56,7 +73,7 @@ def install(argv):
                 dest.rename(bak)
         if not dry:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(SCRIPT_SRC, dest, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "logs"))
+            shutil.copytree(SCRIPT_SRC, dest, ignore=shutil.ignore_patterns(*COPY_IGNORE))
         print("   installed. Restart Live, then Settings → Link, Tempo & MIDI → Control Surface: AbletonOSC")
 
     prefs = live_prefs_dir()

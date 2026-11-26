@@ -30,7 +30,8 @@ advice only, each with its evidence: which sets and the numbers). Writes LIBRARY
 ~/.hypnomix/library.json (HYPNOMIX_HOME to change), which other tools read later.
 
 Usage:
-  hypnomix taste --library [DIR …] [--no-bounces] [--jobs N] [--refresh] [--out DIR]
+  hypnomix taste --library [DIR …] [--no-bounces] [--jobs N] [--refresh] [--no-spotlight]
+                                [--max-bounce-seconds N] [--out DIR]
   hypnomix taste --library --genre "PROJECT=genre" [...]     confirm a genre guess (saved in your preferences)
   python -m hypnomix.workflow.library [DIR …] [same options]
 """

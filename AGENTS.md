@@ -104,7 +104,10 @@ a clean group.
 
 ### 2. Review with the person
 
-Go down `REVIEW.md` in order. For each item say, in plain words: what is wrong, where (track, bar.beat or m:ss),
+On a long scan do not read `REVIEW.md` from top to bottom. Read `hypnomix fix "<SCAN_DIR>" --list --undecided --top 15`
+first (`--offset 15` for the next page; `--severity` and `--tool` narrow it), then `hypnomix fix "<SCAN_DIR>" --show ID`
+for the item under discussion: it prints everything `REVIEW.md` says about it, with the explanation of its kind of
+fix. Read `REVIEW.md` whole only for a small scan or when the person asks. For each item say, in plain words: what is wrong, where (track, bar.beat or m:ss),
 what the fix would do, and **what to listen for there**. Then ask: approve, skip, or change. Record every answer:
 
 ```bash
@@ -128,7 +131,11 @@ skipped 9 of 10 like this") is something to tell them, never a reason to skip th
 hypnomix fix "<SCAN_DIR>" --approved --out "Song (fixed).als"
 ```
 
-`fix` enforces the safety rules itself and stops rather than guesses. It refuses when: the set changed since the
+Before it writes anything `fix` prints the clean-ups it adds because they are on by default (`order-1`, `retire-1`,
+`merge-N`; `--no-defaults` leaves them out) and every file it is about to create, the archive copy included: read
+that to the person. At the end it prints **Not applied**: what they decided as "change" (with their note), what they
+approved that must be done by hand, and what was no longer found, each with what to do next. `fix` enforces the
+safety rules itself and stops rather than guesses. It refuses when: the set changed since the
 scan (re-scan), the output name already exists, an id was recorded as skip or change, a finding is on a protected
 track (ask again, then `--allow-protected`), or the key for vocal tuning was never confirmed (`--key "<key>"`, or `--key sections`: the section-by-section key map,
 where notes on a pitch disputed by an unanswered `key-N` question are left exactly as sung). It looks
@@ -165,26 +172,26 @@ which spots to compare between the old and new set. When the review is finished,
    "Instrument" or is unsure, ask. Wrong role, wrong fix.
 6. **Find the source before fixing the symptom.** Hiss, distortion or mud heard in the mix: solo or render the
    suspects and measure each. Large clip-gain boosts raise the noise under a take; look there first.
-6. **Doubt odd numbers.** If a measurement looks strange, check the measurement (a second tool, a shorter
+7. **Doubt odd numbers.** If a measurement looks strange, check the measurement (a second tool, a shorter
    range, the raw file) before proposing a fix. The tool can be wrong.
-7. **You measured, you didn't listen.** Say "measured", tell the person what to listen for and where, and let
+8. **You measured, you didn't listen.** Say "measured", tell the person what to listen for and where, and let
    their ears overrule the number. If they disagree with a move, they're right.
-8. **Offline first, Live last.** Prefer file and session tools. Ask before opening, saving or quitting anything
+9. **Offline first, Live last.** Prefer file and session tools. Ask before opening, saving or quitting anything
    in Live; never choose "Save" on a set you didn't create. One agent drives Live at a time: if another session
    may be using it, ask the person first. Close the set in Live before opening a new one written from it.
-9. **Keep it human.** `timing` only nudges outliers against the band; `tune` moves note centres and keeps
+10. **Keep it human.** `timing` only nudges outliers against the band; `tune` moves note centres and keeps
    vibrato and slides; `smooth` eases jumps instead of flattening them. When a tool says it can't decide
    (a note between two pitches, crowded hits, a loop seam), hand it to the person.
-10. **Report honestly.** If a step failed, was skipped, or wasn't checked, say so in those words. "Done" means
+11. **Report honestly.** If a step failed, was skipped, or wasn't checked, say so in those words. "Done" means
     applied and measured again. Features marked untested (below) are described as untested.
-11. **Verify the whole, not just the spot.** After a pass, compare a full export with the previous bounce
+12. **Verify the whole, not just the spot.** After a pass, compare a full export with the previous bounce
     (length, intro and fade loudness, true peak). Lossy encodes overshoot: `translate` and `qc` check that.
-12. **Their audio stays on their machine.** `critique` (and the app's Listening) uploads a reduced mono copy
+13. **Their audio stays on their machine.** `critique` (and the app's Listening) uploads a reduced mono copy
     of the mix to a cloud model: ask first, every time (`critique --estimate` says what would be sent and its
     rough cost). Nothing else leaves the computer. Its notes are an opinion by ear: measurements win on numbers.
-13. **Free tools only.** Code and docs here use free, open-source or the DAW's stock devices. Don't add or name
+14. **Free tools only.** Code and docs here use free, open-source or the DAW's stock devices. Don't add or name
     paid plug-ins anywhere in this repo, and only propose plug-ins the person said they have.
-14. **Small steps.** One kind of change per pass, then listen. Stop and check in after a review round; don't
+15. **Small steps.** One kind of change per pass, then listen. Stop and check in after a review round; don't
     start a second round of re-runs on your own. Two attempts at the same fix that the person rejects means
     stop and ask what they're hearing.
 
@@ -305,7 +312,7 @@ commit**: a new command, option, check, fix, default or workflow, a renamed thin
 
 | what changed | edit |
 |---|---|
-| how to use a feature | the guide that covers it, `docs/guides/NN-*.md` (it is also a PDF: `python docs/guides/build.py`) |
+| how to use a feature | the guide that covers it, `docs/guides/NN-*.md` (the wiki reads the Markdown; there is no PDF to rebuild) |
 | how a part works in depth | `docs/<TOPIC>.md`, or a new one (list a new file in `pyproject.toml`'s force-include) |
 | the overview, setup, the rules | `README.md`, `GUIDE.md`, `AGENTS.md`, `CLAUDE.md`, `THIRD_PARTY.md` |
 | a skill or a subagent | `skills/<name>/SKILL.md`, `agents/<name>.md` |

@@ -14,8 +14,8 @@ until they approve it, originals are never overwritten, and every applied fix is
    `hypnomix prefs questions` one at a time in plain words (each has options, a default and a "why") and save
    with `hypnomix prefs set KEY=VALUE …`. Never fill them in yourself. If preferences exist, read them and
    follow them: review style, how much to explain, protected tracks, what is deliberate.
-2. What to scan: a Live set (`.als`), or a folder of recordings / stems (any DAW; ask for full-length files
-   from the same start point, processing off).
+2. What to scan: a Live set (`.als`), a REAPER project (`.rpp`), an Ardour session, or a folder of recordings /
+   stems (any DAW; ask for full-length files from the same start point, processing off).
 3. For a set, optional but valuable: a bounce of the full mix (`--mix`: loudness, true peak, release checks)
    and the mix or an instrumental for vocal tuning (`--ref`; defaults to `--mix`). `hypnomix separate mix.wav`
    makes an instrumental if they have none. The key if they know it (`--key "F# major"`).
@@ -44,9 +44,10 @@ until they approve it, originals are never overwritten, and every applied fix is
 ## 1. Scan in parallel
 
 Start one `hypnomix-scanner` subagent per group, **all in the same message** so they run at once.
-A set: `names`, `files`, `clips`, `timing`, `vocals`, `effects`, `noise`, `intent`, and `mix` (only with `--mix`; add
-`--like REF.wav` if they named a song to sound like). `stems` only when they want the deep pass (`--deep`: renders every track).
-A folder: `recordings`, `stems`. Give each the path, scan folder, group, and the `--mix/--ref/--key` values.
+A Live set: `names`, `files`, `clips`, `timing`, `vocals`, `effects`, `devices`, `noise`, `intent`, `structure`, and
+`mix` (only with `--mix`; add `--like REF.wav` if they named a song to sound like). `stems` only when they want the
+deep pass (`--deep`: renders every track). A REAPER project or an Ardour session has its own groups: see
+`hypnomix scan -h`. A folder: `recordings`, `stems`. Give each the path, scan folder, group, and the `--mix/--ref/--key` values.
 They are read-only and return a short summary.
 
 No subagents available? Run `hypnomix scan "<SET or FOLDER>" [--mix … --ref … --key …] --out "<SCAN_DIR>"`
@@ -68,7 +69,11 @@ the address. Their clicks are saved to `decisions.json`; stay available to expla
 
 ## 3. Review, one item at a time
 
-Go down `REVIEW.md` in order. For each item:
+Do not read `REVIEW.md` from top to bottom on a long scan: it costs the person's money and your attention. Read
+`hypnomix fix "<SCAN_DIR>" --list --undecided --top 15` first (page on with `--offset 15`; narrow with `--severity`,
+`--tool`), then `hypnomix fix "<SCAN_DIR>" --show <id>` for the item you are on: it prints everything REVIEW.md says
+about it, including the explanation of its kind of fix. Read `REVIEW.md` whole only for a small scan or when the
+person asks. For each item:
 
 1. Say what is wrong and where (track, bar.beat or m:ss) in plain words, what the proposed fix does, and what to
    listen for there. If `ab/ab.json` has a pair for it, name the two files (A now, B fixed; the track alone, no
@@ -78,7 +83,9 @@ Go down `REVIEW.md` in order. For each item:
    "Change" means they want something different: note what, then re-run that tool with different options
    (e.g. `--amount 0.6`) and re-merge, or list it as a by-hand item.
 3. Record it straight away: `hypnomix fix "<SCAN_DIR>" --decide <id>=approve|skip|change [--note "…"]`.
-   The review can then stop and resume (`hypnomix fix "<SCAN_DIR>" --list` shows where you are).
+   The review can then stop and resume (`hypnomix fix "<SCAN_DIR>" --list --undecided` shows where you are).
+   `--decide` can be repeated and takes comma lists. REVIEW.md has no checkboxes: this command, or the review
+   page, is how a decision is recorded.
 
 Batch the easy ones only when they ask or their preferences say so ("all the low click fades"). Always one at
 a time: anything **high**, anything **PROTECTED**, anything about taste (reverb, delay, tone, vocal level,
@@ -90,13 +97,18 @@ key before approving any vocal-tuning item. `info` items are read-outs: summaris
 1. A set must be **closed in Live** (Live overwrites edits on its next save, and unsaved Live changes are not
    in the file). If another session is driving Live, ask the person first.
 2. `hypnomix fix "<SCAN_DIR>" --approved --out "<Song> (fixed).als"` (add `--key "<key>"` for tuning items).
+   It first prints the clean-ups it adds because they are on by default (`order-1`, `retire-1`, `merge-N`) and every
+   file it is about to write, including the archive copy: read that to the person, and add `--no-defaults` if
+   they only want what they approved by name.
    Or, to hear each change before the next: `--approve <one id>`, chaining
    `--from "<Song> (fixed 1).als" --out "<Song> (fixed 2).als"`.
 3. If `fix` refuses (set changed since the scan, protected track, name exists, key not confirmed), tell the
    person what it said and do that. Never work around it.
 4. Report exactly what `fix` printed: the new set's name; that the structure check passed (if it failed, the
    file was renamed "(BROKEN, do not open)": say so and stop); what changed (`hypnomix diff`); per tool, how many approved problems are **no longer
-   measured** and which are **still measured**; anything **skipped** (no longer found) or **FAILED**; tuned
+   measured** and which are **still measured**; the **Not applied** section (items they decided as "change", with
+   their note; approved items that must be done by hand; approved items no longer found), each with what to do
+   next; anything **FAILED**; tuned
    vocal files (in `Samples/Tuned/`: put each on a new track at bar 1, warp off, A/B with the original's
    mute); repaired recordings (in `<SCAN_DIR>/fixed/`); and the by-hand list.
 5. Give the A/B: open the new set, compare the fixed spots with the original at the same bars.

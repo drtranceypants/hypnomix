@@ -36,19 +36,54 @@ from hypnomix.core.paths import out_at
 STEMS = ("vocals", "drums", "bass", "other")
 
 
+# Other names stems come with. Matching ignores case, spaces, dashes and underscores; a name that only contains one of
+# these words (`song_vocal.wav`, `Vocals (mix).wav`) matches too. "no vocals" / "without vocals" is the rest of the band.
+ALIASES = {
+    "vocals": ("vocals", "vocal", "vox", "voice", "voices", "leadvocal", "leadvocals", "acapella", "acappella"),
+    "drums": ("drums", "drum", "drumkit", "kit", "percussion"),
+    "bass": ("bass", "basses", "bassline"),
+    "other": ("other", "others", "music", "inst", "instr", "instruments", "instrumental", "instrumentals",
+              "accompaniment", "backing", "novocals", "novocal", "withoutvocals"),
+}
+
+
+def stem_kind(stem_name):
+    """'vocals', 'drums', 'bass' or 'other' for a stem file's name (without extension), or None."""
+    import re
+    flat = re.sub(r"[^a-z0-9]", "", stem_name.lower())
+    for kind, names in ALIASES.items():
+        if flat in names:
+            return kind
+    tokens = re.findall(r"[a-z0-9]+", stem_name.lower())
+    if any(t in ("no", "without", "minus") for t in tokens):          # demucs "no_vocals": the rest of the band
+        if any(t in ALIASES["vocals"] for t in tokens):
+            return "other"
+    for kind, names in ALIASES.items():
+        if any(t in names for t in tokens):
+            return kind
+    return None
+
+
 def load_stems(folder, sr, n):
-    """Vocals.wav, Drums.wav, Bass.wav, Other.wav (any case) from a folder, at the mix's rate and length."""
+    """Vocals.wav, Drums.wav, Bass.wav, Other.wav from a folder, at the mix's rate and length. Case does not matter,
+    and the usual variants work too (vocal, vox, drum, music, inst ...; see ALIASES). Raises FileNotFoundError, listing
+    the audio files it did find, when none of them is a stem."""
     folder = Path(folder)
-    got = {}
-    for f in folder.iterdir():
-        k = f.stem.lower()
-        if f.suffix.lower() in dsp.AUDIO_EXT and k in STEMS:
-            y, _ = dsp.load(f, sr)
-            y = dsp.stereo(y)
-            y = np.pad(y, ((0, max(0, n - len(y))), (0, 0)))[:n]
-            got[k] = y
+    got, seen = {}, []
+    for f in sorted(folder.iterdir()):
+        if f.suffix.lower() not in dsp.AUDIO_EXT:
+            continue
+        seen.append(f.name)
+        k = stem_kind(f.stem)
+        if k is None or k in got:
+            continue
+        y, _ = dsp.load(f, sr)
+        y = dsp.stereo(y)
+        y = np.pad(y, ((0, max(0, n - len(y))), (0, 0)))[:n]
+        got[k] = y
     if not got:
-        raise FileNotFoundError(f"no Vocals/Drums/Bass/Other files in {folder}")
+        raise FileNotFoundError(f"no Vocals/Drums/Bass/Other files in {folder}" +
+                                (f"; the audio files there are: {', '.join(seen)}" if seen else "; no audio files there"))
     return got
 
 
@@ -115,10 +150,15 @@ def main(argv=None):
             separate_to(a.mix, folder, a.model)
         except ImportError as e:
             sys.exit(str(e))
-    stems = load_stems(folder, sr, len(y))
+    try:
+        stems = load_stems(folder, sr, len(y))
+    except FileNotFoundError as e:
+        sys.exit(str(e))
     missing = [k for k in gains if gains[k] and k not in stems]
     if missing:
-        sys.exit(f"no stem for {', '.join(missing)} in {folder}")
+        found = ", ".join(sorted(f.name for f in Path(folder).iterdir() if f.suffix.lower() in dsp.AUDIO_EXT)) or "none"
+        sys.exit(f"no stem for {', '.join(missing)} in {folder}. Audio files found there: {found}. "
+                 f"Name them Vocals, Drums, Bass, Other (vocal, vox, drum, music, inst also work)")
     out, rep = rebalance(y, stems, gains, a.ceiling, a.safety, a.keep_loudness, sr)
     tag = " ".join(f"{k} {v:+g}" for k, v in gains.items() if v) or "unchanged"
     dest, i = od / f"{name} (rebalanced {tag}).wav", 1
