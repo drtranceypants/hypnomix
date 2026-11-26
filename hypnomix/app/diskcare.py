@@ -1,0 +1,474 @@
+"""Disk care: the app clears out the bulky files hypnomix leaves behind, so the disk doesn't fill up.
+
+While the app is open it looks once an hour. It cleans when a week has passed since the last clean, or straight
+away when the disk is nearly full (less than 20 GB or 8% free); then it uses shorter ages too. Nothing to set up:
+it's on by default and can be switched off, previewed and run by hand from the "free" button in the app's header.
+
+What it removes, and only that:
+  cache     ~/.hypnomix/cache/render and renders: rendered audio kept to speed up a re-run, idle 7 days
+            (1 when the disk is nearly full; the pitch cache only then, idle 14 days)
+  scans     audio inside hypnomix scan folders (the app's own, and any folder in "watch") once the whole scan
+            has been idle 14 days: A/B clips and renders. Findings, decisions and reports stay, so the review
+            still opens; "Make A/B clips" builds the clips again
+  out       audio in hypnomix-out folders (the app's own and in watched folders), idle 14 days
+  bounces   the app's master bounces older than 30 days; the newest 5 always stay
+  wavs      only if you switch it on: WAV / AIFF files at the top of Desktop and Downloads, older than 30 days.
+            They are moved to ~/.hypnomix/holding, not deleted, and deleted from there 14 days later
+            ("Restore" puts the last batch back)
+
+Never removed: an audio file any Live, REAPER or Ardour project on this computer uses (projects under Music,
+Documents, Desktop and the watched folders are read for this), a file named "final" or "master", anything
+changed in the last hour, and anything while a job is running.
+
+  python -m hypnomix.app.diskcare            what it would remove now (changes nothing)
+  python -m hypnomix.app.diskcare --run      clean now
+"""
+import gzip, json, os, re, shutil, subprocess, sys, threading, time
+from datetime import datetime
+from pathlib import Path
+
+DAY = 86400
+GB = 1e9
+LOCK = threading.Lock()
+AUDIO = {".wav", ".aif", ".aiff", ".flac", ".mp3", ".m4a", ".ogg", ".npy", ".mov", ".mp4"}
+LOOSE = {".wav", ".aif", ".aiff"}
+PROTECT = re.compile(r"final|master", re.I)
+ACTIVE_S = 3600
+SKIP_DIRS = {".git", "node_modules", "Library", "Backup", "__pycache__", ".venv", "AppData"}
+RUNNING = {"busy": False}
+
+
+# ---------------------------------------------------------------- where things are (read at call time, for tests)
+def user_home():
+    return Path(os.environ.get("HYPNOMIX_USER_HOME", "~")).expanduser()
+
+
+def hx_home():
+    return Path(os.environ.get("HYPNOMIX_HOME", "~/.hypnomix")).expanduser()
+
+
+def app_home():
+    return Path(os.environ.get("HYPNOMIX_APP_HOME", "~/Documents/Hypnomix")).expanduser()
+
+
+def state_file():
+    return hx_home() / "diskcare.json"
+
+
+def holding():
+    return hx_home() / "holding"
+
+
+def load():
+    try:
+        return json.loads(state_file().read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save(s):
+    state_file().parent.mkdir(parents=True, exist_ok=True)
+    state_file().write_text(json.dumps(s, indent=1))
+
+
+def settings(body):
+    s = load()
+    if "auto" in body:
+        s["auto"] = bool(body["auto"])
+    if "wavs" in body:
+        s["wavs"] = bool(body["wavs"])
+    if "watch" in body:
+        w = body["watch"]
+        w = w.splitlines() if isinstance(w, str) else list(w)
+        s["watch"] = [x.strip() for x in w if x.strip()]
+    save(s)
+    return view()
+
+
+def watched():
+    return [Path(x).expanduser() for x in load().get("watch", []) if Path(x).expanduser().is_dir()]
+
+
+# ---------------------------------------------------------------- disk space
+def space():
+    u = shutil.disk_usage(str(user_home()))
+    return u.free, u.total
+
+
+def level(free=None, total=None):
+    if free is None:
+        free, total = space()
+    if free < max(8 * GB, 0.03 * total):
+        return "critical"
+    if free < max(20 * GB, 0.08 * total):
+        return "low"
+    return "ok"
+
+
+# ---------------------------------------------------------------- helpers
+def newest(p: Path):
+    try:
+        t = p.stat().st_mtime
+    except OSError:
+        return time.time()
+    if p.is_dir():                                   # a folder is as old as its newest file (listing it changes its own time)
+        t = 0
+        for root, _, files in os.walk(p):
+            for f in files:
+                try:
+                    t = max(t, os.lstat(os.path.join(root, f)).st_mtime)
+                except OSError:
+                    pass
+        if not t:
+            t = p.stat().st_mtime
+    return t
+
+
+def size(p: Path):
+    if p.is_file():
+        return p.stat().st_size
+    n = 0
+    for root, _, files in os.walk(p):
+        for f in files:
+            try:
+                n += os.lstat(os.path.join(root, f)).st_size
+            except OSError:
+                pass
+    return n
+
+
+def idle_days(p):
+    return (time.time() - newest(p)) / DAY
+
+
+def listdir(d: Path, blocked):
+    try:
+        return list(d.iterdir())
+    except PermissionError:
+        blocked.add(str(d))
+        return []
+    except OSError:
+        return []
+
+
+def walk(root: Path, blocked, depth=6):
+    """os.walk that skips hidden and heavy folders, notes folders the OS won't let us read, and stops at depth."""
+    base = len(root.parts)
+
+    def err(e):
+        if isinstance(e, PermissionError):
+            blocked.add(str(e.filename))
+
+    for dirpath, dirnames, files in os.walk(root, onerror=err):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS
+                       and len(Path(dirpath).parts) - base < depth]
+        yield Path(dirpath), dirnames, files
+
+
+REF_PAT = {".als": re.compile(rb'<(?:Path|RelativePath|Name) Value="([^"]+)"'),
+           ".rpp": re.compile(rb'FILE "([^"]+)"'),
+           ".ardour": re.compile(rb'(?:origin|name)="([^"]+)"')}
+
+
+def project_refs(blocked):
+    """Names of every audio file a Live (.als), REAPER (.rpp) or Ardour (.ardour) project here points at.
+    Each project's list is cached by its size and time, so only changed projects are read again."""
+    cf = hx_home() / "cache" / "diskcare-refs.json"
+    try:
+        cache = json.loads(cf.read_text())
+    except (OSError, ValueError):
+        cache = {}
+    fresh, names = {}, set()
+    roots = [user_home() / n for n in ("Music", "Documents", "Desktop")] + watched()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for d, _, files in walk(root, blocked, depth=8):
+            for f in files:
+                ext = os.path.splitext(f)[1].lower()
+                if ext not in REF_PAT:
+                    continue
+                p = str(d / f)
+                if p in fresh:
+                    continue
+                try:
+                    st = os.stat(p)
+                except OSError:
+                    continue
+                key = f"{st.st_size}:{st.st_mtime}"
+                hit = cache.get(p)
+                if hit and hit[0] == key:
+                    refs = hit[1]
+                else:
+                    try:
+                        data = gzip.open(p).read() if ext == ".als" else open(p, "rb").read()
+                    except Exception:
+                        continue
+                    refs = sorted({os.path.basename(m.group(1).decode("utf-8", "replace").replace("\\", "/")).lower()
+                                   for m in REF_PAT[ext].finditer(data)
+                                   if os.path.splitext(m.group(1))[1].lower().decode() in AUDIO})
+                fresh[p] = [key, refs]
+                names.update(refs)
+    try:
+        cf.parent.mkdir(parents=True, exist_ok=True)
+        cf.write_text(json.dumps(fresh))
+    except OSError:
+        pass
+    return names
+
+
+def scan_folders(blocked):
+    """hypnomix scan folders: the app's own (scan/*) and any folder with findings.json or scan.log under watch."""
+    out = []
+    root = app_home() / "scan"
+    if root.is_dir():
+        out += [d for d in listdir(root, blocked) if d.is_dir()]
+    for w in watched():
+        for d, dirnames, files in walk(w, blocked, depth=6):
+            if "findings.json" in files or "scan.log" in files:
+                out.append(d)
+                dirnames[:] = []
+    return out
+
+
+def out_folders(blocked):
+    found = [app_home() / "hypnomix-out"]
+    for w in watched():
+        for d, dirnames, _ in walk(w, blocked, depth=5):
+            if d.name == "hypnomix-out":
+                found.append(d)
+                dirnames[:] = []
+    return [d for d in found if d.is_dir()]
+
+
+# ---------------------------------------------------------------- the plan
+def plan(lvl=None):
+    """What would go now: (rule, action, path, bytes) and the folders the OS wouldn't let us read."""
+    lvl = lvl or level()
+    low = lvl != "ok"
+    s = load()
+    blocked = set()
+    items = []
+    refs = None
+
+    def used(p):
+        nonlocal refs
+        if refs is None:
+            refs = project_refs(blocked)
+        return p.name.lower() in refs
+
+    # cache
+    cache = hx_home() / "cache"
+    for name, age in (("render", 1 if low else 7), ("renders", 1 if low else 7), ("pitch", 14 if low else None)):
+        d = cache / name
+        if age is None or not d.is_dir():
+            continue
+        for e in listdir(d, blocked):
+            if idle_days(e) > age:
+                items.append(("cache", "delete", e, size(e)))
+
+    # scans: audio only, whole scan idle
+    sage = 7 if low else 14
+    for sd in scan_folders(blocked):
+        if idle_days(sd) <= sage:
+            continue
+        for d, _, files in walk(sd, blocked, depth=6):
+            for f in files:
+                p = d / f
+                if p.suffix.lower() in AUDIO and not used(p):
+                    items.append(("scans", "delete", p, p.stat().st_size))
+
+    # hypnomix-out audio
+    for od in out_folders(blocked):
+        for d, _, files in walk(od, blocked, depth=8):
+            for f in files:
+                p = d / f
+                if p.suffix.lower() in AUDIO and idle_days(p) > sage and not used(p):
+                    items.append(("out", "delete", p, p.stat().st_size))
+
+    # bounces: older than 30 days, newest 5 stay
+    bd = app_home() / "bounces"
+    if bd.is_dir():
+        bs = sorted((p for p in listdir(bd, blocked) if p.suffix.lower() in AUDIO), key=lambda p: -p.stat().st_mtime)
+        for p in bs[5:]:
+            if idle_days(p) > (14 if low else 30) and not used(p):
+                items.append(("bounces", "delete", p, p.stat().st_size))
+
+    # loose WAVs (switched on by the person)
+    if s.get("wavs"):
+        for d in (user_home() / "Desktop", user_home() / "Downloads"):
+            for p in listdir(d, blocked):
+                if (p.is_file() and p.suffix.lower() in LOOSE and not PROTECT.search(p.name)
+                        and idle_days(p) > (14 if low else 30) and not used(p)):
+                    items.append(("wavs", "hold", p, p.stat().st_size))
+
+    # the holding area's batches past their 14 days
+    keep = 0 if lvl == "critical" else 3 if low else 14
+    if holding().is_dir():
+        for b in listdir(holding(), blocked):
+            if b.is_dir() and (time.time() - b.stat().st_mtime) / DAY > keep:
+                items.append(("holding", "delete", b, size(b)))
+
+    now = time.time()
+    items = [i for i in items if now - newest(i[2]) > ACTIVE_S]
+    return items, sorted(blocked)
+
+
+def summary(items):
+    by = {}
+    for rule, action, p, n in items:
+        r = by.setdefault(rule, {"rule": rule, "bytes": 0, "count": 0, "top": []})
+        r["bytes"] += n
+        r["count"] += 1
+        r["top"].append((n, str(p)))
+    for r in by.values():
+        r["top"] = [{"path": p, "bytes": n} for n, p in sorted(r["top"], reverse=True)[:8]]
+    return list(by.values())
+
+
+# ---------------------------------------------------------------- doing it
+def run(reason="by hand", job_running=lambda: False):
+    with LOCK:
+        if RUNNING["busy"]:
+            return view()
+        RUNNING["busy"] = True
+    try:
+        if job_running():
+            return view()
+        free0, total = space()
+        lvl = level(free0, total)
+        items, blocked = plan(lvl)
+        batch = holding() / datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        manifest, freed, done = [], 0, 0
+        for rule, action, p, n in items:
+            try:
+                if action == "hold":
+                    batch.mkdir(parents=True, exist_ok=True)
+                    dest = batch / p.name
+                    shutil.move(str(p), str(dest))
+                    manifest.append({"from": str(p), "to": str(dest)})
+                elif p.is_dir():
+                    shutil.rmtree(p)
+                    freed += n
+                else:
+                    p.unlink()
+                    freed += n
+                done += 1
+            except OSError:
+                pass
+        if manifest:
+            (batch / "manifest.json").write_text(json.dumps(manifest, indent=1))
+        free1, _ = space()
+        s = load()
+        s["last"] = dict(when=time.time(), reason=reason, level=lvl, freed=freed, held=sum(i[3] for i in items if i[1] == "hold"),
+                         count=done, free_before=free0, free_after=free1, rules=summary(items), blocked=blocked)
+        s["last_full"] = time.time()
+        save(s)
+        if reason != "by hand" and (freed > GB or level(free1, total) != "ok"):
+            notify(f"Freed {freed / GB:.1f} GB. {free1 / GB:.0f} GB free." if level(free1, total) == "ok"
+                   else f"Freed {freed / GB:.1f} GB, but only {free1 / GB:.0f} GB is free.")
+        return view()
+    finally:
+        RUNNING["busy"] = False
+
+
+def restore():
+    """Put the newest holding batch back where its files came from."""
+    bs = sorted(b for b in holding().iterdir() if (b / "manifest.json").exists()) if holding().is_dir() else []
+    back = 0
+    if bs:
+        b = bs[-1]
+        for m in json.loads((b / "manifest.json").read_text()):
+            src, dst = Path(m["to"]), Path(m["from"])
+            if src.exists() and not dst.exists():
+                shutil.move(str(src), str(dst))
+                back += 1
+        shutil.rmtree(b, ignore_errors=True)
+    v = view()
+    v["restored"] = back
+    return v
+
+
+def notify(msg):
+    if sys.platform == "darwin":
+        subprocess.run(["osascript", "-e", f'display notification "{msg}" with title "hypnomix"'], capture_output=True)
+
+
+def view():
+    s = load()
+    free, total = space()
+    held = [b for b in holding().iterdir() if b.is_dir()] if holding().is_dir() else []
+    return dict(free=free, total=total, level=level(free, total), auto=s.get("auto", True), wavs=s.get("wavs", False),
+                watch=s.get("watch", []), last=s.get("last"), busy=RUNNING["busy"],
+                holding=dict(batches=len(held), bytes=sum(size(b) for b in held)))
+
+
+def preview():
+    items, blocked = plan()
+    return dict(view(), plan=summary(items), total=sum(i[3] for i in items if i[1] == "delete"),
+                held=sum(i[3] for i in items if i[1] == "hold"), blocked=blocked)
+
+
+# ---------------------------------------------------------------- the hourly look while the app is open
+def due():
+    s = load()
+    if not s.get("auto", True):
+        return False
+    return level() != "ok" or time.time() - s.get("last_full", 0) > 7 * DAY
+
+
+def start_in_background(job_running=lambda: False, first=120, every=3600):
+    def loop():
+        time.sleep(first)
+        while True:
+            try:
+                if due():
+                    run("automatic", job_running)
+            except Exception:
+                pass
+            time.sleep(every)
+
+    threading.Thread(target=loop, daemon=True, name="diskcare").start()
+
+
+# ---------------------------------------------------------------- the app's routes
+def handle_get(path, q):
+    if path == "/diskcare.js":
+        return 200, (Path(__file__).with_name("diskcare.js")).read_bytes(), "text/javascript; charset=utf-8"
+    if path == "/api/diskcare/state":
+        return 200, view()
+    return None
+
+
+def handle_post(path, body, job_running=lambda: False):
+    if path == "/api/diskcare/preview":
+        return 200, preview()
+    if path == "/api/diskcare/run":
+        return 200, run("by hand", job_running)
+    if path == "/api/diskcare/settings":
+        return 200, settings(body)
+    if path == "/api/diskcare/restore":
+        return 200, restore()
+    return None
+
+
+def main():
+    import argparse
+    ap = argparse.ArgumentParser(prog="python -m hypnomix.app.diskcare", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--run", action="store_true", help="clean now (default: only show what would go)")
+    a = ap.parse_args()
+    r = run() if a.run else preview()
+    print(f"{r['free'] / GB:.0f} GB free ({r['level']})")
+    for rule in (r["last"]["rules"] if a.run else r["plan"]):
+        print(f"  {rule['rule']:8} {rule['bytes'] / GB:6.2f} GB  {rule['count']} items")
+        for t in rule["top"][:3]:
+            print(f"             {t['path']}")
+    if a.run:
+        print(f"freed {r['last']['freed'] / GB:.2f} GB")
+    elif r.get("blocked"):
+        print("not readable (give the app access to these folders):", ", ".join(r["blocked"]))
+
+
+if __name__ == "__main__":
+    main()

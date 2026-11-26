@@ -1,0 +1,30 @@
+<!--
+title: Disk care
+sub: hypnomix clears its own old renders and caches · weekly, or at once when the disk is nearly full
+group: Start here
+teaser: Renders, A/B clips and caches add up to gigabytes. While the app is open it clears the old ones on its own: once a week, and straight away when the disk is nearly full. Nothing to set up, and audio your projects use is never touched.
+-->
+<div class="prose paper">
+<p>Every scan, A/B comparison and render leaves audio behind, and a few songs can fill tens of gigabytes. The app looks after this itself: there's nothing to install or schedule. The free space shows at the top right; click it to see what would go, clean now, or switch it off.</p>
+<h3>When it runs</h3>
+<p>While the app is open it checks once an hour. It cleans when a week has passed since the last clean, or straight away when the disk is nearly full (under 20 GB, or under 8% of the disk). When the disk is nearly full it also uses shorter ages, shows a banner, and on a Mac sends a notification with what it freed.</p>
+<h3>What it clears</h3>
+<div class="tablewrap"><table>
+<tr><th>what</th><th>when</th></tr>
+<tr><td><b>Render cache</b> (<code>~/.hypnomix/cache/render</code>)</td><td>unused for 7 days (1 day when the disk is nearly full). The pitch cache only when the disk is nearly full.</td></tr>
+<tr><td><b>Audio in old scans</b>: A/B clips and renders</td><td>once the whole scan has been untouched for 14 days. The findings, your decisions and the reports stay, so the review still opens; <b>Make A/B clips</b> builds the clips again.</td></tr>
+<tr><td><b>Audio in hypnomix-out</b></td><td>unused for 14 days</td></tr>
+<tr><td><b>Master bounces</b></td><td>older than 30 days; the newest 5 always stay</td></tr>
+<tr><td><b>Old WAVs on the Desktop and in Downloads</b> (only if you switch it on)</td><td>older than 30 days. They're <i>moved</i> to <code>~/.hypnomix/holding</code>, not deleted, and deleted from there 14 days later. <b>Restore moved WAVs</b> puts the last batch back.</td></tr>
+</table></div>
+<p>The app's own scans are always included. If you scan into your project folders (from the command line or an AI agent), add those folders under <b>Also look in</b> and their hypnomix scans and <code>hypnomix-out</code> folders are looked after too.</p>
+<h3>What it never touches</h3>
+<ul>
+<li>Any audio file a Live, REAPER or Ardour project on this computer uses. Projects under Music, Documents, Desktop and the folders you added are read to check.</li>
+<li>Files with "final" or "master" in their name, on the Desktop and in Downloads.</li>
+<li>Anything changed in the last hour, and anything while a job is running.</li>
+<li>Your projects, their Samples folders, findings, decisions and reports.</li>
+</ul>
+<p>On a Mac, the first time it looks in Desktop, Documents or Downloads macOS asks whether hypnomix may. If you said no, the preview names the folders it couldn't read: allow hypnomix in System Settings → Privacy &amp; Security → Files and Folders.</p>
+<p>From a terminal: <code>python -m hypnomix.app.diskcare</code> shows what would go, and <code>--run</code> cleans now.</p>
+</div>

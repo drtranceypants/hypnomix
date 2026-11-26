@@ -487,6 +487,11 @@ def make_handler(port):
                     r = WK.handle_get(u.path, q, self.headers)
                     if r:
                         return self.send(*r)
+                if u.path in ("/diskcare.js", "/api/diskcare/state"):   # disk care: old renders and caches cleared
+                    from hypnomix.app import diskcare as DC
+                    r = DC.handle_get(u.path, q)
+                    if r:
+                        return self.send(*r)
                 if u.path in ("/update.js", "/api/update/state"):  # updates: a new version is out, one-click install
                     from hypnomix.app import update as UP
                     r = UP.handle_get(u.path, q)
@@ -593,6 +598,11 @@ def make_handler(port):
                 if u.path.startswith("/api/wiki/"):        # the Wiki tab: edit, publish, live copy on or off
                     from hypnomix.app import wiki as WK
                     r = WK.handle_post(u.path, body)
+                    if r:
+                        return self.send(*r)
+                if u.path.startswith("/api/diskcare/"):    # disk care: preview, clean now, settings, restore
+                    from hypnomix.app import diskcare as DC
+                    r = DC.handle_post(u.path, body, lambda: JOB["status"] == "running")
                     if r:
                         return self.send(*r)
                 if u.path.startswith("/api/update/"):      # check now, download (checksum-verified), install
@@ -733,6 +743,8 @@ def main():
     start_probe_hub()
     from hypnomix.app import update as UP
     UP.check_in_background()                  # at most once a day, and only if it's switched on
+    from hypnomix.app import diskcare as DC
+    DC.start_in_background(lambda: JOB["status"] == "running")   # hourly look; cleans weekly or when the disk is nearly full
     url = f"http://127.0.0.1:{a.port}/"
     print(f"hypnomix app: {url}   (this computer only; Ctrl-C to stop)\nsongs are kept in {work()}", flush=True)
     if not a.no_open:
