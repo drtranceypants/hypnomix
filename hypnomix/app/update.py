@@ -228,7 +228,6 @@ OLD="$APP.old"
 /bin/rm -rf "$OLD"
 mv "$APP" "$OLD" && mv "$NEW" "$APP" || { echo "swap failed"; [ -d "$OLD" ] && [ ! -d "$APP" ] && mv "$OLD" "$APP"; exit 1; }
 /bin/rm -rf "$OLD"
-xattr -dr com.apple.quarantine "$APP" 2>/dev/null
 echo "swapped; opening"
 if [ -n "$HYPNOMIX_PORT" ]; then    # a test copy: reopen it the same way, beside the real one
   open -n --env HYPNOMIX_PORT="$HYPNOMIX_PORT" --env HOME="$HOME" --env HYPNOMIX_UPDATE_URL="$HYPNOMIX_UPDATE_URL" "$APP"
