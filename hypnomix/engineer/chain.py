@@ -145,10 +145,13 @@ def build_master(live, plan, existing="bypass", dry=False):
         elif d == "Glue Compressor":
             did = b.device(d)
             b.disp(did, ["Threshold"], step["threshold_db"])
-            b.disp(did, ["Ratio"], step["ratio"])
-            b.disp(did, ["Attack"], step["attack_ms"])
-            b.disp(did, ["Release"], step["release_s"] * 1000)          # Live shows seconds; hypnomix compares in ms
-            b.disp(did, ["Makeup"], step["makeup_db"])
+            # Ratio, Attack and Release are switches with fixed positions (Release ends in "A" for Auto), so they
+            # are set by position. Searching by the shown number put Release on Auto: Live shows it in seconds.
+            near = lambda xs, v: float(min(range(len(xs)), key=lambda i: abs(xs[i] - v)))
+            b.raw(did, ["Ratio"], near(GLUE_RATIOS, step["ratio"]))
+            b.raw(did, ["Attack"], near(GLUE_ATTACKS, step["attack_ms"]))
+            b.raw(did, ["Release"], near(GLUE_RELEASES, step["release_s"]))
+            b.disp(did, ["Makeup", "Output"], step["makeup_db"])
             rows.append((d, f"threshold {step['threshold_db']} dB, ratio {step['ratio']}:1, attack {step['attack_ms']} ms, "
                             f"release {step['release_s']} s", step["why"]))
         elif d == "Utility":
@@ -172,7 +175,7 @@ def build_master(live, plan, existing="bypass", dry=False):
             b.disp(did, ["Ceiling"], step["ceiling_db"])
             if not dry and live.find_param(tid, did, ["True Peak"]):
                 b.raw(did, ["True Peak"], 1)
-            rows.append((d, f"gain +{step['gain_db']} dB, ceiling {step['ceiling_db']} dB", step["why"]))
+            rows.append((d, f"gain {step['gain_db']:+g} dB, ceiling {step['ceiling_db']} dB", step["why"]))
             step["_did"] = did
     return rows, b.notes
 

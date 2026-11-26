@@ -224,8 +224,10 @@ Every tool prints a human report. Most analysis tools also take `--json OUT.json
 positions in that run's list: valid for the set that was analysed, not for a changed one. `fix` handles that;
 if you call the tools directly, re-run the report on the current set and take the ids from it.
 
-**Not yet verified in Live** (say so if you use them): `chain` (building device chains) and
-`clipmatch --als --apply`. Use `--dry-run` and show the plan first.
+**Checked in Live 12 on a real set:** `chain master` (builds EQ Eight, Glue Compressor, Utility and Limiter on
+Main and sets their values; needs `hypnomix install`) and `clipmatch --als --apply` (sets clip gains). Still use
+`--dry-run` and show the plan first: `clipmatch` can propose large gains on quiet clips.
+**Not yet verified in Live** (say so if you use them): `chain strips`, and `chain master --verify`.
 
 **New, not yet opened in Live** (say so): the sets written by `tempomap`, `loops`, `tighten`, `breathe`,
 `variations`, `order`, `tidy`, `motion` and `borrow`. They pass `check` and their offline previews measure as intended. They are taste tools: show

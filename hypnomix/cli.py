@@ -167,7 +167,12 @@ def main(argv=None):
     elif cmd in ("install", "doctor"):
         getattr(mod, cmd)(rest)
     else:
-        mod.main()
+        try:
+            mod.main()
+        except Exception as e:                # Live not answering, or its script missing a piece: say so plainly
+            if type(e).__name__ != "LiveError":
+                raise
+            sys.exit(str(e))
 
 
 if __name__ == "__main__":
