@@ -113,17 +113,57 @@ def to_html(text):
             out.append(f"<{tag}>" + "".join(f"<li>{inline(x)}</li>" for x in items) + f"</{tag}>")
             i = j
             continue
+        if re.match(r"^\s*(---|\*\*\*|___)\s*$", ln):
+            out.append("<hr>")
+            i += 1
+            continue
         if not ln.strip() or ln.strip().startswith("<!--"):
             i += 1
             continue
         para = []
-        while i < len(lines) and lines[i].strip() and not re.match(r"^(```|#{1,4} |\||>)", lines[i]) \
+        while i < len(lines) and lines[i].strip() and not re.match(r"^(```|#{1,4} |\||>|---\s*$)", lines[i]) \
                 and not LIST.match(lines[i]) and not lines[i].strip().startswith("<!--"):
             para.append(lines[i].strip())
             i += 1
         cls = ' class="lead"' if intro and not out else ""
         out.append(f"<p{cls}>" + inline(" ".join(para)) + "</p>")
     return "\n".join(out)
+
+
+DOCS_GROUP = "Docs"
+
+
+def doc_article(path, taken=()):
+    """A document in docs/ (ALIGN.md, LIVE.md, REAPER.md...) -> an article. Its title is its first heading."""
+    meta, text = front(Path(path).read_text())
+    m = re.search(r"^# (.+)$", text, re.M)
+    title = meta.get("title") or (m.group(1).strip() if m else Path(path).stem.title())
+    aid = meta.get("wiki_id") or Path(path).stem.lower()
+    if aid in taken:
+        aid += "-doc"
+    body = to_html(text)
+    plain = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", body))).strip()
+    from hypnomix.app.wiki import SITE
+    return {"id": aid, "group": DOCS_GROUP, "title": re.sub(r"`([^`]+)`", r"\1", title), "sub": meta.get("subtitle", ""),
+            "no": f"docs/{Path(path).name}", "teaser": meta.get("teaser", ""), "html": body, "text": plain,
+            "url": f"{SITE}/wiki/#{aid}", "file": str(Path(path).resolve())}
+
+
+def link_files(arts):
+    """`docs/LIVE.md`-style mentions of another article's file become links to that article."""
+    by = {}
+    for a in arts:
+        f = a.get("file") or ""
+        if "/docs/" in f:
+            by["docs/" + f.split("/docs/", 1)[1]] = a["id"]
+    if not by:
+        return arts
+    pat = re.compile(r"<code>(" + "|".join(re.escape(k) for k in sorted(by, key=len, reverse=True)) + r")</code>")
+    out = []
+    for a in arts:
+        h = pat.sub(lambda m: f'<a data-wiki="{by[m.group(1)]}" href="#"><code>{m.group(1)}</code></a>', a["html"])
+        out.append(dict(a, html=h) if h != a["html"] else a)
+    return out
 
 
 def guide_id(path, meta):

@@ -83,10 +83,24 @@ def parse(path):
 def guides_dir(root=None):
     """The PDF guides' Markdown: docs/guides in a checkout, or the copy bundled with an installed hypnomix."""
     root = Path(root) if root else HERE
-    for d in (root.resolve().parents[2] / "docs" / "guides", root / "guides"):
+    for d in (root.resolve().parents[2] / "docs" / "guides", root / "guides", root / "docs" / "guides"):
         if d.is_dir():
             return d
     return None
+
+
+def docs_dir(root=None):
+    """docs/ in a checkout, or the copy bundled with an installed hypnomix."""
+    root = Path(root) if root else HERE
+    for d in (root.resolve().parents[2] / "docs", root / "docs"):
+        if d.is_dir() and any(d.glob("*.md")):
+            return d
+    return None
+
+
+def doc_files(root=None):
+    d = docs_dir(root)
+    return sorted(d.glob("[A-Z]*.md")) if d else []
 
 
 def guide_files(root=None):
@@ -99,15 +113,22 @@ def local(root=None):
     root = Path(root) if root else HERE
     files = sorted((root / "articles").glob("*.html"))
     guides = guide_files(root)
+    docs = doc_files(root)
     cli = Path(__file__).resolve().parents[1] / "cli.py"
-    key = (str(root), tuple((f.name, f.stat().st_mtime) for f in files + guides + ([cli] if cli.exists() else [])))
+    key = (str(root), tuple((f.name, f.stat().st_mtime) for f in files + guides + docs + ([cli] if cli.exists() else [])))
     if _CACHE.get("key") != key:
         from hypnomix.app import wiki_md
         arts = [parse(f) for f in files]
         ids = {a["id"] for a in arts}
         gs = [g for g in (wiki_md.article(f) for f in guides) if g["id"] not in ids]   # an article file wins
+        taken = ids | {g["id"] for g in gs}
+        ds = []
+        for f in docs:
+            d = wiki_md.doc_article(f, taken)
+            taken.add(d["id"])
+            ds.append(d)
         at = next((i for i, a in enumerate(arts) if a["group"] in ("Reference", "FAQ")), len(arts))
-        arts = arts[:at] + gs + arts[at:]
+        arts = arts[:at] + gs + ds + arts[at:]
         if "commands" not in {a["id"] for a in arts}:            # the command reference, from the code itself
             try:
                 cmd = wiki_md.commands_article()
@@ -115,7 +136,7 @@ def local(root=None):
                 arts = arts[:at] + [cmd] + arts[at:]
             except Exception:                                      # never let it take the wiki down
                 pass
-        _CACHE.update(key=key, arts=arts)
+        _CACHE.update(key=key, arts=wiki_md.link_files(arts))
     return _CACHE["arts"]
 
 
@@ -133,6 +154,9 @@ def sources(top):
     g = guides_dir()
     if g is not None and str(g.resolve()).startswith(str(Path(top).resolve())):
         out.append(str(g.resolve().relative_to(Path(top).resolve())) + "/[0-9][0-9]-*.md")
+    d = docs_dir()
+    if d is not None and str(d.resolve()).startswith(str(Path(top).resolve())):
+        out.append(str(d.resolve().relative_to(Path(top).resolve())) + "/[A-Z]*.md")
     return out
 
 

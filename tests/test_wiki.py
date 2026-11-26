@@ -199,6 +199,29 @@ class WikiTest(unittest.TestCase):
         self.assertIn("commands", [a["id"] for a in wiki.local()])
         self.assertFalse(wiki.article("commands")["editable"])          # nothing to edit: change the code instead
 
+    def test_docs_are_articles(self):
+        ddir = self.src / "docs"
+        (ddir / "guides").mkdir(parents=True)
+        (ddir / "LIVE.md").write_text("# Working inside Live\n\nThe probe. See `docs/guides/03-x.md`.\n\n---\n\n## Limits\n\n- one\n    more\n")
+        (ddir / "guides" / "03-x.md").write_text("---\ntitle: X guide\n---\n# X\n\nBody.\n")
+        (self.src / "articles" / "05-live.html").write_text("<!--\ntitle: Taken\n-->\n<p>x</p>")
+        wiki._CACHE.clear()
+        arts = wiki.local()
+        self.assertEqual([a["id"] for a in arts], ["l3", "l4", "live", "x", "live-doc", "commands"])
+        d = next(a for a in arts if a["id"] == "live-doc")                 # id taken by an article: -doc
+        self.assertEqual((d["group"], d["title"], d["no"]), ("Docs", "Working inside Live", "docs/LIVE.md"))
+        self.assertIn('<a data-wiki="x" href="#"><code>docs/guides/03-x.md</code></a>', d["html"])   # linked
+        self.assertIn("<hr>", d["html"])
+        self.assertIn("<ul><li>one more</li></ul>", d["html"])
+
+    def test_every_doc_ships_with_the_app(self):
+        """Each docs/*.md is listed in pyproject.toml, so an installed hypnomix has the same wiki."""
+        root = Path(wiki.__file__).resolve().parents[2]
+        toml = (root / "pyproject.toml").read_text()
+        for f in sorted((root / "docs").glob("[A-Z]*.md")):
+            self.assertIn(f'"docs/{f.name}" = "hypnomix/app/wiki/docs/{f.name}"', toml,
+                          f"add docs/{f.name} to [tool.hatch.build.targets.wheel.force-include]")
+
     def test_shipped_wiki_is_complete(self):
         """The wiki that ships with the app: every image or video an article uses is there, and nothing extra."""
         import re
