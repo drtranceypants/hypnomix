@@ -49,16 +49,20 @@ JOB = {"status": "idle", "got": 0, "size": 0, "file": "", "error": ""}
 
 # ---------------------------------------------------------------- what is installed
 def current():
+    # In a source checkout the pyproject.toml beside the package is the truth: an editable install's metadata keeps
+    # the version it was installed at, and goes stale after every `git pull`. An installed app has no pyproject there.
+    try:
+        f = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        m = re.search(r'^version = "([^"]+)"', f.read_text(), re.M) if f.exists() else None
+        if m and re.search(r'^name = "hypnomix"', f.read_text(), re.M):
+            return m.group(1)
+    except OSError:
+        pass
     try:
         from importlib.metadata import version
         return version("hypnomix")
     except Exception:
-        pass
-    for f in (Path(__file__).resolve().parents[2] / "pyproject.toml",):
-        m = re.search(r'^version = "([^"]+)"', f.read_text(), re.M) if f.exists() else None
-        if m:
-            return m.group(1)
-    return "0"
+        return "0"
 
 
 def vkey(v):
