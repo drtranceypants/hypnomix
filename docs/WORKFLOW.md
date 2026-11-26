@@ -104,10 +104,33 @@ that did not run means nothing.
 hypnomix prep "raw takes/" --plan        # every repair it would make, per file, as findings
 hypnomix automix "stems/" --plan         # every EQ, compressor, level, pan and reverb move, plus a trial mix
 hypnomix master "Song mix.wav" --plan    # every stage of the mastering chain
+hypnomix balance "stems/" --plan         # one fader move per part (faders only: no EQ, no compression)
 ```
 
 Nothing is written to your files. The moves land in a scan folder and are reviewed like any other finding;
 `hypnomix fix DIR --approved` then runs the tool with only the approved moves, into `DIR/fixed/`.
+
+### A first balance: `hypnomix balance`
+
+`hypnomix balance "stems/"` reports one fader move per part with the measurement behind it: the part's role, how
+loud it plays (while it plays, not over the gaps), where the move leaves it against the anchor part, and how the
+lead vocal sits against the band (everything else played together). If you built a profile with
+`hypnomix profile build … --sets …`, each move is also compared with the fader range of your own finished songs.
+It differs from `automix` in what it touches: faders only, no EQ, no compression, no pan, no reverb. Options:
+`--anchor NAME`, `--vocal-over-band DB`, `--offset bass=-1.5,hats=-2`, `--keep-level`, `--min-move`, `--max-move`.
+`--plan` sends the moves to the review; `fix --approved` writes only the approved stems (each with its move baked
+in) and a trial mix into `DIR/fixed/balance/`. Measured, not heard: move the faders until it feels right.
+
+### The by-hand list: `hypnomix handoff`
+
+`fix` lists what it cannot do itself under "by hand". `hypnomix handoff "SCAN_DIR"` turns that list (the approved
+by-hand items, plus any item you skipped or changed with a note) into `handoff/HANDOFF.md`: a checklist in song
+order, each line with track, bar.beat and m:ss, what to do in your DAW's words (Live, REAPER, Ardour or plain
+wording; `--daw`, or your `tools.daw` preference), and what to listen for. A Live scan also gets a NEW set
+"Song (handoff).als" with a locator at each spot (checked like any written set), a REAPER scan a new
+"Song (handoff).rpp" with a marker at each spot, and every scan gets `markers.mid` (a MIDI file with a marker per
+spot) and `markers.csv` for DAWs that import those. For a folder of stems give `--bpm` for bar.beat. Nothing is
+changed in place.
 
 ## 1b. Hear it first
 

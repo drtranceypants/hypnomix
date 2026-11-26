@@ -720,6 +720,11 @@ def main():
             kf.parent.mkdir(parents=True, exist_ok=True)
             kf.write_text(json.dumps(sorted(f["plan"]["key"] for f in items)))
             code, txt = hx("automix", source, "--no-prep", "--no-master", "--only", kf, "--out", dest)
+        elif tool == "balance":
+            kf = sd / "raw" / "approved-balance.json"
+            kf.parent.mkdir(parents=True, exist_ok=True)
+            kf.write_text(json.dumps({f["track"]: f["plan"]["gain_db"] for f in items}))
+            code, txt = hx("balance", source, "--only", kf, "--out", dest)
         elif tool == "master":
             pl = items[0]["plan"]
             args = ["master", source, "--only", ",".join(sorted({f["plan"]["key"] for f in items})), "--out", dest,
