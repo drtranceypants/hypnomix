@@ -83,6 +83,7 @@ GROUPS = [
         ("tighten", "hypnomix.session.tighten", "pull a take's hits part of the way toward the click, in place (a gentle quantise)"),
         ("breathe", "hypnomix.session.breathe", "let a click-recorded song breathe: small tempo changes by section, with a preview"),
         ("variations", "hypnomix.session.variations", "vary repetitive loops with unused takes, on new switched-off tracks next to each part"),
+        ("colour", "hypnomix.session.colour", "propose new timbres where a part sounds the same throughout: width, grit, space, movement or octave, as Live-device chains on switched-off copies, each with a before / after clip (Live sets; writes a new set only for the ones you pick)"),
         ("distortion", "hypnomix.session.distortion", "find audible distortion (clipped takes, overs, hot drive, fast bass compression); propose fixes"),
         ("refs", "hypnomix.session.refs", "find missing audio files in sets"),
         ("diff", "hypnomix.session.diff", "what changed between two sets, in plain words (faders, devices, clips, automation)"),
@@ -107,6 +108,7 @@ GROUPS = [
     ("Setup", [
         ("install", "hypnomix.install", "install the Live remote script, write Claude Code config"),
         ("doctor", "hypnomix.install", "check Live, AbletonOSC, BlackHole, ffmpeg, plug-in parameter access"),
+        ("plugins", "hypnomix.session.plugins", "list the plug-ins installed on this computer (VST3, Audio Units, CLAP, LV2), mark the free ones hypnomix knows, optionally load each safely; --save keeps the list in your preferences  [--check: extra plugins]"),
     ]),
 ]
 COMMANDS = {name: (mod, desc) for _, cmds in GROUPS for name, mod, desc in cmds}

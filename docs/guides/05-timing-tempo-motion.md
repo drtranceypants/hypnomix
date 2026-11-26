@@ -115,6 +115,20 @@ Finds parts that repeat the same whole-bar loop and unused material that fits: o
 recording, and other takes of the part in the project's `Samples/Recorded` that the set no longer uses. Each
 gets a new track next to it, with the same devices, switched off. Turn it on to hear it; delete it to undo.
 
+### colour: a different sound for the repeat
+
+```bash
+hypnomix colour "Song.als" --part Pad
+hypnomix colour "Song.als" --plan          # the proposals as findings for the review
+```
+
+Measures every part section by section (tone in six bands, notes per bar) and finds where a part, and the whole mix,
+sounds like an earlier section. There it proposes a colour (`--family width|grit|space|movement|octave`, or the one
+the measurements suggest) as a chain of Live's own devices on a switched-off copy of the part, holding only those bars,
+with a four-bar before / after clip. `--max`, `--per-part`, `--amount` and `--static` (how close counts as "the same",
+2 dB) are yours to set. Nothing is added unless you pick a number: `--apply "Song (colour).als" --ids colour-1`. Live sets
+only for now; the clip "after" is a model of the chain, so listen in Live.
+
 ### borrow: from the song's original project
 
 ```bash

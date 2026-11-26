@@ -70,3 +70,30 @@ tracks (most `duck` items) can't be previewed, because returns are fed by sends;
 
 The pair is the track on its own, through the devices that could be rendered: listen for what the change
 does, then confirm in Live.
+
+## Which plug-ins you have: `hypnomix plugins`
+
+```bash
+hypnomix plugins                      # everything installed, by format; the free list is marked
+hypnomix plugins --check              # load each VST3 / Audio Unit without its window (needs pedalboard)
+hypnomix plugins --save               # keep the list in your preferences
+hypnomix plugins --json               # data for an agent (or --json OUT.json)
+```
+
+It looks in the standard folders of the system (Mac: `/Library/Audio/Plug-Ins` and `~/Library/Audio/Plug-Ins`, folders
+`VST3`, `Components`, `CLAP`, `LV2`; Windows: `Common Files\VST3`, `CLAP`, `LV2`; Linux: `~/.vst3`, `/usr/lib/vst3`, and
+the CLAP and LV2 equivalents), one vendor folder deep and more. Add your own with `--folder FORMAT=DIR`. Audio Units are
+read from their `Info.plist` (which also says instrument or effect); the rest by file name.
+
+**The free list** is the README's "Free plug-ins that work with hypnomix". A plug-in on it is marked, and is what
+`colour` may name; every other plug-in is listed and never proposed.
+
+**`--check`** loads each plug-in the way `plugrender` does: in its own process, with a time limit (`--timeout`,
+default 60 s). A plug-in that crashes, fails to load or does not answer is reported FAILED with the reason, and the run
+goes on. CLAP and LV2 are not opened (the host, pedalboard, hosts VST3 and Audio Units only): they are listed as found,
+"not checked". `--only TEXT` narrows it to some plug-ins.
+
+**`--save`** is the only thing that writes anything, and only the preferences file: `tools.plugins` (the free-list
+plug-ins that are installed and, with `--check`, load; names you added by hand are kept unless `--replace`) and
+`tools.plugins_found` (everything found, with its format and folder). `hypnomix prefs` shows them, and `hypnomix colour`
+reads them so its alternatives only name what is installed.

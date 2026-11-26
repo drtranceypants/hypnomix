@@ -10,7 +10,7 @@ Items marked *(to verify)* rest on research that has not been tested here yet.
 the review page (`review`), the wider scan (noise under clip gain, harmony timing, mic phase, masking as
 findings, the "is this deliberate?" inventory, sections, `--like`), `--plan` for `prep` / `automix` / `master`,
 `deess`, `breaths`, `sections`, `match`, and a first test suite. Still open from those sections: `balance`,
-`plugins`, `listen`, `handoff`, the profile comparison in scan, masking fixes written into a set as stock EQ
+`listen`, `handoff`, the profile comparison in scan, masking fixes written into a set as stock EQ
 bands, and previews for timing nudges and device changes. `deess`, `breaths`, `sections` and `match` need real
 songs before they are trusted.
 
@@ -35,10 +35,19 @@ grouped decisions, a question budget, teach, collaborator export/merge, `history
 support needs checking); an EQ Eight model for `plugrender`; Audio Units that crash in the offline host; the
 probe's numbers next to a full-file meter on the same song.
 
-**Next idea: `colour`.** Propose new timbres for a song that sounds the same throughout: an effect chain from
-stock devices or installed free plug-ins on a copy of a part, or a new instrument doubling a line (from
-`midi`), each on a new switched-off track like `variations`, each with a before / after clip. Needs the
-`plugins` list (item 17) so it only proposes what is installed.
+**Also built: `plugins` and `colour`** (see `docs/PLUGINS.md`, the wiki articles "Which plug-ins you have" and "New colours
+for a song that sounds the same"). `plugins` lists what is installed in the standard VST3 / AU / CLAP / LV2 folders,
+marks the free ones from the README, can load each safely (`--check`, one process and one time limit each) and keeps the
+list in the preferences (`--save`). `colour` measures every part section by section (tone in six bands, texture in
+notes a bar, against the part's own earlier sections and the mix's), proposes a new colour where a part and the mix
+repeat (width, grit, space, movement, octave), as a chain of Live's own devices from its library presets on a new
+switched-off copy of the part, each with a before / after clip (a model of the chain, not Live's device), as findings
+in the review (`--plan`, then `fix`). Open for `colour`: REAPER and Ardour (it writes Live sets only); **(b) a new
+instrument doubling a line from `midi`** (not started: needs an instrument device chain and the MIDI clip written,
+both new); third-party plug-ins named as alternatives but never written into a set (their state is not touched);
+previews through an installed free plug-in with pedalboard; opening the written sets in Live; a hand-tuned recipe per
+family (the values are Live's presets with a few set by name, not yet judged by ear); more real songs for the
+"sounds the same" threshold (default 2 dB).
 
 ## 1. Make the review audible and visible
 
@@ -74,7 +83,7 @@ Checks that exist as tools but are not in the first pass yet, and a few new ones
 | 14 | `--plan` for `prep`, `automix`, `master` | These apply many moves in one go. `--plan` writes the same moves as findings into a scan folder, so they go through the same review, and `fix` renders only the approved ones. |
 | 15 | `balance` | A static first balance for a folder of stems as proposals: fader per part, with the measurement behind each. |
 | 16 | `match` | Reference matching as findings: "your low end is 3 dB heavier than the reference between 60 and 120 Hz", each with a proposed move. |
-| 17 | `plugins` | List the free plug-ins installed on this computer, check each loads without its window, and save the list to preferences so proposals only name what is there. |
+| 17 | `plugins` | *Built (see `docs/PLUGINS.md`).* List the plug-ins installed on this computer, mark the free ones, check each loads without its window (each in its own process, with a time limit), and save the list to preferences so proposals only name what is there. |
 | 18 | `listen` | Optional: a local, open-weights audio model writes "listening notes" on a bounce. Advice only, labelled as such, never a source of numbers. Runs on the person's machine. |
 | 19 | `handoff` | Turn the by-hand list into the person's DAW's terms and, where possible, into markers at each spot. |
 

@@ -201,14 +201,14 @@ which spots to compare between the old and new set. When the review is finished,
 | Hear and review | `ab` (before/after clips), `review` (the page; `--serve` saves clicks) | the scan folder only |
 | Fix a set | `fix` (approved findings); or `order --apply` (track order, vocal stacks), `smooth --apply`, `timing --apply`, `distortion --apply`, `sidechain --apply`, `automation offset/dip` | a new `.als` |
 | Keep it moving (last step before mixdown; see `docs/WORKFLOW.md` §5) | `motion --learn` (your moves from finished songs), `motion SET --mix MIX --plan` (riser, dip, drift, swell, throw, outro, stutter, gate, drop-out: all options), `borrow SET --mix MIX --plan` (unused loops from the song's original project, on switched-off tracks) | a scan folder; `fix` writes a new `.als` |
-| Tempo and variety (see `docs/TEMPO.md`) | `tempomap` (free-played take: `--click` check, then `--conform` or `--follow`), `loops`, `tighten`, `breathe`, `variations` | a new `.als`, or preview files |
+| Tempo and variety (see `docs/TEMPO.md`) | `tempomap` (free-played take: `--click` check, then `--conform` or `--follow`), `loops`, `tighten`, `breathe`, `variations`, `colour` (new timbres where a part repeats itself: Live-device chains on switched-off copies, `--plan` for the review; Live sets only) | a new `.als`, or preview files |
 | Clicking, not typing (see `docs/APP.md`) | `app` (the first pass in a window; decisions land in the same `decisions.json`), `device` (Max for Live: step through findings in Live, jump to each) | scans in `~/Documents/Hypnomix`; a new `.als` on Apply |
 | Inside Live without renders (see `docs/LIVE.md`) | `probe device`, `probe insert SET.als` (new set with every device, no manual placing; also `scan --devices`), `probe listen` / `status` / `report` / `cards SET.als`, `abset SCAN_DIR` (every fix as a switched-off B for A / B / Blind on the device) | a new `.als`; captures in the app folder |
 | Learn the person's style first | `taste --library` (every set on the computer: standards, taste calls, where to improve), `tonal build` (a tone target from their releases) | `~/.hypnomix/` only |
 | Decide faster, stay in charge (see `docs/WORKFLOW.md` 4b) | `fix --decide ID=approve@60`, `--decide-like ID=approve --dry-run`, `review --export / --merge / --settle`, `history` (`--diff`, `--undo`, `--undo-item`) | decisions; undo writes a new `.als` |
 | Faster re-checks | `scan --quick`, `scan --since DIR`, `watch SET.als` | nothing |
 | Mastering options (see `docs/MASTERING.md`) | `tonal check`, `harsh`, `master --plan` with `--stabilize`, `--dyneq`, `--width-bands`, `--limiter-mode`, `--harsh`, `--dither`, `--amount`; `rebalance`; `translate --preview` | new audio files |
-| Real plug-ins offline (see `docs/PLUGINS.md`) | `plugrender SET --list / --check / --tracks`, `ab DIR --plugins` | new audio files |
+| Real plug-ins offline (see `docs/PLUGINS.md`) | `plugins` (what is installed; `--check` loads each safely, `--save` into the preferences), `plugrender SET --list / --check / --tracks`, `ab DIR --plugins` | new audio files; `plugins --save` writes the preferences only |
 | Check what was written | `check NEW.als --against OLD.als`, `diff OLD.als NEW.als` | nothing |
 | Vocals | `tune`, `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |
 | Vocal alignment in a set | `alignset` (timing as warp markers on the parts' own clips; pitch/formant as files from bar 1), the `aligndevice` for Live; see docs/ALIGN.md. Pitch matching is off unless the person asks | a new set |
@@ -234,8 +234,8 @@ checked in Live 12 too. Stems that match no track name are listed, not guessed.
 **Opened in Live 12, not yet judged by ear** (say so): the sets written by `tighten` (warp markers on every
 hit) and `breathe` (tempo automation, read back from Live at the right tempo), and `fix` sets with `tidy` and
 `order` applied.
-**New, not yet opened in Live** (say so): the sets written by `tempomap`, `loops`, `variations`, `motion` and
-`borrow`. They pass `check` and their offline previews measure as intended. They are taste tools: show
+**New, not yet opened in Live** (say so): the sets written by `tempomap`, `loops`, `variations`, `motion`, `borrow` and
+`colour`. They pass `check` and their offline previews measure as intended. They are taste tools: show
 the report and the preview, and apply only when asked. A tempo map with under half its beats on real hits is
 guesswork: the tools say so and refuse to write from it.
 
