@@ -96,7 +96,8 @@ hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --
    (two neighbouring words moved opposite ways across a short gap, as the gentle stack mode does on harmonies),
    the map is eased instead of the clip being skipped: the mean of the closest forward and backward paths that
    never play slower than 0.25x (`alignset.MIN_SPEED`). Everywhere else the markers still follow the plan, and the
-   `ALIGNSET.md` row gives the largest change in ms ("eased by up to … ms").
+   `ALIGNSET.md` row gives the largest change in ms ("eased by up to … ms"). A clip that starts at its file's first
+   sample and is asked to play earlier starts there and catches up the same way (counted in the same figure).
 4. Pitch and formant can't be warp markers: those parts are rendered as files from bar 1 (1.1.1), for a new
    track under the original (the device places them and mutes the original).
 

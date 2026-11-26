@@ -90,8 +90,14 @@ def markers_for_clip(ci, plan, tempo, tol_s=0.0005):
             bwd[i] = min(bwd[i], bwd[i + 1] - d[i])
         src = (fwd + bwd) / 2
         markers_for_clip.eased = float(np.abs(src - want).max() * 1000)
-    if src[0] < -1e-6:
-        return None, "the move would play from before the start of its file: left as it was"
+    if src[0] < 0:
+        # a clip that starts at its file's first sample, asked to play a little earlier: there is no audio before the
+        # file, so it starts there and catches up with the plan (never slower than MIN_SPEED)
+        want = src.copy()
+        src[0] = 0.0
+        for i in range(1, len(src)):
+            src[i] = max(src[i], src[i - 1] + d[i - 1])
+        markers_for_clip.eased = max(markers_for_clip.eased, float(np.abs(src - want).max() * 1000))
     keep = rdp(T, src, tol_s)
     Tk, sk = T[keep], src[keep]
     beats = tm.arr_to_clipbeat(dict(ci, warped=True), Tk / spb)
@@ -281,7 +287,7 @@ def main():
                   + (f" (warp switched on, Complex Pro, for {', '.join(row['warp_switched_on'])})" if row.get("warp_switched_on") else "")
                   + (f"; within {row['max_err_ms']:.2f} ms of the plan" if row.get("max_err_ms") is not None else "")
                   + (f" (eased by up to {row['eased_ms']:.0f} ms where the move changed faster than audio can be "
-                     "slowed: between words)" if row.get("eased_ms") else "")
+                     "slowed, between words, or reached before the start of a file)" if row.get("eased_ms") else "")
                   + ("; skipped: " + "; ".join(row["skipped"]) if row["skipped"] else ""))
         result["parts"].append(row)
     # pitch / formant: rendered files from bar 1, for a new track next to the original

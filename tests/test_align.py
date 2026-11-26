@@ -172,6 +172,26 @@ class SetMarkers(unittest.TestCase):
         A.markers_for_clip(dict(before, el=ET.fromstring("<AudioClip><WarpMarkers/></AudioClip>")), plain, tempo)
         self.assertEqual(A.markers_for_clip.eased, 0.0)           # a gentle plan is not eased
 
+    def test_a_clip_at_its_files_start_asked_to_play_earlier_starts_there(self):
+        import xml.etree.ElementTree as ET
+        from hypnomix.studio import alignset as A
+        from hypnomix.session import smooth as sm
+        tempo = 120.0
+        c = ET.fromstring('<AudioClip><WarpMarkers><WarpMarker Id="0" SecTime="0" BeatTime="10"/>'
+                          '<WarpMarker Id="1" SecTime="20" BeatTime="50"/></WarpMarkers></AudioClip>')
+        ci = dict(el=c, name="harmony", start=10.0, end=20.0, loop_on=False, ls=10.0, le=50.0, rel=0.0, warped=True,
+                  markers=[(10.0, 0.0), (50.0, 20.0)])   # plays its file from second 0 at song second 5
+        before = dict(ci)
+        plan = np.zeros(1500); plan[400:800] = -2.0       # 20 ms earlier from the clip's first sample on
+        pairs, err = A.markers_for_clip(ci, plan, tempo)
+        self.assertIsNotNone(pairs, err)
+        self.assertGreaterEqual(min(s for s, b in pairs), 0.0)
+        self.assertAlmostEqual(A.markers_for_clip.eased, 20.0, delta=0.5)
+        A.write_markers(ci, pairs)
+        T = np.arange(5.2, 7.9, 0.01)                     # caught up with the plan within ~30 ms (20 ms at 0.25x)
+        was = sm.file_seconds(before, (T - 0.02) / 0.5, tempo)
+        self.assertTrue(np.allclose(sm.file_seconds(ci, T / 0.5, tempo), was, atol=0.0006))
+
 
 class AppAndDevice(unittest.TestCase):
     def test_device_request_becomes_an_alignset_command(self):

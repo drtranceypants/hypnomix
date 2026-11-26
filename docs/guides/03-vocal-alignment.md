@@ -171,7 +171,8 @@ hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --
    When two neighbouring words move opposite ways across a short gap (common on harmonies in the gentle stack
    mode), following the plan exactly would play the gap backwards. Warp markers can't do that, so the change is
    spread over a little more time there, never slower than quarter speed, and the report says by how many ms
-   ("eased by up to … ms"). The words themselves still land where the plan puts them.
+   ("eased by up to … ms"). The words themselves still land where the plan puts them. A clip that starts right at
+   the beginning of its file can't play earlier than that, so it starts there and catches up the same way.
 5. Pitch and formant can't be warp markers, so those parts are rendered as files from bar 1 (1.1.1) to put on
    a new track under the original.
 
