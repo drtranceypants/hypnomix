@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   mac:
-    runs-on: macos-14
+    runs-on: macos-latest
     env:
       HAS_CERT: ${{ secrets.MACOS_CERT_P12 != '' }}
       HAS_NOTARY: ${{ secrets.APPLE_APP_PASSWORD != '' }}
