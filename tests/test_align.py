@@ -135,6 +135,43 @@ class SetMarkers(unittest.TestCase):
         self.assertAlmostEqual(now[1] - sm.file_seconds(before, np.array([12.0]), tempo)[0], 0.04, delta=0.001)
         self.assertEqual(len(c.findall("./WarpMarkers/WarpMarker")), len(pairs))
 
+    def test_opposite_moves_across_a_short_gap_are_eased_not_skipped(self):
+        # gentle stack mode moves each word whole and changes the move linearly between words: here one word plays
+        # 30 ms later audio and the next 30 ms earlier, across a 50 ms gap, so the plan would play the gap backwards
+        import xml.etree.ElementTree as ET
+        from hypnomix.studio import alignset as A
+        from hypnomix.session import smooth as sm
+        tempo = 120.0
+        c = ET.fromstring('<AudioClip><WarpMarkers><WarpMarker Id="0" SecTime="0" BeatTime="0"/>'
+                          '<WarpMarker Id="1" SecTime="20" BeatTime="40"/></WarpMarkers></AudioClip>')
+        ci = dict(el=c, name="harmony", start=8.0, end=24.0, loop_on=False, ls=0.0, le=40.0, rel=0.0, warped=True,
+                  markers=[(0.0, 0.0), (40.0, 20.0)])
+        plan = np.zeros(1500)
+        plan[500:600] = 3.0                                       # word one, 5.00-6.00 s: +30 ms
+        plan[600:605] = np.linspace(3, -3, 5)                     # the 50 ms gap
+        plan[605:700] = -3.0                                      # word two, 6.05-7.00 s: -30 ms
+        plan[480:500] = np.linspace(0, 3, 20); plan[700:720] = np.linspace(-3, 0, 20)
+        before = dict(ci)
+        T = np.arange(4.0, 12.0, 0.005)
+        was = sm.file_seconds(before, (T + np.interp(T, np.arange(1500) * 0.01, plan * 0.01)) / 0.5, tempo)
+        self.assertTrue(np.any(np.diff(was) <= 0))                # the plan as it stands runs backwards
+        pairs, err = A.markers_for_clip(ci, plan, tempo)
+        self.assertIsNotNone(pairs, err)
+        self.assertLess(err, 0.6)
+        self.assertGreater(A.markers_for_clip.eased, 5.0)         # eased, and says by how much
+        self.assertLess(A.markers_for_clip.eased, 40.0)
+        A.write_markers(ci, pairs)
+        secs = [s for b, s in ci["markers"]]
+        self.assertTrue(all(b > a for a, b in zip(secs, secs[1:])))
+        now = sm.file_seconds(ci, T / 0.5, tempo)
+        self.assertTrue(np.all(np.diff(now) >= A.MIN_SPEED * 0.005 - 0.0006))  # never backwards, never below 0.25x
+        far = np.abs(T - 6.025) > 0.15                            # away from the gap the words land on the plan
+        self.assertTrue(np.allclose(now[far], was[far], atol=0.0006))
+        plain = np.zeros(1500); plain[500:700] = 2.0
+        plain[480:500] = np.linspace(0, 2, 20); plain[700:720] = np.linspace(2, 0, 20)
+        A.markers_for_clip(dict(before, el=ET.fromstring("<AudioClip><WarpMarkers/></AudioClip>")), plain, tempo)
+        self.assertEqual(A.markers_for_clip.eased, 0.0)           # a gentle plan is not eased
+
 
 class AppAndDevice(unittest.TestCase):
     def test_device_request_becomes_an_alignset_command(self):

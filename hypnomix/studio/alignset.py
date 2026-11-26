@@ -38,6 +38,7 @@ from hypnomix.studio import vocalign as V
 
 SR = 44100
 FR_S = V.FR_S
+MIN_SPEED = 0.25          # warp markers never play slower than this (and never backwards)
 
 
 def rdp(t, y, tol):
@@ -61,7 +62,8 @@ def rdp(t, y, tol):
 
 def markers_for_clip(ci, plan, tempo, tol_s=0.0005):
     """New warp markers [(file seconds, clip beats)] so the clip plays, at song time T, the audio it used to play at
-    T + plan(T). Returns (pairs, max error in ms) or (None, reason)."""
+    T + plan(T). Returns (pairs, max error in ms) or (None, reason). Where the plan would play audio backwards (or
+    slower than MIN_SPEED), it is eased; markers_for_clip.eased says by how many ms (0 when nothing was eased)."""
     from hypnomix.session import smooth as sm, timing as tm
     spb = 60.0 / tempo
     cs, ce = ci["start"] * spb, ci["end"] * spb
@@ -70,11 +72,26 @@ def markers_for_clip(ci, plan, tempo, tol_s=0.0005):
         return None, "clip too short"
     T = np.r_[T, ce]
     o = np.interp(T, np.arange(len(plan)) * FR_S, plan * FR_S, left=0.0, right=0.0)
+    markers_for_clip.eased = 0.0
     if np.abs(o).max() < 0.0005:
         return [], 0.0
     src = sm.file_seconds(ci, (T + o) / spb, tempo)          # the audio that should now play at T (current map)
-    if np.any(np.diff(src) <= 0):
-        return None, "the move would play audio backwards here (a stretch too steep): left as it was"
+    d = MIN_SPEED * np.diff(sm.file_seconds(ci, T / spb, tempo))   # a quarter of the speed the clip plays at now
+    if np.any(np.diff(src) <= d):
+        # the move changes faster than audio can be slowed down (two neighbouring words moved opposite ways across a
+        # short gap: the plan would play the gap backwards). Warp markers can't, so the change is eased over a little
+        # more time there: the mean of the closest forward and backward paths that never go slower than MIN_SPEED
+        # (both follow the plan wherever it is not too steep), as REAPER's alignset_rpp.item_markers does
+        want = src.copy()
+        fwd, bwd = src.copy(), src.copy()
+        for i in range(1, len(fwd)):
+            fwd[i] = max(fwd[i], fwd[i - 1] + d[i - 1])
+        for i in range(len(bwd) - 2, -1, -1):
+            bwd[i] = min(bwd[i], bwd[i + 1] - d[i])
+        src = (fwd + bwd) / 2
+        markers_for_clip.eased = float(np.abs(src - want).max() * 1000)
+    if src[0] < -1e-6:
+        return None, "the move would play from before the start of its file: left as it was"
     keep = rdp(T, src, tol_s)
     Tk, sk = T[keep], src[keep]
     beats = tm.arr_to_clipbeat(dict(ci, warped=True), Tk / spb)
@@ -257,10 +274,14 @@ def main():
             row["clips"] += 1
             row["markers"] += len(pairs)
             row["max_err_ms"] = max(row.get("max_err_ms", 0.0), info)
+            if markers_for_clip.eased > 0.5:
+                row["eased_ms"] = max(row.get("eased_ms", 0.0), markers_for_clip.eased)
         edited += row["clips"]
         md.append(f"- {p_}: {row['markers']} warp markers on {row['clips']} clip(s)"
                   + (f" (warp switched on, Complex Pro, for {', '.join(row['warp_switched_on'])})" if row.get("warp_switched_on") else "")
                   + (f"; within {row['max_err_ms']:.2f} ms of the plan" if row.get("max_err_ms") is not None else "")
+                  + (f" (eased by up to {row['eased_ms']:.0f} ms where the move changed faster than audio can be "
+                     "slowed: between words)" if row.get("eased_ms") else "")
                   + ("; skipped: " + "; ".join(row["skipped"]) if row["skipped"] else ""))
         result["parts"].append(row)
     # pitch / formant: rendered files from bar 1, for a new track next to the original

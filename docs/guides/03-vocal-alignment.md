@@ -168,6 +168,10 @@ hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --
    can be dragged or deleted.
 4. Unwarped clips get warp switched on (Complex Pro, playing exactly as before) unless you pass
    `--keep-unwarped`. Looped clips are skipped: unroll them first (`hypnomix unroll`).
+   When two neighbouring words move opposite ways across a short gap (common on harmonies in the gentle stack
+   mode), following the plan exactly would play the gap backwards. Warp markers can't do that, so the change is
+   spread over a little more time there, never slower than quarter speed, and the report says by how many ms
+   ("eased by up to … ms"). The words themselves still land where the plan puts them.
 5. Pitch and formant can't be warp markers, so those parts are rendered as files from bar 1 (1.1.1) to put on
    a new track under the original.
 

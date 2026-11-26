@@ -92,7 +92,11 @@ hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --
 3. With `--apply`, the planned moves become **warp markers on the part's own clips** in
    `Song (aligned).als` next to yours: the fewest markers that follow the plan within half a millisecond.
    Unwarped clips get warp switched on (Complex Pro, playing exactly as before) unless `--keep-unwarped`.
-   Looped clips are skipped (unroll them first: `hypnomix unroll`).
+   Looped clips are skipped (unroll them first: `hypnomix unroll`). Where the plan would play audio backwards
+   (two neighbouring words moved opposite ways across a short gap, as the gentle stack mode does on harmonies),
+   the map is eased instead of the clip being skipped: the mean of the closest forward and backward paths that
+   never play slower than 0.25x (`alignset.MIN_SPEED`). Everywhere else the markers still follow the plan, and the
+   `ALIGNSET.md` row gives the largest change in ms ("eased by up to … ms").
 4. Pitch and formant can't be warp markers: those parts are rendered as files from bar 1 (1.1.1), for a new
    track under the original (the device places them and mutes the original).
 
