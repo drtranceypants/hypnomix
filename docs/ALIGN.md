@@ -114,7 +114,8 @@ hypnomix aligndevice    # once: writes the device into your User Library
 Drag **Hypnomix Align** onto any track (audio passes through). Save your set, then:
 
 1. **Choose set**: the saved `.als` you are in.
-2. Select the guide track → **Guide ←**. Select each part → **+ Part**.
+2. Select the guide track → **Guide ←**. Select each part → **+ Part**. (A track name that starts with a dash is
+   refused with a message: rename the track.)
 3. Loop-brace the bars → **Range: brace** (or **Range: song**).
 4. Optional: brace a bit you love → **Protect**. Put the playhead on a consonant that must land → **Sync here**.
 5. Drag the dials: **Tight**, **Pitch** (off by default), **Vibrato**, **Formant**. Or click **Preset**.

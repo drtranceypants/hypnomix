@@ -273,7 +273,7 @@ async function render() {
   refresh();
 }
 document.addEventListener('click', async e => {
-  const b = e.target.closest('button, tr.cmd'); if (!b) return;
+  const b = e.target.closest('button, tr.cmd'); if (!b || b.closest('.wa')) return;   // an article's own markup never drives the app's buttons
   const ds = b.dataset;
   try {
     if (ds.pick) { const [field, kind] = ds.pick.split(':'); const r = await post('/api/pick', {kind}); if (r.path) { S.form[field] = r.path; render(); } }
