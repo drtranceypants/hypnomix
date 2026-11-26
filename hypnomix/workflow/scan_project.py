@@ -735,7 +735,11 @@ def g_stems(p, R, od, a):
     stems, sr = M.load_stems(R.dir)
     if len(stems) < 2:
         return [], ["stems: fewer than two heard audio tracks"]
-    f, notes = SC.stem_findings(stems, sr)
+    real = {t.safe_name: t.name for t in p.tracks} if p.daw == "reaper" else None   # only REAPER projects can be written
+    f, notes = SC.stem_findings(stems, sr, writable=real)
+    for x in f:
+        if x.get("eq"):
+            x["edit"] = dict(op="masking")
     notes.append("stems: tracks were rendered without their FX, so EQ already on a track is not counted")
     return f, notes
 

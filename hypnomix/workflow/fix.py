@@ -52,7 +52,7 @@ from pathlib import Path
 
 from hypnomix.workflow import oversight as O
 
-ORDER = ["distortion", "devices", "sidechain", "duck", "smooth", "edges", "cliplevel", "timing", "motion", "borrow", "tidy", "order"]   # track names come last, after all of these
+ORDER = ["distortion", "devices", "sidechain", "duck", "masking", "smooth", "edges", "cliplevel", "timing", "motion", "borrow", "tidy", "order"]   # track names come last, after all of these
 DECISIONS = ("approve", "skip", "change")
 
 
@@ -191,6 +191,8 @@ def apply_args(tool, cur, nxt, ids, items, sd, scan, dec, src, timing_tracks, ti
         args += ["--mix", scan["mix"]]
     if tool in ("order", "tidy", "edges", "cliplevel", "duck", "devices"):
         args += ["--names", sd / "raw" / "names" / "names.json"]
+    if tool == "masking":           # the cuts come from the scan's own findings: no re-measuring (that would re-render everything)
+        args += ["--findings", sd / "findings.json"]
     if tool == "tidy":              # archive the set as it was before this run, then tidy
         args += ["--archive-from", src]
         for f in items:
@@ -490,12 +492,15 @@ def main():
                         groups.setdefault(amounts[f["id"]], []).append(f)
                     gcur, any_ids, n_skip, broke = cur, False, 0, False
                     for gi, (amt, gitems) in enumerate(sorted(groups.items(), key=lambda kv: -kv[0])):
-                        now = recheck(tool, gcur, sd, scan, timing_tracks, f"pre{step}" + (f".{gi}" if gi else ""))
-                        if now is None:
-                            failed += [f"{f['id']}: could not re-check the set with {tool}" for f in gitems]
-                            broke = True
-                            continue
-                        ids, skipped = rematch(gitems, now)
+                        if tool == "masking":    # the finding IS the cut: the writer checks the track and an equal cut itself
+                            ids, skipped = [f["id"] for f in gitems], []
+                        else:
+                            now = recheck(tool, gcur, sd, scan, timing_tracks, f"pre{step}" + (f".{gi}" if gi else ""))
+                            if now is None:
+                                failed += [f"{f['id']}: could not re-check the set with {tool}" for f in gitems]
+                                broke = True
+                                continue
+                            ids, skipped = rematch(gitems, now)
                         skipped_all += skipped
                         n_skip += len(skipped)
                         if not ids:
@@ -514,6 +519,12 @@ def main():
                             args += O.amount_flags(tool, amt)
                         code, t_ = hx(*args)
                         txt += t_ + "\n"
+                        if tool == "masking":
+                            for m_ in re.finditer(r"^- (\S+): not written: (.*)$", t_, re.M):   # what the writer left out
+                                skipped_all += [(f, m_.group(2)) for f in gitems if f["id"] == m_.group(1)]
+                            if code == 0 and not made.exists():      # every cut was already there: nothing to write
+                                any_ids, n_skip = gcur != cur, n_skip + len(gitems)
+                                continue
                         if code != 0 or not made.exists():
                             failed += [f"{f['id']}: {tool} --apply failed" for f in gitems]
                             continue
@@ -573,6 +584,12 @@ def main():
             log += ["### verify (the new set, measured again)", ""]
             for tool in applied_tools:
                 if tool == "sidechain":
+                    continue
+                if tool == "masking":
+                    line = ("- masking: the cuts are written as EQ bands (listed above); a frequency fight is only measured "
+                            "again by a new `scan --deep` (it renders every track): listen to each part that gave way")
+                    print("verify     " + line[2:])
+                    log.append(line)
                     continue
                 if tool in ("motion", "borrow"):   # options, not problems: report what was written instead of re-measuring
                     line = (f"- {tool}: approved " + ("moves written as automation / clip edits" if tool == "motion" else
