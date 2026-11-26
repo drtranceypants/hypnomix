@@ -317,7 +317,7 @@ def control(P, thisdev, js, name, label, kind, spec, x, y):
     if kind == "menu":
         b = {"id": bid, "maxclass": "live.menu", "numinlets": 1, "numoutlets": 3, "outlettype": ["", "", "float"],
              "parameter_enable": 1, "varname": name, "patching_rect": [float(x + 600), float(y + 400), 100.0, 15.0],
-             "presentation": 1, "presentation_rect": [float(x), float(y), 150.0 if len(spec) > 8 else 75.0, 15.0],
+             "presentation": 1, "presentation_rect": [float(x), float(y), 150.0 if len(spec) > 8 or max(len(str(x)) for x in spec) > 10 else 75.0, 15.0],
              "saved_attribute_attributes": {"valueof": {"parameter_enum": list(spec), "parameter_longname": name,
                                                         "parameter_mmax": len(spec) - 1, "parameter_shortname": label,
                                                         "parameter_type": 2, "parameter_initial_enable": 1,
