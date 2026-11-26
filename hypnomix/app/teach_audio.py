@@ -22,7 +22,7 @@ from hypnomix.core import dsp
 SR = 44100
 SECONDS = 8.0
 BPM = 128                          # 4 bars of 4 beats = 7.5 s
-VERSION = 3                        # bump when a demo changes: the cache file names carry it
+VERSION = 4                        # bump when a demo changes: the cache file names carry it
 TARGET_LUFS = -20.0                # where matched variants sit
 PEAK = 0.891                       # -1 dBFS: nothing leaves above this
 
@@ -356,7 +356,7 @@ def _delay_kinds():
 
 def _saturation():
     m = music()
-    return {"a": m, "b": dsp.saturate(m * 1.6, drive_db=12.0, mix=1.0)}
+    return {"a": m, "b": dsp.saturate(m, drive_db=8.0, mix=0.5)}
 
 
 def _mono_wide():
@@ -446,7 +446,7 @@ def _interval_tune():
 def _timing_feel():
     out = {}
     n = int(7.5 * SR)
-    for k, jit, flat in (("tight", 4.0, False), ("loose", 26.0, False), ("grid", 0.0, True)):
+    for k, jit, flat in (("tight", 4.0, False), ("loose", 26.0, False), ("grid", 0.0, False)):
         d = drums(seed=7, jitter_ms=jit, flat=flat, jseed=21)[:n]
         g = np.zeros((n, 2))
         step = 60 / BPM / 2
@@ -499,10 +499,10 @@ def _kick_bass():
     for beat in range(16):
         m = int(0.4 * SR)
         tt = _t(m)
-        x = np.sin(2 * np.pi * 55.0 * tt) * _env(m, 0.005, 0.05)
+        x = (np.sin(2 * np.pi * 55.0 * tt) + 0.35 * np.sin(2 * np.pi * 110.0 * tt)) * _env(m, 0.005, 0.05)
         _place(b2, x, (beat * 60 / BPM + 0.0) * SR, 0.9)
     fight = k[:n] * 0.8 + b2 * 0.9
-    fixed = k[:n] * 0.8 + _bell(b2, 55.0, -9.0, 1.4) * 0.9
+    fixed = k[:n] * 0.8 + _bell(b2, 55.0, -3.0, 1.4) * 0.9
     fixed = dsp.filt(fixed, dsp.peaking(55.0, 0.0, 1.0, SR)) if False else fixed
     # the fix: a cut in the bass where the kick lives, and a little of the bass's upper harmonics so it still reads
     return {"a": fight, "b": fixed}
@@ -542,7 +542,7 @@ DEMOS = {
                         listen="The slap is one quick echo that thickens the voice. The synced delay is set to a dotted eighth at 100 BPM (450 ms) and repeats a few times: in a song at that tempo the echoes would fall in the beat's own rhythm."),
     "saturation": dict(title="Clean and saturated", build=_saturation, match="loudness",
                        variants=[("a", "Clean"), ("b", "Saturated")],
-                       listen="At the same loudness, the saturated one is thicker and has more bite, because it has added harmonics. Too much turns into fuzz."),
+                       listen="At the same loudness, the saturated one is a little thicker and has more bite, because it has added harmonics. It is pushed a bit so you can hear it: in your own mix a touch is enough, and too much turns into fuzz."),
     "mono-wide": dict(title="Mono against wide", build=_mono_wide, match="loudness",
                       variants=[("a", "Mono"), ("b", "Wide stereo")],
                       listen="In mono the sound sits in the middle and is narrow. Wide spreads the chords across your speakers. A mix should still work in mono."),
@@ -563,19 +563,19 @@ DEMOS = {
                           listen="In A the two notes sit together and sound settled. In B the top note is 30 cents sharp: the pair rubs, sounds rough and out of tune. 30 cents is less than a third of a semitone."),
     "timing-feel": dict(title="Tight, loose and rigidly on the grid", build=_timing_feel, match="loudness",
                         variants=[("tight", "Tight"), ("loose", "Loose"), ("grid", "Rigidly on the grid")],
-                        listen="Tight is human and steady. Loose drifts and starts to sound careless. The grid is perfect and machine-like: every hit the same strength, exactly on time."),
+                        listen="Tight is human and steady. Loose is scattered by random amounts and starts to sound careless. The grid has every hit exactly on the beat: tidy, and a little machine-like."),
     "loudness-bias": dict(title="Louder sounds better", build=_loudness_bias, match="none",
                           variants=[("a", "The original"), ("b", "The same, 2 dB louder"), ("c", "A brighter version, level-matched to the original")],
                           listen="B nearly always feels better, though it is only louder. C is a real change, judged fairly because it is the same loudness as A. Always match levels before you compare."),
     "sidechain": dict(title="A bass ducking under the kick", build=_sidechain, match="loudness",
                       variants=[("a", "No ducking"), ("b", "Ducked under the kick")],
                       listen="In A the bass and the kick pile up and the kick gets lost. In B the bass dips every time the kick hits, so the kick is clear and the mix pumps in time. This duck is exaggerated so you can hear it: for clarity in a real mix, 2 to 4 dB of ducking is plenty."),
-    "deess": dict(title="De-essing", build=_deess, match="loudness",
+    "deess": dict(title="De-essing", build=_deess, match="none",
                   variants=[("a", "With harsh S sounds"), ("b", "De-essed")],
                   listen="Listen to the hiss after each note in A. In B the S sounds are turned down, and the voice itself is untouched."),
     "kick-bass": dict(title="Bass and kick fighting, and with a cut", build=_kick_bass, match="loudness",
                       variants=[("a", "Fighting"), ("b", "A cut in the bass")],
-                      listen="Both sit on the same low note, so in A they smear into one boom. In B a cut in the bass leaves the kick room to thump."),
+                      listen="Both sit on the same low note, so in A they smear into one boom. In B the bass is turned down a few dB where the kick thumps: the kick has room, and the bass is still there."),
 }
 
 

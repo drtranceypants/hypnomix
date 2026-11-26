@@ -270,7 +270,7 @@ STEPS = [
              ["Licence", "the written rules for how you may use something."],
              ["Clearance", "permission, from the owners of a recording and its song, to use it."]],
       how={"live": ["Drag a loop file from the Browser into an audio track; in the clip, turn **Warp** on so it follows the project tempo.",
-                    "Set the clip's pitch with the **Transpose** control in the clip's Sample box if the key is off."],
+                    "Set the clip's pitch with the clip's **Transpose** (pitch) control in the Clip View if the key is off."],
            "reaper": ["Drag the loop file into the arrange view.",
                       "Right-click the item → Item properties, and use the options for playback rate and pitch if the tempo or key needs matching."],
            "ardour": ["Import the file (Session → Import), and use the region's options for stretching and pitch shifting to match the project, if you need them."]},

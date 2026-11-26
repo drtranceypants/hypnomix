@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Will it still sound right everywhere else? Checks a mix or master the way it'll actually be heard.
 
-  mono        what is lost when L+R are summed (phones held sideways, club PAs, Bluetooth speakers)
+  mono        what is lost when L+R are summed (phones with one speaker, club PAs, Bluetooth speakers)
   phone       a small speaker: nothing below ~300 Hz, a bump at 1–3 kHz. Is the bass line still audible?
   earbuds     cheap earbuds: rolled-off lows, hyped highs. Is the top end harsh?
   car         big low-end boom. Does the low end get out of hand?

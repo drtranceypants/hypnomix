@@ -108,8 +108,9 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="hypnomix in y
   dict(id="hm-master", title="The mastering chain", daws=ALL,
        say=["On the master device, **Build chain** puts your DAW's own plug-ins before it: Tone (EQ, low cut 25 Hz, "
             "everything else at 0 dB), Glue (2:1, slow attack, never more than 3 dB), Tame and Warmth (switched off until "
-            "needed), Width (bass mono below 120 Hz) and the Limiter (ceiling from the song card). **Match target** plays "
-            "the loudest part and turns the limiter until the master hits the card's target LUFS. **Save** keeps any chain, "
+            "needed), Width (bass mono below 120 Hz) and the Limiter (ceiling from the song card). In Live, play "
+            "the loudest part yourself, then press **Match target**: it turns the limiter until the master hits the card's target LUFS "
+            "(in REAPER it starts playback itself and stops what it started). **Save** keeps any chain, "
             "yours included, as a template.",
             "Offline, `hypnomix master mix.wav --plan` turns each stage into a finding to approve, with test AAC and MP3 "
             "copies to keep the true peak safe."],
