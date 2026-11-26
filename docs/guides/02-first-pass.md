@@ -91,7 +91,9 @@ proposed fix, and how it applies:
 **From inside Live:** drag the **Hypnomix** device (`hypnomix device`) onto any track. With the app open on
 a review, Prev / Next / Next open step through the findings and Live jumps to each one: the track is
 selected, the playhead and loop brace move to the spot, the clip opens. Approve and Skip record your decision
-exactly like the app. Nothing is applied from inside Live.
+exactly like the app. Nothing is applied from inside Live. Press **Float** on the device first: each jump
+selects the finding's track, so Live shows that track's clip where the device was, and the floating panel
+stays in view while you step.
 
 **In the terminal:**
 

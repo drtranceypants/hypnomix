@@ -128,8 +128,11 @@ each "s" as a short burst louder than the body of the voice, and turns down **on
 "s"**, by at most `--max-db`. Everywhere else the audio is bit-identical, and the report lists every "s" it
 touched.
 
-**breaths** finds breaths between phrases (150-900 ms, quiet, noisy and airy) and turns each down by `--reduce`
-dB with short fades inside the breath. Not removed: no breaths at all sounds robotic.
+**breaths** finds breaths between phrases and turns each down by `--reduce` dB with short fades inside the
+breath. Not removed: no breaths at all sounds robotic. A breath is 150-900 ms of sound that is quieter than the
+singing, has no pitch, and is airier than that singer's own voice, so it works on dark microphones too. A short
+"s" or "f" straight after a word is left alone. Use it on vocals only (a drum track gives false breaths), run
+`--report` first, and listen: if a word's start or end got quieter, lower `--reduce` or skip that file.
 
 Both take `--report` to analyse without writing anything, and neither ever overwrites its input.
 
