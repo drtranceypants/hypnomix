@@ -7,7 +7,8 @@ teaser: Renders, A/B clips and caches add up to gigabytes. While the app is open
 <div class="prose paper">
 <p>Every scan, A/B comparison and render leaves audio behind, and a few songs can fill tens of gigabytes. The app looks after this itself: there's nothing to install or schedule. The free space shows at the top right; click it to see what would go, clean now, or switch it off.</p>
 <h3>When it runs</h3>
-<p>While the app is open it checks once an hour. It cleans when a week has passed since the last clean, or straight away when the disk is nearly full (under 20 GB, or under 8% of the disk). When the disk is nearly full it also uses shorter ages, shows a banner, and on a Mac sends a notification with what it freed.</p>
+<p>While the app is open it checks once an hour. It cleans when a week has passed since the last clean, or straight away when the disk is nearly full: under 8% of the disk, counted as at most 50 GB and at least 20 GB, so a big disk with 70 GB left is not called full. When the disk is nearly full it also uses shorter ages and shows a banner.</p>
+<p>On a Mac it sends a notification only when the news is worth hearing: it freed more than 1 GB, the disk got fuller than at its last notice, or once a day while the disk stays nearly full. It never repeats the same warning every hour.</p>
 <h3>What it clears</h3>
 <div class="tablewrap"><table>
 <tr><th>what</th><th>when</th></tr>

@@ -97,6 +97,36 @@ class DiskCare(unittest.TestCase):
         self.assertFalse((self.r / ".hypnomix/cache/render/abc").exists())
         self.assertFalse(self.DC.due())
 
+    def test_notifies_only_when_it_matters(self):
+        DC, GB, DAY = self.DC, self.DC.GB, self.DC.DAY
+        s = {}
+        self.assertTrue(DC.should_notify(s, 2 * GB, "ok"))            # freed something real
+        self.assertFalse(DC.should_notify(s, 0, "ok"))
+        self.assertTrue(DC.should_notify(s, 0, "low"))                # first time low
+        s["notified"] = dict(when=DC.time.time(), level="low")
+        self.assertFalse(DC.should_notify(s, 0, "low"))               # the same news an hour later: quiet
+        self.assertTrue(DC.should_notify(s, 0, "critical"))           # fuller than at the last notice
+        s["notified"]["when"] -= DAY + 1
+        self.assertTrue(DC.should_notify(s, 0, "low"))                # once a day while it stays low
+
+    def test_a_big_disk_is_not_low_with_plenty_left(self):
+        GB = self.DC.GB
+        self.assertEqual(self.DC.level(70 * GB, 926 * GB), "ok")     # 8% of 926 GB would have said low
+        self.assertEqual(self.DC.level(45 * GB, 926 * GB), "low")
+        self.assertEqual(self.DC.level(15 * GB, 926 * GB), "critical")
+        self.assertEqual(self.DC.level(15 * GB, 200 * GB), "low")     # small disks keep 8% / 3%
+        self.assertEqual(self.DC.level(5 * GB, 200 * GB), "critical")
+
+    def test_off_in_the_environment_never_starts_the_hourly_look(self):
+        import threading
+        os.environ["HYPNOMIX_DISKCARE"] = "off"
+        try:
+            before = {t.name for t in threading.enumerate()}
+            self.DC.start_in_background(first=0, every=1)
+            self.assertNotIn("diskcare", {t.name for t in threading.enumerate()} - before)
+        finally:
+            os.environ.pop("HYPNOMIX_DISKCARE", None)
+
     # ---- which folders may be watched (the cleaner deletes old audio by rule inside them)
     def refused(self, folder, *words):
         before = self.DC.load()

@@ -1,8 +1,13 @@
 """Disk care: the app clears out the bulky files hypnomix leaves behind, so the disk doesn't fill up.
 
 While the app is open it looks once an hour. It cleans when a week has passed since the last clean, or straight
-away when the disk is nearly full (less than 20 GB or 8% free); then it uses shorter ages too. Nothing to set up:
-it's on by default and can be switched off, previewed and run by hand from the "free" button in the app's header.
+away when the disk is nearly full (under 8% free, counted as at most 50 GB and at least 20 GB, so a big disk is not
+"nearly full" with 70 GB left); then it uses shorter ages too. Nothing to set up: it's on by default and can be
+switched off, previewed and run by hand from the "free" button in the app's header.
+
+It tells you (a macOS notification) only when it freed more than 1 GB, when the disk got fuller than at its last
+notice (ok -> low -> critical), or once a day while it stays low: never every hour. HYPNOMIX_DISKCARE=off in the
+environment keeps the hourly look from starting at all (test and preview copies of the app use it).
 
 What it removes, and only that:
   cache     ~/.hypnomix/cache/render and renders: rendered audio kept to speed up a re-run, idle 7 days;
@@ -193,9 +198,9 @@ def space():
 def level(free=None, total=None):
     if free is None:
         free, total = space()
-    if free < max(8 * GB, 0.03 * total):
+    if free < max(8 * GB, min(0.03 * total, 20 * GB)):
         return "critical"
-    if free < max(20 * GB, 0.08 * total):
+    if free < max(20 * GB, min(0.08 * total, 50 * GB)):
         return "low"
     return "ok"
 
@@ -468,9 +473,13 @@ def run(reason="by hand", job_running=lambda: False):
                          count=done, free_before=free0, free_after=free1, rules=summary(items), blocked=blocked)
         s["last_full"] = time.time()
         save(s)
-        if reason != "by hand" and (freed > GB or level(free1, total) != "ok"):
-            notify(f"Freed {freed / GB:.1f} GB. {free1 / GB:.0f} GB free." if level(free1, total) == "ok"
-                   else f"Freed {freed / GB:.1f} GB, but only {free1 / GB:.0f} GB is free.")
+        lvl1 = level(free1, total)
+        if reason != "by hand" and should_notify(s, freed, lvl1):
+            notify(f"Freed {freed / GB:.1f} GB. {free1 / GB:.0f} GB free." if lvl1 == "ok"
+                   else f"Freed {freed / GB:.1f} GB, but only {free1 / GB:.0f} GB is free." if freed > GB
+                   else f"Only {free1 / GB:.0f} GB is free: nothing of hypnomix's was old enough to clear.")
+            s["notified"] = dict(when=time.time(), level=lvl1)
+            save(s)
         return view()
     finally:
         RUNNING["busy"] = False
@@ -491,6 +500,22 @@ def restore():
     v = view()
     v["restored"] = back
     return v
+
+
+RANK = {"ok": 0, "low": 1, "critical": 2}
+
+
+def should_notify(s, freed, lvl):
+    """Tell the person only when it matters: more than 1 GB freed, the disk fuller than at the last notice, or once
+    a day while it stays low. Never every hour for the same news."""
+    if freed > GB:
+        return True
+    if lvl == "ok":
+        return False
+    last = s.get("notified") if isinstance(s.get("notified"), dict) else {}
+    if RANK.get(lvl, 0) > RANK.get(last.get("level"), 0):
+        return True
+    return time.time() - float(last.get("when") or 0) > DAY
 
 
 def notify(msg):
@@ -522,6 +547,8 @@ def due():
 
 
 def start_in_background(job_running=lambda: False, first=120, every=3600):
+    if os.environ.get("HYPNOMIX_DISKCARE", "").lower() in ("off", "0", "no", "false"):
+        return                                                      # test and preview copies of the app
     def loop():
         time.sleep(first)
         while True:
