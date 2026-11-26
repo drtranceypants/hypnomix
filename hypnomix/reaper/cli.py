@@ -8,6 +8,9 @@
   hypnomix reaper fx [FILTER]     plug-ins REAPER has installed (e.g. `fx Rea`, `fx JS:`)
   hypnomix reaper params TRACK FX every parameter of one plug-in as the plug-in shows it (TRACK: name, number or
                                   master; FX: name or number)
+  hypnomix reaper record          Record and review before export (the same as the button on Hypnomix Main): plays
+                                  from the edit cursor while the probes listen; run it again or stop REAPER, and the
+                                  hypnomix app renders exactly what played and reviews it
   hypnomix reaper review          the Hypnomix panel in REAPER: step through the app's review, A / B / Blind
   hypnomix reaper probes install|insert SONG.rpp|cards SONG.rpp
                                   Hypnomix Probe and Hypnomix Main for REAPER (JSFX): see `hypnomix reaper probes -h`
@@ -31,7 +34,7 @@ def main():
     if len(_sys.argv) > 1 and _sys.argv[1] == "review":
         from hypnomix.reaper import review
         return review.main(_sys.argv[2:])
-    ap.add_argument("cmd", choices=["start", "stop", "status", "tracks", "fx", "params", "probes", "review"])
+    ap.add_argument("cmd", choices=["start", "stop", "status", "tracks", "fx", "params", "probes", "review", "record"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
@@ -41,6 +44,12 @@ def main():
             r.start()
             p = r.ping()
             print(f"bridge running in REAPER {p['reaper']}; project: {p['project'] or '(unsaved)'}")
+            return
+        if a.cmd == "record":
+            out = r.call("record")
+            print({"start": "recording the master from the edit cursor: run it again (or stop REAPER) to review",
+                   "stop": "stopped: the hypnomix app renders what played and reviews it",
+                   "no app": "the hypnomix app is not relaying (start `hypnomix app`, with the bridge running)"}[out["did"]])
             return
         if a.cmd == "stop":
             r.stop()

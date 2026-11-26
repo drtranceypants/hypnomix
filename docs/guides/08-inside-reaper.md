@@ -185,7 +185,8 @@ The menus are saved in the project, so `scan` reads them (`hypnomix reaper probe
 reads). With the app open, press **Record** in its Live tab, play the song or a section in REAPER, press **Stop**: the
 review is made from what was heard (frequency fights while parts play together, the lead vocal against the band
 section by section, a low end that is not mono, Main's loudness against the card). From a terminal:
-`hypnomix probe listen` while you play, then `hypnomix probe report`.
+`hypnomix probe listen` while you play, then `hypnomix probe report`. To review the whole master before export
+in one go, see section 9.
 
 Measured against the same audio offline: loudness within 0.04 LU of a BS.1770 meter, peak, stereo correlation (also
 below 120 Hz) and mid/side exactly. When the bridge starts it gives each probe a slot number (a hidden setting), so
@@ -223,6 +224,26 @@ not from the A/B project. Track names and order cannot be heard, so they are not
 has tracks in it is not copied (its fix is listed: apply it alone to hear it). If the panel is not the window in
 front, the first click only brings it forward.
 
+## 9. Review before export
+
+With the probes in the project (section 7), the bridge running and the hypnomix app open, press **Record and review
+before export** on Hypnomix Main (open its window on the master), or run `hypnomix reaper record`.
+
+REAPER plays from the edit cursor (or carries on, if it is already playing) while every probe listens, and Main's
+window shows how long it has been recording. Press **Stop and review** (or run the command again, or just stop
+REAPER) and the app:
+
+- has REAPER render the master for **exactly the stretch that played** (32-bit float, into the app's `bounces`
+  folder; your render settings are put back afterwards). It is a render rather than a live recording, so nothing
+  can drop out, and it sounds exactly like what you heard;
+- reviews it the same way as Live's Record and review: the live findings from the probes, loudness and true peak
+  against Main's song card, `qc`, `translate`, and `master --plan` with the card's target, ceiling, limiter
+  character and amount. The review opens in the app.
+
+If you loop a section, the review covers from where you started to the furthest point played. If Main's window
+says the app did not answer, open the app (`hypnomix app`) with the bridge running and press again. REAPER's own
+Render is still how you make the final file.
+
 ## Measured in REAPER
 
 | what | result |
@@ -238,7 +259,5 @@ front, the first click only brings it forward.
 ## Not yet in REAPER
 
 - Sidechain checks on compressors other than ReaComp (listed, not measured).
-- The one-button *Record and review before export* (Live only). In REAPER: `probe listen` while you play, and a
-  render of the master for `probe report --mix`.
 - Where a stretch marker squeezes or stretches a segment, hypnomix's own render reads it at a slightly different
   pitch than REAPER plays it (REAPER keeps the pitch). The timing is exact.

@@ -18,6 +18,7 @@ import os
 import platform
 import re
 import shutil
+import queue
 import threading
 import time
 import uuid
@@ -178,11 +179,40 @@ def insert(path, out=None):
 _FEEDERS = {}
 
 
+def handle(hub, ev, r):
+    """One Record and review event from the bridge. start: the app opens a capture (or says it cannot); stop: the
+    app closes the capture, has REAPER render the master for exactly what played, and reviews it."""
+    fn = getattr(hub, "on_record", None)
+    if fn is None:
+        raise RuntimeError("no app to review it (start `hypnomix app`)")
+    out = fn(ev, r)
+    if ev.get("ev") == "stop":
+        r.call("rec_status", code=4)
+    return out
+
+
 def feed(hub, interval=0.2):
     """Relay REAPER's probe blocks into a `probe.Hub` while the bridge runs (one thread per hub; quiet otherwise)."""
     if id(hub) in _FEEDERS:
         return _FEEDERS[id(hub)]
     stop = threading.Event()
+    jobs = queue.Queue()
+
+    def records():                                    # Record and review events, one at a time (a render takes a while)
+        from hypnomix.reaper.client import Reaper, ReaperError
+        while True:
+            ev = jobs.get()
+            r = Reaper(timeout=10.0)
+            try:
+                handle(hub, ev, r)
+            except Exception as e:                    # tell Main, so the button does not hang on "rendering"
+                try:
+                    r.call("rec_status", code=3)
+                except (ReaperError, OSError):
+                    pass
+                print(f"record and review: {e}", flush=True)
+
+    threading.Thread(target=records, daemon=True, name="reaper-record").start()
 
     def run():
         from hypnomix.app.probe import signature
@@ -195,7 +225,7 @@ def feed(hub, interval=0.2):
                     since = None
                     stop.wait(2.0)
                     continue
-                d = r.call("probe_blocks", since=since if since is not None else 10 ** 12)
+                d = r.call("probe_blocks", since=since if since is not None else 10 ** 12, rec=1)
                 if since is None:                         # first contact: only what comes from now on
                     since = int(d.get("seq") or 0)
                 else:
@@ -203,6 +233,8 @@ def feed(hub, interval=0.2):
                         hub.on_block(b["id"], b["name"], 1 if b["main"] else 0, b["beat"], b["playing"], b["fader"],
                                      b["pan"], b["sr"], *b["vals"])
                         since = max(since, int(b["seq"]))
+                for ev in d.get("rec") or []:
+                    jobs.put(ev)
                 sig = signature(d.get("names") or [])
                 for m in d.get("meta") or []:
                     params = m.get("params") if isinstance(m.get("params"), dict) else {}

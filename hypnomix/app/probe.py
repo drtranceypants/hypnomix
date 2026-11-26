@@ -655,6 +655,7 @@ class Hub:
         self.gain = {}                    # probe id -> dB the probe should apply (A/B loudness match)
         self.server = None
         self.meta = {}                    # id -> dict(name, main, sig, params, chords, at)
+        self.on_record = None             # REAPER's Record and review: fn(event, reaper client), set by the app
 
     def on_meta(self, tid, name, main, sig, params, chords=""):
         try:

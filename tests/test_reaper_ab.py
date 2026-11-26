@@ -153,10 +153,23 @@ class Panel(unittest.TestCase):
 
 class MainMatch(unittest.TestCase):
     def test_main_has_the_match_gain(self):
-        txt = (ROOT / "hypnomix" / "reaper" / "jsfx" / "hypnomix_main.jsfx").read_text()
-        self.assertIn("-match gain dB (set by hypnomix during A/B)", txt)   # hidden slider
-        self.assertIn("match_g=10^(match/20)", txt.replace(" ", ""))
-        self.assertIn("spl0*=match_g", txt.replace(" ", ""))
+        jd = ROOT / "hypnomix" / "reaper" / "jsfx"
+        main, inc = (jd / "hypnomix_main.jsfx").read_text(), (jd / "hypnomix_meter.jsfx-inc").read_text()
+        self.assertIn("slider9:abgain=0<-12,12,0.01>-match gain dB (set by hypnomix during A/B)", main)  # hidden slider
+        self.assertIn("match_g=10^(abgain/20)", inc.replace(" ", ""))
+        self.assertTrue(inc.rstrip().endswith("spl0 *= match_g; spl1 *= match_g;        // after measuring: Main reports the level before matching"))
+
+    def test_main_keeps_the_meter_sections(self):
+        """An effect's own @init/@slider/@sample REPLACE the imported ones in REAPER (measured in 7.86: Main stopped
+        measuring), so Main may only add @gfx; and `match` is a built-in EEL2 function, never a variable."""
+        import re
+        jd = ROOT / "hypnomix" / "reaper" / "jsfx"
+        for f in ("hypnomix_main.jsfx", "hypnomix_probe.jsfx"):
+            txt = (jd / f).read_text()
+            self.assertEqual([x for x in re.findall(r"^@(\w+)", txt, re.M) if x != "gfx"], [], f)
+        for f in jd.iterdir():
+            names = re.findall(r"^slider\d+:(\w+)=", f.read_text(), re.M)
+            self.assertFalse({n.lower() for n in names} & {"match", "matchi", "strlen", "sprintf", "printf", "str_setlen"}, f.name)
 
 
 if __name__ == "__main__":

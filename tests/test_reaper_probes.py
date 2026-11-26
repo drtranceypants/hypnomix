@@ -45,6 +45,7 @@ class ReaperProbes(unittest.TestCase):
         """JSFX variable names are case-insensitive: N and n are one variable (that bug made every sample a block)."""
         for f in P.JSFX.iterdir():
             src = re.sub(r"//[^\n]*", "", f.read_text())
+            src = re.sub(r'"[^"\n]*"', '""', src)                  # text in quotes is not a variable
             src = "\n".join(l for l in src.splitlines() if not l.startswith(("slider", "desc:", "in_pin", "out_pin")))
             names = collections.defaultdict(set)
             for w in re.findall(r"(?<![.\w$])([A-Za-z_]\w*)", src):

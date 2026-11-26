@@ -320,8 +320,10 @@ def card_save(sig, chords=None, params=None):
 MASTER = {"path": "", "song": ""}
 
 
-def master_record(body):
-    """Main's Record and review: start → a file to record into (and the probes start listening); stop → the review."""
+def master_record(body, render=None):
+    """Main's Record and review: start → a file to record into (and the probes start listening); stop → the review.
+    `render(path)` writes the recording first (REAPER renders what played, after the capture is closed, so the
+    render's own meter readings are not in it); Live's device has already recorded it."""
     hub = PROBE["hub"]
     if body.get("state") == "start":
         if JOB["status"] == "running":
@@ -333,7 +335,14 @@ def master_record(body):
             hub.begin("master")
         return {"path": MASTER["path"]}
     path = body.get("path") or MASTER["path"]
+    if not path:
+        d = work() / "bounces"
+        d.mkdir(parents=True, exist_ok=True)
+        path = str(d / f"master-{time.strftime('%Y%m%d-%H%M%S')}.wav")
     cap = hub.end(work() / "captures", "master") if hub and hub.capture is not None else None
+    if render:
+        render(path)
+    MASTER["path"] = ""
     sig = body.get("sig") or "song"
     name = safe(f"Pre-export {time.strftime('%Y-%m-%d %H%M')}")
     d = work() / "scan" / name
@@ -350,17 +359,31 @@ def master_record(body):
         flags += ["--limiter-mode", pr["mode"]]
     if isinstance(pr.get("amount"), (int, float)):
         flags += ["--amount", str(pr["amount"])]
-    steps.append(("Release checks on the recorded master", ["qc", path] + (["--target", str(pr["target"])] if "target" in flags else []), False))
+    steps.append(("Release checks on the recorded master", ["qc", path] + (["--target", str(pr["target"])] if "--target" in flags else []), False))
     steps.append(("How it translates (mono, phone, earbuds, car, codecs)", ["translate", path], False))
     steps.append(("Mastering moves, as proposals", ["master", path, "--plan", str(d)] + flags, False))
     run_job("probe", "Review before export", steps, d)
     return {"job": JOB["id"], "dir": str(d)}
 
 
+def reaper_record(ev, r):
+    """REAPER's Record and review (Hypnomix Main's button, through the bridge): the same review as Live's device."""
+    if ev.get("ev") == "start":
+        return master_record({"state": "start"})
+    card = PROBE["hub"].song_card() if PROBE["hub"] else {}
+    start, end = float(ev["start"]), float(ev["end"])
+    if end - start < 1.0:
+        raise RuntimeError("less than a second was played")
+    return master_record({"state": "stop", "sig": card.get("sig") or "song", "params": card.get("song") or {}},
+                         render=lambda path: r.render_master(start, end, path))
+
+
 def start_probe_hub():
     try:
         from hypnomix.app.probe import Hub
-        PROBE["hub"] = Hub().start()
+        h = Hub()
+        h.on_record = reaper_record
+        PROBE["hub"] = h.start()
         PROBE["error"] = ""
     except Exception as e:                    # the port is taken (another app, or `hypnomix probe listen`)
         PROBE["error"] = f"UDP port 8792 is in use ({e}); close the other program using it: it is tried again every few seconds"

@@ -58,6 +58,11 @@ function clear() (
 );
 clear();
 
+match_g = 1;                              // A/B loudness match (Main's hidden slider9 `abgain`; 1 on probes)
+
+@slider
+match_g = 10 ^ (abgain / 20);            // `abgain` is only defined on Main (0 elsewhere). Not `match`: a built-in
+
 @sample
 L = spl0; R = spl1;
 kl = kl2.bq(kl1.bq(L, k1b0, k1b1, k1b2, k1a1, k1a2), k2b0, k2b1, k2b2, k2a1, k2a2);
@@ -96,3 +101,4 @@ fill >= blocklen ? (
   );
   fill = 0; clear();
 );
+spl0 *= match_g; spl1 *= match_g;        // after measuring: Main reports the level before matching

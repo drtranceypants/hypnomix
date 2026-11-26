@@ -416,7 +416,69 @@ function C.transport(a)
   return { state = reaper.GetPlayState(), pos = reaper.GetPlayPosition() }
 end
 
+
+-- ------------------------------------------------------------------ Record and review before export
+-- Hypnomix Main's button counts presses in gmem[8]; the state Main shows is gmem[9] (0 idle, 1 recording,
+-- 2 rendering, 3 no app, 4 reviewing in the app) and gmem[10] the seconds recorded. While recording, the probes
+-- listen as usual; on stop the app renders the master for exactly the stretch that played (`render_master`) and
+-- reviews it. The events go to the app's relay with `probe_blocks rec=1` (one reader: the app that owns the probes).
+local GM_PRESS, GM_STATE, GM_SECS = 8, 9, 10
+local rec = { on = false, start = 0, last = 0, began = 0, presses = nil, events = {}, fed = 0 }
+
+local function rec_begin()
+  local playing = reaper.GetPlayState() & 1 == 1
+  rec.start = playing and reaper.GetPlayPosition() or reaper.GetCursorPosition()
+  rec.last, rec.on, rec.began = rec.start, true, reaper.time_precise()
+  if not playing then reaper.OnPlayButton() end
+  reaper.gmem_write(GM_STATE, 1); reaper.gmem_write(GM_SECS, 0)
+  rec.events[#rec.events + 1] = { ev = "start", pos = rec.start }
+end
+
+local function rec_finish(stop_transport)
+  rec.on = false
+  if stop_transport and reaper.GetPlayState() & 1 == 1 then reaper.OnStopButton() end
+  reaper.gmem_write(GM_STATE, 2)
+  rec.events[#rec.events + 1] = { ev = "stop", start = rec.start, ["end"] = rec.last }
+end
+
+local function rec_toggle()
+  if rec.on then rec_finish(true); return "stop" end
+  if reaper.time_precise() - rec.fed > 3 then          -- nobody to review it: the app's relay is not polling
+    reaper.gmem_write(GM_STATE, 3); return "no app"
+  end
+  rec_begin(); return "start"
+end
+
+local function rec_poll()
+  if not attached then reaper.gmem_attach("hypnomix"); attached = true end
+  local p = reaper.gmem_read(GM_PRESS)
+  if rec.presses == nil then rec.presses = p end
+  if p ~= rec.presses then rec.presses = p; rec_toggle() end
+  if rec.on then
+    if reaper.GetPlayState() & 1 == 1 then
+      local pos = reaper.GetPlayPosition()
+      if pos > rec.last then rec.last = pos end         -- loop playback wraps back: keep the furthest point
+      reaper.gmem_write(GM_SECS, rec.last - rec.start)
+    elseif reaper.time_precise() - rec.began > 0.5 then
+      rec_finish(false)                                 -- REAPER was stopped (or reached the end)
+    end
+  end
+end
+
+function C.record()             -- the same as pressing Main's button
+  if not attached then reaper.gmem_attach("hypnomix"); attached = true end
+  return { did = rec_toggle(), recording = rec.on, start = rec.start, ["end"] = rec.last }
+end
+
+function C.rec_status(a)        -- the app says how it went; 3 (it could not) also stops a recording
+  local code = tonumber(a.code) or 0
+  if code == 3 and rec.on then rec.on = false; if reaper.GetPlayState() & 1 == 1 then reaper.OnStopButton() end end
+  reaper.gmem_write(GM_STATE, code)
+  return { state = code }
+end
+
 function C.probe_blocks(a)
+  if a.rec == "1" then rec.fed = reaper.time_precise() end   -- a relay that reviews recordings
   local since = tonumber(a.since or "0") or 0
   local out = {}
   for _, b in ipairs(probes.buf) do if b.seq > since then out[#out + 1] = b end end
@@ -436,7 +498,9 @@ function C.probe_blocks(a)
     meta[#meta + 1] = { id = 900000 + f.slot, name = probe_name(f), main = f.main, params = params }
   end
   for i = 0, reaper.CountTracks(0) - 1 do names[#names + 1] = select(2, reaper.GetTrackName(reaper.GetTrack(0, i))) end
-  return { seq = probes.seq, blocks = out, meta = meta, names = names }
+  local evs = {}
+  if a.rec == "1" then evs = rec.events; rec.events = {} end
+  return { seq = probes.seq, blocks = out, meta = meta, names = names, rec = evs }
 end
 
 -- ------------------------------------------------------------------ the Hypnomix panel (review and A/B)
@@ -578,6 +642,8 @@ local last_beat = 0
 local function loop()
   local okp, errp = pcall(probe_poll)
   if not okp then probes.err = tostring(errp) end
+  local okr, errr = pcall(rec_poll)
+  if not okr then probes.err = "record: " .. tostring(errr) end
   if panel.open then
     local okd, errd = pcall(panel_draw)
     if not okd then panel.flash = "panel: " .. tostring(errd); panel.flash_until = reaper.time_precise() + 10 end

@@ -16,6 +16,7 @@ Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER"
 | `hypnomix/workflow/timing_project.py` | Live's timing judgement (`session/timing.judge`) on hits read from items; nudges written as stretch markers (`SM`), anchored on every onset either side |
 | `hypnomix/workflow/sidechain_project.py` | sidechained ReaComps: found by their detector channel and the sends landing there, simulated with Live's `sidechain` model, suggestions written as ReaComp floats |
 | `hypnomix/reaper/jsfx/`, `reaper/probes.py` | Hypnomix Probe / Main as JSFX: 20 values per 100 ms into gmem `hypnomix`; the bridge assigns slots and keeps blocks (`probe_blocks`); `probes.feed` relays them into the app's `probe.Hub`; `insert` and `read_cards` for `.rpp` |
+| Record and review (`bridge.lua` `rec_*`, `probes.handle`, `server.reaper_record`) | Main's `@gfx` button adds 1 to gmem[8]; the bridge plays from the cursor, keeps start and furthest position, and queues start/stop events for `probe_blocks rec=1` (only a relay that asks gets them, and only it counts as "an app is there"); state back to Main in gmem[9] (0 idle, 1 recording, 2 rendering, 3 no app, 4 reviewing), seconds in gmem[10]. On stop the app closes the probe capture FIRST (a render runs every JSFX again and would add its blocks), renders `render_master(start, end)` and runs the same review steps as Live's `master_record`. `hypnomix reaper record` = a press |
 | `hypnomix/workflow/edges_project.py` | Live's word-edge detectors on the model; the REAPER edge fixes |
 | `hypnomix/workflow/fix_project.py` | `fix` for an `.rpp`: one pass into one new file, structure check, re-measure |
 | `hypnomix/reaper/bridge.lua`, `client.py`, `cli.py` | the bridge into the open REAPER, and `hypnomix reaper` |
@@ -107,6 +108,10 @@ change is one undo step. Things that bit:
   that is already gone, or a stale listing answers it twice.
 - Lua's `tonumber` does not read `+0.00`; displays also show `-inf` and `inf`.
 - Plug-in displays can be Latin-1 (`°`): decode answers leniently.
+- JSFX `import`: an effect's own `@init` / `@slider` / `@sample` REPLACE the imported file's sections (they do not
+  add to them). Hypnomix Main had its own `@init`/`@sample` for the A/B gain and silently stopped measuring; the gain
+  now lives in the include (`abgain`, 0 = unity on probes) and Main only adds `@gfx`. A test keeps it that way.
+- `match` is a built-in EEL2 string function: a slider or variable with that name stops the effect compiling.
 - The panel is a `gfx` window: it reads the real mouse, so background (synthetic) clicks do not reach it, and the
   first click on it while REAPER is behind another app only focuses it. Redraws lag a poll or two.
 - Closing a changed project tab asks "save?", and a dialog stops the bridge. Save a throwaway copy, reopen it with
