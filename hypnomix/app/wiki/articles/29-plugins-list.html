@@ -1,0 +1,19 @@
+<!--
+title: Which plug-ins you have
+sub: hypnomix plugins · list what is installed, check it loads, keep the list so proposals only name what you have
+group: How-to
+teaser: hypnomix plugins lists the plug-ins installed on this computer (VST3, Audio Units, CLAP, LV2), marks the free ones it knows, can load each one safely, and keeps the list in your preferences so a proposal never names something you don't have.
+-->
+<div class="prose paper">
+      <p><b>What it does.</b> <code>hypnomix plugins</code> looks in the standard plug-in folders of your computer and lists what is there, by format: VST3, Audio Units (on a Mac), CLAP and LV2. The ones that are on the <a data-wiki="plugins" href="#">free list</a> in the README are marked, so a proposal can use them. Every other plug-in is listed but never proposed. Nothing is changed: the only file it ever writes is your preferences, and only when you ask.</p>
+      <p><b>Try it.</b></p>
+      <pre>hypnomix plugins                       # what is installed
+hypnomix plugins --free                # only the free list
+hypnomix plugins --check               # also load each one, without its window
+hypnomix plugins --save                # keep the list in your preferences
+hypnomix plugins --json                # the same as data, for an agent</pre>
+      <p><b>Checking that each one loads.</b> <code>--check</code> opens every VST3 and Audio Unit once, without showing its window, to see that it starts. Each plug-in is opened in its own process with a time limit (<code>--timeout</code>, 60 seconds by default), so one that crashes or hangs is listed as FAILED with the reason, and the run goes on to the next. It needs the optional <code>plugins</code> extra (the same one <code>plugrender</code> uses). CLAP and LV2 plug-ins are listed as found but marked "not checked", because the host can only open VST3 and Audio Units.</p>
+      <p><b>Keeping the list.</b> <code>--save</code> writes two things into your preferences: <code>tools.plugins</code>, the free-list plug-ins you have (and, with <code>--check</code>, that load), and <code>tools.plugins_found</code>, everything found. Plug-ins you added by hand to <code>tools.plugins</code> stay unless you give <code>--replace</code>. <code>hypnomix prefs</code> shows the list. <a data-wiki="colour" href="#">colour</a> reads it, so it only names plug-ins you have.</p>
+      <p><b>If yours live somewhere else.</b> Add the folder with <code>--folder FORMAT=DIR</code> (for example <code>--folder vst3=D:\Plugins</code>), as often as you like, or use <code>--no-system</code> to look only there.</p>
+      <p><b>Limits.</b> It reads folders, not a host's own scan: a plug-in in a folder hypnomix doesn't know isn't listed until you add the folder. Audio Units are read from their Info.plist, the others by file name. It does not say whether a plug-in is licensed or in a demo period; "loads" means it started.</p>
+    </div>

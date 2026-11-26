@@ -59,7 +59,7 @@ QUESTIONS = [
          why="existing automation and effects are treated as your intent; this list is shown on every review"),
     dict(key="taste.notes", ask="Anything about your sound an engineer should know? (references, 'vocals up front', …)",
          options=None, default=[], why="taste calls are always asked; this just makes the first proposal closer"),
-    dict(key="tools.plugins", ask="Which free plug-ins do you have installed? (names, commas; empty = stock only)",
+    dict(key="tools.plugins", ask="Which free plug-ins do you have installed? (names, commas; empty = stock only; `hypnomix plugins --save` fills it in)",
          options=None, default=[], why="proposals only name devices you actually have"),
 ]
 LISTS = {"protect.tracks", "protect.notes", "taste.notes", "tools.plugins"}
