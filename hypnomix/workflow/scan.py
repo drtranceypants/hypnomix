@@ -21,6 +21,7 @@ Groups (each can run on its own with --only, so several agents can scan in paral
            sidechain compressors, device-chain audit            (distortion, sidechain, audit)
   devices  every Live device on every track, judged by what it does to that track's own audio   (devices)
   mix      loudness, true peak, release checks, translation     (measure, qc, translate; needs --mix)
+           and, if `hypnomix profile build` was run, the mix against your own ranges (--no-profile skips it)
   noise    takes whose big clip-gain boost lifts their noise floor into the mix
   intent   "is this deliberate?": every automated control, big clip gains, hard pans, switched-off tracks
   structure  the set's structure and level extremes, from the XML alone
@@ -650,6 +651,14 @@ def g_mix(als, od, a, tempo=None):
         save(od / "raw" / f"{tool}.txt", out)
         if tool == "measure":
             findings += target_check(out)
+        sev = "high" if (tool == "qc" and code != 0) else "info"       # one line per tool; a failed release check is loud
+        findings.append(dict(id=f"mix-{n}", tool=tool, kind=tool, severity=sev, track="mix", where="",
+                             problem=f"{tool} of the mix" + (" FAILED release checks" if sev == "high" else ""),
+                             fix=out.strip()[:1500], applies="manual" if sev == "high" else "info"))
+    notes = []
+    if profile_wanted(a):               # the mix against the person's OWN ranges, from the numbers measure just wrote
+        f, notes = profile_check(od / "raw" / "measure" / (Path(a.mix).stem + ".json"), skip={x["id"] for x in findings})
+        findings += f
     try:  # sections: needs the tempo, which a set knows
         from hypnomix.session import automation as aa
         from hypnomix.ears import sections as SE
@@ -671,11 +680,7 @@ def g_mix(als, od, a, tempo=None):
         except Exception as e:
             findings.append(dict(id="match-0", tool="match", kind="match", severity="info", track="mix", where="",
                                  problem=f"reference comparison failed ({e})", fix="", applies="info"))
-        sev = "high" if (tool == "qc" and code != 0) else "info"
-        findings.append(dict(id=f"mix-{n}", tool=tool, kind=tool, severity=sev, track="mix", where="",
-                             problem=f"{tool} of the mix" + (" FAILED release checks" if sev == "high" else ""),
-                             fix=out.strip()[:1500], applies="manual" if sev == "high" else "info"))
-    return findings, []
+    return findings, notes
 
 
 def target_check(measure_out):
@@ -703,6 +708,160 @@ def target_check(measure_out):
                               "Normal for an unmastered mix; it matters for a master.",
                       fix=f"`hypnomix master MIX.wav --target {lufs_t:g}` when the mix is approved"))
     return f
+
+
+# ---------------------------------------------------------------- the mix against the person's own sound (profile)
+PROFILE_SPEC = {   # measure: (what it is, unit, decimals, ignore a miss under, words if above, words if below, listen above, listen below)
+    "integrated_lufs": ("loudness", "LUFS", 1, 1.0, "louder", "quieter",
+                        "does it still breathe? Match the level to one of your finished songs, then compare",
+                        "does it feel small next to your finished songs once the level is matched?"),
+    "lra_lu": ("loudness range (how much the loudness moves over the song)", "LU", 1, 1.0, "wider", "narrower",
+               "do quiet parts get lost, or loud parts jump out?",
+               "does it feel flat, with sections that no longer lift?"),
+    "crest_factor_db": ("punch (the gap between the peaks and the average level)", "dB", 1, 0.5, "peakier", "flatter",
+                        "do single hits (snare, vocal consonants) poke out?",
+                        "do drums and plucked sounds keep their snap, or do they feel squashed?"),
+    "short_term_spread_lu": ("how much the loudness changes between sections", "LU", 1, 1.0, "bigger", "smaller",
+                             "do the jumps from verse to chorus feel bigger than you meant?",
+                             "do the sections feel the same level, with no lift where the chorus comes in?"),
+    "spectral_centroid_hz": ("brightness (the average centre of the sound)", "Hz", 0, 100, "brighter", "darker",
+                             "harsh cymbals, s sounds and strings; check it on small speakers",
+                             "do the vocal and the snare still cut through, or does the top sound dull?"),
+    "rolloff_85_hz": ("top end (the frequency under which 85% of the sound sits)", "Hz", 0, 300, "higher", "lower",
+                      "hiss, harsh cymbals and edgy air; check it on small speakers",
+                      "does it sound closed in or dull on top next to your finished songs?"),
+    "band_sub_20_60": ("sub bass (20 to 60 Hz) share of the sound", "dB", 1, 1.0, "more", "less",
+                       "does the very low end boom, or eat the headroom?", "does the bottom feel missing or thin?"),
+    "band_bass_60_250": ("bass (60 to 250 Hz) share of the sound", "dB", 1, 1.0, "more", "less",
+                         "does the bass boom or crowd the kick and the low guitar and keys?",
+                         "does it sound thin, with the bass far behind the other parts?"),
+    "band_lowmid_250_500": ("low mids (250 to 500 Hz) share of the sound", "dB", 1, 1.0, "more", "less",
+                            "does it sound boxy or muddy?", "does it sound hollow, with the body of the parts missing?"),
+    "band_mid_500_2k": ("mids (500 Hz to 2 kHz) share of the sound", "dB", 1, 1.0, "more", "less",
+                        "does it sound honky or crowded, with parts fighting for the same space?",
+                        "does it sound scooped, with the vocal and the guitars pushed back?"),
+    "band_highmid_2k_6k": ("upper mids (2 to 6 kHz) share of the sound", "dB", 1, 1.0, "more", "less",
+                           "does it sound harsh or tiring, especially on the vocal?",
+                           "does the vocal lose its edge, so the words are harder to follow?"),
+    "band_air_6k_20k": ("air (6 to 20 kHz) share of the sound", "dB", 1, 1.0, "more", "less",
+                        "hiss, sharp s sounds and bright cymbals", "does it sound dull or closed in?"),
+    "side_to_mid_db": ("width (the side level against the middle level)", "dB", 1, 1.0, "wider", "narrower",
+                       "check it in mono: do parts vanish or go thin, and does the middle (vocal, kick) stay solid?",
+                       "does it feel narrow or boxed in? Are the parts that should be wide (pads, guitars) panned out?"),
+    "lr_correlation": ("left-right match (1 means both sides are the same)", "", 2, 0.05, "more alike on both sides",
+                       "less alike on the two sides", "does it sound narrower than your finished songs?",
+                       "does it sound wider than your finished songs? Check it in mono."),
+    "lr_corr_below_150hz": ("bass in the middle (left-right match below 150 Hz)", "", 2, 0.03,
+                            "more centred", "less centred",
+                            "nothing to fix by itself: a centred low end is what most players want",
+                            "is the bass spread to the sides? Check it in mono and on a phone speaker: does the low end thin out?"),
+}
+PROFILE_MIN_SONGS = 3        # fewer songs than this give no range worth comparing with
+PROFILE_STEADY_SONGS = 5     # `hypnomix profile build` says five or more give useful ranges
+OFF_WORDS = ("off", "no", "false", "0")
+
+
+def profile_wanted(a):
+    """False with --no-profile or `hypnomix prefs set taste.profile=off`."""
+    if getattr(a, "no_profile", False):
+        return False
+    try:
+        from hypnomix.workflow import prefs as P
+        v = P.get(P.load(), "taste.profile")
+    except Exception:
+        return True
+    return not (v is False or str(v).strip().lower() in OFF_WORDS)
+
+
+def profile_values(m):
+    """{measure: number} for the profile's measures, from one `measure` result; {} when it has none to give."""
+    from hypnomix.session.profile import audio_metrics
+    if not isinstance(m, dict) or m.get("silent") or not isinstance(m.get("ffmpeg"), dict):
+        return {}
+    m = dict(m)
+    no_spread = not m.get("short_term_p10_p95")
+    if no_spread:
+        m["short_term_p10_p95"] = [0, 0]            # audio_metrics needs it; the spread itself is left out below
+    try:
+        v = audio_metrics(m)
+    except (KeyError, TypeError):
+        return {}
+    if no_spread:
+        v.pop("short_term_spread_lu", None)
+    return {k: float(x) for k, x in v.items() if k in PROFILE_SPEC and isinstance(x, (int, float)) and x == x}
+
+
+def own_range_findings(values, ranges, skip=(), skipped=None):
+    """One finding per measure outside the person's own range (their lowest to their highest song), as proposals
+    for the ears (applies manual, nothing to change). Returns (findings, how many measures were compared). A
+    measure that is outside the range but already said by the target check is left out of the findings and its
+    name is added to the list `skipped` (when given), so a count of measures outside can include it."""
+    out, compared = [], 0
+    for key, (what, unit, dec, tol, up, down, listen_up, listen_down) in PROFILE_SPEC.items():
+        r, v = ranges.get(key), values.get(key)
+        if not isinstance(r, dict) or v is None or not all(isinstance(r.get(k), (int, float)) for k in ("min", "max", "p25", "p75")):
+            continue
+        compared += 1
+        lo, hi = r["min"], r["max"]
+        miss = v - hi if v > hi else lo - v if v < lo else 0.0
+        if miss <= tol:
+            continue
+        if key == "integrated_lufs" and "mix-loudness" in skip:
+            if skipped is not None:
+                skipped.append(key)
+            continue                                  # the target check already said it, in its own words
+        above = v > hi
+        ratio = miss / max(r["p75"] - r["p25"], 2 * tol)
+        fmt = lambda x: f"{x:.{dec}f}"
+        u = f" {unit}" if unit else ""
+        du = " LU" if unit == "LUFS" else u           # a gap between two loudness levels is in LU, not LUFS
+        spread = f"sit at {fmt(lo)}{u}" if fmt(lo) == fmt(hi) else f"sit between {fmt(lo)} and {fmt(hi)}{u}"
+        steady = r.get("n", PROFILE_STEADY_SONGS) >= PROFILE_STEADY_SONGS
+        middle = "" if fmt(lo) == fmt(hi) else f" (middle {fmt(r['median'])}{u})"
+        problem = (f"{what}: your finished songs {spread} here{middle}; this mix is {fmt(v)}{u}, {fmt(miss)}{du} {'above' if above else 'below'} that ({up if above else down} than your songs)"
+                   + ("" if steady else f". Your profile has only {r.get('n')} songs, so treat the range as rough"))
+        mastered = key in ("integrated_lufs", "lra_lu", "crest_factor_db")
+        listen = listen_up if above else listen_down
+        fix = (f"Listen for: {listen if listen[-1] in '.?!' else listen + '.'} "
+               + ("A mix that is not mastered yet is often off here, so this may settle at mastering. " if mastered else "")
+               + "This compares the mix with your own songs, not with a rule: if it is deliberate, leave it. "
+                 "Nothing is changed.")
+        out.append(dict(id=f"mix-profile-{key}", tool="profile", kind="own-range", severity="medium" if ratio >= 1 else "low",
+                        track="mix", where="", applies="manual", problem=problem, fix=fix,
+                        confidence=0.9))     # the gap is measured; whether it matters is the person's call (it is a proposal)
+    return out, compared
+
+
+def profile_check(measure_json, skip=(), path=None):
+    """The mix against the person's own profile (`hypnomix profile build`), using the measurements the mix group
+    already made (raw/measure/<mix>.json): no second pass over the audio. Returns (findings, notes). Without a
+    profile there are no findings and one note that says how to add this check."""
+    from hypnomix.core.paths import PROFILE
+    from hypnomix.session.profile import profile_ranges
+    path = Path(path or PROFILE)
+    if not path.exists():
+        return [], ["mix: your own sound is not compared yet (`hypnomix profile build song1.wav song2.wav ...` adds this "
+                    "check; `--no-profile` turns it off)"]
+    try:
+        ranges = profile_ranges(path)
+    except Exception:
+        return [], ["mix: your profile could not be read, so the mix was not compared with your own sound "
+                    "(`hypnomix profile build ...` makes a new one)"]
+    n = max((r.get("n", 0) for r in ranges.values() if isinstance(r, dict)), default=0)
+    if n < PROFILE_MIN_SONGS:
+        return [], [f"mix: your profile has {n} song{'s' if n != 1 else ''}; from {PROFILE_MIN_SONGS} songs it gives "
+                    "ranges to compare with (five or more are steadier)"]
+    values = profile_values(AT.load_json(measure_json, {}) or {})
+    if not values:
+        return [], ["mix: no measurements of the mix were available, so it was not compared with your own sound"]
+    left_out = []
+    found, compared = own_range_findings(values, ranges, skip, left_out)
+    where = f"your profile of {n} songs"
+    outside = len(found) + len(left_out)             # the loudness the target check already said is still outside
+    if outside:
+        return found, [f"mix: compared with {where}: {outside} of {compared} measure{' sits' if outside == 1 else 's sit'} "
+                       "outside your usual range"]
+    return [], [f"mix: compared with {where}: all {compared} measures sit inside your usual range"]
 
 
 # ---------------------------------------------------------------- folder of recordings (no Live set)
@@ -1655,6 +1814,8 @@ def main():
     ap.add_argument("--key", help='song key for the vocal check, e.g. "F# major"')
     ap.add_argument("--like", metavar="REFERENCE.wav", help="a finished song you want this mix to sit next to: "
                     "tone, dynamics and width differences become proposals (needs --mix)")
+    ap.add_argument("--no-profile", action="store_true", help="do not compare the mix with your own profile "
+                    "(`hypnomix profile build`); `hypnomix prefs set taste.profile=off` turns it off for every scan")
     ap.add_argument("--out", help="output folder (default hypnomix-out/scan/<song>)")
     ap.add_argument("--only", action="append", choices=sorted(set(GROUPS + FOLDER_GROUPS + ["effects", "recordings"])), help="run only these groups (repeatable)")
     ap.add_argument("--vocal-track", action="append", help="vocal tracks to check (default: from `name`)")
@@ -1687,6 +1848,9 @@ def main():
     folder = als.is_dir() and not reaper
     if folder and not audio_files(als):
         sys.exit(f"no audio files (wav, aif, flac) in {als}")
+    if als.is_file() and als.suffix.lower() == ".als":      # a set from a newer Live: one warning line, the scan goes on
+        from hypnomix.session import liveversion as LV
+        LV.warn_read(als)
     od = scan_folder(a.out, als)
     from hypnomix.core import paths as _paths
     _paths.OUT = od / "raw" / "tools"                   # a scan writes only under its own folder: a tool that
