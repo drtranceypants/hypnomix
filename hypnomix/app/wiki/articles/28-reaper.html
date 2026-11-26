@@ -1,0 +1,52 @@
+<!--
+title: hypnomix in REAPER
+sub: scan a REAPER project, approve the fixes into a new .rpp, and master with REAPER's own plug-ins · REAPER can stay open
+group: How-to
+-->
+<p class="lead">hypnomix reads your REAPER project, lists what it finds, and writes only what you approve into a <b>new</b> project next to the original. Nothing is installed into REAPER and none of its settings change. Every step here was checked against REAPER 7.86 itself: hypnomix built test projects inside REAPER, had REAPER render them, and compared the result sample by sample with its own.</p>
+
+<h3 class="sub-h">1 · Look inside a project</h3>
+<div class="term" data-label="project"><pre><span class="p">$</span> hypnomix project "Song.rpp"            <span class="c"># tracks, folders, fader, pan, plug-ins, automation</span>
+<span class="p">$</span> hypnomix project "Song.rpp" --items    <span class="c"># every item: position, take, file, volume, fades</span>
+<span class="p">$</span> hypnomix project "Song.rpp" --render   <span class="c"># each track to a WAV, without opening REAPER</span></pre></div>
+<p>Renders include item and take volume, fades and crossfades, loops, sections, playrate and stretch markers; not faders, plug-ins or automation (these are the raw parts, for checking and for stems).</p>
+
+<h3 class="sub-h">2 · Scan, decide, fix</h3>
+<div class="term" data-label="first pass"><pre><span class="p">$</span> hypnomix scan "Song.rpp" --mix "Song mix.wav"                     <span class="c"># read-only → REVIEW.md</span>
+<span class="p">$</span> hypnomix review "hypnomix-out/scan/Song" --serve                  <span class="c"># a page: listen, approve / skip / change</span>
+<span class="p">$</span> hypnomix fix "hypnomix-out/scan/Song" --decide name-4=approve --note "Acoustic Guitar"
+<span class="p">$</span> hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).rpp"</pre></div>
+<p>The scan checks track names and order, missing files, clicks, level jumps at comp cuts, spikes, item edges that cut off the first sound of a word, vocal pitch and doubles, plug-ins switched off, the source recordings, boosted hiss, and things that look deliberate (asked about, never changed). <code>fix</code> writes everything you approved into <b>one new project</b>:</p>
+<div class="tablewrap"><table>
+  <tr><th>finding</th><th>what is written</th></tr>
+  <tr><td>click at an item edge</td><td>a 5 ms fade (an existing fade is never made shorter)</td></tr>
+  <tr><td>level jump at a comp cut</td><td>short fades either side, and a volume ride that eases the jump in over 300 ms</td></tr>
+  <tr><td>spike (a pop, a bump)</td><td>a quick dip in the track's volume over it (at most 3 dB on a "p" or "b" thump)</td></tr>
+  <tr><td>a word's first sound cut off</td><td>the item edge opened to just before the consonant; the audio stays exactly where it was</td></tr>
+  <tr><td>track names and order</td><td>renamed and reordered; folders keep their tracks, sends still come from the same tracks</td></tr>
+  <tr><td>vocal tuning</td><td>each take tuned into a new file and added to its items as a <b>new take</b>, made active</td></tr>
+</table></div>
+<p class="note-box">Your comp is never replaced by a rendered copy: a tuned vocal is a second take on each of your own items, so switching takes in REAPER gives you the original back. Volume rides multiply with what is already on the track's envelope, so a ride you drew yourself is kept and the fader is left alone. Every finding is found again before anything changes, the new file is read back and checked (same tracks, folders, items, sends), and the clip checks run again to say which problems are gone.</p>
+
+<h3 class="sub-h">3 · Master in REAPER, with REAPER's own plug-ins</h3>
+<div class="term" data-label="master"><pre><span class="p">$</span> hypnomix reaper start                                      <span class="c"># a small script inside the open REAPER</span>
+<span class="p">$</span> hypnomix chain master "Song mix.wav" --reaper --verify</pre></div>
+<p><code>reaper start</code> installs nothing and stops when REAPER quits (or <code>hypnomix reaper stop</code>). <b>Every change it makes is one undo step</b>, so Edit → Undo takes it back. The chain is built on REAPER's master from stock plug-ins only:</p>
+<div class="tablewrap"><table>
+  <tr><th>step</th><th>REAPER plug-in</th></tr>
+  <tr><td>clean the sub, tone</td><td>ReaEQ</td></tr>
+  <tr><td>glue</td><td>ReaComp</td></tr>
+  <tr><td>mono low end</td><td>JS Mid/Side Encoder → ReaEQ → ReaEQ → JS Mid/Side Decoder (only the bass goes mono; the stereo image above is untouched)</td></tr>
+  <tr><td>warmth, width (if asked for)</td><td>JS Saturation, JS Stereo Field Manipulator</td></tr>
+  <tr><td>loudness</td><td>ReaLimit</td></tr>
+</table></div>
+<p>With <code>--verify</code>, REAPER renders the loudest bars and ReaLimit is trimmed to your target; then the whole song is rendered for true peak, and the ceiling is pulled down if the signal between samples goes over (REAPER writes the file itself: no extra routing app). Plug-ins already on the master are never removed: <code>--existing bypass</code> switches them off, <code>--existing keep</code> builds after them.</p>
+
+<h3 class="sub-h">4 · Talk to the REAPER that is open</h3>
+<div class="term" data-label="reaper"><pre><span class="p">$</span> hypnomix reaper status            <span class="c"># version, open project, tempo, tracks</span>
+<span class="p">$</span> hypnomix reaper tracks            <span class="c"># each track with its plug-ins, fader and pan</span>
+<span class="p">$</span> hypnomix reaper fx Rea            <span class="c"># installed plug-ins with "Rea" in the name</span>
+<span class="p">$</span> hypnomix reaper params master 0   <span class="c"># every parameter of one plug-in, as it shows it</span></pre></div>
+
+<h3 class="sub-h">Not in REAPER yet</h3>
+<p>Moving vocal-stack items so the lowest harmony sits on the lowest track, timing nudges for out-of-time hits, sidechain checks, and the probe devices are Live-only for now. The full walk-through is guide 8, <i>hypnomix in REAPER</i> (PDF in <code>docs/guides/pdf/</code>).</p>
