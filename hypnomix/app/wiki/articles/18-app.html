@@ -51,9 +51,10 @@ group: Start here
 <span class="p">$</span> hypnomix device       <span class="c"># optional: puts the Max for Live device in your Live User Library</span>
 <span class="p">$</span> pip install "hypnomix[assistant]"   <span class="c"># optional: the Assistant tab (chat with your own AI key)</span>
 <span class="p">$</span> pip install "hypnomix[critique]"    <span class="c"># optional: the Listener (a Google model hears a bounce)</span></pre></div>
-    <h3 class="sub-h">Optional: make it a Mac app</h3>
+    <h3 class="sub-h">The Mac and Windows app</h3>
     <div class="prose paper">
-      <p>Prefer an icon in your Dock to a browser tab? You can build your own <b>Hypnomix.app</b>: a small window around the same web app, which starts and stops it for you. It takes about a minute, and you build it yourself so it is made for (and trusted by) your own Mac.</p>
+      <p><b>The easiest way to get it:</b> the installer for Mac or Windows from <a target="_blank" rel="noopener" href="https://hypnomix.bradfieldenterprises.org/download/">the download page</a>. On a Mac it's <b>Hypnomix.app</b>, a window of its own; on Windows the Start menu opens it in your browser. The first time it opens, a guided setup asks how you'd like to work (on your own, with an AI key, with a free model on your computer, or with Claude Code) and shows the costs and the pros and cons of each: <a data-wiki="setup-ai" href="#">Setting Up, and Choosing an AI</a>.</p>
+      <p><b>Installed from the source?</b> You can build the same Mac app yourself in about a minute, made for (and trusted by) your own Mac:</p>
       <p><b>1.</b> Install Apple's command line tools once, if you haven't: <code>xcode-select --install</code>.<br>
       <b>2.</b> In the hypnomix folder, run <code>macapp/build.sh</code>.<br>
       <b>3.</b> Open <code>macapp/dist/Hypnomix.app</code>, or drag it into Applications.</p>
