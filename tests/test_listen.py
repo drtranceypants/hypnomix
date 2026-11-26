@@ -154,5 +154,114 @@ class Listener(unittest.TestCase):
         self.assertEqual(tc["extra_content"], {"google": {"thought_signature": "SIG"}})
 
 
+class Context(unittest.TestCase):
+    """F3: what `critique` may read as text for a cloud model, and that the Assistant cannot run it."""
+
+    def setUp(self):
+        self.d = tempfile.TemporaryDirectory()
+        self.root = Path(self.d.name)
+        self.p = mock.patch.object(L, "CONF", self.root / "home" / ".hypnomix" / "ai.json")
+        self.p.start()
+
+    def tearDown(self):
+        self.p.stop()
+        self.d.cleanup()
+
+    def _file(self, rel, text="hello"):
+        f = self.root / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text)
+        return f
+
+    def test_normal_command_line_use_still_works(self):
+        prof = self._file("PROFILE.md", "my style")
+        meas = self._file("song.json", '{"lufs": -14}')
+        note = self._file("notes.txt", "n")
+        scan = self.root / "scan"
+        self._file("scan/REVIEW.md", "findings here")
+        out = L.context(scan=scan, measure=meas, profile=prof)
+        for want in ("my style", '{"lufs": -14}', "findings here"):
+            self.assertIn(want, out)
+        self.assertIn("n", L.context(profile=note))
+        (self.root / "scan2").mkdir()
+        self._file("scan2/findings.json", "{}")                       # a scan folder without a review: nothing to add
+        self.assertEqual(L.context(scan=self.root / "scan2"), "")
+        self.assertEqual(L.context(), "")
+
+    def test_profile_and_measure_take_only_plain_reports(self):
+        secret = self._file("home/.hypnomix/ai.json", '{"keys": {"openrouter": "sk-or-SECRET"}}')
+        cases = [secret,                                              # in a dot-directory (and the keys file itself)
+                 self._file("home/.hypnomix/preferences.json", "{}"),
+                 self._file("home/.zshrc", "export TOKEN=abc"),         # a dotfile, and not .md/.json/.txt
+                 self._file("notes/.hidden.md", "x"),                  # a dotfile with an allowed suffix
+                 self._file(".config/profile.md", "x"),                # in a dot-directory
+                 self._file("id_rsa", "-----BEGIN"),                    # not a report suffix
+                 self._file("script.py", "x"),
+                 self.root / "missing.md", self.root]                  # not there / a folder
+        for f in cases:
+            for kw in ("profile", "measure"):
+                with self.assertRaises(ValueError, msg=(kw, f)) as cm:
+                    L.context(**{kw: f})
+                self.assertNotIn("SECRET", str(cm.exception))
+        link = self.root / "innocent.json"                              # a link pointing at the keys file
+        link.symlink_to(secret)
+        with self.assertRaises(ValueError):
+            L.context(measure=link)
+        hidden_link = self.root / "x.md"
+        hidden_link.symlink_to(self.root / "home" / ".zshrc")
+        with self.assertRaises(ValueError):
+            L.context(profile=hidden_link)
+
+    def test_a_hard_link_to_the_keys_file_is_refused(self):
+        secret = self._file("home/.hypnomix/ai.json", '{"keys": {"openrouter": "sk-or-SECRET"}}')
+        hard = self.root / "ok" / "hard.json"
+        hard.parent.mkdir()
+        os.link(secret, hard)
+        for kw in ("profile", "measure"):
+            with self.assertRaises(ValueError) as cm:
+                L.context(**{kw: hard})
+            self.assertNotIn("SECRET", str(cm.exception))
+
+    def test_a_huge_file_is_refused_and_a_big_one_is_cut(self):
+        big = self._file("big.json", "x" * (L.MAX_CONTEXT_FILE + 1))
+        with self.assertRaises(ValueError) as cm:
+            L.context(measure=big)
+        self.assertIn("smaller", str(cm.exception))
+        ok = self._file("ok.txt", "y" * 50000)
+        self.assertEqual(len(L.context(profile=ok).split(":\n", 1)[1]), 6000)
+
+    def test_scan_takes_only_a_scan_folder(self):
+        self._file("docs/readme.md", "not a scan")
+        self._file("home/.ssh/config", "Host *")
+        for d in (self.root / "docs", self.root / "home", self.root, self.root / "nope", self._file("afile.md")):
+            with self.assertRaises(ValueError, msg=str(d)):
+                L.context(scan=d)
+        outside = self._file("elsewhere/secret.md", "TOP SECRET")      # a REVIEW.md that is a link out of the folder
+        scan = self.root / "linked"
+        scan.mkdir()
+        (scan / "REVIEW.md").symlink_to(outside)
+        with self.assertRaises(ValueError):
+            L.context(scan=scan)
+
+    def test_the_command_line_says_why_it_refuses(self):
+        with mock.patch("sys.argv", ["critique", str(self._file("a.wav")), "--profile",
+                                     str(self._file("home/.hypnomix/ai.json", "{}"))]), \
+                mock.patch.object(L, "estimate", return_value=dict(seconds=1.0, tokens=1, cost=None)), \
+                mock.patch.object(L, "listen") as sent:
+            with self.assertRaises(SystemExit) as cm:
+                L.main()
+        self.assertIn("hidden", str(cm.exception))
+        sent.assert_not_called()
+
+    def test_the_assistant_cannot_run_critique_even_with_listening_off(self):
+        CH.CHAT.update(items=[], pending=None)
+        with mock.patch.object(L, "listen") as sent, mock.patch.object(CH, "run_cli") as run:
+            out = CH.tool("run_hypnomix", {"command": "critique", "args": ["a.wav", "--profile", "/Users/x/notes.md"]})
+        self.assertIn("listen tool", out)
+        sent.assert_not_called()
+        run.assert_not_called()
+        self.assertTrue(CH.needs_ok("critique", ["a.wav"]))
+
+
 if __name__ == "__main__":
     unittest.main()
