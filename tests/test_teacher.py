@@ -24,7 +24,9 @@ class FakeLive:
     def inputs(self, t): return (["Ext. In", "Resampling"], ["1", "2", "1/2"], "Ext. In", "1")
     def set_input(self, t, kind=None, channel=None): self.calls.append(("input", kind, channel))
     def monitor(self, t, mode): self.calls.append(("monitor", mode))
-    def arm(self, t, on=True): self.calls.append(("arm", t, on))
+    def arm(self, t, on=True): self.calls.append(("arm", t, on)); self.armed_ = on
+    def armed(self, t): return getattr(self, "armed_", False) and not getattr(self, "no_input", False)
+    def devices(self, t): return ["Reverb"] if t == -2 and getattr(self, "has_reverb", False) else []
     def tid(self, t): return -1 if t == "Master" else -2 if t == "A" else self.tracks_.index(t) if t in self.tracks_ else 0
     def load_stock_device(self, t, name): self.calls.append(("device", t, name)); return 0
     def find_param(self, t, d, names):
@@ -138,6 +140,20 @@ class Actions(unittest.TestCase):
         self.assertIn(("arm", 1, True), c)
         with self.assertRaises(ValueError):
             self.live("tempo", "tempo", {"bpm": 900})
+
+    def test_live_track_without_an_audio_input(self):
+        lv = FakeLive(); lv.no_input = True
+        with mock.patch.object(T, "_live", return_value=lv):
+            r = T.run("live", "track", "track", {"name": "Vox", "input": 1})
+        self.assertIn("wouldn't arm", r["done"])
+        self.assertIn("Audio Input Device", r["by_hand"][0])
+
+    def test_live_reverb_reuses_the_return_s_reverb(self):
+        lv = FakeLive(); lv.has_reverb = True
+        with mock.patch.object(T, "_live", return_value=lv):
+            T.run("live", "reverb", "fx", {})
+        self.assertFalse([c for c in lv.calls if c[0] == "device"])
+        self.assertIn(("disp", "Dry/Wet", 100), lv.calls)
 
     def test_live_drums(self):
         r, c = self.live("drums", "drums", {"bars": 2})

@@ -336,6 +336,9 @@ class Live:
     def arm(self, track, on=True):
         self.send("/live/track/set/arm", self.tid(track), int(bool(on)))
 
+    def armed(self, track):
+        return bool(self.query("/live/track/get/arm", self.tid(track))[1])
+
     def inputs(self, track):
         tid = self.tid(track)
         return (list(self.query("/live/track/get/available_input_routing_types", tid)[1:]),

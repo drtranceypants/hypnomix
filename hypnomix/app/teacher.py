@@ -653,7 +653,9 @@ REC = {"busy": False, "msg": ""}
 
 def _fx_live(lv, fx, track):
     tid = lv.tid(track)
-    i = lv.load_stock_device(tid, fx["device"])
+    have = lv.devices(tid) if fx.get("track") else []
+    # a return that already has this effect (Live's default set has a Reverb on A) gets its settings, not a second one
+    i = have.index(fx["device"]) if fx["device"] in have else lv.load_stock_device(tid, fx["device"])
     done, by_hand = [], []
     for how, names, value in fx["set"]:
         p = None
@@ -800,6 +802,11 @@ def _run_live(step, kind, a):
                 by_hand.append(f"Choose Audio From → Ext. In → {ch} on the {name} track.")
             lv.monitor(tid, "auto")
             lv.arm(tid, True)
+            time.sleep(0.3)
+            if not lv.armed(tid):
+                return dict(done=f"Made the {name} track with monitoring on Auto, but Live wouldn't arm it.",
+                            by_hand=["Live has no audio input to record from: in Live's Settings → Audio, choose your audio "
+                                     f"interface as the Audio Input Device, then click the {name} track's Arm button."])
             return dict(done=f"Made the {name} track, recording from input {ch}, armed, monitoring Auto.", by_hand=by_hand)
         if kind == "record":
             bars = int(_num(a, "bars", 8, 1, 64))
@@ -815,8 +822,8 @@ def _run_live(step, kind, a):
                 except Exception as e:
                     REC["msg"] = f"Recording stopped: {e}"
                 finally:
+                    l2.close()                        # before "done": the next action needs Live's reply port
                     REC["busy"] = False
-                    l2.close()
             lv.close()
             lv = None
             threading.Thread(target=go, daemon=True).start()
@@ -826,8 +833,9 @@ def _run_live(step, kind, a):
             track = fx.get("track") or str(a.get("track") or "")
             if not track:
                 raise ValueError("which track?")
+            reuse = bool(fx.get("track")) and fx["device"] in lv.devices(lv.tid(track))
             done, by_hand = _fx_live(lv, fx, track)
-            return dict(done=f"Added {fx['device']} to {track}" + (f": {', '.join(done)}." if done else "."),
+            return dict(done=f"{'Set the' if reuse else 'Added'} {fx['device']} {'on' if reuse else 'to'} {track}" + (f": {', '.join(done)}." if done else "."),
                         by_hand=[f"Set by hand: {x}" for x in by_hand])
         if kind == "chain":
             from hypnomix.app.masterchain import STOCK
