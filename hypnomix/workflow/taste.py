@@ -29,15 +29,33 @@ from pathlib import Path
 
 import numpy as np
 
+from hypnomix.core import atomic
 from hypnomix.core.paths import out_at
 
-CACHE = Path.home() / ".hypnomix" / "cache"
-PROFILE = Path.home() / ".hypnomix" / "taste.json"
 v = lambda n, p: (n.find(p).get("Value") if n.find(p) is not None else None)
 ROLE_OF = [("lead", r"^Lead Vocal"), ("harmony", r"^(Harmony|Backing Vocal|Vocal)"), ("drums", r"^(Drums|Kick|Snare|Hats|Perc)"),
            ("bass", r"^Bass"), ("keys/guitar/synth", r"^(Keys|Piano|Guitar|Synth|Pad|Organ|Pluck)"),
            ("strings/other", r"^(Strings|Brass|Lead\b|FX)")]
 WARP = {"0": "Beats", "1": "Tones", "2": "Texture", "3": "Re-Pitch", "4": "Complex", "6": "Complex Pro"}
+
+
+def cache_dir():
+    """The cache `voices --learn` fills: <hypnomix home>/cache, the same place every other cache lives (HYPNOMIX_HOME)."""
+    from hypnomix.core.atomic import cache_root
+    return cache_root()
+
+
+def profile_path():
+    """Your taste profile: <hypnomix home>/taste.json (HYPNOMIX_HOME decides the home)."""
+    return cache_dir().parent / "taste.json"
+
+
+def __getattr__(name):                       # `taste.CACHE` (the library scan reads it) and `taste.PROFILE` follow HYPNOMIX_HOME
+    if name == "CACHE":
+        return cache_dir()
+    if name == "PROFILE":
+        return profile_path()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def cache_key(set_path):
@@ -76,7 +94,7 @@ def song(set_path, labels=None, require_lead=True, root=None):
     vocal (their levels against the lead are then left empty); `root` is an already-parsed set."""
     set_path = Path(set_path)
     if labels is None:
-        nj = CACHE / "names" / cache_key(set_path) / "names.json"
+        nj = cache_dir() / "names" / cache_key(set_path) / "names.json"
         if not nj.exists():
             return dict(song=set_path.stem, skipped="not studied yet: run `hypnomix voices --learn` on it first")
         labels = {r["old"]: (str(r.get("final") or r.get("label") or ""), float(r.get("confidence") or 0))
@@ -156,7 +174,7 @@ def song(set_path, labels=None, require_lead=True, root=None):
     wm = collections.Counter(w for r in voc for w in r["warp"])
     out["vocal_warp_modes"] = dict(wm.most_common(3))
     # harmony timing against the lead, from the cached renders
-    rd = CACHE / "renders" / cache_key(set_path)
+    rd = cache_dir() / "renders" / cache_key(set_path)
     safe = lambda n: re.sub(r'[\\/:*?"<>|]', "-", n)
     lp = rd / f"{safe(lead['track'])}.wav" if lead else Path("/nonexistent")
     tight = []
@@ -216,9 +234,9 @@ def across(songs):
     for s in ok:
         wm.update(s["vocal_warp_modes"])
     prof["vocal_warp_modes"] = dict(wm.most_common(3))
-    hs = Path.home() / ".hypnomix" / "harmony-style.json"
-    if hs.exists():
-        h = json.loads(hs.read_text())
+    hs = cache_dir().parent / "harmony-style.json"          # written by `voices --learn`, same home
+    h = atomic.load_json(hs, None)
+    if isinstance(h, dict):
         prof["harmonies"] = {k: h.get(k) for k in ("lead_margin", "lead_margin_median", "tolerance", "higher_minus_lower_median")}
     return prof
 
@@ -333,12 +351,11 @@ def main():
         print(f"  {Path(sp).stem}…", flush=True)
         songs.append(song(sp))
     prof = across(songs)
-    PROFILE.parent.mkdir(parents=True, exist_ok=True)
-    PROFILE.write_text(json.dumps(dict(profile=prof, songs=songs), indent=1, default=str))
+    atomic.write_json(profile_path(), dict(profile=prof, songs=songs), default=str)
     od = out_at(a.out, "taste")
     (od / "TASTE.md").write_text(report(prof, songs))
     print(report(prof, songs))
-    print(f"→ {od / 'TASTE.md'} and {PROFILE}")
+    print(f"→ {od / 'TASTE.md'} and {profile_path()}")
 
 
 if __name__ == "__main__":

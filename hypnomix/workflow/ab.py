@@ -37,6 +37,7 @@ What cannot (said in ab.json and on the review page, with the reason):
 Clip, tuning and timing previews are the track on its own, without effects; device previews are the track
 through its chain, without sends. Either way a pair shows what the fix does, not the final sound.
 """
+from hypnomix.core import atomic
 from hypnomix.extras import hint as extra_hint
 import argparse, json, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
@@ -160,7 +161,7 @@ def stale(scan, orig):
 def timing_args(sd, orig, tmp, ids, unroll):
     """The `timing` command that writes only these nudges into tmp, with the options the scan used."""
     tj = sd / "raw" / "timing.json"
-    d = json.loads(tj.read_text()) if tj.exists() else {}
+    d = atomic.load_json(tj, {}) or {}
     args = ["timing", orig, "--apply", tmp, "--ids", ",".join(ids), "--list", "0"]
     for t in d.get("tracks", []):
         args += ["--track", t]
@@ -277,15 +278,17 @@ def main():
                     help="also preview device changes through the track's plug-in chain (needs pedalboard)")
     a = ap.parse_args()
     sd = Path(a.scan_dir)
-    data = json.loads((sd / "findings.json").read_text())
-    scan = json.loads((sd / "scan.json").read_text()) if (sd / "scan.json").exists() else {}
+    data = atomic.load_json(sd / "findings.json", None)            # a cut-off file falls back to findings.json.bak
+    if not isinstance(data, dict) or "findings" not in data:
+        sys.exit(f"{sd / 'findings.json'} could not be read: scan again (or `hypnomix scan --merge {sd}`)")
+    scan = atomic.load_json(sd / "scan.json", {}) or {}
     want = {x.strip() for x in a.ids.split(",") if x.strip()}
     findings = [f for f in data["findings"] if f.get("applies") in ("set", "audio") and (not want or f["id"] in want)]
     od = sd / "ab"
     od.mkdir(exist_ok=True)
     mp = od / "ab.json"
     from hypnomix.session import plugrender as PR
-    manifest = json.loads(mp.read_text()) if mp.exists() else {}
+    manifest = atomic.load_json(mp, {}) or {}
     folder = scan.get("mode") == "folder"
     orig = Path(data["set"]) if data.get("set") and not folder else None
     sr = 44100
@@ -408,7 +411,7 @@ def main():
         elif fid not in manifest:
             manifest[fid] = dict(note="no offline preview: this kind of fix has no model here. Apply this one fix into "
                                       "a new set (fix --approve) and listen there.")
-    mp.write_text(json.dumps(manifest, indent=1))
+    atomic.write_json(mp, manifest)
     pairs = sum(1 for v in manifest.values() if v.get("a"))
     print(f"{pairs} before/after pair(s) in {od}; {len(manifest) - pairs} finding(s) without a preview (see ab.json)")
     print(f"next: hypnomix review \"{sd}\"   (a page with play buttons and approve / skip)")

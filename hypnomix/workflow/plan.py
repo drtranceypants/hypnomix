@@ -4,9 +4,9 @@ A plan changes nothing. It writes the moves the tool WOULD make into a scan fold
 through the same review as everything else (REVIEW.md, `hypnomix review`, decisions.json), and
 `hypnomix fix DIR --approved` then runs the tool with only the approved moves, into DIR/fixed/.
 """
-import json
 from pathlib import Path
 
+from hypnomix.core import atomic as AT
 from hypnomix.core.paths import out_at
 
 PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow", "balance", "colour", "album", "preflight"]
@@ -28,13 +28,13 @@ def write(od, group, source, findings, notes, seconds=0.0):
         f.setdefault("tool", group)
         f.setdefault("where", "")
         f.setdefault("applies", "audio")
-    (od / f"{group}.json").write_text(json.dumps({"group": group, "set": str(src), "seconds": seconds,
-                                                  "findings": findings, "notes": notes}, indent=1, default=str))
+    AT.write_json(od / f"{group}.json", {"group": group, "set": str(src), "seconds": seconds,
+                                         "findings": findings, "notes": notes}, default=str)    # whole or not at all
     sj = od / "scan.json"
-    info = json.loads(sj.read_text()) if sj.exists() else {}
+    info = AT.load_json(sj, {}) or {}
     if info.get("set") in (None, str(src)):
         info.update(set=str(src), mode="folder" if src.is_dir() else "file", set_mtime=src.stat().st_mtime)
-        sj.write_text(json.dumps(info, indent=1))
+        AT.write_json(sj, info)
     from hypnomix.workflow import scan
     all_f, _ = scan.merge(od)
     print(f"{len(findings)} proposed move(s) from {group}; nothing was changed.\nreview: {od / 'REVIEW.md'}")

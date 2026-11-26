@@ -219,9 +219,26 @@ def question(names, levels, pitches, win_s):
 
 
 # ---------------------------------------------------------------- learn the person's own harmony spacing
-STYLE = Path.home() / ".hypnomix" / "harmony-style.json"
-CACHE = Path.home() / ".hypnomix" / "cache"
 VOCAL = ("Lead Vocal", "Vocal", "Harmony", "Backing Vocal")
+
+
+def cache_dir():
+    """The names / renders cache: <hypnomix home>/cache, the same place every other cache lives (HYPNOMIX_HOME)."""
+    from hypnomix.core.atomic import cache_root
+    return cache_root()
+
+
+def style_path():
+    """Your learned harmony spacing: <hypnomix home>/harmony-style.json (HYPNOMIX_HOME decides the home)."""
+    return cache_dir().parent / "harmony-style.json"
+
+
+def __getattr__(name):                       # `voices.CACHE` / `voices.STYLE` still work, and follow HYPNOMIX_HOME
+    if name == "CACHE":
+        return cache_dir()
+    if name == "STYLE":
+        return style_path()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _hx(*args):
@@ -238,7 +255,8 @@ def song_spacing(set_path, win_s=2.0):
     set_path = Path(set_path)
     st = os.stat(set_path)
     key = hashlib.sha1(f"{set_path.resolve()}|{st.st_size}|{st.st_mtime_ns}".encode()).hexdigest()[:16]
-    nd, rd = CACHE / "names" / key, CACHE / "renders" / key
+    cache = cache_dir()
+    nd, rd = cache / "names" / key, cache / "renders" / key
     nj = nd / "names.json"
     if not nj.exists():
         code, out = _hx("name", set_path, "--out", nd)
@@ -344,9 +362,10 @@ def learn_style(sets):
 
 
 def style_defaults():
-    if STYLE.exists():
+    sp = style_path()
+    if sp.exists():
         try:
-            return json.loads(STYLE.read_text())
+            return json.loads(sp.read_text())
         except Exception:
             return None
     return None
@@ -584,21 +603,21 @@ def main():
     if a.learn:
         print(f"learning how you balance harmonies from {len(a.learn)} song(s)…")
         st = learn_style(a.learn)
-        STYLE.parent.mkdir(parents=True, exist_ok=True)
-        STYLE.write_text(json.dumps(st, indent=1))
+        from hypnomix.core import atomic
+        atomic.write_json(style_path(), st)
         print(f"\nyour pattern: harmonies sit about {st['lead_margin_median']:.1f} dB under the lead (3 in 4 at least "
               f"{st['lead_margin']:.1f} dB); a higher harmony is at most {st['tolerance']:.1f} dB louder than the one below it "
               f"in 9 of 10 readings" + (f" (median {st['higher_minus_lower_median']:+.1f} dB)" if st.get('higher_minus_lower_median') is not None else "")
-              + f"\n→ --tame now uses: lead margin {st['lead_margin']:.1f} dB, tolerance {st['tolerance']:.1f} dB.  Saved: {STYLE}")
+              + f"\n→ --tame now uses: lead margin {st['lead_margin']:.1f} dB, tolerance {st['tolerance']:.1f} dB.  Saved: {style_path()}")
         if not a.stems:
             return
     if a.confirm:
         st = style_defaults() or {}
         st["confirmed"] = {k: float(x) for k, _, x in (c.partition("=") for c in a.confirm)
                            if k in ("lead_margin", "tolerance", "root_step", "upper_step", "max_cut")}
-        STYLE.parent.mkdir(parents=True, exist_ok=True)
-        STYLE.write_text(json.dumps(st, indent=1))
-        print(f"--tame default now: {st['confirmed']} (saved in {STYLE})")
+        from hypnomix.core import atomic
+        atomic.write_json(style_path(), st)
+        print(f"--tame default now: {st['confirmed']} (saved in {style_path()})")
         if not a.stems:
             return
     if not a.stems:

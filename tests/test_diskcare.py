@@ -20,8 +20,11 @@ class DiskCare(unittest.TestCase):
         os.environ.update(HYPNOMIX_USER_HOME=str(r), HYPNOMIX_HOME=str(r / ".hypnomix"), HYPNOMIX_APP_HOME=str(r / "Documents/Hypnomix"))
         from hypnomix.app import diskcare as DC
         self.DC, self.r = DC, r
+        self._space = DC.space            # the test must not depend on how full this computer's own disk is
+        DC.space = lambda: (500 * DC.GB, 1000 * DC.GB)
 
     def tearDown(self):
+        self.DC.space = self._space
         for k, v in self.env.items():
             if v is None:
                 os.environ.pop(k, None)

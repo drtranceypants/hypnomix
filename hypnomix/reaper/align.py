@@ -2,8 +2,9 @@
 
   hypnomix reaper align           open the Hypnomix Align panel in REAPER (and keep it in step with the app)
 
-Needs the hypnomix app running (`hypnomix app`): it runs `hypnomix alignset` on the SAVED project, the same way the
-Live device does (through /api/align/*). Save the project first (alignset reads the saved .rpp). In the panel:
+Needs the hypnomix app running (`hypnomix app`; for an app on another port give --port N, or set HYPNOMIX_PORT):
+it runs `hypnomix alignset` on the SAVED project, the same way the Live device does (through /api/align/*). Save
+the project first (alignset reads the saved .rpp). In the panel:
 
   Guide ←           the selected track becomes the guide (the one the others follow)
   + Part / Clear    the selected tracks become parts (repeat); Clear empties the list
@@ -32,14 +33,20 @@ import urllib.request
 from pathlib import Path
 
 from hypnomix.reaper.client import Reaper, ReaperError
+from hypnomix.reaper.review import DEFAULT_PORT, app_port      # the same port rule as the review panel
 
-APP = "http://127.0.0.1:8791"          # --port changes it
+APP = None                              # "http://127.0.0.1:<port>", set when the panel starts (see app_url)
 PRESETS = ["", "gentle-stack", "natural-double", "tight-pop", "loose-folk", "rap-doubles"]
 LANE_POINTS = 120                       # each lane's shape, thinned for the bridge
 
 
+def app_url():
+    """The app's address: --port, else HYPNOMIX_PORT, else 8791 (read when the panel starts, not when this loads)."""
+    return APP or f"http://127.0.0.1:{app_port()}"
+
+
 def app(path, body=None, timeout=5):
-    req = urllib.request.Request(APP + path, data=json.dumps(body).encode() if body is not None else None,
+    req = urllib.request.Request(app_url() + path, data=json.dumps(body).encode() if body is not None else None,
                                  headers={"Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
 
@@ -222,10 +229,11 @@ def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(prog="hypnomix reaper align", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", type=int, default=8791, help="the hypnomix app's port (default 8791)")
+    ap.add_argument("--port", type=int, default=None, help="the hypnomix app's port (default: HYPNOMIX_PORT, else "
+                    f"{DEFAULT_PORT})")
     a = ap.parse_args(argv)
     global APP
-    APP = f"http://127.0.0.1:{a.port}"
+    APP = f"http://127.0.0.1:{app_port(a.port)}"
     try:
         app("/api/align/state", timeout=2)
     except OSError:

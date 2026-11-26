@@ -31,6 +31,7 @@ What the workflow does with them:
 import json, sys, time
 from pathlib import Path
 
+from hypnomix.core import atomic
 from hypnomix.core.paths import HOME
 
 PREFS = HOME / "preferences.json"
@@ -88,7 +89,8 @@ LISTS = {"protect.tracks", "protect.notes", "taste.notes", "tools.plugins"}
 
 def load(path=None):
     p = Path(path or PREFS)
-    return json.loads(p.read_text()) if p.exists() else {}
+    d = atomic.load_json(p, {})                      # a cut-off file falls back to its .bak
+    return d if isinstance(d, dict) else {}
 
 
 def get(prefs, key, default=None):
@@ -225,7 +227,7 @@ def save(prefs, path=None):
     p.parent.mkdir(parents=True, exist_ok=True)
     prefs["version"] = 1
     prefs["updated"] = time.strftime("%Y-%m-%d")
-    p.write_text(json.dumps(prefs, indent=1))
+    atomic.write_json(p, prefs)
     return p
 
 
@@ -276,10 +278,15 @@ def habit(prefs, f):
 
 def learn(scan_dir, path=None):
     sd = Path(scan_dir)
-    dec = json.loads((sd / "decisions.json").read_text()) if (sd / "decisions.json").exists() else {}
+    dec = atomic.load_json(sd / "decisions.json", {}) or {}        # a cut-off file falls back to decisions.json.bak
     if not dec:
-        sys.exit(f"no decisions.json in {sd}: record decisions with `hypnomix fix {sd} --decide ID=approve|skip|change`")
-    findings = {f["id"]: f for f in json.loads((sd / "findings.json").read_text())["findings"]}
+        if not (sd / "decisions.json").exists():
+            sys.exit(f"no decisions.json in {sd}: record decisions with `hypnomix fix {sd} --decide ID=approve|skip|change`")
+        if (sd / "decisions.json.corrupt").exists():        # load_json keeps a copy only when the file would not parse
+            sys.exit(f"decisions.json in {sd} could not be read (the broken file is kept as decisions.json.corrupt); "
+                     "nothing was counted")
+        sys.exit(f"no decisions recorded yet in {sd}: nothing was counted")
+    findings = {f["id"]: f for f in (atomic.load_json(sd / "findings.json", {}) or {}).get("findings", [])}
     prefs = load(path)
     seen = prefs.setdefault("learned_from", [])
     tag = str(sd.resolve())

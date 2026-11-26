@@ -18,6 +18,7 @@ from there), with a new name; nothing is ever written over.
 import argparse, json, shutil, subprocess, sys, time
 from pathlib import Path
 
+from hypnomix.core import atomic
 from hypnomix.core.paths import OUT
 
 
@@ -27,12 +28,13 @@ def hist_dir(sd):
 
 def load(sd):
     p = hist_dir(sd) / "history.json"
-    return json.loads(p.read_text()) if p.exists() else {"versions": []}
+    h = atomic.load_json(p, None)               # a cut-off log falls back to history.json.bak
+    return h if isinstance(h, dict) and isinstance(h.get("versions"), list) else {"versions": []}
 
 
 def save(sd, h):
     hist_dir(sd).mkdir(parents=True, exist_ok=True)
-    (hist_dir(sd) / "history.json").write_text(json.dumps(h, indent=1, default=str))
+    atomic.write_json(hist_dir(sd) / "history.json", h, default=str)
 
 
 def free_name(path):
@@ -139,7 +141,7 @@ def undo(sd, h, n):
     snap = snapshot(sd, v, "input")
     if snap is None:
         sys.exit(f"version {n} kept no copy of its input set; nothing to go back to")
-    scan = json.loads((Path(sd) / "scan.json").read_text()) if (Path(sd) / "scan.json").exists() else {}
+    scan = atomic.load_json(Path(sd) / "scan.json", {}) or {}
     orig = Path(scan.get("set") or v["input"])
     dest = free_name(orig.with_name(f"{orig.stem} (back to v{n} input).als"))
     shutil.copyfile(snap, dest)
@@ -160,7 +162,7 @@ def undo_item(sd, h, fid, extra_args=()):
     keep = [i for i in ids if i != fid]
     if not keep:
         sys.exit(f"v{v['n']} has only {fid}: to go back to before it, use --undo {v['n']}")
-    scan = json.loads((Path(sd) / "scan.json").read_text()) if (Path(sd) / "scan.json").exists() else {}
+    scan = atomic.load_json(Path(sd) / "scan.json", {}) or {}
     orig = Path(scan.get("set") or v["input"])
     dest = free_name(orig.with_name(f"{orig.stem} (v{v['n']} without {fid}).als"))
     args = [sys.executable, "-m", "hypnomix.workflow.fix", str(sd), "--approve", ",".join(keep), "--out", str(dest)]
