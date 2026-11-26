@@ -21,6 +21,7 @@ you use it; Ctrl-C stops it.
 | Apply | writes only what you approved into one new set next to the original (`fix --approved`), then shows the log: what was applied, what changed, what is no longer measured |
 | Preferences | the questions asked once: targets, protected tracks, what is deliberate |
 | Tools | every other command with its help and a form: tempo, variations, mastering, and the rest |
+| Wiki | the website's training lessons, how-to guides, command reference and FAQ, with their screenshots and videos, searchable and offline. `python -m hypnomix.app.wiki_sync` copies them again from the site after it changes |
 
 It is a web server on this computer only. It refuses requests from other sites, only reads and writes scans
 inside its own folder (`~/Documents/Hypnomix`; change with `--home`), and never overwrites a set.
