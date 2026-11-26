@@ -1,0 +1,14 @@
+<!--
+title: Your real plug-ins, offline
+sub: render a track through the chain you built, faster than real time
+no: lesson 11
+group: Training
+-->
+<div class="prose paper">
+      <p>With the optional <code>plugins</code> extra, hypnomix loads your VST3 and AU plug-ins outside Live and restores each one to the settings saved in your set. That way it can render a track through its actual chain, and the before/after clips for device changes include your plug-ins too. Each plug-in is tried in a separate process first, so one that crashes is reported and skipped and the render carries on.</p>
+    </div>
+    <div class="term" data-label="plugrender"><pre><span class="p">$</span> hypnomix plugrender "Song.als" --list             <span class="c"># each chain, and what can be rendered</span>
+<span class="p">$</span> hypnomix plugrender "Song.als" --check            <span class="c"># load and restore every plug-in, no audio</span>
+<span class="p">$</span> hypnomix plugrender "Song.als" --tracks "Lead Vox" "Bass"
+<span class="p">$</span> hypnomix ab "hypnomix-out/scan/Song" --plugins    <span class="c"># before/after for device fixes, through the chain</span></pre></div>
+    <div class="note-box">Live's own Utility, Compressor, Glue Compressor and Limiter are modelled. Other Live devices, racks and Max for Live devices are skipped and named in the report. Some Audio Units refuse to load outside a DAW; when a plug-in also comes as a VST3, that version is used instead.</div>

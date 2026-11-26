@@ -1,0 +1,20 @@
+<!--
+title: Measure while you play
+sub: every track at once, after all of its plug-ins · no renders, no exports
+no: lesson 8
+group: Training
+-->
+<figure class="shot"><video src="/wiki/assets/live-meters.mp4" muted playsinline poster="/wiki/assets/app-live.png" width="1100" controls></video>
+      <figcaption>The app's Live tab while a chorus plays: loudness, peak, tone and stereo for every track, and what you told hypnomix in Live. Here the demo song's tracks are replayed through the probe's own measurements.</figcaption></figure>
+    <div class="prose paper">
+      <p>The probe measures each track ten times a second, after every device and plug-in on it, which is what you actually hear. A full scan used to render each track without its effects. Now one play of the song measures them all, third-party plug-ins included. Press <b>Record</b> in the Live tab, play the song (or just the part you're working on), press Stop, and you get a normal review:</p>
+      <ul>
+        <li>frequency fights between tracks while they play together, with the band and who should give way (your <i>priority</i> settings decide)</li>
+        <li>the lead vocal's level against the band, section by section</li>
+        <li>a low end that isn't mono, a mix that's too wide or narrow</li>
+        <li>Main's loudness and peak against your song card</li>
+        <li>tracks running hot into the next plug-in</li>
+      </ul>
+    </div>
+    <div class="term" data-label="or from the terminal"><pre><span class="p">$</span> hypnomix probe status                         <span class="c"># who's sending, loudness right now</span>
+<span class="p">$</span> hypnomix probe listen --bars 49-64 --play     <span class="c"># Live plays the chorus; a review comes back</span></pre></div>

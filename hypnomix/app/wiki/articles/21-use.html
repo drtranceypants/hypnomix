@@ -1,0 +1,71 @@
+<!--
+title: How to use it
+sub: ten recipes that cover most sessions · everything lands in hypnomix-out/ with a Markdown report next to the audio
+group: How-to
+-->
+<h3 class="sub-h">1 · Mix a folder of stems, start to finish</h3>
+    <div class="term" data-label="mix"><pre><span class="p">$</span> hypnomix automix "Night Drive stems/" --name "Night Drive" --reference "reference.wav"
+<span class="p">$</span> hypnomix translate "hypnomix-out/automix/Night Drive/Night Drive (master).wav" --render
+<span class="p">$</span> hypnomix qc "hypnomix-out/automix/Night Drive/Night Drive (master).wav"</pre></div>
+    <p class="lead">Read <code>MIX NOTES.md</code>, listen on headphones and a phone, and change what your ears disagree with: usually vocal level and reverb amount.</p>
+    <h3 class="sub-h">2 · Master a finished mix</h3>
+    <div class="term" data-label="master"><pre><span class="p">$</span> hypnomix master "Song mix.wav" --target -14
+<span class="p">$</span> hypnomix master "Song mix.wav" --target -14 --reference "reference.wav" --match 0.6
+<span class="p">$</span> hypnomix chain master "Song bounce.wav" --target -14 --verify --existing bypass   <span class="c"># same, built in Live</span></pre></div>
+    <h3 class="sub-h">3 · Clean up raw recordings</h3>
+    <div class="term" data-label="prep"><pre><span class="p">$</span> hypnomix prep "raw stems/"
+<span class="p">$</span> hypnomix dehiss "Lead Vox.wav" --reduce 12 --gate 18 --report
+<span class="p">$</span> hypnomix vocalign "Lead.wav" "Double.wav" "Harmony hi.wav" --trim-tails --level -6</pre></div>
+    <h3 class="sub-h">4 · First pass on a Live set: scan → hear → review → fix</h3>
+    <div class="term" data-label="first pass"><pre><span class="p">$</span> hypnomix prefs                                                    <span class="c"># once: targets, protected tracks</span>
+<span class="p">$</span> hypnomix scan "Song.als" --mix "Song mix.wav" --key "F# major"   <span class="c"># read-only → REVIEW.md</span>
+<span class="p">$</span> hypnomix scan "Song.rpp"                                          <span class="c"># or a REAPER project</span>
+<span class="p">$</span> hypnomix scan "Song/"                                             <span class="c"># or an Ardour session folder</span>
+<span class="p">$</span> hypnomix scan "raw takes/"                                        <span class="c"># or a folder from any DAW</span>
+<span class="p">$</span> hypnomix ab "hypnomix-out/scan/Song"                              <span class="c"># before/after clips, level-matched</span>
+<span class="p">$</span> hypnomix review "hypnomix-out/scan/Song" --serve                  <span class="c"># a page: play A, play B, click</span>
+<span class="p">$</span> hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).als"</pre></div>
+    <p class="lead">Every check runs at once, nothing changes until you approve it, and approved changes land in <b>one new set</b> next to the original, which <code>fix</code> then checks and measures again to confirm each problem is gone. Close the set in Live before <code>fix</code>.</p>
+    <h3 class="sub-h">5 · Hands on your open set</h3>
+    <div class="term" data-label="live"><pre><span class="p">$</span> hypnomix live snapshot                                   <span class="c"># always first</span>
+<span class="p">$</span> hypnomix live db "Lead Vox" -3.5
+<span class="p">$</span> hypnomix live paramd "Lead Vox" "EQ Eight" "1 Frequency A" 2500
+<span class="p">$</span> hypnomix loop --bar 49 --bars 8 --ab "db Bass -1.5" --revert   <span class="c"># the A/B habit</span></pre></div>
+    <h3 class="sub-h">6 · Recording a part</h3>
+    <div class="term" data-label="record"><pre><span class="p">$</span> hypnomix soundcheck --watch --device "USB Audio"     <span class="c"># set the preamp: peaks -12 to -6 dBFS</span>
+<span class="p">$</span> hypnomix live input "Gtr" "Ext. In" "2" &amp;&amp; hypnomix live arm "Gtr" 1
+<span class="p">$</span> hypnomix live record 17 8 3                          <span class="c"># bars 17–24, three takes</span>
+<span class="p">$</span> hypnomix takes "Gtr take 1.wav" "Gtr take 2.wav" "Gtr take 3.wav" --bpm 92</pre></div>
+    <h3 class="sub-h">7 · A harmony stack that sits right</h3>
+    <div class="term" data-label="vocals"><pre><span class="p">$</span> hypnomix voices --learn "Finished song 1.als" "Finished song 2.als"   <span class="c"># your own spacing, once</span>
+<span class="p">$</span> hypnomix voices "Lead.wav" "Harmony lo.wav" "Harmony hi.wav"           <span class="c"># lists the parts and asks</span>
+<span class="p">$</span> hypnomix voices "Lead.wav" "Harmony lo.wav" "Harmony hi.wav" --anchor lead --tame
+<span class="p">$</span> hypnomix tune "Lead.wav" --ref "Song mix.wav" --key "F# major" --report-only</pre></div>
+    <h3 class="sub-h">8 · A drum take played without a click</h3>
+    <div class="term" data-label="tempo"><pre><span class="p">$</span> hypnomix tempomap "Drum take.wav" --click "check.wav"       <span class="c"># listen: is the click on the beat?</span>
+<span class="p">$</span> hypnomix tempomap "Jam.als" --track "Drums" --conform --preview "conformed.wav" --apply "Jam (conformed).als"
+<span class="p">$</span> hypnomix tempomap "Jam.als" --track "Drums" --follow --apply "Jam (tempo map).als"   <span class="c"># or: the grid follows the drummer</span>
+<span class="p">$</span> hypnomix loops "Jam.als" --track "Drums" --apply "Jam (loops).als"                  <span class="c"># best loops into Session slots</span></pre></div>
+    <h3 class="sub-h">9 · Tighter, but still played by a person</h3>
+    <div class="term" data-label="feel"><pre><span class="p">$</span> hypnomix timing "Song.als" --track Drums --track Bass --track Guitar    <span class="c"># only the hits out of time with the band</span>
+<span class="p">$</span> hypnomix tighten "Song.als" --track "Drums" --strength 0.5 --preview "tighten preview/"
+<span class="p">$</span> hypnomix breathe "Song.als" --mix "Song mix.wav" --preview "Song (breathing).wav"    <span class="c"># choruses push, verses relax</span></pre></div>
+    <h3 class="sub-h">10 · A song that loops too much</h3>
+    <div class="term" data-label="variety"><pre><span class="p">$</span> hypnomix variations "Song.als"                              <span class="c"># unused takes that fit; A/B files to audition</span>
+<span class="p">$</span> hypnomix variations "Song.als" --apply "Song (variations).als"   <span class="c"># new tracks, switched off</span>
+<span class="p">$</span> hypnomix borrow "Song.als" --mix "Song mix.wav" --plan    <span class="c"># loops the original project had</span>
+<span class="p">$</span> hypnomix motion --learn "Finished song.als"                <span class="c"># your own effect moves, once</span>
+<span class="p">$</span> hypnomix motion "Song.als" --mix "Song mix.wav" --plan    <span class="c"># risers, dips, throws: options to approve</span></pre></div>
+    <p class="lead">Everything in recipes 8 to 10 arrives as an option: a preview file, a switched-off track, or an item in the review. Turn it on, listen in the mix, keep or delete.</p>
+    <h3 class="sub-h">Numbers cheat sheet</h3>
+    <div class="tablewrap"><table>
+      <tr><th>what</th><th>target</th><th>why</th></tr>
+      <tr><td>Recording peaks (24-bit)</td><td>-12 … -6 dBFS</td><td>headroom for the loud take; noise is irrelevant at 24-bit</td></tr>
+      <tr><td>Noise between notes</td><td>below -60 dBFS</td><td>above -50 is audible once compressed</td></tr>
+      <tr><td>Stems into a mix</td><td>~-20 LUFS playing, peaks ≤ -3 dBFS</td><td>plug-ins behave; faders near 0</td></tr>
+      <tr><td>Pre-master mix</td><td>~-18 LUFS, peaks ≤ -3 dBFS</td><td>room for the master chain</td></tr>
+      <tr><td>Master for streaming</td><td>-14 LUFS, ≤ -1 dBTP</td><td>matches platform playback, codec-safe</td></tr>
+      <tr><td>Limiter reduction</td><td>under ~2 dB transparent</td><td>more means fix the mix</td></tr>
+      <tr><td>Vocal stack timing</td><td>under 10 ms tight, 20–40 ms natural</td><td>above that, flams</td></tr>
+      <tr><td>Low end below 120 Hz</td><td>L/R correlation &gt; 0.9</td><td>mono-, club- and vinyl-safe</td></tr>
+    </table></div>

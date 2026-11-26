@@ -1,0 +1,12 @@
+<!--
+title: Faster every time
+sub: only what changed is looked at again
+no: lesson 14
+group: Training
+-->
+<div class="term" data-label="speed"><pre><span class="p">$</span> hypnomix scan "Song.als" --quick                 <span class="c"># structure, edges, levels: seconds, no rendering</span>
+<span class="p">$</span> hypnomix scan "Song.als" --since "hypnomix-out/scan/Song"   <span class="c"># only the tracks you changed</span>
+<span class="p">$</span> hypnomix watch "Song.als"                        <span class="c"># every time you save in Live, a quick check of what changed</span></pre></div>
+    <div class="prose paper">
+      <p>Rendered clips are cached by their source file and settings, so a second scan of the same song re-renders nothing it has already rendered. The library scan, the names and the pitch analysis are cached the same way.</p>
+    </div>

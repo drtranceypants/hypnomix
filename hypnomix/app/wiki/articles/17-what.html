@@ -1,0 +1,33 @@
+<!--
+title: What it is
+sub: an engineer, an assistant and a pair of hands on your Live set
+group: Start here
+-->
+<div class="prose paper">
+      <p>hypnomix is a free, open-source mixing and mastering engineer that lives on your Mac and works with Ableton Live. It was built by <a target="_blank" rel="noopener" href="https://drtrance.bradfieldenterprises.org/">Dr. Trance</a>, who writes, plays, records, mixes and masters every part of his own music, for people who record <strong>real instruments and vocals</strong>, not just MIDI.</p>
+      <p>You can use it three ways. <strong>First pass:</strong> point it at a Live set, or a folder of recordings from any DAW. It runs every check at once, changes nothing, and writes one review list with before-and-after clips. You approve, skip or change each item, and only the approved fixes go into a <em>new</em> set next to your original. <strong>Engineer mode:</strong> give it a folder of stems and it cleans them up, balances them, compresses, EQs, pans, adds reverb and masters the result, then writes <code>MIX NOTES.md</code> explaining every decision. <strong>Hands-on mode:</strong> keep your own session and let hypnomix set exact fader levels and plug-in parameters in the open Live set, record A/B loops, and measure what each change did.</p>
+      <p><strong>How it decides.</strong> Everything is measurement plus the rules an engineer would use. There are no black-box models in the mixing chain, so every decision can be written down and argued with. It measures; it doesn't listen. Treat its work as a strong first pass by an assistant, then make the taste calls yourself.</p>
+      <p><strong>It learns how <em>you</em> work.</strong> It asks your preferences once (loudness target, tracks never to touch, what is deliberate), reads your own finished songs to learn your habits (how far your harmonies sit under the lead, how you pan, which effect moves you draw), and remembers what you approve and skip. Proposals then start from your standards, not from someone else's numbers.</p>
+      <p><strong>It keeps the performance human.</strong> Timing fixes move only the hits that are clearly out, and only part of the way. Tuning moves the centre of a note and keeps the vibrato and slides. A full snap to the grid is refused.</p>
+      <p><strong>It never needs a paid plug-in.</strong> Its own processing is built in, and anything it does offline it can also build inside Live from the stock devices every Live Standard or Suite owner already has.</p>
+    </div>
+    <h3 class="sub-h">The workflow at a glance</h3>
+    <div class="flow">
+      <div class="step"><b>Record</b><span>soundcheck · takes</span></div><span class="arrow">→</span>
+      <div class="step"><b>First pass</b><span>scan · review · fix</span></div><span class="arrow">→</span>
+      <div class="step"><b>Vocals</b><span>tune · vocalign · voices</span></div><span class="arrow">→</span>
+      <div class="step"><b>Feel</b><span>timing · breathe · motion</span></div><span class="arrow">→</span>
+      <div class="step"><b>Mix</b><span>automix · masking</span></div><span class="arrow">→</span>
+      <div class="step"><b>Master</b><span>master · chain</span></div><span class="arrow">→</span>
+      <div class="step"><b>Check</b><span>translate · qc</span></div><span class="arrow">→</span>
+      <div class="step"><b>Release</b><span>🎉</span></div>
+    </div>
+    <div class="term" data-label="stems in, song out">
+<pre><span class="p">$</span> hypnomix automix "My Song stems/" --reference "song I love.wav"
+<span class="c">prep pass (clicks, clipping, plosives, breaths, noise, silence, fades) …</span>
+  Kick          kick          <span class="c">(by name)</span>
+  Bass DI       bass          <span class="c">(by name)</span>
+  Gtr L         guitar        <span class="c">(by name)</span>
+  Lead Vox      lead vocal    <span class="c">(by name)</span>
+  …
+<span class="o">→ My Song (automix).wav · My Song (master).wav · MIX NOTES.md · recipe.json</span></pre></div>

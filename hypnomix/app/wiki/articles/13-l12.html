@@ -1,0 +1,26 @@
+<!--
+title: Mastering
+sub: options and fine controls · every move logged with why
+no: lesson 12
+group: Training
+-->
+<figure class="shot"><img src="/wiki/assets/tonal.png" alt="A mix&#x27;s tonal balance plotted against a target range built from finished songs" loading="lazy" width="1100">
+      <figcaption>Tonal balance against a target built from your own released songs: inside the band is fine, outside it gets a proposed EQ move.</figcaption></figure>
+    <div class="tablewrap"><table>
+      <tr><th>option</th><th>what it does</th></tr>
+      <tr><td><code>tonal build</code> · <code>tonal check</code></td><td>a target tone range from your releases or songs you choose; where your mix sits outside it</td></tr>
+      <tr><td><code>--amount 0-100</code></td><td>scales every mastering move: 100 is the full proposal, 50 is half of each</td></tr>
+      <tr><td><code>--stabilize TARGET</code></td><td>slow dynamic EQ that moves a band back toward the target only when it drifts out</td></tr>
+      <tr><td><code>--dyneq</code></td><td>your own dynamic EQ bands: frequency, threshold, ratio, width</td></tr>
+      <tr><td><code>--width-bands</code> · <code>--mono-below</code></td><td>stereo width per frequency range; a mono low end</td></tr>
+      <tr><td><code>--limiter-mode clean|punch|loud</code></td><td>the limiter's character; every run reports loudness gained against punch lost</td></tr>
+      <tr><td><code>--harsh</code> · <code>harsh</code></td><td>finds and gently tames build-ups in the 2–6 kHz range only where they happen</td></tr>
+      <tr><td><code>--dither</code></td><td>proper dither on 16- and 24-bit files</td></tr>
+      <tr><td><code>rebalance</code></td><td>turn the vocal, bass or drums up or down inside a finished stereo mix</td></tr>
+      <tr><td><code>translate --preview</code></td><td>hear it as MP3 and AAC, and as a streaming service plays it</td></tr>
+    </table></div>
+    <div class="term" data-label="mastering"><pre><span class="p">$</span> hypnomix tonal build "Release 1.wav" "Release 2.wav" "Release 3.wav" --name mine
+<span class="p">$</span> hypnomix tonal check "Song mix.wav" --target mine
+<span class="p">$</span> hypnomix master "Song mix.wav" --target -11 --limiter-mode punch --stabilize mine --amount 80 --plan
+<span class="p">$</span> hypnomix rebalance "Song master.wav" --vocals +1.5
+<span class="p">$</span> hypnomix translate "Song master.wav" --preview</pre></div>

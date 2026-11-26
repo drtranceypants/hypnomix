@@ -1,0 +1,27 @@
+<!--
+title: Teach it your style
+sub: so it proposes what you would do · and tells you where you could do better
+no: lesson 2
+group: Training
+-->
+<div class="prose paper">
+      <p>Before your first review, let hypnomix study the songs you've already finished. It reads every Live set on your computer (it skips backups, factory packs and older versions of the same song) and your exported bounces. Nothing is rendered and nothing leaves your Mac. A few hundred sets take well under a minute, and after that only the sets you've changed are read again.</p>
+      <p>What it learns: how loud you set each kind of track against the lead vocal, how wide you pan, how much reverb and delay each part gets, which devices and plug-ins you use on what, how you set your compressors, EQs and limiters, what you automate, and how loud and bright your released songs are. A setting you keep the same in every song becomes a <b>standard</b> that tools stick to. One that changes from song to song is a <b>taste call</b>, and you'll be asked about it.</p>
+    </div>
+    <div class="term" data-label="learn your style"><pre><span class="p">$</span> hypnomix taste --library                   <span class="c"># every set on this computer</span>
+<span class="p">$</span> hypnomix taste --library "~/Music/Projects"  <span class="c"># or just one folder</span>
+<span class="o">→ LIBRARY.md</span>
+<span class="o"># Your style, learned from your library</span>
+Learned from 9 sets in 24 s; 341 .als files found, 332 skipped (backups, packs, older versions).
+<span class="o">## YOUR STYLE</span>
+- harmony: -5.9 dB against the lead (songs from -8.5 to -2.3 dB) · taste call
+- centred in every song: bass, drums, harmony, lead · <b>standard</b>
+- lead: reverb send -14.2 dB; delay send -12 dB
+- bass: Compressor, Utility, EQ Eight (3 songs)
+<span class="o">## WHERE YOU COULD IMPROVE</span>
+1. Bounces peak above -1 dBTP: three releases at -0.07, -0.5 and -0.62 dBTP.
+   Streaming encodes add 0.5-1 dB, so they may clip after upload: try a -1 dB ceiling.
+2. Compressor release faster than two bass cycles: 30 ms on a bass whose lowest
+   note needs 61 ms. Try a longer release so it doesn't distort the low end.
+3. Loudness differs by 4 LU between your songs: choose one target for the album.</pre></div>
+    <p class="lead">Not sure of a song's genre? It guesses and asks you to confirm: <code>hypnomix taste --library --genre "Song=folk"</code>. Once genres are set, your style is also broken down by genre.</p>

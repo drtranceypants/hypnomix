@@ -1,0 +1,16 @@
+<!--
+title: Install
+sub: about fifteen minutes, once
+no: lesson 1
+group: Training
+-->
+<div class="term" data-label="install"><pre><span class="p">$</span> brew install python ffmpeg uv git rubberband
+<span class="p">$</span> git clone https://github.com/drtranceypants/hypnomix &amp;&amp; cd hypnomix
+<span class="p">$</span> uv venv &amp;&amp; uv pip install -e . &amp;&amp; source .venv/bin/activate
+<span class="p">$</span> uv pip install -e ".[plugins]"     <span class="c"># optional: render through your own plug-ins (lesson 11)</span>
+<span class="p">$</span> hypnomix doctor                     <span class="c"># checks every part and says what is missing</span></pre></div>
+    <ol class="steps">
+      <li><b>For the Live features</b>, run <code>hypnomix install</code> once and restart Live, then pick <i>AbletonOSC</i> as a Control Surface in Live's settings (Link, Tempo &amp; MIDI).</li>
+      <li><b>For the Max for Live devices</b> (Live Suite, or Live with the Max for Live add-on): <code>hypnomix device</code> and <code>hypnomix probe device</code> put them in your User Library. They appear in Live's browser under User Library → Presets → Audio Effects → Max Audio Effect → Hypnomix.</li>
+      <li><b>Start the app</b> with <code>hypnomix app</code>. It opens in your browser and runs only on your computer.</li>
+    </ol>

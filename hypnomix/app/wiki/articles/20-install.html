@@ -1,0 +1,33 @@
+<!--
+title: Install
+sub: about fifteen minutes, most of it downloads
+group: Start here
+-->
+<ol class="steps">
+      <li><h4>Install Homebrew (skip if you have it)</h4><p>Homebrew installs the free tools hypnomix needs. Open <b>Terminal</b> (Applications → Utilities) and paste the line from <a target="_blank" rel="noopener" href="https://brew.sh">brew.sh</a>, then follow its prompts.</p></li>
+      <li><h4>Install the tools</h4>
+        <div class="term" data-label="terminal"><pre><span class="p">$</span> brew install python ffmpeg uv git
+<span class="p">$</span> brew install blackhole-2ch rubberband   <span class="c"># recommended: recording from Live, best vocal re-timing</span></pre></div></li>
+      <li><h4>Download and install hypnomix</h4>
+        <div class="term" data-label="terminal"><pre><span class="p">$</span> git clone https://github.com/drtranceypants/hypnomix &amp;&amp; cd hypnomix
+<span class="p">$</span> uv venv &amp;&amp; uv pip install -e .
+<span class="p">$</span> source .venv/bin/activate          <span class="c"># do this in each new Terminal window</span>
+<span class="p">$</span> hypnomix                            <span class="c"># prints the command list</span></pre></div>
+        <p>No uv? <code>python3 -m venv .venv &amp;&amp; source .venv/bin/activate &amp;&amp; pip install -e .</code> does the same.</p></li>
+      <li><h4>Connect it to Ableton Live</h4>
+        <div class="term" data-label="terminal"><pre><span class="p">$</span> hypnomix install</pre></div>
+        <p>This copies the bundled AbletonOSC remote script into Live's User Library and walks you through the rest, including the two-minute BlackHole setup. Then <b>restart Live</b> and choose <b>Settings → Link, Tempo &amp; MIDI → Control Surface: AbletonOSC</b>.</p>
+        <p>To reach more of your plug-ins' parameters: <code>hypnomix install --plugin-params</code> (adds one line to Live's <code>Options.txt</code>; restart Live).</p></li>
+      <li><h4>Check everything</h4>
+        <div class="term" data-label="terminal"><pre><span class="p">$</span> hypnomix doctor</pre></div>
+        <p>It checks Live, AbletonOSC, BlackHole, ffmpeg and plug-in parameter access, and tells you what to fix.</p></li>
+      <li><h4>Optional extras</h4>
+        <div class="tablewrap"><table>
+          <tr><th>extra</th><th>adds</th><th>install</th></tr>
+          <tr><td><code>reference</code></td><td><code>hypnomix reference</code> (Matchering; GPL-3.0, kept separate so hypnomix stays MIT)</td><td><code>uv pip install -e ".[reference]"</code></td></tr>
+          <tr><td><code>ml</code></td><td><code>separate</code> (split a song into stems) and <code>midi</code> (audio → MIDI)</td><td><code>uv pip install -e ".[ml]"</code></td></tr>
+          <tr><td><code>critique</code></td><td>a written second opinion from Gemini (needs <code>GEMINI_API_KEY</code>)</td><td><code>uv pip install -e ".[critique]"</code></td></tr>
+        </table></div></li>
+      <li><h4>Updating later</h4>
+        <div class="term" data-label="terminal"><pre><span class="p">$</span> cd hypnomix &amp;&amp; git pull &amp;&amp; uv pip install -e .</pre></div></li>
+    </ol>

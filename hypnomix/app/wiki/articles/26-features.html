@@ -1,0 +1,113 @@
+<!--
+title: What it can do
+sub: all 83 commands, grouped the way you'll use them · run hypnomix <command> -h for full options · new = passes its tests and the structure check, still young: keep your original and listen
+group: Reference
+-->
+<div class="groups">
+      <div class="group"><h3>First pass</h3><p class="tagline">scan a song, hear each fix, approve, apply</p><dl>
+        <dt><code>app</code><span class="extra">new</span></dt><dd>The whole first pass in a window: choose a song, hear each fix, approve, apply. No terminal and no AI needed.</dd>
+        <dt><code>device</code><span class="extra">new</span></dt><dd>A Max for Live device: step through the findings inside Live, and Live jumps to each one.</dd>
+        <dt><code>prefs</code></dt><dd>Asked once: your loudness targets, tracks to protect, what is deliberate, and how you like to review. It remembers what you usually approve and skip.</dd>
+        <dt><code>scan</code></dt><dd>Runs every check on a Live set, a REAPER project, an Ardour session, or a folder of recordings or stems from any DAW. Changes nothing. Writes <code>REVIEW.md</code>, most severe first, and lists any check that could not run.</dd>
+        <dt><code>project</code><span class="extra">new</span></dt><dd>Looks inside a REAPER project or an Ardour session without opening the DAW: tracks, buses, items or regions, takes, plug-ins and automation. <code>--render</code> renders each track to a full-length file.</dd>
+        <dt><code>reaper</code><span class="extra">new</span></dt><dd>Talks to the REAPER that is open: starts the bridge, lists tracks, installed plug-ins and their parameters.</dd>
+        <dt><code>ab</code></dt><dd>Before-and-after clips for each proposed fix, at matched loudness, so you hear it before you approve it.</dd>
+        <dt><code>review</code></dt><dd>The whole review as one page: play A, play B, click approve, skip or change. Approve part of a move with an amount, decide the ones like this together, read why each technique works, leave notes, and merge a collaborator's review.</dd>
+        <dt><code>fix</code></dt><dd>Applies only what you approved into one new set, then measures it again to show which problems are gone. Refuses a set that changed since the scan, never overwrites a file, asks again before a protected track.</dd>
+        <dt><code>check · diff</code></dt><dd>Every set hypnomix writes gets a structure check before you open it, and a plain list of what changed. Tracks are matched by id, so a new order or new names show as expected changes, not errors.</dd>
+        <dt><code>taste</code></dt><dd>Reads your own finished songs: fader levels against the lead, panning, reverb and delay amounts, device chains, what you automate. What you always do becomes a standard; what varies becomes a question. <code>--library</code> studies every set on your computer at once (in seconds after the first run) and adds where you could improve, with the evidence.</dd>
+        <dt><code>profile</code></dt><dd>Your sound as measured ranges, from songs you love.</dd>
+        <dt><code>history</code><span class="extra">new</span></dt><dd>Every version <code>fix</code> wrote for a song: list them, see what changed between two, undo to any version or rebuild without one fix. Undo always writes a new set.</dd>
+        <dt><code>watch</code><span class="extra">new</span></dt><dd>Keeps an eye on a set while you work: every time you save, a quick check of only what changed. Read-only.</dd></dl></div>
+      <div class="group"><h3>Clean-up in the set</h3><p class="tagline">the first tidy of a session, without opening Live</p><dl>
+        <dt><code>name</code></dt><dd>Names every track and group by how it sounds: drums, bass, guitar, strings, lead vocal, harmonies, keys, pads.</dd>
+        <dt><code>order</code><span class="extra">new</span></dt><dd>Tracks in working order, and each part of a vocal stack on the track for its pitch. Never changes the sound.</dd>
+        <dt><code>tidy</code><span class="extra">new</span></dt><dd>Retires switched-off tracks (after an archive copy with every take) and puts one instrument's clips on one track. Clips may overlap only where the overlap is silence, which is cut away: no sound is ever overwritten.</dd>
+        <dt><code>devices</code><span class="extra">new</span></dt><dd>Checks every stock compressor, gate, limiter and EQ low cut by what it does to its track, and suggests settings.</dd>
+        <dt><code>smooth</code></dt><dd>Clicks at clip edges and loop seams, level jumps at cuts, and real pops: eased with short fades and dips. A consonant that opens a sung phrase is left alone; plosives get at most 3 dB.</dd>
+        <dt><code>timing</code></dt><dd>Detects the song's grid (straight, triplets or mixed), finds hits out of time with the band and nudges only those, part of the way. In passes: drums, then bass toward the drums, then the rest. Audio and MIDI.</dd>
+        <dt><code>distortion</code></dt><dd>Audible distortion in takes and device chains (clipped takes, hot drive, fast bass compression), with a fix for each.</dd>
+        <dt><code>sidechain</code></dt><dd>Measures every sidechain's ducking (depth, recovery, timing) and suggests settings for clarity, pump or vocal ducking.</dd>
+        <dt><code>duck</code><span class="extra">new</span></dt><dd>Vocal reverb and delay that step back while the singer sings and bloom in the gaps: tunes what you have, or adds it.</dd>
+        <dt><code>cliplevel</code><span class="extra">new</span></dt><dd>Finds single harmony clips sitting far under the rest of their track and offers a clip-gain raise.</dd>
+        <dt><code>unroll</code><span class="extra">new</span></dt><dd>A looped clip becomes one copy per pass, so a single pass can be nudged or changed on its own.</dd>
+        <dt><code>automation</code></dt><dd>List, show, offset or dip automation envelopes.</dd>
+        <dt><code>mine · audit · refs</code></dt><dd>Tempo, key, plug-in chains and routing; stacked limiters and bypassed devices; missing audio files.</dd></dl></div>
+      <div class="group"><h3>Vocals &amp; recordings</h3><p class="tagline">real instruments, real voices</p><dl>
+        <dt><code>prep</code></dt><dd>Raw takes → mix-ready stems: clicks, clipping, plosives, breaths, hum, hiss, silence, fades, gain staging. <code>--plan</code> turns every repair into an item you approve.</dd>
+        <dt><code>tune</code></dt><dd>Extremely gentle pitch correction to the song's own tuning: a 35% nudge, only notes over 20 cents off, never more than 25 cents, and only the moved notes are replaced. From a Live set it tunes the takes under your comp clips, so the comp stays yours.</dd>
+        <dt><code>key</code></dt><dd>The song's key with a confidence, mapped section by section; names the one disputed note when it is unsure.</dd>
+        <dt><code>edges</code><span class="extra">new</span></dt><dd>Finds the start of a word your comp loses: an “s” or “t” the take sings but a fade or a comp edit turns down, only where the word goes on right after. Fixes are clip edits on your own comp (a shorter fade, an earlier start, a later comp switch), re-checked until clean.</dd>
+        <dt><code>vocalign</code></dt><dd>Doubles and harmonies in time with each other, word by word, with presets, protected areas and sync points; optional pitch matching (chord-checked) and formant.</dd>
+        <dt><code>alignset · aligndevice</code><span class="extra">new</span></dt><dd>Aligns the vocal parts inside a Live set as warp markers on your own clips, in a new set; or from the Hypnomix Align device in Live.</dd>
+        <dt><code>voices</code></dt><dd>Balances harmonies around the part you choose, or splits them into one track per voice. <code>--learn</code> reads the spacing you use in your own songs; in a set it is judged as heard and written as volume automation.</dd>
+        <dt><code>dehiss · deess · breaths</code></dt><dd>Spectral de-hiss with a smart gate; a split-band de-esser; breaths turned down, not off. Each reports before it writes.</dd>
+        <dt><code>clipmatch</code></dt><dd>Evens out clips recorded at different gain or mic positions.</dd>
+        <dt><code>takes</code></dt><dd>Ranks takes by clipping, noise, pitch and timing; writes a comp list per section.</dd>
+        <dt><code>soundcheck</code></dt><dd>Listens to your input and tells you how to set the preamp. <code>--watch</code> is a live meter.</dd>
+        <dt><code>cleanup</code></dt><dd>Demo rescue: hum, noise, rumble, DC, silence.</dd></dl></div>
+      <div class="group"><h3>Tempo, feel &amp; variety</h3><p class="tagline">keep it human, keep it moving</p><dl>
+        <dt><code>tempomap</code><span class="extra">new</span></dt><dd>Follows the beat of a take played without a click. Then warps the take to the grid, or makes the grid follow the take. A click check comes first.</dd>
+        <dt><code>loops</code><span class="extra">new</span></dt><dd>The best 1, 2, 4 and 8 bar loops in a free-played take, grouped by groove, lined up in Session slots to try.</dd>
+        <dt><code>tighten</code><span class="extra">new</span></dt><dd>A gentle quantise: hits move part of the way to the click, close ones stay put, a full snap is refused.</dd>
+        <dt><code>breathe</code><span class="extra">new</span></dt><dd>Small tempo changes by section for a song recorded to a rigid click, with a preview of your mix bent along the new tempo.</dd>
+        <dt><code>motion</code><span class="extra">new</span></dt><dd>Risers, filter dips, reverb swells, delay throws, stutters and drop-outs for repetitive sections, in the lengths and depths of your own automation. Options only.</dd>
+        <dt><code>variations</code><span class="extra">new</span></dt><dd>Unused takes of a part that fit the loop it keeps repeating, on a new switched-off track next to it.</dd>
+        <dt><code>borrow</code><span class="extra">new</span></dt><dd>Loops the song's original project had and the new version dropped, offered as switched-off layers that fit the key and groove.</dd></dl></div>
+      <div class="group"><h3>Engineer</h3><p class="tagline">stems in, song out</p><dl>
+        <dt><code>automix</code></dt><dd>Stems folder → balanced mix + master, with notes on every move. <code>--plan</code> lists each EQ, compressor, level and pan move for approval first.</dd>
+        <dt><code>master</code></dt><dd>Stereo mix → release master at a loudness target, or matched to a reference. Codec-safe. Options: a tonal stabilizer toward your own target, dynamic EQ, width by band, limiter character (clean, punch, loud), harshness taming, dither, and an amount for everything. <code>--plan</code> stage by stage.</dd>
+        <dt><code>rebalance</code><span class="extra">new</span></dt><dd>Turns the vocal, drums or bass up or down inside a finished stereo mix, true-peak safe.</dd>
+        <dt><code>chain</code></dt><dd>Builds the mastering chain (or per-track channel strips) inside Live from stock devices and dials in every value. <code>--reaper</code> builds it in REAPER from its stock plug-ins.</dd>
+        <dt><code>masking</code></dt><dd>Which stems fight over which frequencies, and the exact cut that fixes it.</dd>
+        <dt><code>align</code></dt><dd>Phase, polarity and time offset between mics on one source (kick in/out, DI + amp).</dd>
+        <dt><code>translate</code></dt><dd>Mono, phone, earbuds and car checks; streaming loudness; clipping after MP3/AAC encoding. <code>--preview</code> to hear it as MP3, AAC, and at the level a streaming service plays it.</dd>
+        <dt><code>qc</code></dt><dd>Release checklist: format, silence, true peak, loudness, phase. Exits 1 on failure.</dd></dl></div>
+      <div class="group"><h3>Ears</h3><p class="tagline">measure and compare</p><dl>
+        <dt><code>measure</code></dt><dd>Loudness, true peak, bands, stereo, tempo and key → JSON.</dd>
+        <dt><code>sections</code></dt><dd>Finds the song's sections; loudness and vocal balance in each.</dd>
+        <dt><code>match</code></dt><dd>Your mix against a song you love, as proposals: tone by band, dynamics, width, loudness.</dd>
+        <dt><code>tonal</code><span class="extra">new</span></dt><dd>A target tone range built from your own released songs (or ones you choose), and where a mix sits outside it, with the EQ move and a plot.</dd>
+        <dt><code>harsh</code><span class="extra">new</span></dt><dd>Lists the moments with a harsh 2–6 kHz build-up, with timestamps; <code>master --harsh</code> tames only those.</dd>
+        <dt><code>spectrogram</code></dt><dd>Spectrogram, loudness curve and average spectrum as a PNG.</dd>
+        <dt><code>pitchcheck · clicks</code></dt><dd>Pitch and loudness difference between two captures; clicks and crackle in renders.</dd>
+        <dt><code>punch</code></dt><dd>Transient punch, pumping and harmonics A/B at matched loudness.</dd>
+        <dt><code>stems</code></dt><dd>Who owns which band (and any resonance) in a folder of stems.</dd>
+        <dt><code>reference</code><span class="extra">extra</span></dt><dd>What it would take to sound like a reference (Matchering).</dd>
+        <dt><code>separate · midi</code><span class="extra">extra</span></dt><dd>Split a finished song into stems; audio → MIDI, and into a Live clip.</dd>
+        <dt><code>critique</code><span class="extra">extra</span></dt><dd>A written second opinion on a mix from a cloud AI model (Gemini; needs your own API key).</dd></dl></div>
+      <div class="group"><h3>Inside Live</h3><p class="tagline">Max for Live devices · no renders, no exports</p><dl>
+        <dt><code>probe</code><span class="extra">new</span></dt><dd>HypnomixProbe on every track measures it after all its plug-ins while Live plays: one play of the song is a deep scan. Tell it what each track is, its priority and whether it's protected. HypnomixMain on Main holds the song card (genre, key, scale, chords, loudness target, ceiling, limiter character) and records Main for a review before export.</dd>
+        <dt><code>abset</code><span class="extra">new</span></dt><dd>Every proposed fix as a switched-off B next to what you have, in one new set: the hypnomix device switches A, B and a blind test instantly, with all your plug-ins and matched loudness.</dd>
+        <dt><code>plugrender</code><span class="extra">extra</span></dt><dd>Renders tracks offline through your real VST3 and AU plug-ins, restored from the settings saved in your set, so before/after clips include your chain.</dd></dl></div>
+      <div class="group"><h3>Live</h3><p class="tagline">hands on the open set, through AbletonOSC</p><dl>
+        <dt><code>live</code></dt><dd>Faders in exact dB, sends, pans, mute and solo; any device or VST/AU parameter in real units; transport; snapshots; input routing, arming and punch recording with take lanes.</dd>
+        <dt><code>loop</code></dt><dd>Plays bars, records them, measures them and compares. <code>--ab "db Lead -2" --revert</code> for one-change A/Bs.</dd>
+        <dt><code>diagnose</code></dt><dd>Solos every group in the loudest section: who owns the sub, the bass and the vocal band.</dd>
+        <dt><code>render</code></dt><dd>Not Live at all: renders a set's tracks to stems with Live closed, following every warp marker, pitch preserved.</dd>
+        <dt><code>install · doctor</code></dt><dd>Installs the Live remote script; checks Live, AbletonOSC, BlackHole, ffmpeg and plug-in parameter access.</dd></dl></div>
+    </div>
+    <h3 class="sub-h">How automix decides, move by move</h3>
+    <div class="tablewrap"><table>
+      <tr><th>move</th><th>the rule behind it</th></tr>
+      <tr><td><b>Roles</b></td><td>Reads each stem's name first (kick, snr, bass, gtr, keys, vox, bv, pad…), then the sound. Name your stems: it's the single best thing you can do for the result.</td></tr>
+      <tr><td><b>Clean-up EQ</b></td><td>High-passes parts with nothing useful down low (vocals and guitars ~90 Hz, hats ~300 Hz); cuts resonances only when present in most of the song; wide cuts for mud (200–500 Hz) and harshness (2.5–5 kHz).</td></tr>
+      <tr><td><b>Tone EQ</b></td><td>Only where needed: kick weight at 60 Hz and click at 4 kHz, bass harmonics around 800 Hz for small speakers, vocal presence at 3 kHz and air at 10 kHz.</td></tr>
+      <tr><td><b>Compression</b></td><td>Set by result, not threshold: vocal ~5 dB at 3:1, bass ~5 dB at 4:1, drum bus ~2 dB at 2:1. The vocal gets a split-band de-esser after it.</td></tr>
+      <tr><td><b>Balance</b></td><td>From each part's loudness <em>while it is sounding</em>: lead vocal on top, kick ~3 dB under, bass and snare ~4, guitars and keys ~7, pads ~12.</td></tr>
+      <tr><td><b>Panning</b></td><td>Kick, snare, bass and lead centred; doubles, backing vocals and keys spread in pairs; low end kept mono.</td></tr>
+      <tr><td><b>Masking</b></td><td>Two parts fighting in the same band at the same time: the less important one gives way with a 2–3 dB cut. The lead vocal is never the one cut.</td></tr>
+      <tr><td><b>Space &amp; glue</b></td><td>One shared plate (1.8 s, 25 ms pre-delay) puts everything in one room; kick and bass stay dry. Drums glued at 2:1, 30 ms attack, ~2 dB.</td></tr>
+    </table></div>
+    <h3 class="sub-h">The mastering chain</h3>
+    <div class="tablewrap"><table>
+      <tr><th>step</th><th>what and why</th><th>in Live (stock)</th></tr>
+      <tr><td>1 · Subsonic</td><td>High-pass at 22 Hz: energy no speaker plays still eats limiter headroom.</td><td>EQ Eight</td></tr>
+      <tr><td>2 · Tone match</td><td>Optional: moves your tonal balance part of the way (default 60%, capped ±3 dB) toward a reference.</td><td>EQ Eight</td></tr>
+      <tr><td>3 · Glue</td><td>1.5:1, slow attack, ~1.5 dB. More than ~2 dB becomes an effect.</td><td>Glue Compressor</td></tr>
+      <tr><td>4 · Mono lows</td><td>Below 120 Hz, only if the low end is wide.</td><td>Utility</td></tr>
+      <tr><td>5 · Warmth</td><td>Optional saturation so bass is heard on small speakers.</td><td>Saturator</td></tr>
+      <tr><td>6 · Limiter</td><td>True-peak limiting to the loudness target, 4× oversampled.</td><td>Limiter</td></tr>
+      <tr><td>7 · Codec-safe</td><td>Test-encodes AAC 256 and MP3 320; lowers the ceiling if they'd clip.</td><td>Limiter ceiling</td></tr>
+      <tr><td>8 · Top &amp; tail</td><td>Head silence trimmed to 50 ms, a 3 ms fade-in, a fade-out if the song ends abruptly.</td><td></td></tr>
+    </table></div>

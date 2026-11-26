@@ -1,5 +1,6 @@
 // The Wiki tab (served at /wiki.js; uses the page's own helpers: $, esc, get, S, render).
-// Articles are the website's training, how-to and FAQ pages, copied by `python -m hypnomix.app.wiki_sync`.
+// One set of articles for the app and the website (hypnomix/app/wiki/articles/): the app shows the newest of
+// this computer's files and the website's copy; Edit and Publish change both.
 const W = {index: null, id: null, art: null, q: ''};
 try { W.id = localStorage.getItem('hypnomix.wiki') || null; } catch (e) {}
 
@@ -50,13 +51,28 @@ try { W.id = localStorage.getItem('hypnomix.wiki') || null; } catch (e) {}
   .wa .group .tagline{color:var(--mute);font-style:italic;margin-top:-4px}
   .wa .group dl{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:baseline;margin:0}.wa .group dt{margin:0}.wa .group dd{margin:0}
   .wa pre .o{color:#8fc7a4;font-weight:600}
+  .wa .foot+.foot{margin-top:6px;border-top:0;padding-top:0}.wa .foot label{display:inline-flex;gap:6px;align-items:center}
   .wa .foot{margin-top:36px;padding-top:12px;border-top:1px solid var(--line);color:var(--mute);font-size:.86rem;display:flex;gap:12px;flex-wrap:wrap}
   .wa .next{display:flex;justify-content:space-between;gap:12px;margin-top:28px}
   @media (max-width:760px){.wiki{grid-template-columns:1fr}.wiki aside{position:static;max-height:none}.wiki aside nav{max-height:230px;overflow:auto;border-bottom:1px solid var(--line)}.wa .pair{grid-template-columns:1fr}}`;
   document.head.appendChild(st);
 })();
 
-async function wikiLoad() { if (!W.index) W.index = await get('/api/wiki'); return W.index; }
+async function wikiLoad() { W.index = await get('/api/wiki'); return W.index; }
+function wikiAbout() {
+  const a = W.index.about, when = a.updated ? new Date(a.updated * 1000).toLocaleDateString() : '';
+  const src = a.source === 'the website' ? `the website's copy${when ? ', updated ' + when : ''}` : `this computer's copy${when ? ' (' + when + ')' : ''}`;
+  return `<div class="foot"><span>Showing ${esc(src)}.</span>
+    <label><input type="checkbox" id="wlive" ${a.live ? 'checked' : ''}> keep up to date from the website</label>
+    ${a.checking ? '<span><span class="spin"></span>checking the website…</span>' : a.error && a.live ? `<span>Could not reach the website's wiki just now${a.source === 'the website' ? ': showing the last copy from it' : ''}.</span>` : ''}</div>`;
+}
+function wikiBanner() {
+  const a = W.index.about;
+  if (!a.unpublished || !a.unpublished.length) return '';
+  return `<div class="card" style="margin-bottom:14px"><b>${a.unpublished.length} wiki change(s) not published yet.</b>
+    Publish puts them on the website and in everyone's app.<br><button class="primary" id="wpub">Publish</button>
+    <span class="note">${a.unpublished.map(esc).slice(0, 4).join(', ')}${a.unpublished.length > 4 ? '…' : ''}</span></div>`;
+}
 
 function wikiMatches() {
   const q = W.q.trim().toLowerCase(), all = W.index.articles;
@@ -85,19 +101,22 @@ async function wikiView() {
   if (!all.length) return `<h1>Wiki</h1><p class="sub">No articles yet. From the hypnomix folder run
     <code>python -m hypnomix.app.wiki_sync</code> to copy them from the website.</p>`;
   if (!W.id || !all.some(a => a.id === W.id)) W.id = all[0].id;
-  if (!W.art || W.art.id !== W.id) W.art = await get('/api/wiki/article?id=' + encodeURIComponent(W.id));
+  W.art = await get('/api/wiki/article?id=' + encodeURIComponent(W.id));
   const a = W.art, i = all.findIndex(x => x.id === a.id), prev = all[i - 1], next = all[i + 1];
   return `<div class="wiki"><aside><input type="search" id="wq" placeholder="Search the wiki" value="${esc(W.q)}" aria-label="Search the wiki">
     <nav id="wlist">${wikiList()}</nav></aside>
-    <article class="wa">${a.no ? `<div class="no">${esc(a.no)}</div>` : ''}<h1>${esc(a.title)}</h1>
+    <article class="wa">${wikiBanner()}${a.no ? `<div class="no">${esc(a.no)}</div>` : ''}<h1>${esc(a.title)}${a.editable ? ` <button id="wedit" style="font-size:.8rem;vertical-align:middle">Edit</button>` : ''}</h1>
       ${a.sub ? `<p class="sub">${esc(a.sub)}</p>` : ''}${a.html}
       <div class="next">${prev ? `<button data-wart="${esc(prev.id)}">← ${esc(prev.title)}</button>` : '<span></span>'}
         ${next ? `<button data-wart="${esc(next.id)}">${esc(next.title)} →</button>` : ''}</div>
-      <div class="foot"><span>Also on the website: <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.url)}</a></span>
-        ${W.index.synced ? `<span>Copied ${esc(W.index.synced)}</span>` : ''}</div></article></div>`;
+      <div class="foot"><span>On the website: <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.url)}</a></span></div>
+      ${wikiAbout()}</article></div>`;
 }
 
 function wikiAfter() {
+  clearTimeout(W.recheck);
+  if (W.index && W.index.about.checking) W.recheck = setTimeout(() => {
+    if (S.view === 'wiki' && document.activeElement.id !== 'wq') render(); }, 2500);
   document.querySelectorAll('.wa .term pre').forEach(pre => {
     const b = document.createElement('button'); b.className = 'wcopy'; b.textContent = 'copy';
     b.onclick = () => { const t = [...pre.childNodes].filter(n => !(n.classList && n.classList.contains('p'))).map(n => n.textContent).join('');
@@ -118,6 +137,21 @@ document.addEventListener('click', e => {
   e.preventDefault();
   wikiOpen(t.dataset.wart || t.dataset.wiki);
 });
+document.addEventListener('click', async e => {
+  const t = e.target;
+  try {
+    if (t.id === 'wedit') { await post('/api/wiki/edit', {id: W.id}); setTimeout(() => S.view === 'wiki' && render(), 4000); }
+    else if (t.id === 'wpub') {
+      const m = prompt('What changed? (a few words for the history)', ''); if (m === null) return;
+      t.disabled = true; t.textContent = 'Publishing…';
+      const r = await post('/api/wiki/publish', {message: m}); alert(r.done || 'Published.'); render();
+    }
+  } catch (err) { alert(err.message); render(); }
+});
+document.addEventListener('change', async e => {
+  if (e.target.id === 'wlive') { await post('/api/wiki/settings', {live: e.target.checked}); render(); }
+});
+window.addEventListener('focus', () => { if (S.view === 'wiki' && document.activeElement.id !== 'wq') render(); });
 document.addEventListener('input', e => {
   if (e.target.id !== 'wq') return;
   W.q = e.target.value;

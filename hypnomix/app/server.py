@@ -11,8 +11,8 @@ What you can do in it:
   apply         writes only what you approved into ONE new set next to the original, then shows what changed
   preferences   the questions asked once: targets, protected tracks, what is deliberate
   tools         run any hypnomix command with a form, and read its report
-  wiki          the website's training lessons, how-to guides, command reference and FAQ, offline and searchable
-                (copied from the site by `python -m hypnomix.app.wiki_sync`)
+  wiki          lessons, how-to guides, every command and the FAQ, offline and searchable: the same articles as the
+                website's /wiki/ (source: hypnomix/app/wiki/articles/; Edit and Publish in a git checkout)
   assistant     chat with an AI (your own key: Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, or a free model
                 in Ollama on this computer) that runs hypnomix for you; anything that writes a set waits for your
                 click. Needs `pip install "hypnomix[assistant]"`
@@ -523,6 +523,11 @@ def make_handler(port):
                     return self.send(200, {"capture": str(f)})
                 if self.headers.get("X-Hypnomix") != TOKEN:
                     return self.send(403, {"error": "open the app's own page to do this"})
+                if u.path.startswith("/api/wiki/"):        # the Wiki tab: edit, publish, live copy on or off
+                    from hypnomix.app import wiki as WK
+                    r = WK.handle_post(u.path, body)
+                    if r:
+                        return self.send(*r)
                 if u.path.startswith("/api/chat/"):        # the Assistant tab (needs the page's token, like the rest)
                     from hypnomix.app import chat as CH
                     r = CH.handle_post(u.path, body)

@@ -1,0 +1,19 @@
+<!--
+title: What you need
+sub: all free except Ableton Live itself
+group: Start here
+-->
+<div class="tablewrap"><table>
+      <tr><th>app</th><th>needed for</th><th>get it</th></tr>
+      <tr><td><b>A Mac (macOS)</b></td><td>Everything. Built and tested on macOS. Windows should work for the file tools and Live control, but it's untested.</td><td></td></tr>
+      <tr><td><b>Python 3.9 or newer</b></td><td>Runs hypnomix.</td><td><code>brew install python</code></td></tr>
+      <tr><td><b>ffmpeg</b></td><td>Reading and writing audio formats, codec checks.</td><td><code>brew install ffmpeg</code></td></tr>
+      <tr><td><b>uv</b> (recommended)</td><td>Fast, tidy installs into their own environment. Plain <code>pip</code> works too.</td><td><code>brew install uv</code></td></tr>
+      <tr><td><b>git</b></td><td>Downloading and updating hypnomix.</td><td><code>brew install git</code></td></tr>
+      <tr><td><b>Ableton Live 11 or 12</b></td><td>Only the Live features: controlling the open set, recording, building device chains. The file tools work without Live. Stock-device mastering uses Glue Compressor (Live Standard or Suite).</td><td><a target="_blank" rel="noopener" href="https://www.ableton.com/live/">ableton.com</a></td></tr>
+      <tr><td><b>REAPER or Ardour</b> (optional)</td><td>If you mix there instead: <code>scan</code> and <code>project</code> read REAPER projects (<code>.rpp</code>) and Ardour sessions (Ardour 3 to 9) directly. Ardour is free and open source.</td><td><a target="_blank" rel="noopener" href="https://ardour.org/">ardour.org</a> · <a target="_blank" rel="noopener" href="https://www.reaper.fm/">reaper.fm</a></td></tr>
+      <tr><td><b>BlackHole 2ch</b></td><td>Recording what Live plays: <code>loop</code>, <code>diagnose</code> and <code>chain --verify</code>.</td><td><code>brew install blackhole-2ch</code></td></tr>
+      <tr><td><b>Rubber Band</b> (optional)</td><td>Best-quality re-timing in <code>vocalign</code>; it falls back to its own method without it.</td><td><code>brew install rubberband</code></td></tr>
+      <tr><td><b>An AI coding agent</b> (optional)</td><td>Asking for mixes in plain English. Any agent that can run terminal commands works. Open-source agents paired with a local model run entirely on your Mac: no account, no subscription, nothing leaves the computer.</td><td>see <a data-wiki="agents" href="#">With an AI agent</a> · <a data-wiki="local" href="#">free &amp; offline</a></td></tr>
+    </table></div>
+    <p class="lead">The Python libraries (numpy, scipy, librosa, soundfile, pyloudnorm, noisereduce, python-osc and friends) install automatically in step 3 below. The bundled AbletonOSC remote script is installed for you in step 4.</p>

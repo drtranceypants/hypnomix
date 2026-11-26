@@ -1,0 +1,10 @@
+<!--
+title: History and undo
+sub: every applied version is kept · undo writes a new set, it never deletes
+no: lesson 6
+group: Training
+-->
+<div class="term" data-label="history"><pre><span class="p">$</span> hypnomix history "Song"                       <span class="c"># every version: when, what was approved, what changed</span>
+<span class="p">$</span> hypnomix history "Song" --diff 2 3            <span class="c"># what changed between two versions</span>
+<span class="p">$</span> hypnomix history "Song" --undo-item tune-Lead  <span class="c"># the latest version without one fix</span>
+<span class="p">$</span> hypnomix history "Song" --undo 2               <span class="c"># go back to version 2 (as a new set)</span></pre></div>

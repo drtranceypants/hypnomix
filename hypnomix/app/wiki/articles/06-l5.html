@@ -1,0 +1,13 @@
+<!--
+title: Review with someone
+sub: a co-producer, a bandmate, a client
+no: lesson 5
+group: Training
+-->
+<div class="prose paper">
+      <p>Every decision records who made it and when. A reviewer can leave a note at a bar or a time on any finding. Send them the review file, and when it comes back, merge it: where you both decided the same finding differently, it's shown to you to settle. Your own decision is never overwritten without you seeing it.</p>
+    </div>
+    <div class="term" data-label="collaborate"><pre><span class="p">$</span> hypnomix review "hypnomix-out/scan/Song" --export "Song review.json"     <span class="c"># send this</span>
+<span class="p">$</span> hypnomix review "hypnomix-out/scan/Song" --as Sam --serve              <span class="c"># they review as "Sam"</span>
+<span class="p">$</span> hypnomix review "hypnomix-out/scan/Song" --merge "Song review (Sam).json"
+<span class="p">$</span> hypnomix review "hypnomix-out/scan/Song" --settle smooth-4=mine      <span class="c"># settle a conflict</span></pre></div>

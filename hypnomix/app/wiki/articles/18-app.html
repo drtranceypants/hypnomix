@@ -1,0 +1,24 @@
+<!--
+title: The app and the Live device
+sub: no terminal, no AI, no API key · the whole first pass by clicking
+group: Start here
+-->
+<div class="prose paper">
+      <p><b>The web app.</b> One command opens it in your browser; it runs on your computer only. Choose a Live set, or a folder of recordings from any DAW, and press one button: it runs every check and builds the before-and-after clips. The review shows each finding with play buttons for A and B and three choices: Approve, Skip, Change. Apply writes only what you approved into a new set next to your original, then shows exactly what changed. Your preferences and every other hypnomix tool are a click away, each with a form.</p>
+      <p><b>The Live device.</b> A Max for Live device you drop on any track; audio passes through it untouched. It shows the finding you are on and steps through them, and Live jumps to each one: the track is selected, the playhead moves to the spot, the loop brace goes around it and the clip opens. Approve or skip right there. "Show in Live" buttons in the app do the same jump. The device never edits the set it sits in: applying still happens in the app, into a new set.</p>
+      <p>Both run on your computer only. Nothing is sent anywhere, and the app refuses requests from other sites. The device is new and needs Max for Live (Live Suite, or the add-on).</p>
+      <p><b>New:</b> measure every track while Live plays, tell hypnomix what each track is and what the song is, A/B every fix inside Live with a blind test, and record a review before export. See the <a data-wiki="loop" href="#">Training</a> page for step-by-step lessons with pictures and videos.</p>
+    </div>
+    <div class="term" data-label="the web app"><pre><span class="p">$</span> hypnomix app          <span class="c"># opens http://127.0.0.1:8791 in your browser</span>
+<span class="p">$</span> hypnomix device       <span class="c"># optional: puts the Max for Live device in your Live User Library</span></pre></div>
+    <h3 class="sub-h">Optional: make it a Mac app</h3>
+    <div class="prose paper">
+      <p>Prefer an icon in your Dock to a browser tab? You can build your own <b>Hypnomix.app</b>: a small window around the same web app, which starts and stops it for you. It takes about a minute, and you build it yourself so it is made for (and trusted by) your own Mac.</p>
+      <p><b>1.</b> Install Apple's command line tools once, if you haven't: <code>xcode-select --install</code>.<br>
+      <b>2.</b> In the hypnomix folder, run <code>macapp/build.sh</code>.<br>
+      <b>3.</b> Open <code>macapp/dist/Hypnomix.app</code>, or drag it into Applications.</p>
+      <p>If you move or reinstall the hypnomix folder, run the build again. The web app and the Mac app are the same thing inside; use whichever you like.</p>
+    </div>
+    <div class="term" data-label="build your own Mac app"><pre><span class="p">$</span> xcode-select --install     <span class="c"># once</span>
+<span class="p">$</span> cd hypnomix &amp;&amp; macapp/build.sh
+<span class="p">$</span> open macapp/dist/Hypnomix.app</pre></div>

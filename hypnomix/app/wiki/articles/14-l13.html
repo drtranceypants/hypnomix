@@ -1,0 +1,14 @@
+<!--
+title: Vocals
+sub: doubles and harmonies that sit together · your feel kept
+no: lesson 13
+group: Training
+-->
+<div class="prose paper">
+      <p><code>vocalign</code> lines doubles and harmonies up with the lead in time. If you ask, it also matches pitch and formant, checking each note against the chord under it. Presets cover the usual jobs, and you can protect any bars you want left exactly as sung. Inside Live, <code>alignset</code> writes the timing as warp markers on your own clips in a new set, and the Hypnomix Align device does it from inside Live.</p>
+    </div>
+    <div class="term" data-label="vocals"><pre><span class="p">$</span> hypnomix vocalign --list-presets
+<span class="p">$</span> hypnomix vocalign "Lead.wav" "Double.wav" "Harmony hi.wav" --preset natural-double --protect 33-36
+<span class="p">$</span> hypnomix vocalign "Lead.wav" "Harmony hi.wav" --pitch --chords "Song instrumental.wav"
+<span class="p">$</span> hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --apply   <span class="c"># warp markers on your own clips, in a new set</span>
+<span class="p">$</span> hypnomix aligndevice                  <span class="c"># the Align device for Live</span></pre></div>
