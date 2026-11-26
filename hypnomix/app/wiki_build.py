@@ -41,9 +41,14 @@ STYLE = """<style>
 .wiki .wa h3,.wiki .wa h4{scroll-margin-top:70px}.wiki .wa h2.wt{margin:.2rem 0 .3rem;text-align:left;font-size:clamp(1.4rem,3vw,2.1rem);overflow-wrap:anywhere}.wiki .wa > .sub{text-align:left;margin:0 0 1rem}
 .wiki .wa img,.wiki .wa video{max-width:100%;height:auto}.wiki .wa .pair{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
 .wiki .wa .steps,.wiki .wa .lead,.wiki .wa .note-box,.wiki .wa .warn-box,.wiki .wa .tablewrap{max-width:none}
+.wiki .wa .demo-loops{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem}.wiki .wa .shots{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+.wiki .wa .demo-loops figure,.wiki .wa .shots figure,.wiki .wa .devdemo figure{margin:0}.wiki .wa .devdemo{display:grid;gap:1.2rem}
+.wiki .wa .devpanel{max-width:430px}.wiki .wa .frame-paper img,.wiki .wa .frame-paper video{display:block;width:100%}
+.wiki .wa .demo-loops figcaption,.wiki .wa .shots figcaption,.wiki .wa .demo-cap{font-size:.92rem;text-align:center;margin-top:.5rem}
+.wiki .wa .demo-loops figcaption b,.wiki .wa .shots figcaption b{display:block;font:600 .7rem var(--futura,Jost,sans-serif);letter-spacing:.2em;text-transform:uppercase;color:var(--wine,#8e3f3f)}
 .wiki .wa .next{display:flex;justify-content:space-between;gap:1rem;margin-top:1.6rem;font-size:.95rem}
 .wiki.js .wa{display:none}.wiki.js .wa.on{display:block}
-@media (max-width:820px){.wiki{grid-template-columns:1fr}.wiki aside{position:static;max-height:240px}.wiki .wa .pair{grid-template-columns:1fr}}
+@media (max-width:820px){.wiki{grid-template-columns:1fr}.wiki aside{position:static;max-height:240px}.wiki .wa .pair,.wiki .wa .demo-loops,.wiki .wa .shots{grid-template-columns:1fr}}
 </style>"""
 
 SCRIPT = """<script>

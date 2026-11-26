@@ -51,10 +51,15 @@ try { W.id = localStorage.getItem('hypnomix.wiki') || null; } catch (e) {}
   .wa .group .tagline{color:var(--mute);font-style:italic;margin-top:-4px}
   .wa .group dl{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:baseline;margin:0}.wa .group dt{margin:0}.wa .group dd{margin:0}
   .wa pre .o{color:#8fc7a4;font-weight:600}
+  .wa .demo-loops{display:grid;grid-template-columns:1fr 1fr;gap:16px}.wa .shots{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .wa .demo-loops figure,.wa .shots figure,.wa .devdemo figure{margin:0}.wa .devdemo{display:grid;gap:16px}
+  .wa .devpanel{max-width:430px}.wa .frame-paper img,.wa .frame-paper video{display:block;width:100%}
+  .wa .demo-loops figcaption b,.wa .shots figcaption b{display:block;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+  .wa .demo-cap{color:var(--mute);font-size:.88rem}
   .wa .foot+.foot{margin-top:6px;border-top:0;padding-top:0}.wa .foot label{display:inline-flex;gap:6px;align-items:center}
   .wa .foot{margin-top:36px;padding-top:12px;border-top:1px solid var(--line);color:var(--mute);font-size:.86rem;display:flex;gap:12px;flex-wrap:wrap}
   .wa .next{display:flex;justify-content:space-between;gap:12px;margin-top:28px}
-  @media (max-width:760px){.wiki{grid-template-columns:1fr}.wiki aside{position:static;max-height:none}.wiki aside nav{max-height:230px;overflow:auto;border-bottom:1px solid var(--line)}.wa .pair{grid-template-columns:1fr}}`;
+  @media (max-width:760px){.wiki{grid-template-columns:1fr}.wiki aside{position:static;max-height:none}.wiki aside nav{max-height:230px;overflow:auto;border-bottom:1px solid var(--line)}.wa .pair,.wa .demo-loops,.wa .shots{grid-template-columns:1fr}}`;
   document.head.appendChild(st);
 })();
 
