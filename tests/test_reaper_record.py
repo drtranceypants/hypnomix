@@ -27,7 +27,7 @@ class Hub:
 
 class Relay(unittest.TestCase):
     def test_no_app_says_so(self):
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(RP.NoApp):                               # Main then says to open the app (3)
             RP.handle(Hub(), {"ev": "start", "pos": 0}, FakeReaper())
 
     def test_stop_marks_reviewing(self):
@@ -38,6 +38,18 @@ class Relay(unittest.TestCase):
         RP.handle(h, {"ev": "stop", "start": 2.0, "end": 9.5}, r)
         self.assertEqual(seen, ["start", "stop"])
         self.assertEqual(r.calls, [("rec_status", {"code": 4})])
+
+
+class MainStates(unittest.TestCase):
+    def test_every_state_has_its_words(self):
+        """Each state the bridge can report has its own line on Main (a failed review is not 'no app')."""
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1] / "hypnomix" / "reaper"
+        main = (root / "jsfx" / "hypnomix_main.jsfx").read_text()
+        lua = (root / "bridge.lua").read_text()
+        for k in range(1, 7):
+            self.assertIn(f"rr_state == {k} ?", main)
+        self.assertIn("if rec.last - rec.start < 1.0 then reaper.gmem_write(GM_STATE, 5); return false end", lua)
 
 
 class App(unittest.TestCase):

@@ -49,6 +49,7 @@ def main():
             out = r.call("record")
             print({"start": "recording the master from the edit cursor: run it again (or stop REAPER) to review",
                    "stop": "stopped: the hypnomix app renders what played and reviews it",
+                   "short": "stopped: under a second played, so there is nothing to review",
                    "no app": "the hypnomix app is not relaying (start `hypnomix app`, with the bridge running)"}[out["did"]])
             return
         if a.cmd == "stop":

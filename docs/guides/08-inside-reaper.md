@@ -240,8 +240,9 @@ REAPER) and the app:
   against Main's song card, `qc`, `translate`, and `master --plan` with the card's target, ceiling, limiter
   character and amount. The review opens in the app.
 
-If you loop a section, the review covers from where you started to the furthest point played. If Main's window
-says the app did not answer, open the app (`hypnomix app`) with the bridge running and press again. REAPER's own
+If you loop a section, the review covers from where you started to the furthest point played. Under a second of
+playing is not reviewed (Main says so). If Main's window says the app did not answer, open the app (`hypnomix app`)
+with the bridge running and press again; if it says the review could not run, the app shows why. REAPER's own
 Render is still how you make the final file.
 
 ## Measured in REAPER

@@ -28,7 +28,8 @@ out_pin:right output
 @gfx 460 64
 // Record and review before export: a press goes to the hypnomix bridge (gmem[8] counts presses); the bridge plays
 // the project from the edit cursor and keeps what played, the app renders that stretch of the master and reviews it.
-// gmem[9] is the state the bridge reports (0 idle, 1 recording, 2 rendering, 3 no app, 4 reviewing), gmem[10] seconds.
+// gmem[9] is the state the bridge reports (0 idle, 1 recording, 2 rendering, 3 no app, 4 reviewing, 5 too short,
+// 6 the review failed), gmem[10] seconds.
 rr_state = gmem[9];
 rr_x = 8; rr_y = 8; rr_w = 250; rr_h = 26;
 gfx_set(0.12, 0.10, 0.09, 1); gfx_rect(0, 0, gfx_w, gfx_h);
@@ -50,6 +51,10 @@ rr_pressed > 0 && time_precise() - rr_pressed > 1.5 ? (
   gfx_drawstr("The hypnomix app did not answer: open it (hypnomix app), then try again");
 ) : rr_state == 4 ? (
   gfx_drawstr("Reviewing in the hypnomix app");
+) : rr_state == 5 ? (
+  gfx_drawstr("Under a second played: nothing to review. Press again to record");
+) : rr_state == 6 ? (
+  gfx_drawstr("The review could not run: the hypnomix app says why");
 ) : (
   gfx_drawstr("Plays from the edit cursor while every probe listens");
 );

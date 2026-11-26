@@ -179,12 +179,16 @@ def insert(path, out=None):
 _FEEDERS = {}
 
 
+class NoApp(RuntimeError):
+    pass
+
+
 def handle(hub, ev, r):
     """One Record and review event from the bridge. start: the app opens a capture (or says it cannot); stop: the
     app closes the capture, has REAPER render the master for exactly what played, and reviews it."""
     fn = getattr(hub, "on_record", None)
     if fn is None:
-        raise RuntimeError("no app to review it (start `hypnomix app`)")
+        raise NoApp("no app to review it (start `hypnomix app`)")
     out = fn(ev, r)
     if ev.get("ev") == "stop":
         r.call("rec_status", code=4)
@@ -207,7 +211,7 @@ def feed(hub, interval=0.2):
                 handle(hub, ev, r)
             except Exception as e:                    # tell Main, so the button does not hang on "rendering"
                 try:
-                    r.call("rec_status", code=3)
+                    r.call("rec_status", code=3 if isinstance(e, NoApp) else 6)
                 except (ReaperError, OSError):
                     pass
                 print(f"record and review: {e}", flush=True)

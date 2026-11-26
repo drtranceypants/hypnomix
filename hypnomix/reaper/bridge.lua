@@ -419,7 +419,7 @@ end
 
 -- ------------------------------------------------------------------ Record and review before export
 -- Hypnomix Main's button counts presses in gmem[8]; the state Main shows is gmem[9] (0 idle, 1 recording,
--- 2 rendering, 3 no app, 4 reviewing in the app) and gmem[10] the seconds recorded. While recording, the probes
+-- 2 rendering, 3 no app, 4 reviewing in the app, 5 under a second played: nothing sent, 6 the review failed) and gmem[10] the seconds recorded. While recording, the probes
 -- listen as usual; on stop the app renders the master for exactly the stretch that played (`render_master`) and
 -- reviews it. The events go to the app's relay with `probe_blocks rec=1` (one reader: the app that owns the probes).
 local GM_PRESS, GM_STATE, GM_SECS = 8, 9, 10
@@ -437,12 +437,14 @@ end
 local function rec_finish(stop_transport)
   rec.on = false
   if stop_transport and reaper.GetPlayState() & 1 == 1 then reaper.OnStopButton() end
+  if rec.last - rec.start < 1.0 then reaper.gmem_write(GM_STATE, 5); return false end   -- nothing worth reviewing
   reaper.gmem_write(GM_STATE, 2)
   rec.events[#rec.events + 1] = { ev = "stop", start = rec.start, ["end"] = rec.last }
+  return true
 end
 
 local function rec_toggle()
-  if rec.on then rec_finish(true); return "stop" end
+  if rec.on then return rec_finish(true) and "stop" or "short" end
   if reaper.time_precise() - rec.fed > 3 then          -- nobody to review it: the app's relay is not polling
     reaper.gmem_write(GM_STATE, 3); return "no app"
   end
@@ -470,9 +472,9 @@ function C.record()             -- the same as pressing Main's button
   return { did = rec_toggle(), recording = rec.on, start = rec.start, ["end"] = rec.last }
 end
 
-function C.rec_status(a)        -- the app says how it went; 3 (it could not) also stops a recording
+function C.rec_status(a)        -- the app says how it went; 3 (no app) or 6 (it failed) also stops a recording
   local code = tonumber(a.code) or 0
-  if code == 3 and rec.on then rec.on = false; if reaper.GetPlayState() & 1 == 1 then reaper.OnStopButton() end end
+  if (code == 3 or code == 6) and rec.on then rec.on = false; if reaper.GetPlayState() & 1 == 1 then reaper.OnStopButton() end end
   reaper.gmem_write(GM_STATE, code)
   return { state = code }
 end
