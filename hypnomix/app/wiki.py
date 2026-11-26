@@ -89,7 +89,7 @@ def local(root=None):
 def git(*args, cwd=None):
     try:
         r = subprocess.run(["git", *args], cwd=cwd or HERE, capture_output=True, text=True, timeout=20)
-        return r.returncode, (r.stdout + r.stderr).strip()
+        return r.returncode, (r.stdout + r.stderr).rstrip()
     except (OSError, subprocess.TimeoutExpired) as e:
         return 1, str(e)
 
@@ -97,9 +97,11 @@ def git(*args, cwd=None):
 def checkout():
     """-> (repo root, commit time of the wiki, unpublished changes) when running from a git checkout."""
     code, top = git("rev-parse", "--show-toplevel")
+    top = top.strip()
     if code:
         return None, 0, []
     _, t = git("log", "-1", "--format=%ct", "--", str(HERE))
+    t = t.strip()
     _, st = git("status", "--porcelain", "--", str(HERE))
     return Path(top), int(t) if t.isdigit() else 0, [ln[3:] for ln in st.splitlines() if ln.strip()]
 
