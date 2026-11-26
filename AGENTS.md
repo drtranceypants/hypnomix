@@ -19,6 +19,10 @@ A command-line mixing and mastering toolkit (`hypnomix <command>`). Three kinds 
   scan writes ONE new `.rpp` (`workflow/fix_project.py`, edits in `project/rpp_edit.py`; tuned vocals become new
   takes on the person's own items, never a rendered copy). The same model also reads `.als` sets; new tools that should work in both DAWs
   belong there (`project.load(path)`), not on raw XML.
+- **REAPER tools:** `hypnomix reaper start|status|tracks|fx|params` talk to the open REAPER through
+  `hypnomix/reaper/bridge.lua` (request files in `~/.hypnomix/reaper-bridge`, a fixed list of commands, never code;
+  each change is one REAPER undo step). `chain … --reaper` builds chains from stock plug-ins (`engineer/chain_reaper.py`).
+  Starting the bridge installs nothing, but it does run a script in the person's REAPER: say so before starting it.
 - **Live tools:** drive the open Live set through AbletonOSC (`hypnomix live`, `loop`, `diagnose`, `chain`).
   The last resort, not the first: they need Live running, a remote script, and a person at the screen.
 

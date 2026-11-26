@@ -1,0 +1,377 @@
+-- hypnomix bridge for REAPER: lets `hypnomix` read and change the open project, one request at a time.
+--
+-- Started by `hypnomix reaper start` (REAPER runs a script given on its command line, in the running REAPER).
+-- No install, no remote script, nothing changed in REAPER's settings. It keeps running in the background
+-- (Actions list: "Terminate instances" or `hypnomix reaper stop` ends it).
+--
+-- Requests are small text files in the bridge folder: req-<id>.txt, first line the command, then key=value lines.
+-- Answers are res-<id>.json. Every change is one undo step named "hypnomix: ..." (Edit > Undo takes it back).
+-- Only the commands below exist: the bridge never runs code it is sent.
+
+local DIR = HYPNOMIX_DIR or (reaper.GetResourcePath() .. "/hypnomix-bridge")
+local VERSION = "1"
+reaper.RecursiveCreateDirectory(DIR, 0)
+
+-- ------------------------------------------------------------------ JSON out
+local function esc(s)
+  return (s:gsub('[%c"\\]', function(c)
+    local m = { ['"'] = '\\"', ['\\'] = '\\\\', ['\n'] = '\\n', ['\r'] = '\\r', ['\t'] = '\\t' }
+    return m[c] or string.format("\\u%04x", c:byte())
+  end))
+end
+
+local function json(v)
+  local t = type(v)
+  if t == "nil" then return "null"
+  elseif t == "boolean" then return v and "true" or "false"
+  elseif t == "number" then
+    if v ~= v or v == math.huge or v == -math.huge then return "null" end
+    return string.format("%.10g", v)
+  elseif t == "string" then return '"' .. esc(v) .. '"'
+  elseif t == "table" then
+    if #v > 0 or next(v) == nil then
+      local out = {}
+      for i = 1, #v do out[i] = json(v[i]) end
+      return "[" .. table.concat(out, ",") .. "]"
+    end
+    local out = {}
+    for k, x in pairs(v) do out[#out + 1] = json(tostring(k)) .. ":" .. json(x) end
+    return "{" .. table.concat(out, ",") .. "}"
+  end
+  return "null"
+end
+
+-- ------------------------------------------------------------------ helpers
+local function track_of(ref)
+  if ref == nil or ref == "" or ref == "master" then return reaper.GetMasterTrack(0) end
+  local n = tonumber(ref)
+  if n then return reaper.GetTrack(0, n) end
+  for i = 0, reaper.CountTracks(0) - 1 do
+    local tr = reaper.GetTrack(0, i)
+    local _, name = reaper.GetTrackName(tr)
+    if name == ref then return tr end
+  end
+  return nil
+end
+
+local function fx_of(tr, ref)
+  local n = tonumber(ref)
+  if n then return n end
+  for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
+    local _, name = reaper.TrackFX_GetFXName(tr, i, "")
+    if name == ref then return i end
+  end
+  return -1
+end
+
+local function param_of(tr, fx, ref)
+  local n = tonumber(ref)
+  if n then return n end
+  local low = ref:lower()
+  for i = 0, reaper.TrackFX_GetNumParams(tr, fx) - 1 do
+    local _, name = reaper.TrackFX_GetParamName(tr, fx, i, "")
+    if name:lower() == low then return i end
+  end
+  return -1
+end
+
+local function shown(tr, fx, p)
+  local _, s = reaper.TrackFX_GetFormattedParamValue(tr, fx, p, "")
+  return s
+end
+
+local function first_number(s)
+  if s and s:find("%-inf") then return -math.huge end        -- "-inf" dB: the bottom of the range
+  if s and s:lower():find("inf") then return math.huge end    -- "inf" (a ratio of infinity to one): the top
+  local x = s and s:match("[-+]?%d*%.?%d+") or nil
+  if not x then return nil end
+  local v = tonumber((x:gsub("^%+", "")))                   -- Lua does not read "+0.00"
+  if s:match("[%d%.]%s*[kK]") then v = v * 1000 end        -- "1.2 kHz", "1.2k"
+  return v
+end
+
+-- the plug-in shows the value it plays; find the normalized position that shows `target` (values rise or fall
+-- monotonically with the knob, as on every stock plug-in this is used with)
+local function set_shown(tr, fx, p, target)
+  local lo, hi = 0.0, 1.0
+  reaper.TrackFX_SetParamNormalized(tr, fx, p, 0.0); local a = first_number(shown(tr, fx, p))
+  reaper.TrackFX_SetParamNormalized(tr, fx, p, 1.0); local b = first_number(shown(tr, fx, p))
+  if a == nil or b == nil then return nil, "the plug-in does not show this value as a number" end
+  local rising = b >= a
+  for _ = 1, 40 do
+    local mid = (lo + hi) / 2
+    reaper.TrackFX_SetParamNormalized(tr, fx, p, mid)
+    local v = first_number(shown(tr, fx, p))
+    if v == nil then break end
+    if (v < target) == rising then lo = mid else hi = mid end
+  end
+  -- whichever end of the last step shows the value nearest the target (displays round)
+  local best, bestd = (lo + hi) / 2, math.huge
+  for _, x in ipairs({ lo, (lo + hi) / 2, hi }) do
+    reaper.TrackFX_SetParamNormalized(tr, fx, p, x)
+    local v = first_number(shown(tr, fx, p))
+    if v and math.abs(v - target) < bestd then best, bestd = x, math.abs(v - target) end
+  end
+  reaper.TrackFX_SetParamNormalized(tr, fx, p, best)
+  return shown(tr, fx, p)
+end
+
+-- ------------------------------------------------------------------ commands
+local C = {}
+
+function C.ping()
+  local _, path = reaper.EnumProjects(-1, "")
+  return { bridge = VERSION, reaper = reaper.GetAppVersion(), project = path,
+           tempo = reaper.Master_GetTempo(), tracks = reaper.CountTracks(0), sr = reaper.GetSetProjectInfo(0, "PROJECT_SRATE", 0, false) }
+end
+
+function C.tracks()
+  local out = {}
+  for i = 0, reaper.CountTracks(0) - 1 do
+    local tr = reaper.GetTrack(0, i)
+    local _, name = reaper.GetTrackName(tr)
+    local fx = {}
+    for k = 0, reaper.TrackFX_GetCount(tr) - 1 do
+      local _, n = reaper.TrackFX_GetFXName(tr, k, "")
+      fx[#fx + 1] = { name = n, on = reaper.TrackFX_GetEnabled(tr, k) }
+    end
+    out[#out + 1] = { index = i, name = name, guid = reaper.GetTrackGUID(tr), fx = fx,
+                      volume = reaper.GetMediaTrackInfo_Value(tr, "D_VOL"), pan = reaper.GetMediaTrackInfo_Value(tr, "D_PAN"),
+                      mute = reaper.GetMediaTrackInfo_Value(tr, "B_MUTE") == 1,
+                      depth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH") }
+  end
+  return out
+end
+
+function C.fx_list(a)
+  local tr = track_of(a.track); if not tr then return nil, "no track" end
+  local out = {}
+  for k = 0, reaper.TrackFX_GetCount(tr) - 1 do
+    local _, n = reaper.TrackFX_GetFXName(tr, k, "")
+    out[#out + 1] = { index = k, name = n, on = reaper.TrackFX_GetEnabled(tr, k) }
+  end
+  return out
+end
+
+function C.fx_installed(a)
+  local out, i, want = {}, 0, (a.filter or ""):lower()
+  while true do
+    local ok, name = reaper.EnumInstalledFX(i)
+    if not ok then break end
+    if want == "" or name:lower():find(want, 1, true) then out[#out + 1] = name end
+    i = i + 1
+  end
+  return out
+end
+
+function C.add_fx(a)
+  local tr = track_of(a.track)
+  if not tr then return nil, "no track " .. tostring(a.track) end
+  local fx = reaper.TrackFX_AddByName(tr, a.name, false, -1)
+  if fx < 0 then return nil, "REAPER has no plug-in called " .. a.name end
+  return { fx = fx, name = select(2, reaper.TrackFX_GetFXName(tr, fx, "")) }
+end
+
+function C.fx_params(a)
+  local tr = track_of(a.track); if not tr then return nil, "no track" end
+  local fx = fx_of(tr, a.fx); if fx < 0 then return nil, "no such plug-in on the track" end
+  local out = {}
+  for p = 0, reaper.TrackFX_GetNumParams(tr, fx) - 1 do
+    local _, name = reaper.TrackFX_GetParamName(tr, fx, p, "")
+    out[#out + 1] = { index = p, name = name, value = reaper.TrackFX_GetParamNormalized(tr, fx, p), shown = shown(tr, fx, p) }
+  end
+  return out
+end
+
+function C.set_param(a)
+  local tr = track_of(a.track); if not tr then return nil, "no track" end
+  local fx = fx_of(tr, a.fx); if fx < 0 then return nil, "no such plug-in on the track" end
+  local p = param_of(tr, fx, a.param); if p < 0 then return nil, "no parameter " .. a.param end
+  if a.shown then
+    local s, err = set_shown(tr, fx, p, tonumber(a.shown))
+    if not s then return nil, err end
+    return { param = p, shown = s }
+  end
+  reaper.TrackFX_SetParamNormalized(tr, fx, p, tonumber(a.value))
+  return { param = p, shown = shown(tr, fx, p) }
+end
+
+function C.set_named(a)
+  local tr = track_of(a.track); if not tr then return nil, "no track" end
+  local fx = fx_of(tr, a.fx); if fx < 0 then return nil, "no such plug-in on the track" end
+  local ok = reaper.TrackFX_SetNamedConfigParm(tr, fx, a.key, a.value)
+  local _, now = reaper.TrackFX_GetNamedConfigParm(tr, fx, a.key)
+  return { ok = ok, now = now }
+end
+
+function C.get_named(a)
+  local tr = track_of(a.track); if not tr then return nil, "no track" end
+  local fx = fx_of(tr, a.fx); if fx < 0 then return nil, "no such plug-in on the track" end
+  local ok, now = reaper.TrackFX_GetNamedConfigParm(tr, fx, a.key)
+  return { ok = ok, value = now }
+end
+
+function C.fx_enable(a)
+  local tr = track_of(a.track); if not tr then return nil, "no track" end
+  local fx = fx_of(tr, a.fx); if fx < 0 then return nil, "no such plug-in on the track" end
+  reaper.TrackFX_SetEnabled(tr, fx, a.on == "1")
+  return { on = reaper.TrackFX_GetEnabled(tr, fx) }
+end
+
+function C.set_track(a)
+  local tr = track_of(a.track); if not tr then return nil, "no track" end
+  if a.volume_db then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", 10 ^ (tonumber(a.volume_db) / 20)) end
+  if a.pan then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", tonumber(a.pan)) end
+  if a.mute then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", tonumber(a.mute)) end
+  return { volume = reaper.GetMediaTrackInfo_Value(tr, "D_VOL"), pan = reaper.GetMediaTrackInfo_Value(tr, "D_PAN") }
+end
+
+-- render the master output of a time range to a file (the project's own render settings are put back after)
+function C.render_master(a)
+  local keys = { "RENDER_FILE", "RENDER_PATTERN", "RENDER_FORMAT" }
+  local nums = { "RENDER_SETTINGS", "RENDER_BOUNDSFLAG", "RENDER_STARTPOS", "RENDER_ENDPOS", "RENDER_SRATE", "RENDER_CHANNELS" }
+  local keep_s, keep_n = {}, {}
+  for _, k in ipairs(keys) do keep_s[k] = select(2, reaper.GetSetProjectInfo_String(0, k, "", false)) end
+  for _, k in ipairs(nums) do keep_n[k] = reaper.GetSetProjectInfo(0, k, 0, false) end
+  local dir, file = a.path:match("^(.*)/([^/]+)%.wav$")
+  reaper.GetSetProjectInfo_String(0, "RENDER_FILE", dir, true)
+  reaper.GetSetProjectInfo_String(0, "RENDER_PATTERN", file, true)
+  reaper.GetSetProjectInfo_String(0, "RENDER_FORMAT", "ZXZhdyAAAQ==", true)     -- WAV, 32-bit float
+  reaper.GetSetProjectInfo(0, "RENDER_SETTINGS", 0, true)                       -- master mix
+  reaper.GetSetProjectInfo(0, "RENDER_BOUNDSFLAG", 0, true)                     -- custom time range
+  reaper.GetSetProjectInfo(0, "RENDER_STARTPOS", tonumber(a.start), true)
+  reaper.GetSetProjectInfo(0, "RENDER_ENDPOS", tonumber(a["end"]), true)
+  reaper.GetSetProjectInfo(0, "RENDER_CHANNELS", 2, true)
+  reaper.Main_OnCommand(42230, 0)                                               -- render, auto-close
+  for _, k in ipairs(keys) do reaper.GetSetProjectInfo_String(0, k, keep_s[k], true) end
+  for _, k in ipairs(nums) do reaper.GetSetProjectInfo(0, k, keep_n[k], true) end
+  return { path = a.path, exists = reaper.file_exists(a.path) }
+end
+
+-- route a plug-in's input or output pin to channels (mask: 1 = channel 1, 2 = channel 2, 0 = none); channels no
+-- output pin writes pass through unchanged
+function C.set_pins(a)
+  local tr = track_of(a.track); if not tr then return nil, "no track" end
+  local fx = fx_of(tr, a.fx); if fx < 0 then return nil, "no such plug-in on the track" end
+  local ok = reaper.TrackFX_SetPinMappings(tr, fx, tonumber(a.output), tonumber(a.pin), tonumber(a.mask), 0)
+  return { ok = ok }
+end
+
+function C.remove_fx(a)
+  local tr = track_of(a.track); if not tr then return nil, "no track" end
+  local fx = fx_of(tr, a.fx); if fx < 0 then return nil, "no such plug-in on the track" end
+  reaper.TrackFX_Delete(tr, fx)
+  return { removed = fx }
+end
+
+-- a new, empty project tab (for checks that must not touch the person's project); close_tab closes only a tab
+-- this bridge opened, and never saves it
+-- the tabs this bridge opened, remembered for the whole REAPER session (a restarted bridge still knows them)
+local function opened_tabs()
+  local t = {}
+  for id in (reaper.GetExtState("hypnomix", "tabs") or ""):gmatch("[^,]+") do t[id] = true end
+  return t
+end
+
+function C.new_tab()
+  reaper.Main_OnCommand(40859, 0)
+  local proj = reaper.EnumProjects(-1, "")
+  local t = opened_tabs(); t[tostring(proj)] = true
+  local ids = {}; for id in pairs(t) do ids[#ids + 1] = id end
+  reaper.SetExtState("hypnomix", "tabs", table.concat(ids, ","), false)
+  return { tab = tostring(proj) }
+end
+
+function C.add_track(a)
+  local n = reaper.CountTracks(0)
+  reaper.InsertTrackAtIndex(n, true)
+  local tr = reaper.GetTrack(0, n)
+  if a.name then reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", a.name, true) end
+  if a.file then
+    local it = reaper.AddMediaItemToTrack(tr)
+    local tk = reaper.AddTakeToMediaItem(it)
+    local src = reaper.PCM_Source_CreateFromFile(a.file)
+    reaper.SetMediaItemTake_Source(tk, src)
+    reaper.SetMediaItemInfo_Value(it, "D_POSITION", tonumber(a.pos or 0))
+    reaper.SetMediaItemInfo_Value(it, "D_LENGTH", reaper.GetMediaSourceLength(src))
+    reaper.UpdateArrange()
+  end
+  return { index = n }
+end
+
+function C.close_tab()
+  local proj = reaper.EnumProjects(-1, "")
+  if not opened_tabs()[tostring(proj)] then return nil, "the open tab was not made by hypnomix: not closing it" end
+  -- closing a changed tab asks "save?" (a dialog the bridge would wait on): save a throwaway copy, reload it into
+  -- this tab without a prompt (now unchanged), then close
+  local scratch = DIR .. "/scratch.rpp"
+  reaper.Main_SaveProjectEx(proj, scratch, 0)
+  reaper.Main_openProject("noprompt:" .. scratch)
+  reaper.Main_OnCommand(40860, 0)
+  return { closed = true }
+end
+
+local CHANGES = { set_pins = true, remove_fx = true, add_track = true, add_fx = true, set_param = true, set_named = true, fx_enable = true, set_track = true }
+local running = true
+function C.quit() running = false; return { bye = true } end
+
+-- ------------------------------------------------------------------ loop
+local function read_request(path)
+  local f = io.open(path, "r"); if not f then return nil end
+  local cmd = f:read("*l")
+  local args = {}
+  for line in f:lines() do
+    local k, v = line:match("^([%w_]+)=(.*)$")
+    if k then args[k] = v end
+  end
+  f:close()
+  return cmd, args
+end
+
+local function answer(id, ok, body, err)
+  local tmp, out = DIR .. "/res-" .. id .. ".tmp", DIR .. "/res-" .. id .. ".json"
+  local f = io.open(tmp, "w")
+  f:write(json({ ok = ok, result = body, error = err }))
+  f:close()
+  os.rename(tmp, out)
+end
+
+local last_beat = 0
+local function loop()
+  local now = reaper.time_precise()
+  if now - last_beat > 1 then
+    local f = io.open(DIR .. "/alive", "w"); if f then f:write(tostring(os.time())); f:close() end
+    last_beat = now
+  end
+  local names, i = {}, 0
+  while true do                                      -- a fresh listing each pass (index 0 re-reads the folder)
+    local name = reaper.EnumerateFiles(DIR, i)
+    if not name then break end
+    names[#names + 1] = name
+    i = i + 1
+  end
+  for _, name in ipairs(names) do
+    local id = name:match("^req%-(.+)%.txt$")
+    local path = id and (DIR .. "/" .. name)
+    local cmd, args
+    if path then cmd, args = read_request(path) end
+    if cmd then                                      -- nil: already handled (a stale listing)
+      os.remove(path)
+      local fn = C[cmd]
+      if not fn then
+        answer(id, false, nil, "unknown command " .. tostring(cmd))
+      else
+        if CHANGES[cmd] then reaper.Undo_BeginBlock() end
+        local ok, body, err = pcall(fn, args)
+        if CHANGES[cmd] then reaper.Undo_EndBlock("hypnomix: " .. cmd, -1) end
+        if not ok then answer(id, false, nil, tostring(body))
+        elseif body == nil then answer(id, false, nil, err or "failed")
+        else answer(id, true, body, nil) end
+      end
+    end
+  end
+  if running then reaper.defer(loop) else os.remove(DIR .. "/alive") end
+end
+
+reaper.atexit(function() os.remove(DIR .. "/alive") end)
+loop()

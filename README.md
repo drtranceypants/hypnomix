@@ -114,6 +114,10 @@ comp cuts, spikes, vocal pitch and doubles, plug-ins, the source recordings, boo
 `fix … --out "Song (fixed).rpp"` writes what you approved into **one new project**: item fades, volume eases at
 comp cuts and dips over spikes (as track volume automation), and tuned vocals as **new takes** on your own items,
 so the original take is one click away. Checked against REAPER 7.86's own renders.
+`hypnomix reaper start` runs a small bridge inside the REAPER that is open (nothing is installed; every change is
+one undo step), and `hypnomix chain master BOUNCE.wav --reaper --verify` builds the mastering chain on REAPER's
+master from stock plug-ins only (ReaEQ, ReaComp, ReaLimit, JS Mid/Side for a clean bass-mono), then has REAPER
+render the song and trims it to your loudness target and true-peak ceiling.
 
 **Ardour:** the same for an Ardour session (Ardour 3 to 9): `hypnomix project "Song/"` lists tracks, buses,
 regions, plug-ins and automation, `--render` plays the regions the way Ardour layers them (upper regions cover

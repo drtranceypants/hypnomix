@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Build a mastering chain or channel strips in your Live set from Live's own devices: no paid plug-ins.
+With --reaper, the same chain in the REAPER that is open, from REAPER's stock plug-ins (see chain_reaper.py).
 
   master   Analyses a bounce of your mix with `hypnomix master`, then builds the same chain on the Main
            track from stock devices and dials in every value:
@@ -15,6 +16,7 @@ Usage:
     hypnomix chain master BOUNCE.wav [--target -14] [--reference ref.wav] [--warmth 0.3] [--verify]
                          [--existing bypass|keep] [--dry-run]
     hypnomix chain strips recipe.json [--dry-run]
+    hypnomix chain master BOUNCE.wav --reaper [--verify]   (and `strips … --reaper`)
 
 The bounce must start at bar 1 of the set (export the whole song). Existing devices on Main are never
 deleted: with --existing bypass they are switched off (a third-party limiter, for example), with keep the new chain goes after them.
@@ -283,8 +285,13 @@ def main():
     m.add_argument("--existing", choices=["bypass", "keep", "refuse"], default="refuse")
     m.add_argument("--verify", action="store_true"); m.add_argument("--dry-run", action="store_true")
     s = sub.add_parser("strips"); s.add_argument("recipe"); s.add_argument("--dry-run", action="store_true")
+    for p_ in (m, s):
+        p_.add_argument("--reaper", action="store_true", help="build it in the REAPER that is open (stock ReaEQ, "
+                        "ReaComp, ReaLimit and JS plug-ins) instead of Live")
     a = ap.parse_args()
 
+    if a.reaper:
+        return main_reaper(a)
     live = None
     if not a.dry_run:
         from hypnomix.live.osc import Live
@@ -315,6 +322,36 @@ def main():
         print("\n".join(build_strips(live, a.recipe, a.dry_run)))
     if live:
         live.close()
+
+
+def main_reaper(a):
+    from hypnomix.engineer import chain_reaper as CR
+    from hypnomix.reaper.client import Reaper, ReaperError
+    r = None
+    if not a.dry_run:
+        r = Reaper()
+        try:
+            r.start()
+            info = r.ping()
+        except ReaperError as e:
+            sys.exit(str(e))
+        print(f"REAPER {info['reaper']}: {info['project'] or '(unsaved project)'}. Every change is an undo step "
+              "(Edit > Undo).", file=sys.stderr)
+    if a.cmd == "master":
+        print(f"analysing {Path(a.bounce).name} …", file=sys.stderr)
+        plan, ctx = plan_master(a.bounce, a.target, a.ceiling, a.reference, a.match, a.warmth, a.width)
+        rows, notes = CR.build_master(r, plan, a.existing, a.dry_run)
+        md = [f"# Mastering chain on REAPER's master{' (plan only)' if a.dry_run else ''}", "",
+              "| plug-in | settings | why |", "|---|---|---|", *[f"| {d} | {s_} | {w} |" for d, s_, w in rows]]
+        if notes:
+            md += ["", "Set by hand:", *[f"- {n}" for n in notes]]
+        if a.verify and not a.dry_run:
+            md += ["", *CR.verify(r, plan, ctx)]
+        elif not a.dry_run:
+            md += ["", "Run with --verify: REAPER renders the loudest bars, and ReaLimit is trimmed to the target."]
+        print("\n".join(md))
+    else:
+        print("\n".join(CR.build_strips(r, a.recipe, a.dry_run)))
 
 
 if __name__ == "__main__":
