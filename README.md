@@ -45,6 +45,9 @@ leaves your time for playing, dialling in sounds and listening.
 | Working out which parts clash | which two parts fight over which frequencies, and the cut that fixes it; mic phase | `masking`, `align`, `stems` |
 | Getting loud without wrecking it | a measured mastering chain, test-encoded so it won't clip after upload; offline, built in Live, or an editable rack on HypnomixMain saved as your own template | `master`, `chain`, `probe` |
 | The pre-release checklist | phone, car and mono checks, streaming loudness, true peak, section-by-section balance | `translate`, `qc`, `sections`, `match` |
+| Packaging the release | one folder to upload: your master as 24-bit WAV (untouched), a dithered 16-bit WAV, MP3 320 and AAC 256 with tags and cover, a report that measures every file, including the true peak after the lossy ones are decoded; `--check` first | `release` |
+| Instrumental, a cappella, TV mix, radio edit | from your own exported stems (no separation): checks the stems really add up to your mix, matches each version to its loudness with gain only, crossfades the cuts of a radio edit (to bar lines with `--bpm`), and runs the release checks on every file | `versions` |
+| Is the new bounce better than the last one? | lines the two up, then says in plain words what changed: loudness, peaks, dynamics, tone and stereo width by band, each section, with level-matched A/B clips of the three spots that differ most | `compare` |
 | Measuring every track while you play | a Max for Live probe last on each track measures it after all its plug-ins; one play of the song is a deep scan, no renders or exports | `probe` |
 | Knowing which plug-ins you have | lists what is installed (VST3, Audio Units, CLAP, LV2), marks the free ones hypnomix knows, loads each one safely (a plug-in that crashes or hangs is reported, not fatal) and keeps the list in your preferences so proposals only name what you have | `plugins` |
 | Hearing each fix with your real chain | every fix as a switched-off B inside Live: A / B / Blind, loudness-matched; or offline renders through your own VST3/AU plug-ins | `abset`, `plugrender`, `ab --plugins` |
@@ -54,6 +57,9 @@ leaves your time for playing, dialling in sounds and listening.
 | A first balance of a folder of stems | one fader move per part with the measurement behind it, the vocal against the band, your own fader range; faders only | `balance` |
 | What's left to do by hand | the by-hand list as a checklist in your DAW's words, in song order, with a marker (locator, REAPER marker, or MIDI/CSV) at each spot | `handoff` |
 | Re-checking after every change | a quick scan in seconds, only the tracks you changed, or on every save | `scan --quick`, `scan --since`, `watch` |
+| Making an EP or album sit together | the songs side by side in plain words: which sit apart in level (judged on the loudest section as well as the whole, so a quiet ballad may be quieter), which are brighter, darker or boomier and by how much, the gap each pair could have, order options; any trim, gentle tilt or silence change is a finding you approve, applied into new files | `album` |
+| Checking the files before you start | mixed sample rates or bit depths and which file is the odd one out, stems of different length or that start apart, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel; report first, `prep` repairs what it can | `preflight` |
+| Learning the loop on nothing of your own | a 40-second synthetic song with six labelled problems (a click, a level jump, hiss, clipped peaks, a drifting harmony, late hits), as stems or a REAPER project: scan it, hear each fix, apply two | `demo` |
 
 What stays yours: the playing, the sounds, the effects, the arrangement and every taste call. It learns your
 habits from your own finished songs (`taste`, `voices --learn`, `motion --learn`, `profile`) and from what you

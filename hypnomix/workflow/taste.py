@@ -18,7 +18,10 @@ a STANDARD (you do it the same way every time: tools should keep to it); a wide 
 (ask). Writes TASTE.md (plain words) and ~/.hypnomix/taste.json (for the tools).
 
 Usage:  hypnomix taste SONG.als [SONG2.als …] [--out DIR]
-        hypnomix taste --library [DIR …]      first run: study every set you have (see hypnomix/workflow/library.py)
+        hypnomix taste --library [DIR …] [--no-bounces] [--genre "PROJECT=genre"] [--jobs N] [--refresh]
+                                              first run: study every set you have; --no-bounces skips measuring
+                                              exported mixes, --genre confirms a project's genre guess
+                                              (`hypnomix taste --library -h` lists every option)
 """
 import argparse, collections, gzip, hashlib, json, math, os, re, sys
 import xml.etree.ElementTree as ET
@@ -313,7 +316,7 @@ def main():
     ap = argparse.ArgumentParser(prog="hypnomix taste", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("sets", nargs="*"); ap.add_argument("--out")
     ap.add_argument("--library", nargs="*", metavar="DIR",
-                    help="study every Ableton set in these folders (default: your Ableton folders): LIBRARY.md")
+                    help="study every Ableton set in these folders (default: your Ableton folders): LIBRARY.md. Also takes --no-bounces, --genre PROJECT=GENRE, --jobs N, --refresh (see `taste --library -h`)")
     if "--library" in sys.argv[1:] and {"-h", "--help"} & set(sys.argv[1:]):
         from hypnomix.workflow import library
         return library.main(["-h"])

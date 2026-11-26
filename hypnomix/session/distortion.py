@@ -348,6 +348,10 @@ def pointees(root):
     return {p.get("Value") for p in root.iter("PointeeId")}
 
 
+class ParamMissing(Exception):
+    """A device in the set has no stored value for a parameter hypnomix needs (args[0] is the parameter's name)."""
+
+
 class Param:
     def __init__(self, d, name):
         self.e = d.find(f"./{name}")
@@ -360,6 +364,8 @@ class Param:
 
     @property
     def v(self):
+        if self.m is None:
+            raise ParamMissing(self.name)
         s = self.m.get("Value")
         return {"true": 1.0, "false": 0.0}.get(s, None) if s in ("true", "false") else float(s)
 
@@ -439,250 +445,261 @@ def branch_devices(d):
 
 
 def walk_chain(devs, s, add, path_stages):
-    """Walk devices in order, updating the level estimate s and calling add(...) for each finding."""
-    ctx = s.ctx
+    """Walk devices in order, updating the level estimate s and calling add(...) for each finding.
+    A device with a parameter this set does not store is skipped, with a note saying which one."""
     for d in devs:
-        if not is_on(d):
-            continue
-        lab = dlabel(d)
-        tag = d.tag
-        inner = branch_devices(d)
-        if inner:                                          # rack: each branch gets the rack's input
-            outs, branch_stages = [], []
-            for b in inner:                                # branches run in parallel, not in series
-                bs = Stage(s.peak, s.assumed, ctx); bs.boosts = list(s.boosts); bs.utility = s.utility
-                mine = []
-                walk_chain(list(b), bs, add, mine)
-                outs.append(bs.peak); branch_stages.append([(tr, x if " (in " in x else f"{x} (in {lab})") for tr, x in mine])
-            path_stages += max(branch_stages, key=len, default=[])
-            if tag != "AudioEffectGroupDevice":          # instruments/drums: output level unknown
-                s.peak, s.assumed = ASSUMED_PEAK, True
-            elif outs and all(o is not None for o in outs):
-                s.peak = 10 * math.log10(sum(10 ** (o / 10) for o in outs) / len(outs)) if len(outs) > 1 else outs[0]
-            continue
-        if tag in PLUGIN:
-            if LIMITERISH.search(lab):
-                path_stages.append((ctx["track"], lab))
-            s.assumed = True                               # a plug-in can change the level any amount
-            continue
-        if s.peak is None:
+        try:
+            _walk_device(d, s, add, path_stages)
+        except ParamMissing as e:
+            notes = s.ctx.get("notes")
+            msg = f"{s.ctx['track']}: {dlabel(d)} not checked, the set has no {e.args[0]} parameter for it"
+            if notes is not None and msg not in notes:
+                notes.append(msg)
+
+
+def _walk_device(d, s, add, path_stages):
+    ctx = s.ctx
+    if not is_on(d):
+        return
+    lab = dlabel(d)
+    tag = d.tag
+    inner = branch_devices(d)
+    if inner:                                          # rack: each branch gets the rack's input
+        outs, branch_stages = [], []
+        for b in inner:                                # branches run in parallel, not in series
+            bs = Stage(s.peak, s.assumed, ctx); bs.boosts = list(s.boosts); bs.utility = s.utility
+            mine = []
+            walk_chain(list(b), bs, add, mine)
+            outs.append(bs.peak); branch_stages.append([(tr, x if " (in " in x else f"{x} (in {lab})") for tr, x in mine])
+        path_stages += max(branch_stages, key=len, default=[])
+        if tag != "AudioEffectGroupDevice":          # instruments/drums: output level unknown
             s.peak, s.assumed = ASSUMED_PEAK, True
-        wet = 1.0
-        if tag == "StereoGain":
-            g = Param(d, "Gain")
-            if g.ok and g.v > 0:
-                gdb = dbv(g.v)
-                s.peak += gdb
-                if gdb:
-                    s.boosts.append((lab, gdb))
-                s.utility = (lab, g)
-            continue
-        if tag == "Saturator":
-            pre, typ, post = Param(d, "PreDrive"), int(pv(d, "Type")), pv(d, "PostDrive")
-            wet = pv(d, "DryWet", 1)
-            hard = typ in (3, 5)
-            if pv(d, "PostClip") or typ == 5:
-                path_stages.append((ctx["track"], lab + (" clip" if pv(d, "PostClip") else " digital clip")))
-            into = s.peak + pre.v
-            target = 1.0 if hard else 6.0
-            excess = into - target
-            if excess >= 3:
-                sev = "high" if excess >= 9 else "medium"
-                new = max(-36.0, round((pre.v - excess) * 2) / 2)
-                add("drive", sev, lab, wet, s,
-                    f"{lab} is driven to {into:+.1f} dB ({lvl_text(s)} in{boosts_text(s)} plus {pre.v:+.1f} dB Drive) "
-                    f"into a {'hard' if hard else 'soft'} curve: heavy clipping",
-                    f"{lab} Drive {pre.v:.1f} dB -> {new:.1f} dB (then check its output level)",
-                    [change(lab, pre, new, f"Drive {pre.v:.1f} -> {new:.1f} dB")])
-            s.peak = min(into, 0.0) + post
-            s.boosts = []                                  # it clamped: earlier boosts are spent
-            continue
-        if tag == "Tube":
-            pre, post = Param(d, "PreDrive"), pv(d, "PostDrive")
-            wet = pv(d, "DryWet", 1)
-            into = s.peak + pre.v
-            if into >= 6:
-                sev = "high" if into >= 12 else "medium"
-                new = round((pre.v - (into - 0)) * 2) / 2
-                add("drive", sev, lab, wet, s,
-                    f"{lab} is driven to {into:+.1f} dB ({lvl_text(s)} in{boosts_text(s)} plus {pre.v:+.1f} dB Drive)",
-                    f"{lab} Drive {pre.v:.1f} dB -> {new:.1f} dB", [change(lab, pre, new, f"Drive {pre.v:.1f} -> {new:.1f} dB")])
-            s.peak = min(into, 0.0) + post
-            s.boosts = []                                  # it clamped: earlier boosts are spent
-            continue
-        if tag == "Overdrive":
-            dr = Param(d, "Drive"); wet = pv(d, "DryWet", 100) / 100
-            if dr.v >= 60:
-                sev = "high" if dr.v >= 85 else "medium"
-                add("drive", sev, lab, wet, s, f"{lab} Drive at {dr.v:.0f}% ({wet * 100:.0f}% wet), {lvl_text(s)} in",
-                    f"{lab} Drive {dr.v:.0f}% -> 40%", [change(lab, dr, 40.0, f"Drive {dr.v:.0f}% -> 40%")])
-            continue
-        if tag == "Amp":
-            g = Param(d, "Gain"); wet = pv(d, "DryWet", 1)
-            hot = s.peak > -3 and not s.assumed
-            if g.v >= 6.5 or (hot and g.v >= 5):
-                sev = "high" if g.v >= 8 else "medium"
-                fix = f"{lab} Gain {g.v:.1f} -> 4.0"
-                if hot:
-                    fix += f", and lower the input {s.peak + 9:.0f} dB with a Utility before the amp"
-                add("drive", sev, lab, wet, s, f"{lab} Gain {g.v:.1f}/10 with {lvl_text(s)} going in{boosts_text(s)}",
-                    fix, [change(lab, g, 4.0, f"Gain {g.v:.1f} -> 4.0")])
-            continue
-        if tag == "DrumBuss":
-            dr, cr = Param(d, "DriveAmount"), Param(d, "CrunchAmount"); wet = pv(d, "DryWet", 1)
-            trim = dbv(pv(d, "InputTrim", 1))
-            worst = max(dr.v, cr.v if cr.ok else 0)
-            if worst >= 0.6:
-                p = dr if dr.v >= (cr.v if cr.ok else 0) else cr
-                add("drive", "high" if worst >= 0.85 else "medium", lab, wet, s,
-                    f"{lab} {p.name.replace('Amount', '')} at {p.v * 100:.0f}% (input trim {trim:+.1f} dB)",
-                    f"{lab} {p.name.replace('Amount', '')} {p.v * 100:.0f}% -> 30%",
-                    [change(lab, p, 0.3, f"{p.name} {p.v * 100:.0f}% -> 30%")])
-            s.peak += trim + dbv(pv(d, "OutputGain", 1))
-            continue
-        if tag == "Roar":
-            ig = Param(d, "Input_InputGain")
-            amts = [Param(d, f"Stage{i}_Shaper_Amount") for i in (1, 2, 3)]
-            amts = [a for i, a in zip((1, 2, 3), amts) if a.ok and pv(d, f"Stage{i}_On", 1) and pv(d, f"Stage{i}_Shaper_On", 1)]
-            mx = max((a.v for a in amts), default=0)
-            igdb = dbv(ig.v) if ig.ok else 0
-            if mx >= 0.6 or (igdb >= 6 and mx >= 0.3):
-                ch = [change(lab, ig, 1.0, f"Input {igdb:+.1f} -> 0 dB")] if igdb >= 6 else \
-                     [change(lab, a, 0.4, f"{a.name} {a.v * 100:.0f}% -> 40%") for a in amts if a.v >= 0.6]
-                add("drive", "high" if mx >= 0.85 else "medium", lab, 1, s,
-                    f"{lab} shaper amount {mx * 100:.0f}% with input {igdb:+.1f} dB ({lvl_text(s)} in)",
-                    "; ".join(f"{lab} {c['shown']}" for c in ch), ch)
-            continue
-        if tag == "Redux2":
-            bd, sr_ = Param(d, "BitDepth"), Param(d, "SampleRate")
-            if (bd.ok and bd.v <= 8) or (sr_.ok and sr_.v <= 11025):
-                ch = []
-                if bd.ok and bd.v <= 8:
-                    ch.append(change(lab, bd, 16.0, f"Bit Depth {bd.v:.0f} -> 16"))
-                if sr_.ok and sr_.v <= 11025:
-                    ch.append(change(lab, sr_, 40000.0, f"Sample Rate {sr_.v:.0f} -> 40000 Hz"))
-                add("aliasing", "low", lab, pv(d, "DryWet", 1), s,
-                    f"{lab} at {bd.v:.0f} bits / {sr_.v:.0f} Hz: bit-crushing and aliasing (fine if intended)",
-                    "; ".join(f"{lab} {c['shown']}" for c in ch), ch)
-            continue
-        if tag == "Limiter":
-            g, ce = Param(d, "Gain"), Param(d, "Ceiling")
-            rel, auto = pv(d, "Release", 300), pv(d, "AutoRelease", 1)
+        elif outs and all(o is not None for o in outs):
+            s.peak = 10 * math.log10(sum(10 ** (o / 10) for o in outs) / len(outs)) if len(outs) > 1 else outs[0]
+        return
+    if tag in PLUGIN:
+        if LIMITERISH.search(lab):
             path_stages.append((ctx["track"], lab))
-            into = s.peak + g.v
-            gr = into - ce.v
-            main = ctx["main"]
-            target, med, high = (5, 8, 12) if main else (3, 6, 10)
-            if gr >= med:
-                sev = "high" if gr >= high else "medium"
-                cut = gr - target
-                ch, fix = [], []
-                if g.v > 0:
-                    newg = max(0.0, round((g.v - cut) * 2) / 2)
-                    ch.append(change(lab, g, newg, f"Gain {g.v:.1f} -> {newg:.1f} dB"))
-                    fix.append(f"{lab} Gain {g.v:.1f} dB -> {newg:.1f} dB")
-                    cut -= g.v - newg
-                if cut >= 0.5:
-                    if s.utility:
-                        ul, up = s.utility
-                        nl = 10 ** ((dbv(up.v) - cut) / 20)
-                        ch.append(change(ul, up, nl, f"Gain {dbv(up.v):+.1f} -> {dbv(nl):+.1f} dB"))
-                        fix.append(f"{ul} Gain {dbv(up.v):+.1f} dB -> {dbv(nl):+.1f} dB")
-                    else:
-                        fix.append(f"lower the input {cut:.1f} dB (a Utility before the {lab})")
-                add("limiter", sev, lab, 1, s,
-                    f"{lab} takes ~{gr:.1f} dB off the peaks ({lvl_text(s)} in{boosts_text(s)}, Gain {g.v:+.1f}, "
-                    f"Ceiling {ce.v:.1f}): flattened transients and audible clipping",
-                    "; ".join(fix), ch)
-            if not auto and rel < 30 and ctx["bassy"] and gr >= 2:
-                rp = Param(d, "Release")
-                add("limiter", "medium", lab, 1, s,
-                    f"{lab} releases in {rel:.0f} ms on a bass-heavy source: it follows the waveform (low-end distortion)",
-                    f"{lab} Release {rel:.0f} ms -> 100 ms", [change(lab, rp, 100.0, f"Release {rel:.0f} -> 100 ms")])
-            s.peak = min(into, ce.v)
-            s.boosts = []                                  # it clamped: earlier boosts are spent
-            continue
-        if tag == "Compressor2":
-            thr = dbv(pv(d, "Threshold", 1)); ratio = pv(d, "Ratio", 1); model = int(pv(d, "Model"))
-            at, rl = Param(d, "Attack"), Param(d, "Release")
-            autorel = pv(d, "AutoReleaseControlOnOff", 0)
-            wet = pv(d, "DryWet", 1)
-            gr = max(0.0, s.peak - thr) * (1 - 1 / ratio) if ratio > 1 and model != 2 else 0.0
-            if model == 1:
-                gr *= 0.6                                  # RMS detection reacts less to peaks
-            if ctx["bassy"] and gr >= 3 and not autorel and (at.v < 3 and rl.v < 40):
-                sev = "high" if rl.v < 15 and gr >= 8 else "medium"
-                ch = [change(lab, rl, 100.0, f"Release {rl.v:.0f} -> 100 ms")]
-                fx = [f"{lab} Release {rl.v:.0f} ms -> 100 ms"]
-                if at.v < 1:
-                    ch.append(change(lab, at, 10.0, f"Attack {at.v:.2f} -> 10 ms")); fx.append(f"Attack {at.v:.2f} ms -> 10 ms")
-                add("compressor", sev, lab, wet, s,
-                    f"{lab} attack {at.v:.2f} ms / release {rl.v:.0f} ms with ~{gr:.0f} dB gain reduction on a "
-                    "bass-heavy source: faster than one bass cycle, so it reshapes the waveform (distortion)",
-                    ", ".join(fx), ch)
-            s.peak = s.peak - gr + pv(d, "Gain", 0)
-            mk = pv(d, "Gain", 0)
-            if mk >= 1:
-                s.boosts.append((lab + " makeup", mk))
-            continue
-        if tag == "GlueCompressor":
-            thr = pv(d, "Threshold", 0); ratio = GLUE_RATIO.get(int(pv(d, "Ratio")), 4.0)
-            mk = Param(d, "Makeup"); clip = pv(d, "PeakClipIn", 0)
-            gr = max(0.0, s.peak - thr) * (1 - 1 / ratio)
-            out = s.peak - gr + mk.v
-            if clip:
-                path_stages.append((ctx["track"], lab + " soft clip"))
-                if out >= 3:
-                    sev = "high" if out >= 8 else "medium"
-                    new = max(0.0, round((mk.v - out) * 2) / 2)
-                    add("clipper", sev, lab, pv(d, "DryWet", 1), s,
-                        f"{lab} Soft Clip is hit {out:+.1f} dB over full scale ({lvl_text(s)} in, ~{gr:.0f} dB "
-                        f"reduction, {mk.v:+.1f} dB makeup)",
-                        f"{lab} Makeup {mk.v:.1f} dB -> {new:.1f} dB", [change(lab, mk, new, f"Makeup {mk.v:.1f} -> {new:.1f} dB")])
-                out = min(out, 0.0)
-            s.peak = out
-            if mk.v >= 1:
-                s.boosts.append((lab + " makeup", mk.v))
-            continue
-        if tag == "Eq8":
-            from hypnomix.session.audit import TYPES
-            big, hits = 0.0, []
-            for i in range(8):
-                b = d.find(f"./Bands.{i}/ParameterA")
-                if b is None or pv(b, "IsOn", 0) < 1:
-                    continue
-                mode = TYPES.get(int(pv(b, "Mode", 3)), "?")
-                g = Param(b, "Gain")
-                if mode not in ("Bell", "LowShelf", "HighShelf") or not g.ok:
-                    continue
-                if g.v >= 9:
-                    g.name = f"Band {i + 1} Gain"
-                    hits.append((i + 1, mode, pv(b, "Freq"), pv(b, "Q", 0.71), g))
-                big = max(big, g.v)
-            if hits:
-                mx = max(h[4].v for h in hits)
-                desc = ", ".join(f"band {n} {m} {f:.0f} Hz {g.v:+.1f} dB (Q {q:.2f})" for n, m, f, q, g in hits)
-                add("eq-boost", "high" if mx >= 12 else "medium", lab, 1, s,
-                    f"{lab} {desc}: extreme boost{'s' if len(hits) > 1 else ''} eat headroom and push everything after harder",
-                    "; ".join(f"{lab} band {n} {g.v:+.1f} dB -> +6.0 dB" for n, m, f, q, g in hits) + " (cut elsewhere instead)",
-                    [change(lab, g, 6.0, f"band {n} {g.v:+.1f} -> +6.0 dB") for n, m, f, q, g in hits])
-            if big >= 6:
-                s.peak += big * 0.5; s.boosts.append((lab + " boost", big * 0.5))
-            gg = Param(d, "GlobalGain")
-            if gg.ok:
-                s.peak += gg.v
-            continue
-        if tag == "ChannelEq":
-            hits = [g for g in (Param(d, n) for n in ("LowShelfGain", "MidGain", "HighShelfGain")) if g.ok and g.v >= 2.818]
-            if hits:
-                nm = lambda g: g.name.replace("Gain", "").replace("Shelf", " shelf")
-                add("eq-boost", "high" if max(g.v for g in hits) >= 3.98 else "medium", lab, 1, s,
-                    f"{lab} " + ", ".join(f"{nm(g)} {dbv(g.v):+.1f} dB" for g in hits) +
-                    ": extreme boosts eat headroom for whatever follows",
-                    "; ".join(f"{lab} {nm(g)} {dbv(g.v):+.1f} dB -> +6.0 dB" for g in hits),
-                    [change(lab, g, 2.0, f"{nm(g)} {dbv(g.v):+.1f} -> +6.0 dB") for g in hits])
-            s.peak += dbv(pv(d, "Gain", 1))
-            continue
+        s.assumed = True                               # a plug-in can change the level any amount
+        return
+    if s.peak is None:
+        s.peak, s.assumed = ASSUMED_PEAK, True
+    wet = 1.0
+    if tag == "StereoGain":
+        g = Param(d, "Gain")
+        if g.ok and g.v > 0:
+            gdb = dbv(g.v)
+            s.peak += gdb
+            if gdb:
+                s.boosts.append((lab, gdb))
+            s.utility = (lab, g)
+        return
+    if tag == "Saturator":
+        pre, typ, post = Param(d, "PreDrive"), int(pv(d, "Type")), pv(d, "PostDrive")
+        wet = pv(d, "DryWet", 1)
+        hard = typ in (3, 5)
+        if pv(d, "PostClip") or typ == 5:
+            path_stages.append((ctx["track"], lab + (" clip" if pv(d, "PostClip") else " digital clip")))
+        into = s.peak + pre.v
+        target = 1.0 if hard else 6.0
+        excess = into - target
+        if excess >= 3:
+            sev = "high" if excess >= 9 else "medium"
+            new = max(-36.0, round((pre.v - excess) * 2) / 2)
+            add("drive", sev, lab, wet, s,
+                f"{lab} is driven to {into:+.1f} dB ({lvl_text(s)} in{boosts_text(s)} plus {pre.v:+.1f} dB Drive) "
+                f"into a {'hard' if hard else 'soft'} curve: heavy clipping",
+                f"{lab} Drive {pre.v:.1f} dB -> {new:.1f} dB (then check its output level)",
+                [change(lab, pre, new, f"Drive {pre.v:.1f} -> {new:.1f} dB")])
+        s.peak = min(into, 0.0) + post
+        s.boosts = []                                  # it clamped: earlier boosts are spent
+        return
+    if tag == "Tube":
+        pre, post = Param(d, "PreDrive"), pv(d, "PostDrive")
+        wet = pv(d, "DryWet", 1)
+        into = s.peak + pre.v
+        if into >= 6:
+            sev = "high" if into >= 12 else "medium"
+            new = round((pre.v - (into - 0)) * 2) / 2
+            add("drive", sev, lab, wet, s,
+                f"{lab} is driven to {into:+.1f} dB ({lvl_text(s)} in{boosts_text(s)} plus {pre.v:+.1f} dB Drive)",
+                f"{lab} Drive {pre.v:.1f} dB -> {new:.1f} dB", [change(lab, pre, new, f"Drive {pre.v:.1f} -> {new:.1f} dB")])
+        s.peak = min(into, 0.0) + post
+        s.boosts = []                                  # it clamped: earlier boosts are spent
+        return
+    if tag == "Overdrive":
+        dr = Param(d, "Drive"); wet = pv(d, "DryWet", 100) / 100
+        if dr.v >= 60:
+            sev = "high" if dr.v >= 85 else "medium"
+            add("drive", sev, lab, wet, s, f"{lab} Drive at {dr.v:.0f}% ({wet * 100:.0f}% wet), {lvl_text(s)} in",
+                f"{lab} Drive {dr.v:.0f}% -> 40%", [change(lab, dr, 40.0, f"Drive {dr.v:.0f}% -> 40%")])
+        return
+    if tag == "Amp":
+        g = Param(d, "Gain"); wet = pv(d, "DryWet", 1)
+        hot = s.peak > -3 and not s.assumed
+        if g.v >= 6.5 or (hot and g.v >= 5):
+            sev = "high" if g.v >= 8 else "medium"
+            fix = f"{lab} Gain {g.v:.1f} -> 4.0"
+            if hot:
+                fix += f", and lower the input {s.peak + 9:.0f} dB with a Utility before the amp"
+            add("drive", sev, lab, wet, s, f"{lab} Gain {g.v:.1f}/10 with {lvl_text(s)} going in{boosts_text(s)}",
+                fix, [change(lab, g, 4.0, f"Gain {g.v:.1f} -> 4.0")])
+        return
+    if tag == "DrumBuss":
+        dr, cr = Param(d, "DriveAmount"), Param(d, "CrunchAmount"); wet = pv(d, "DryWet", 1)
+        trim = dbv(pv(d, "InputTrim", 1))
+        worst = max(dr.v, cr.v if cr.ok else 0)
+        if worst >= 0.6:
+            p = dr if dr.v >= (cr.v if cr.ok else 0) else cr
+            add("drive", "high" if worst >= 0.85 else "medium", lab, wet, s,
+                f"{lab} {p.name.replace('Amount', '')} at {p.v * 100:.0f}% (input trim {trim:+.1f} dB)",
+                f"{lab} {p.name.replace('Amount', '')} {p.v * 100:.0f}% -> 30%",
+                [change(lab, p, 0.3, f"{p.name} {p.v * 100:.0f}% -> 30%")])
+        s.peak += trim + dbv(pv(d, "OutputGain", 1))
+        return
+    if tag == "Roar":
+        ig = Param(d, "Input_InputGain")
+        amts = [Param(d, f"Stage{i}_Shaper_Amount") for i in (1, 2, 3)]
+        amts = [a for i, a in zip((1, 2, 3), amts) if a.ok and pv(d, f"Stage{i}_On", 1) and pv(d, f"Stage{i}_Shaper_On", 1)]
+        mx = max((a.v for a in amts), default=0)
+        igdb = dbv(ig.v) if ig.ok else 0
+        if mx >= 0.6 or (igdb >= 6 and mx >= 0.3):
+            ch = [change(lab, ig, 1.0, f"Input {igdb:+.1f} -> 0 dB")] if igdb >= 6 else \
+                 [change(lab, a, 0.4, f"{a.name} {a.v * 100:.0f}% -> 40%") for a in amts if a.v >= 0.6]
+            add("drive", "high" if mx >= 0.85 else "medium", lab, 1, s,
+                f"{lab} shaper amount {mx * 100:.0f}% with input {igdb:+.1f} dB ({lvl_text(s)} in)",
+                "; ".join(f"{lab} {c['shown']}" for c in ch), ch)
+        return
+    if tag == "Redux2":
+        bd, sr_ = Param(d, "BitDepth"), Param(d, "SampleRate")
+        if (bd.ok and bd.v <= 8) or (sr_.ok and sr_.v <= 11025):
+            ch = []
+            if bd.ok and bd.v <= 8:
+                ch.append(change(lab, bd, 16.0, f"Bit Depth {bd.v:.0f} -> 16"))
+            if sr_.ok and sr_.v <= 11025:
+                ch.append(change(lab, sr_, 40000.0, f"Sample Rate {sr_.v:.0f} -> 40000 Hz"))
+            add("aliasing", "low", lab, pv(d, "DryWet", 1), s,
+                f"{lab} at {bd.v:.0f} bits / {sr_.v:.0f} Hz: bit-crushing and aliasing (fine if intended)",
+                "; ".join(f"{lab} {c['shown']}" for c in ch), ch)
+        return
+    if tag == "Limiter":
+        g, ce = Param(d, "Gain"), Param(d, "Ceiling")
+        rel, auto = pv(d, "Release", 300), pv(d, "AutoRelease", 1)
+        path_stages.append((ctx["track"], lab))
+        into = s.peak + g.v
+        gr = into - ce.v
+        main = ctx["main"]
+        target, med, high = (5, 8, 12) if main else (3, 6, 10)
+        if gr >= med:
+            sev = "high" if gr >= high else "medium"
+            cut = gr - target
+            ch, fix = [], []
+            if g.v > 0:
+                newg = max(0.0, round((g.v - cut) * 2) / 2)
+                ch.append(change(lab, g, newg, f"Gain {g.v:.1f} -> {newg:.1f} dB"))
+                fix.append(f"{lab} Gain {g.v:.1f} dB -> {newg:.1f} dB")
+                cut -= g.v - newg
+            if cut >= 0.5:
+                if s.utility:
+                    ul, up = s.utility
+                    nl = 10 ** ((dbv(up.v) - cut) / 20)
+                    ch.append(change(ul, up, nl, f"Gain {dbv(up.v):+.1f} -> {dbv(nl):+.1f} dB"))
+                    fix.append(f"{ul} Gain {dbv(up.v):+.1f} dB -> {dbv(nl):+.1f} dB")
+                else:
+                    fix.append(f"lower the input {cut:.1f} dB (a Utility before the {lab})")
+            add("limiter", sev, lab, 1, s,
+                f"{lab} takes ~{gr:.1f} dB off the peaks ({lvl_text(s)} in{boosts_text(s)}, Gain {g.v:+.1f}, "
+                f"Ceiling {ce.v:.1f}): flattened transients and audible clipping",
+                "; ".join(fix), ch)
+        if not auto and rel < 30 and ctx["bassy"] and gr >= 2:
+            rp = Param(d, "Release")
+            add("limiter", "medium", lab, 1, s,
+                f"{lab} releases in {rel:.0f} ms on a bass-heavy source: it follows the waveform (low-end distortion)",
+                f"{lab} Release {rel:.0f} ms -> 100 ms", [change(lab, rp, 100.0, f"Release {rel:.0f} -> 100 ms")])
+        s.peak = min(into, ce.v)
+        s.boosts = []                                  # it clamped: earlier boosts are spent
+        return
+    if tag == "Compressor2":
+        thr = dbv(pv(d, "Threshold", 1)); ratio = pv(d, "Ratio", 1); model = int(pv(d, "Model"))
+        at, rl = Param(d, "Attack"), Param(d, "Release")
+        autorel = pv(d, "AutoReleaseControlOnOff", 0)
+        wet = pv(d, "DryWet", 1)
+        gr = max(0.0, s.peak - thr) * (1 - 1 / ratio) if ratio > 1 and model != 2 else 0.0
+        if model == 1:
+            gr *= 0.6                                  # RMS detection reacts less to peaks
+        if ctx["bassy"] and gr >= 3 and not autorel and (at.v < 3 and rl.v < 40):
+            sev = "high" if rl.v < 15 and gr >= 8 else "medium"
+            ch = [change(lab, rl, 100.0, f"Release {rl.v:.0f} -> 100 ms")]
+            fx = [f"{lab} Release {rl.v:.0f} ms -> 100 ms"]
+            if at.v < 1:
+                ch.append(change(lab, at, 10.0, f"Attack {at.v:.2f} -> 10 ms")); fx.append(f"Attack {at.v:.2f} ms -> 10 ms")
+            add("compressor", sev, lab, wet, s,
+                f"{lab} attack {at.v:.2f} ms / release {rl.v:.0f} ms with ~{gr:.0f} dB gain reduction on a "
+                "bass-heavy source: faster than one bass cycle, so it reshapes the waveform (distortion)",
+                ", ".join(fx), ch)
+        s.peak = s.peak - gr + pv(d, "Gain", 0)
+        mk = pv(d, "Gain", 0)
+        if mk >= 1:
+            s.boosts.append((lab + " makeup", mk))
+        return
+    if tag == "GlueCompressor":
+        thr = pv(d, "Threshold", 0); ratio = GLUE_RATIO.get(int(pv(d, "Ratio")), 4.0)
+        mk = Param(d, "Makeup"); clip = pv(d, "PeakClipIn", 0)
+        gr = max(0.0, s.peak - thr) * (1 - 1 / ratio)
+        out = s.peak - gr + mk.v
+        if clip:
+            path_stages.append((ctx["track"], lab + " soft clip"))
+            if out >= 3:
+                sev = "high" if out >= 8 else "medium"
+                new = max(0.0, round((mk.v - out) * 2) / 2)
+                add("clipper", sev, lab, pv(d, "DryWet", 1), s,
+                    f"{lab} Soft Clip is hit {out:+.1f} dB over full scale ({lvl_text(s)} in, ~{gr:.0f} dB "
+                    f"reduction, {mk.v:+.1f} dB makeup)",
+                    f"{lab} Makeup {mk.v:.1f} dB -> {new:.1f} dB", [change(lab, mk, new, f"Makeup {mk.v:.1f} -> {new:.1f} dB")])
+            out = min(out, 0.0)
+        s.peak = out
+        if mk.v >= 1:
+            s.boosts.append((lab + " makeup", mk.v))
+        return
+    if tag == "Eq8":
+        from hypnomix.session.audit import TYPES
+        big, hits = 0.0, []
+        for i in range(8):
+            b = d.find(f"./Bands.{i}/ParameterA")
+            if b is None or pv(b, "IsOn", 0) < 1:
+                continue
+            mode = TYPES.get(int(pv(b, "Mode", 3)), "?")
+            g = Param(b, "Gain")
+            if mode not in ("Bell", "LowShelf", "HighShelf") or not g.ok:
+                continue
+            if g.v >= 9:
+                g.name = f"Band {i + 1} Gain"
+                hits.append((i + 1, mode, pv(b, "Freq"), pv(b, "Q", 0.71), g))
+            big = max(big, g.v)
+        if hits:
+            mx = max(h[4].v for h in hits)
+            desc = ", ".join(f"band {n} {m} {f:.0f} Hz {g.v:+.1f} dB (Q {q:.2f})" for n, m, f, q, g in hits)
+            add("eq-boost", "high" if mx >= 12 else "medium", lab, 1, s,
+                f"{lab} {desc}: extreme boost{'s' if len(hits) > 1 else ''} eat headroom and push everything after harder",
+                "; ".join(f"{lab} band {n} {g.v:+.1f} dB -> +6.0 dB" for n, m, f, q, g in hits) + " (cut elsewhere instead)",
+                [change(lab, g, 6.0, f"band {n} {g.v:+.1f} -> +6.0 dB") for n, m, f, q, g in hits])
+        if big >= 6:
+            s.peak += big * 0.5; s.boosts.append((lab + " boost", big * 0.5))
+        gg = Param(d, "GlobalGain")
+        if gg.ok:
+            s.peak += gg.v
+        return
+    if tag == "ChannelEq":
+        hits = [g for g in (Param(d, n) for n in ("LowShelfGain", "MidGain", "HighShelfGain")) if g.ok and g.v >= 2.818]
+        if hits:
+            nm = lambda g: g.name.replace("Gain", "").replace("Shelf", " shelf")
+            add("eq-boost", "high" if max(g.v for g in hits) >= 3.98 else "medium", lab, 1, s,
+                f"{lab} " + ", ".join(f"{nm(g)} {dbv(g.v):+.1f} dB" for g in hits) +
+                ": extreme boosts eat headroom for whatever follows",
+                "; ".join(f"{lab} {nm(g)} {dbv(g.v):+.1f} dB -> +6.0 dB" for g in hits),
+                [change(lab, g, 2.0, f"{nm(g)} {dbv(g.v):+.1f} -> +6.0 dB") for g in hits])
+        s.peak += dbv(pv(d, "Gain", 1))
+        return
 
 
 def mixer_db(t):
@@ -722,7 +739,7 @@ def effects_findings(root, track_info, pts, names, include_off):
             assumed = not known or any(a for _, a in ps)
         else:
             peak, assumed = None, True
-        ctx = dict(track=nm, main=ismain, bassy=info.get("bassy", bool(BASSY.search(nm))))
+        ctx = dict(track=nm, main=ismain, bassy=info.get("bassy", bool(BASSY.search(nm))), notes=notes)
         s = Stage(peak, assumed, ctx)
         path = []
         on = sm.track_on(t) or ismain
@@ -987,6 +1004,8 @@ def measured_fix(chain):
         lab = dlabel(d)
         if d.tag == "Saturator":
             p = Param(d, "PreDrive")
+            if not p.ok:
+                continue                                   # this set stores no Drive for it: try the next device
             return f"{lab} Drive {p.v:.1f} dB -> {p.v - 6:.1f} dB", [change(lab, p, p.v - 6, f"Drive {p.v:.1f} -> {p.v - 6:.1f} dB")]
         if d.tag == "Compressor2" and pv(d, "Release", 100) < 60 and not pv(d, "AutoReleaseControlOnOff", 0):
             p = Param(d, "Release")

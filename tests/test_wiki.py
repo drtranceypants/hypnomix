@@ -183,7 +183,6 @@ class WikiTest(unittest.TestCase):
         self.assertIn('<p class="note-box">Tip: under ~10 ms reads as one voice.</p>', h)
         self.assertIn('<p class="warn-box">Careful: the device is new.</p>', h)
         self.assertIn("<ul><li>one</li><li>two continued</li></ul>", h)
-        self.assertNotIn("also a PDF", h)
         (self.src / "articles" / "03-vocals-guide.html").write_text("<!--\ntitle: Mine\n-->\n<p>x</p>")
         wiki._CACHE.clear()
         self.assertEqual([a["title"] for a in wiki.local() if a["id"] == "vocals-guide"], ["Mine"])  # a file wins

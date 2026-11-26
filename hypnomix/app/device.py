@@ -29,17 +29,32 @@ is put around it (without switching looping on), and the clip under it opens in 
 Live" buttons in the app do the same through this device.
 
 The device is built from the blank "Max Audio Effect" that ships inside your own copy of Live, plus one
-script file. The two files must stay in the same folder.
+script file. The two files must stay in the same folder. The device talks to the app on port 8791; if the app runs
+on another port (`hypnomix app --port N`), set HYPNOMIX_PORT=N before `hypnomix device` so the device is written
+with that port.
 
 Loaded in Live 12 Suite on a real set: it connects, follows the review, jumps and floats. Not yet tried on a
 second machine: if it shows an error, the Max window (right-click the device title → Open Max Window) says
 which line.
 """
-import argparse, glob, json, sys
+import argparse, glob, json, os, sys
 from pathlib import Path
 
 W, H = 430, 169
-PORT = 8791
+DEFAULT_PORT = 8791
+
+
+def app_port():
+    """The hypnomix app's port the device talks to: HYPNOMIX_PORT when it is set (read each time the device is made,
+    so `hypnomix app --port N` can be matched), else 8791."""
+    try:
+        n = int(os.environ.get("HYPNOMIX_PORT", "").strip() or DEFAULT_PORT)
+        return n if 1 <= n <= 65535 else DEFAULT_PORT
+    except ValueError:
+        return DEFAULT_PORT
+
+
+PORT = app_port()          # at import; the device is written with app_port() read again when it is made
 
 JS = r"""// hypnomix device (jsui): talks to the hypnomix app on this computer and moves Live to each finding.
 autowatch = 1;
@@ -439,7 +454,7 @@ def build(out, tpl=None):
     out = Path(out).expanduser()
     out.mkdir(parents=True, exist_ok=True)
     write_amxd(out / "Hypnomix.amxd", head, build_patch(patch))
-    (out / "hypnomix_device.js").write_text(JS.replace("__PORT__", str(PORT)).replace("__W__", str(W)).replace("__H__", str(H)))
+    (out / "hypnomix_device.js").write_text(JS.replace("__PORT__", str(app_port())).replace("__W__", str(W)).replace("__H__", str(H)))
     return out
 
 

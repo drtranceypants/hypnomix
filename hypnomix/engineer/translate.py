@@ -104,6 +104,9 @@ def codec_preview(path, outdir, normalise_to=-14.0):
 def analyse(path, render=False, outdir=None):
     y, sr = dsp.load(path)
     y = dsp.stereo(y)
+    if not len(y) or float(np.max(np.abs(y))) < 1e-9:
+        return dict(silent=True, lufs=None, tp=None, rows=[],
+                    notes=["the file is silent (every sample is zero), so there is nothing to check"])
     L = dsp.lufs(y, sr)
     tp = dsp.true_peak(y, sr)
     rows, notes = [], []
@@ -130,11 +133,11 @@ def analyse(path, render=False, outdir=None):
         z *= dsp.undb(L - dsp.lufs(z, sr))                   # compare at equal loudness
         sims[kind] = z
         e, _ = dsp.band_energy(z, sr, edges)
-        sims[kind + "_bands"] = 10 * np.log10(e / e.sum())
+        sims[kind + "_bands"] = 10 * np.log10((e + 1e-20) / max(float(e.sum()), 1e-20))
     # phone: does the bass line survive? energy in 300-1000 Hz harmonics relative to the mids
     pb = sims["phone_bands"]
     rows.append(("Phone speaker", f"low-mids {pb[1]:.1f} dB, presence {pb[3]:.1f} dB of total", "INFO"))
-    sub_share = 10 * np.log10(ref_e[0] / ref_e.sum())
+    sub_share = 10 * np.log10((ref_e[0] + 1e-20) / max(float(ref_e.sum()), 1e-20))
     if sub_share > -6:
         notes.append(f"{sub_share:.1f} dB of the energy is below 120 Hz, which phones can't play: on a phone this song "
                      "loses most of its kick and bass. Saturation on the bass (harmonics at 200–800 Hz) or a 3–5 kHz click "
@@ -182,6 +185,12 @@ def main():
     ap.add_argument("--preview", action="store_true", help="write decoded MP3 / AAC / as-Spotify-plays-it WAVs")
     a = ap.parse_args()
     r = analyse(a.file, a.render, a.out)
+    if r.get("silent"):
+        text = (f"# Translation check: {Path(a.file).name}\n\nThis file is silent (every sample is zero), so there is "
+                f"nothing to check. Bounce or export it again.\n")
+        (out_at(a.out, "translate") / f"{Path(a.file).stem} (translation).md").write_text(text)
+        print(text)
+        sys.exit(1)
     if a.preview:
         pv = codec_preview(a.file, out_at(a.out, "translate", Path(a.file).stem))
         for k, v in pv.items():

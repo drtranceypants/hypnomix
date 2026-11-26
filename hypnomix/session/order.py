@@ -327,6 +327,24 @@ def findings(rows, new_ids, stacks):
     return out
 
 
+def read_names(path):
+    """The track rows of a names.json file (written by `hypnomix name`); stops with a plain message when
+    --names was given something else, such as a track name."""
+    what = ("--names expects the path to a names.json file written by `hypnomix name SET.als` "
+            "(not a track name)")
+    p = Path(path)
+    if not p.is_file():
+        sys.exit(f"{what}; '{path}' is not a file")
+    try:
+        data = json.loads(p.read_text())
+    except (ValueError, UnicodeDecodeError):
+        sys.exit(f"{what}; '{path}' is not a names.json file (it is not valid JSON)")
+    rows = data.get("tracks") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        sys.exit(f"{what}; '{path}' has no \"tracks\" list")
+    return rows
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix order", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("als"); ap.add_argument("--names", required=True, help="names.json from `hypnomix name`")
@@ -338,9 +356,11 @@ def main():
         sys.exit("refusing to overwrite the set; give a new file name")
     if a.apply and Path(a.apply).resolve().parent != src.resolve().parent:
         sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent})")
+    names = read_names(a.names)
+    if not src.is_file():
+        sys.exit(f"can't open the set '{src}': no such file (give the path to a saved .als)")
     tree = load(src); root = tree.getroot()
     tempo = float(root.find(".//Tempo/Manual").get("Value"))
-    names = json.loads(Path(a.names).read_text()).get("tracks", [])
     rows = track_rows(root, names)
     new_ids = propose_order(rows)
     stacks = [] if a.no_clips else stack_moves(root, rows, tempo, src.parent)

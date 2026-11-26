@@ -3,8 +3,9 @@ where something is actually sounding, never on silence.
 
     times, f0, level_db = pitch.track("Vocal.wav")      # f0 in Hz, NaN where nothing pitched is sounding
 
-The result is cached in ~/.hypnomix/cache/pitch/ by file path, size, modification time and settings, so a scan
-and the fix after it (and any other tool) analyse each file once. Use pYIN only where note-level accuracy
+The result is cached in <hypnomix home>/cache/pitch/ (~/.hypnomix unless HYPNOMIX_HOME says otherwise) by file
+path, size, modification time and settings, so a scan and the fix after it (and any other tool) analyse each
+file once. Use pYIN only where note-level accuracy
 matters (vocal tuning); for "which part is higher / where is it singing" this is plenty.
 """
 import hashlib
@@ -14,7 +15,11 @@ from pathlib import Path
 
 import numpy as np
 
-CACHE = Path.home() / ".hypnomix" / "cache" / "pitch"
+
+def cache_dir():
+    """The pitch cache folder: under the same hypnomix home as everything else (HYPNOMIX_HOME)."""
+    from hypnomix.core.atomic import cache_root
+    return cache_root() / "pitch"
 
 
 def _key(path, fmin, fmax, sr, hop, floor_db):
@@ -45,7 +50,8 @@ def track(path, fmin=65.0, fmax=1000.0, sr=22050, hop=256, floor_db=35.0, cache=
     import librosa
     import soundfile as sf
     k = _key(path, fmin, fmax, sr, hop, floor_db) if cache else None
-    f = CACHE / f"{k}.npz" if k else None
+    cdir = cache_dir()
+    f = cdir / f"{k}.npz" if k else None
     if f is not None and f.exists():
         try:
             d = np.load(f)
@@ -72,7 +78,7 @@ def track(path, fmin=65.0, fmax=1000.0, sr=22050, hop=256, floor_db=35.0, cache=
     f0[db < db.max() - floor_db] = np.nan
     t = np.arange(len(db)) * hop / sr
     if f is not None:                     # written whole, then renamed: parallel readers never see half a file
-        CACHE.mkdir(parents=True, exist_ok=True)
+        cdir.mkdir(parents=True, exist_ok=True)
         tmp = f.with_name(f"{k}.{os.getpid()}.{threading.get_ident()}.tmp.npz")
         np.savez_compressed(tmp, t=t, f0=f0, db=db)
         os.replace(tmp, f)

@@ -13,6 +13,13 @@ hypnomix app            # opens http://127.0.0.1:8791 in your browser
 That is all it takes: the app is a page served from your own computer. Leave the terminal window open while
 you use it; Ctrl-C stops it.
 
+A second copy of the app (a test copy beside the real one) needs its own ports. The Max for Live devices talk to
+the app on port 8791 (`HYPNOMIX_PORT` changes it) and the probes send their measurements by UDP to port 8792
+(`HYPNOMIX_PROBE_PORT`). Start the copy with `hypnomix app --port N`, and make its devices (`hypnomix device`,
+`hypnomix probe device`, `hypnomix reaper review`) in a terminal where `HYPNOMIX_PORT=N` and
+`HYPNOMIX_PROBE_PORT=M` are set, so the devices use the same numbers. If the probe port is taken, the app's status
+says which port and how to change it.
+
 | screen | what you do there |
 |---|---|
 | Songs | choose a Live set, or a folder of recordings from any DAW; optionally a bounce of the mix, a song you love, the key. "Start the first pass" runs `scan`, then `ab` |

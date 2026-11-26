@@ -9,17 +9,23 @@
                                           so the next review can say "you usually skip these"
 
 Saved in ~/.hypnomix/preferences.json (HYPNOMIX_HOME to change). Nothing is uploaded anywhere.
+An answer that makes no sense is refused with the values that would work, e.g. targets.lufs=abc says the
+target must be a number between -40 and -1; the file is only written when every answer in the command is good.
 
 What the workflow does with them:
   targets.*        the loudness / true-peak target the mix check compares against
   protect.tracks   findings on these tracks are marked PROTECTED; `fix` refuses them without --allow-protected
   protect.notes    things never to change (shown at the top of every REVIEW.md)
-  review.*         how the review is run (one at a time, which kinds may be batched, how much explanation)
-                   review.max_questions=N (the rest goes into a batch section), review.teach=on|off (why each
-                   technique, default on), review.name=NAME (recorded with every decision)
+  review.*         how the review is run. review.max_questions=N asks N items one by one and puts the rest in a
+                   batch section (0 = ask everything); review.teach=on|off (why each technique, default on);
+                   review.name=NAME (recorded with every decision). review.style and review.explain are read by
+                   AI agents and the Assistant, who follow them when they run the review with you
   taste.*          tuning / timing strictness and free-text taste notes (shown to the reviewer; tools stay gentle
                    by default and only go further when you say so)
-  tools.*          your DAW and the free plug-ins you have installed (proposals only name what you have)
+  tools.*          your DAW (live, reaper, ardour or other: the same choice as the app's Setup page, which is used
+                   until you answer here) and the free plug-ins you have installed (proposals only name what you have)
+  cleanup.*        the tidy steps of the first clean-up, all on by default: cleanup.order, cleanup.retire,
+                   cleanup.consolidate (on or off)
   learned          approve / skip / change counts per finding kind from past reviews (advice, never auto-apply)
 """
 import json, sys, time
@@ -30,28 +36,43 @@ from hypnomix.core.paths import HOME
 PREFS = HOME / "preferences.json"
 
 QUESTIONS = [
-    dict(key="tools.daw", ask="Which DAW do you work in?", options=["ableton", "logic", "protools", "reaper", "other"],
-         default="ableton", why="decides whether fixes can be written into a project or are handed over as audio and a to-do list"),
+    dict(key="tools.daw", ask="Which DAW do you work in?", options=["live", "reaper", "ardour", "other"],
+         default="live", why="the same choice as the app's Setup page (until you answer here, Setup's answer is used); "
+         "decides whether fixes can be written into a project or are handed over as audio and a to-do list"),
     dict(key="targets.delivery", ask="Where will the music be released first?",
          options=["streaming", "video", "cd", "vinyl", "demo"], default="streaming",
-         why="sets the loudness and peak targets the mix check uses"),
+         why="read by AI agents and the Assistant (they see it in `hypnomix prefs`) to choose sensible targets for you; "
+         "the numbers hypnomix itself checks against are the two targets below"),
     dict(key="targets.lufs", ask="Loudness target (integrated LUFS)?", options=[-14, -16, -11, -9], default=-14,
-         why="-14 suits streaming and video; louder masters get turned down by the platforms"),
+         why="-14 suits streaming and video; louder masters get turned down by the platforms (any number from -40 to -1)"),
     dict(key="targets.true_peak", ask="True-peak ceiling (dBTP)?", options=[-1.0, -2.0, -0.5], default=-1.0,
-         why="lossy encodes (AAC, MP3) overshoot; -1 is the usual ceiling, -2 for very dense masters"),
+         why="lossy encodes (AAC, MP3) overshoot; -1 is the usual ceiling, -2 for very dense masters (any number from -12 to 0)"),
     dict(key="review.style", ask="How should fixes be reviewed?",
          options=["one-at-a-time", "batch-low", "batch-by-kind"], default="one-at-a-time",
-         why="high-severity and protected items are always asked one at a time"),
+         why="read by AI agents and the Assistant, who follow it when they run the review with you; "
+         "high-severity and protected items are always asked one at a time"),
     dict(key="review.explain", ask="How much explanation with each fix?", options=["teach", "brief"], default="teach",
-         why="teach = what the technique is and why; brief = just what and where"),
+         why="read by AI agents and the Assistant: teach = what the technique is and why; brief = just what and where "
+         "(the review page's own explanations are switched with review.teach)"),
+    dict(key="review.max_questions", ask="How many fixes should be asked one by one before the rest are batched?",
+         options=[0, 3, 5, 8, 12], default=0,
+         why="0 asks every fix one at a time. With a number, the most important fixes are asked one by one and the "
+         "rest are grouped into a batch section you can approve or skip in a few clicks (high-severity and protected "
+         "items are always asked)"),
     dict(key="taste.tuning", ask="Vocal tuning?", options=["natural", "tight", "off"], default="natural",
          why="natural keeps vibrato and slides and only moves note centres; off = never propose tuning"),
     dict(key="taste.timing", ask="Timing?", options=["loose", "tight", "off"], default="loose",
-         why="loose only fixes hits that stick out from the band's own feel"),
+         why="loose only fixes hits that stick out from the band's own feel; off = never propose timing changes"),
     dict(key="cleanup.order", ask="In the first clean-up, put tracks in working order (drums, bass, keys/guitar/synth, "
          "vocals, other melodic; low to high) and vocal-stack parts on the track for their pitch?",
          options=["on", "off"], default="on",
          why="one fader per voice in a harmony stack, and every song laid out the same way; sound is unchanged"),
+    dict(key="cleanup.retire", ask="In the first clean-up, retire tracks that are switched off (an archive copy of "
+         "the set is kept first)?", options=["on", "off"], default="on",
+         why="a set with dead tracks is harder to read; the sound is unchanged"),
+    dict(key="cleanup.consolidate", ask="In the first clean-up, merge one instrument's matching tracks into one track "
+         "when nothing overlaps?", options=["on", "off"], default="on",
+         why="fewer tracks to mix; clips keep their timing and the sound is unchanged"),
     dict(key="protect.tracks", ask="Any tracks that must never be changed without asking again? (names, commas)",
          options=None, default=[], why="findings on them are marked PROTECTED and `fix` refuses them by default"),
     dict(key="protect.notes", ask="Anything deliberate that might look like a mistake? (long reverb tails, a fade, "
@@ -71,6 +92,8 @@ def load(path=None):
 
 
 def get(prefs, key, default=None):
+    if key == "tools.daw":                           # one value, shared with the app's Setup page
+        return daw(prefs) or default
     cur = prefs
     for part in key.split("."):
         if not isinstance(cur, dict) or part not in cur:
@@ -87,10 +110,108 @@ def put(prefs, key, value):
     cur[parts[-1]] = value
 
 
+# ---------------------------------------------------------------- the DAW: one choice, shared with Setup
+DAW_IDS = ("live", "reaper", "ardour", "other")
+_DAW_WORDS = {"live": "live", "ableton": "live", "ableton live": "live", "reaper": "reaper", "ardour": "ardour",
+              "other": "other", "logic": "other", "pro tools": "other", "protools": "other", "studio one": "other"}
+
+
+def _daw_name(v):
+    return _DAW_WORDS.get(str(v or "").strip().lower(), "")
+
+
+def setup_daw(setup_path=None):
+    """The DAW chosen on the app's Setup page (live, reaper, ardour, other), or "" when it was never chosen."""
+    p = Path(setup_path) if setup_path else Path("~/.hypnomix/setup.json").expanduser()     # where setup.py keeps it
+    try:
+        return _daw_name(json.loads(p.read_text()).get("daw"))
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def daw(prefs=None, setup_path=None):
+    """The person's DAW as one of live, reaper, ardour, other ("" when neither Preferences nor Setup has it).
+    Preferences (tools.daw) win; when that is unanswered, the choice made in Setup is used, so the two never disagree.
+    Older answers (ableton, logic, protools) are read as live / other."""
+    if prefs is None:
+        prefs = load()
+    cur = prefs.get("tools") if isinstance(prefs, dict) else None
+    mine = _daw_name(cur.get("daw")) if isinstance(cur, dict) else ""
+    return mine or setup_daw(setup_path)
+
+
+# ---------------------------------------------------------------- taste: tuning and timing strictness
+_WANTS = {"tune": ("taste", "tuning", {"off": "off", "natural": "gentle", "tight": "tight"}),
+          "timing": ("taste", "timing", {"off": "off", "loose": "gentle", "tight": "tight"})}
+_WANTS["tuning"] = _WANTS["tune"]
+
+
+def wants(kind, prefs=None):
+    """How strict the person wants tuning ('tune') or timing ('timing') proposals to be:
+    "off"      never propose them
+    "gentle"   only the clear ones, keeping the player's feel (taste.tuning=natural, taste.timing=loose)
+    "tight"    go further (taste.tuning=tight, taste.timing=tight)
+    "default"  not answered: behave as before (the tools' own gentle settings)
+    A scan marks (or leaves out) proposals of that kind accordingly; the person still approves each one."""
+    if kind not in _WANTS:
+        raise ValueError(f"wants() knows 'tune' and 'timing', not {kind!r}")
+    group, name, table = _WANTS[kind]
+    v = get(load() if prefs is None else prefs, f"{group}.{name}")
+    if isinstance(v, bool):                          # `off` saved without quotes by an older version
+        v = "on" if v else "off"
+    return table.get(str(v).strip().lower(), "default") if v is not None else "default"
+
+
+# ---------------------------------------------------------------- answers are checked when they are saved
+class PrefError(ValueError):
+    """An answer that does not fit its question. The message names what would work."""
+
+
+NUMBERS = {   # key: (lowest, highest, integer only, example)
+    "targets.lufs": (-40.0, -1.0, False, "-14"),
+    "targets.true_peak": (-12.0, 0.0, False, "-1"),
+    "review.max_questions": (0, 50, True, "5"),
+}
+ON_OFF = {"on": "on", "yes": "on", "true": "on", "1": "on", "off": "off", "no": "off", "false": "off", "0": "off"}
+EXTRA_CHOICES = {"review.teach": ["on", "off"]}       # read by the code but not asked as first-run questions
+
+
+def choices(key):
+    """The allowed words for a choice question (None when the key takes anything or a number)."""
+    for q in QUESTIONS:
+        if q["key"] == key and q["options"] and all(isinstance(o, str) for o in q["options"]):
+            return list(q["options"])
+    return EXTRA_CHOICES.get(key)
+
+
 def parse(key, raw):
     if key in LISTS:
         return [x.strip() for x in raw.split(",") if x.strip()]
-    low = raw.strip().lower()
+    text = str(raw).strip()
+    low = text.lower()
+    if key in NUMBERS:
+        lo, hi, whole, eg = NUMBERS[key]
+        if key == "review.max_questions" and low in ("none", "no", "off", "all", ""):
+            return 0                                 # no limit: ask everything one at a time
+        try:
+            v = float(text)
+        except ValueError:
+            v = float("nan")
+        if v != v or not lo <= v <= hi or (whole and v != int(v)):
+            kind = "a whole number" if whole else "a number"
+            raise PrefError(f"{key} must be {kind} from {lo:g} to {hi:g} (for example {eg}); got {raw!r}")
+        return int(v) if whole or ("." not in text and v == int(v)) else v
+    opts = choices(key)
+    if opts is not None:
+        if key == "tools.daw":
+            got = _daw_name(low)
+        elif sorted(opts) == ["off", "on"]:
+            got = ON_OFF.get(low, "")
+        else:
+            got = next((o for o in opts if o.lower() == low), "")
+        if not got:
+            raise PrefError(f"{key} must be one of: {', '.join(opts)}; got {raw!r}")
+        return got
     if low in ("yes", "true", "no", "false"):
         return low in ("yes", "true")
     try:
@@ -195,8 +316,8 @@ def main():
         for line in summary(prefs):
             print("  " + line)
         tl = prefs.get("tools", {})
-        if tl:
-            print(f"  DAW: {tl.get('daw', '?')}; free plug-ins: {', '.join(tl.get('plugins') or []) or 'stock only'}")
+        if tl or daw(prefs):
+            print(f"  DAW: {daw(prefs) or '?'}; free plug-ins: {', '.join(tl.get('plugins') or []) or 'stock only'}")
         if prefs.get("learned"):
             print("\n  learned from past reviews:")
             for k, row in sorted(prefs["learned"].items()):
@@ -214,7 +335,10 @@ def main():
             k, v = item.split("=", 1)
             if k not in known and not k.startswith(("review.", "taste.", "targets.", "tools.", "protect.")):
                 sys.exit(f"unknown key {k!r}; see `hypnomix prefs questions`")
-            put(prefs, k, parse(k, v))
+            try:
+                put(prefs, k, parse(k, v))
+            except PrefError as e:
+                sys.exit(f"not saved: {e}")
         print(f"saved {save(prefs)}")
     elif args[0] == "learn" and len(args) > 1:
         learn(args[1])

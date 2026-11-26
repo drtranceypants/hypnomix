@@ -64,9 +64,16 @@ def midi_evidence(als):
     return pc, bass, n
 
 
+def _load_mono(path, sr):
+    """Mono float audio at `sr`; a file that cannot be read stops with the shared plain message (no traceback)."""
+    from hypnomix.core import dsp
+    y, _ = dsp.load(path, sr)
+    return y.mean(axis=1).astype(np.float32)
+
+
 def audio_evidence(path, sr=22050):
     import librosa
-    y, _ = librosa.load(path, sr=sr, mono=True)
+    y = _load_mono(path, sr)
     h = librosa.effects.harmonic(y, margin=3)
     C = np.abs(librosa.cqt(h, sr=sr, hop_length=2048, fmin=librosa.note_to_hz("C1"), n_bins=84, bins_per_octave=12))
     pc = np.zeros(12); bass = np.zeros(12)
@@ -98,6 +105,9 @@ def main():
     ap.add_argument("--bars", type=int, default=8); ap.add_argument("--bpm", type=float)
     a = ap.parse_args()
     if not a.set and not a.audio: sys.exit("give --set and/or --audio")
+    if a.sections and not a.set and not a.bpm:
+        sys.exit("--sections needs the song's tempo for the bar grid: give --set SET.als (the tempo is read from "
+                 "the set) or --bpm N")
     total, parts, tonic = np.zeros(24), {}, np.zeros(12)
     if a.set:
         pc, bass, n = midi_evidence(a.set)
@@ -182,7 +192,7 @@ def section_map(als=None, audio=None, bars=8, hop_bars=4, bpm=None, sure_cov=0.8
     bar_s = 4 * 60 / tempo
     C = None
     if audio:
-        y, sr = librosa.load(audio, sr=22050, mono=True); h = librosa.effects.harmonic(y, margin=3)
+        sr = 22050; y = _load_mono(audio, sr); h = librosa.effects.harmonic(y, margin=3)
         hop = 2048; C = np.abs(librosa.cqt(h, sr=sr, hop_length=hop, fmin=librosa.note_to_hz("C1"), n_bins=84))
         fr_s = hop / sr; dur = len(y) / sr
     else:

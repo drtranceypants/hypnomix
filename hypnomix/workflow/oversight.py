@@ -193,12 +193,13 @@ def reviewer(name=None):
 
 
 def load_decisions(sd):
-    p = Path(sd) / "decisions.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    from hypnomix.core import atomic
+    return atomic.load_json(Path(sd) / "decisions.json", {})       # a cut-off file falls back to decisions.json.bak
 
 
 def save_decisions(sd, dec):
-    (Path(sd) / "decisions.json").write_text(json.dumps(dec, indent=1))
+    from hypnomix.core import atomic
+    atomic.write_json(Path(sd) / "decisions.json", dec)             # whole or not at all; the last good one is kept
 
 
 def decision_of(dec, fid):

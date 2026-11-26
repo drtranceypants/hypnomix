@@ -9,7 +9,7 @@ from pathlib import Path
 
 from hypnomix.core.paths import out_at
 
-PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow", "balance", "colour"]
+PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow", "balance", "colour", "album", "preflight"]
 
 
 def scan_dir(custom, source, suffix=""):

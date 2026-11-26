@@ -11,7 +11,6 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-import pyloudnorm as pyln
 
 warnings.filterwarnings("ignore")
 BANDS = [("sub", 20, 60), ("bass", 60, 250), ("lowmid", 250, 500), ("mid", 500, 2000), ("highmid", 2000, 6000), ("air", 6000, 20000)]
@@ -24,6 +23,7 @@ def analyse(path, hz):
     if peak < 1e-6:
         return None  # silent stem
     try:
+        import pyloudnorm as pyln
         lufs = pyln.Meter(sr).integrated_loudness(y)
     except Exception:
         lufs = float("-inf")
@@ -40,7 +40,8 @@ def analyse(path, hz):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("folder"); ap.add_argument("--hz", type=float)
+    ap = argparse.ArgumentParser(prog="hypnomix stems", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter); ap.add_argument("folder"); ap.add_argument("--hz", type=float)
     ap.add_argument("--out"); ap.add_argument("--include-groups", action="store_true",
                                                help="Live also renders group tracks; they are skipped by default to avoid double counting")
     a = ap.parse_args()

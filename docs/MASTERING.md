@@ -176,6 +176,80 @@ the same level as everything else, with less punch.
 
 **How to hear it.** A/B the original against "as Spotify plays it", then against a reference at the same level.
 
+## From master to release: `release`, `versions`, `compare`
+
+Three commands take over between a finished master and the upload. All of them write only new files, in new folders,
+and say what they measured, not what they heard.
+
+**`hypnomix release MASTER.wav --title T --artist A [--album --track --year --genre --isrc --art cover.jpg]`**
+makes the folder a distributor asks for: your master as 24-bit WAV (a byte-for-byte copy when it already is one;
+never re-processed), a 16-bit / 44.1 kHz WAV made from the unrounded master with the same dither `master` uses,
+MP3 320 and AAC 256 (`.m4a`) with the tags and the cover embedded, FLAC if you add it to `--formats`, a copy of the
+cover, `release.json` (the details; `--meta release.json` reads them back) and `RELEASE.md`. Run it with `--check`
+first: it runs the release checks on the master, checks the cover (square, at least 3000 px, JPEG or PNG) and the
+ISRC's shape, and prints what it would write, without writing anything. A package written with a cover that fails
+those checks says so on the console, in `RELEASE.md` and in `release.json`.
+`RELEASE.md` gives each file's loudness, true peak and checks. For the MP3 and AAC it decodes the file again, the
+way a player does, and reports the true peak **after** decoding. If that is over 0 dBTP it says by how much and
+that mastering again with the ceiling that many dB lower would fix it. It never changes the audio to hide it.
+
+**`hypnomix versions --stems DIR --vocals "Lead*,Harm*" [--mix MIX.wav] [--tv -6] [--cut 1:12-1:40] [--bpm N]`**
+builds an instrumental, an a cappella, a TV mix (`--tv`) and a radio edit (`--cut`) from stems you exported
+yourself. With `--mix` it first adds the stems up and subtracts them from the mix (the null test): a tiny leftover
+means the stems are the mix; a big one means master-bus processing, a different level, a different start point or a
+missing stem, and the report says which, and that the versions are then built from the stems, not carved out of the
+mix. Each version is gain-matched to the mix's loudness (gain only; it stops short of a true-peak overshoot and says
+so). The radio edit is cut from the mix when you give one, with equal-power crossfades, and snaps to bar lines when
+you give `--bpm` (the bar grid is only found to within about 30 ms, so an edge within 50 ms of a drum hit moves onto that hit). `qc` runs on every file; `VERSIONS.md` has the results. `--check` prints the plan and writes nothing.
+
+**`hypnomix compare OLD.wav NEW.wav`** is the "compare a full export with the previous bounce" step. It lines the two
+up (and says the offset if one starts later), then writes `COMPARE.md`: one line first ("new is 1.2 dB louder, 1.5 dB
+brighter above 8 kHz, a little narrower in the lows; the 2nd chorus-like section changed most"), then loudness,
+peaks, dynamics, tone and stereo width in 8 bands, each section's loudness, and the three spots where the two differ
+most as level-matched A / B clips in `ab/`, which `hypnomix review` can play. It refuses politely when the two are
+not the same song, or the sample rates differ (`--resample`).
+
+**When.** `compare` after every round of changes; `versions` once the master is final; `release` last.
+
+**How to hear it.** Play each A / B pair from `compare`; play the radio edit across each join and the instrumental
+against the mix; open each file in `release` once.
+
+---
+
+## An album as a whole: `hypnomix album`
+
+`qc` checks one file and `tonal` builds one target; nothing else puts the songs of an EP side by side.
+**`hypnomix album SONG1.wav SONG2.wav … [--order a,b,c] [--target LUFS] [--anchor SONG] [--plan]`** (or one folder)
+writes `ALBUM.md` and changes nothing. Per song it measures integrated loudness, the loudest section (the highest
+short-term loudness over 3 s windows), true peak, the 8-band tonal curve against the median of the other songs,
+stereo width, the silence at the head and tail and how the song ends and starts, key and tempo.
+
+**Level.** A quiet ballad is allowed to be quieter, so it takes two readings, the whole song and its loudest section,
+and says which it uses. The default (`--reading both`) calls a song *apart* only when both are more than
+`--tolerance` (2 LU) from the median of the other songs, in the same direction; a song that is lower only as a
+whole (quiet verses) is listed and left alone. `--reading whole` or `loudest` judges on one; `--target -14` compares
+the whole-song loudness with a fixed figure; `--anchor SONG` matches the others to one song; `--keep-quiet NAME`
+marks a song you want quieter.
+
+**Tone and width.** Brighter, darker, boomier, thinner or boxier than the rest, band by band, in dB
+(`--tone-tolerance`, 1.5 dB); wider or narrower than the rest (`--width-tolerance`, 3 dB).
+
+**Gaps and order.** For each transition in your order, a gap suggested from how the first song's tail decays (cut
+off, short fade, ring-out, long fade) and how the next one starts (full strength or soft), plus the level step, the
+key relation (circle of fifths) and the tempo change. `--gap-style tight|normal|roomy` or `--gap SECONDS` change it.
+`--suggest-order` lists one or two orders (by energy arc, by key relation) as options; they are never applied.
+
+**Moves, only with your yes.** With `--plan`, each proposal is a finding: a gain trim (the smaller of the two gaps,
+never past `--ceiling`, -1 dBTP; the rest needs a limiter), a gentle tilt (a low shelf at 160 Hz and a high shelf at
+5 kHz, `--tilt-amount` 50% of the gap, at most `--max-tilt-db` 2 dB, loudness kept), and trimmed or padded silence
+(only silence is touched). `hypnomix ab` plays each level-matched; `hypnomix fix DIR --approved` writes the approved
+ones as new files in `DIR/fixed/`. Several moves on one song chain (`Song (album gain+tilt+ends).wav` is the
+finished one; the steps before it are kept). The silence moves belong to the order you gave: change the order, plan
+again.
+
+**When.** After every song is mastered, before the upload; then `qc` and `release` on each. **How to hear it.** Play
+each transition with the next song queued, at one volume, and trust your ears over the figures.
+
 ---
 
 ## Order of the chain

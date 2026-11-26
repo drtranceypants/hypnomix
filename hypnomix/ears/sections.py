@@ -77,7 +77,9 @@ def bar_grid(mono, sr, bpm=None):
     return bars, float(bpm)
 
 
-def bar_features(mono, sr, bars):
+def bar_features(mono, sr, bars, raw=False):
+    """Per-bar features, each column scaled to unit spread. With raw=True also returns the unscaled rows
+    (loudness/6 dB, centroid in octaves, MFCC/10, chroma*2) so a real change can be told from noise."""
     S = np.abs(librosa.stft(mono, n_fft=2048, hop_length=HOP))
     rms = librosa.feature.rms(S=S)[0]
     cent = librosa.feature.spectral_centroid(S=S, sr=sr)[0]
@@ -94,42 +96,69 @@ def bar_features(mono, sr, bars):
             mfcc[1:, sl].mean(axis=1) / 10.0,
             chroma[:, sl].mean(axis=1) * 2.0,
         ]))
-    F = np.array(rows)
-    sd = F.std(axis=0)
-    return (F - F.mean(axis=0)) / np.where(sd > 1e-9, sd, 1.0)
+    R = np.array(rows)
+    sd = R.std(axis=0)
+    F = (R - R.mean(axis=0)) / np.where(sd > 1e-9, sd, 1.0)
+    return (F, R) if raw else F
 
 
 def segment(F, kmin=4, kmax=12):
     """Boundaries (bar indices, including 0 and len) from a checkerboard novelty on the bar SSM."""
+    return segment_found(F, kmin, kmax)[0]
+
+
+# a change counts as real when the average bar on each side of it differs by at least this much in the
+# unscaled features (0.6 = about 3.6 dB of loudness, or a comparable shift in brightness or tone colour).
+# A song that never changes differs by 0.05-0.2 there; a loud/quiet section change by 5 or more.
+MIN_CHANGE = 0.6
+
+
+def block_change(R, p, k=4):
+    """How far apart the bars just before and just after bar p are, in unscaled feature units."""
+    k = max(1, min(k, p, len(R) - p))
+    return float(np.linalg.norm(R[p - k:p].mean(axis=0) - R[p:p + k].mean(axis=0)))
+
+
+def even_cut(n, kmin, keep=()):
+    b = sorted(set([0, n] + [int(x) for x in keep]))
+    while len(b) - 1 < kmin:
+        i = int(np.argmax(np.diff(b)))
+        if b[i + 1] - b[i] < 2:
+            break
+        b.insert(i + 1, (b[i] + b[i + 1]) // 2)
+    return b
+
+
+def segment_found(F, kmin=4, kmax=12, raw=None):
+    """(boundaries, found): found is False when no clear change was heard and the song was cut evenly.
+    raw: the unscaled bar features from bar_features(raw=True); with them a change must be big in real units
+    (not just big after every column was stretched to the same spread), so a flat song is not split."""
     n = len(F)
     if n < 2 * kmin:
-        return list(range(0, n, max(1, n // max(1, n // 2)))) + [n] if n > 1 else [0, n]
+        return (list(range(0, n, max(1, n // max(1, n // 2)))) + [n] if n > 1 else [0, n]), False
     D = np.linalg.norm(F[:, None] - F[None], axis=2)
     S = -D
     L = 4 if n >= 24 else 2
     g = np.outer(np.r_[-np.ones(L), np.ones(L)], np.r_[-np.ones(L), np.ones(L)])
     nov = np.zeros(n)
     for i in range(L, n - L + 1):
-        nov[i] = -(S[i - L:i + L, i - L:i + L] * g).sum()
+        nov[i] = (S[i - L:i + L, i - L:i + L] * g).sum()   # S = -distance: within-block high, across low
     nov = np.maximum(nov, 0)
     peaks, _ = find_peaks(nov, distance=4)
     peaks = peaks[(peaks >= 2) & (peaks <= n - 2)]
+    if raw is not None:
+        peaks = np.array([p for p in peaks if block_change(raw, int(p)) >= MIN_CHANGE], dtype=int)
     if not len(peaks):
-        peaks = np.array([n // 2])
+        # nothing in the audio changes clearly: cut evenly and say so
+        return even_cut(n, kmin), False
     order = peaks[np.argsort(nov[peaks])[::-1]]
     thr = 0.3 * nov[order[0]]
     keep = [p for p in order if nov[p] >= thr][: kmax - 1]
     if len(keep) < kmin - 1:
         keep = list(order[: kmin - 1])
         if len(keep) < kmin - 1:   # too few change points: split the longest sections evenly on bars
-            b = sorted(set([0, n] + keep))
-            while len(b) - 1 < kmin:
-                i = int(np.argmax(np.diff(b)))
-                if b[i + 1] - b[i] < 2:
-                    break
-                b.insert(i + 1, (b[i] + b[i + 1]) // 2)
-            return b
-    return sorted(set([0, n] + [int(p) for p in keep]))
+            return even_cut(n, kmin, keep), bool(keep)   # real change points were found: say so
+    return sorted(set([0, n] + [int(p) for p in keep])), True
 
 
 def group(F, bounds):
@@ -154,8 +183,8 @@ def analyse(path, bpm=None, vocal=None):
     y = dsp.stereo(y)
     mono = librosa.resample(y.mean(axis=1), orig_sr=sr, target_sr=FEAT_SR) if sr != FEAT_SR else y.mean(axis=1)
     bars, bpm_used = bar_grid(mono, FEAT_SR, bpm)
-    F = bar_features(mono, FEAT_SR, bars)
-    bounds = segment(F)
+    F, R = bar_features(mono, FEAT_SR, bars, raw=True)
+    bounds, found = segment_found(F, raw=R)
     labels = group(F, bounds)
     dur = len(y) / sr
     edges = np.append(bars, dur)
@@ -195,7 +224,7 @@ def analyse(path, bpm=None, vocal=None):
         findings.append({"id": f"sections-{len(findings) + 1}", "tool": "sections", "kind": kind, "severity": sev,
                          "track": "mix", "where": where, "problem": problem, "fix": fix, "applies": applies})
 
-    for k, g in repeated.items():
+    for k, g in ({} if not found else repeated).items():   # letters of an even split mean nothing
         for s in g[1:]:
             d = s["lufs"] - g[0]["lufs"]
             if abs(d) >= 1.5:
@@ -233,7 +262,13 @@ def analyse(path, bpm=None, vocal=None):
                         f"the band than the song's median ({d:+.1f} vs {med:+.1f} dB)",
                         f"ride the vocal {'up' if d < med else 'down'} about {min(3, abs(d - med)):.1f} dB there, "
                         f"or {'thin' if d < med else 'fill'} the band in that section")
-    return {"file": str(path), "bpm": round(bpm_used, 1) if bpm_used else None, "sections": secs, "findings": findings}
+    return {"file": str(path), "bpm": round(bpm_used, 1) if bpm_used else None, "sections": secs, "findings": findings,
+            "even_split": not found,
+            "note": None if found else "no clear section changes found; split evenly"}
+
+
+EVEN_NOTE = ("No clear section changes found; split evenly. The blocks below are equal slices of the song, "
+             "not real sections, so read the levels but not the labels.")
 
 
 def table(r):
@@ -264,10 +299,13 @@ def main():
     name = Path(a.mix).stem
     t = table(r)
     lines = [f"- [{f['severity']}] {f['where']}: {f['problem']} - {f['fix']}" for f in r["findings"]] or ["- nothing stands out"]
-    print(f"{Path(a.mix).name}: {len(r['sections'])} sections, {r['bpm']} BPM\n\n{t}\n\nFindings:\n" + "\n".join(lines))
+    head = f"{Path(a.mix).name}: {len(r['sections'])} sections, {r['bpm']} BPM"
+    if r.get("even_split"):
+        head += f"\n\n{EVEN_NOTE}"
+    print(f"{head}\n\n{t}\n\nFindings:\n" + "\n".join(lines))
     outdir = out_at(a.out, "sections", name)
     md = (f"# Sections: {name}\n\nTempo {r['bpm']} BPM. Labels are guesses from the audio: same letter = sounds alike; "
-          f"\"chorus-like\" = loudest repeated group.\n\n{t}\n\n## Findings\n\n" + "\n".join(lines) + "\n")
+          f"\"chorus-like\" = loudest repeated group.\n\n" + (EVEN_NOTE + "\n\n" if r.get("even_split") else "") + f"{t}\n\n## Findings\n\n" + "\n".join(lines) + "\n")
     (outdir / "SECTIONS.md").write_text(md)
     if a.json:
         Path(a.json).write_text(json.dumps(r, indent=2))

@@ -10,28 +10,70 @@ from pathlib import Path
 
 import numpy as np
 import soundfile as sf
-import pyloudnorm as pyln
-from scipy.signal import sosfilt, butter, resample_poly, fftconvolve, iirnotch, tf2sos
-from scipy.ndimage import minimum_filter1d, uniform_filter1d
 
 AUDIO_EXT = (".wav", ".aif", ".aiff", ".flac", ".mp3", ".ogg", ".m4a")
+
+# scipy.signal and pyloudnorm take most of a second to import, and every command (even `-h`) loads this module,
+# so they are imported on first use. `dsp.butter`, `dsp.sosfilt` etc. still work for other modules (see __getattr__).
+_LAZY = {"sosfilt": "scipy.signal", "butter": "scipy.signal", "resample_poly": "scipy.signal",
+         "fftconvolve": "scipy.signal", "iirnotch": "scipy.signal", "tf2sos": "scipy.signal",
+         "minimum_filter1d": "scipy.ndimage", "uniform_filter1d": "scipy.ndimage", "pyln": "pyloudnorm"}
+
+
+def _sig():
+    import scipy.signal
+    return scipy.signal
+
+
+def _ndi():
+    import scipy.ndimage
+    return scipy.ndimage
+
+
+def _pyln():
+    import pyloudnorm
+    return pyloudnorm
+
+
+def __getattr__(name):
+    mod = _LAZY.get(name)
+    if mod is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+    m = importlib.import_module(mod)
+    return m if name == "pyln" else getattr(m, name)
+
+
+class AudioReadError(Exception):
+    """A file could not be read as audio. The message is plain words fit to print as they are."""
 
 
 # ---------------------------------------------------------------- I/O
 def load(path, sr=None):
     """Read audio as float64 (n, ch). Resamples to `sr` if given. Falls back to ffmpeg for mp3/m4a."""
     path = Path(path)
+    if not path.exists():
+        raise AudioReadError(f"can't read '{path}' as audio: no such file")
+    if path.is_dir():
+        raise AudioReadError(f"can't read '{path}' as audio: it is a folder, not a file")
     try:
         y, file_sr = sf.read(str(path), always_2d=True, dtype="float64")
-    except Exception:
-        import subprocess, tempfile
+    except Exception as first:
+        import shutil, subprocess, tempfile
+        if shutil.which("ffmpeg") is None:
+            raise AudioReadError(f"can't read '{path}' as audio: not a format the built-in reader opens, "
+                                 f"and ffmpeg (needed for the rest, such as mp3 and m4a) is not installed") from first
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td) / "x.wav"
-            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-c:a", "pcm_f32le", str(tmp)], check=True)
-            y, file_sr = sf.read(str(tmp), always_2d=True, dtype="float64")
+            try:
+                subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-c:a", "pcm_f32le", str(tmp)],
+                               check=True, capture_output=True)
+                y, file_sr = sf.read(str(tmp), always_2d=True, dtype="float64")
+            except Exception as e:
+                raise AudioReadError(f"can't read '{path}' as audio: not an audio file hypnomix can decode") from e
     if sr and sr != file_sr:
         g = math.gcd(int(sr), int(file_sr))
-        y = resample_poly(y, sr // g, file_sr // g, axis=0)
+        y = _sig().resample_poly(y, sr // g, file_sr // g, axis=0)
         file_sr = sr
     return y, int(file_sr)
 
@@ -105,13 +147,13 @@ def undb(d):
 def lufs(y, sr):
     if len(y) < int(0.4 * sr):
         return -70.0
-    v = pyln.Meter(sr).integrated_loudness(y)
+    v = _pyln().Meter(sr).integrated_loudness(y)
     return float(v) if np.isfinite(v) else -70.0
 
 
 def true_peak(y, sr):
     """dBTP via 4x oversampling (ITU-R BS.1770 style)."""
-    up = resample_poly(y, 4, 1, axis=0) if sr < 176400 else y
+    up = _sig().resample_poly(y, 4, 1, axis=0) if sr < 176400 else y
     return float(db(np.max(np.abs(up))))
 
 
@@ -146,7 +188,7 @@ def active_lufs(y, sr, rel_db=35, floor_db=-90):
     seg = np.concatenate([y[i * n:(i + 1) * n] for i in keep])
     if len(seg) < n:
         seg = np.tile(seg, (int(np.ceil(n / max(1, len(seg)))) + 1, 1))[:n]
-    v = pyln.Meter(sr).integrated_loudness(seg)
+    v = _pyln().Meter(sr).integrated_loudness(seg)
     if not np.isfinite(v) or v < -70:                     # below the BS.1770 absolute gate: fall back to RMS
         v = rms_db(seg) - 0.7
     return float(v)
@@ -196,20 +238,20 @@ def shelf(f0, gain_db, sr, high=False, s=1.0):
 
 
 def highpass(f0, sr, order=2):
-    return butter(order, f0, "highpass", fs=sr, output="sos")
+    return _sig().butter(order, f0, "highpass", fs=sr, output="sos")
 
 
 def lowpass(f0, sr, order=2):
-    return butter(order, min(f0, sr * 0.45), "lowpass", fs=sr, output="sos")
+    return _sig().butter(order, min(f0, sr * 0.45), "lowpass", fs=sr, output="sos")
 
 
 def notch(f0, q, sr):
-    b, a = iirnotch(f0, q, fs=sr)
-    return tf2sos(b, a)
+    b, a = _sig().iirnotch(f0, q, fs=sr)
+    return _sig().tf2sos(b, a)
 
 
 def filt(y, sos):
-    return sosfilt(sos, y, axis=0)
+    return _sig().sosfilt(sos, y, axis=0)
 
 
 class EQ:
@@ -270,7 +312,7 @@ def compress(y, sr, threshold_db=-18, ratio=3.0, attack_ms=10, release_ms=120, k
     sc = y if sidechain is None else sidechain
     if detector == "rms":
         # running averages drift slightly negative over millions of samples of silence: clamp before the log
-        lvl = 10 * np.log10(np.maximum(uniform_filter1d(np.max(sc ** 2, axis=1), int(0.01 * sr) or 1), 0) + 1e-20)
+        lvl = 10 * np.log10(np.maximum(_ndi().uniform_filter1d(np.max(sc ** 2, axis=1), int(0.01 * sr) or 1), 0) + 1e-20)
     else:
         lvl = db(np.max(np.abs(sc), axis=1))
     over = lvl - threshold_db
@@ -301,13 +343,13 @@ def limit(y, sr, ceiling_dbtp=-1.0, lookahead_ms=5.0, release_ms=80.0):
     """Look-ahead brickwall limiter on true peaks (4x oversampled detection). Returns (out, gr_db)."""
     L = max(1, int(lookahead_ms / 1000 * sr))
     ceil = undb(ceiling_dbtp - 0.15)                               # small margin for inter-sample peaks
-    up = np.max(np.abs(resample_poly(y, 4, 1, axis=0)), axis=1)
+    up = np.max(np.abs(_sig().resample_poly(y, 4, 1, axis=0)), axis=1)
     pk = up[: (len(up) // 4) * 4].reshape(-1, 4).max(axis=1)
     pk = np.pad(pk, (0, len(y) - len(pk)), mode="edge") if len(pk) < len(y) else pk[: len(y)]
     pk = np.maximum(pk, np.max(np.abs(y), axis=1))
     req = db(np.minimum(1.0, ceil / np.maximum(pk, 1e-12)))      # dB gain needed per sample (<= 0)
     # h[k] = min(req[k … k+L]): forward-looking hold, so the gain is already down when the peak arrives
-    h = minimum_filter1d(req, size=L + 1, origin=-(L // 2) if L > 1 else 0, mode="nearest")
+    h = _ndi().minimum_filter1d(req, size=L + 1, origin=-(L // 2) if L > 1 else 0, mode="nearest")
     # release: gain may rise by at most r dB per sample  ->  g[n] = min_k (h[k] + r (n-k))
     r = 20 * math.log10(math.e) / max(1, release_ms / 1000 * sr) * 1.0
     idx = np.arange(len(h))
@@ -333,7 +375,7 @@ def deess(y, sr, freq=6500, threshold_db=-30, ratio=4, max_gr_db=8):
     crossover and the "de-essed" band came out up to 3-4 dB LOUDER.)"""
     from scipy.signal import sosfiltfilt
     hp = sosfiltfilt(highpass(freq * 0.75, sr, 4), y, axis=0)
-    sc = filt(y, butter(4, [freq * 0.8, min(freq * 1.6, sr * 0.45)], "bandpass", fs=sr, output="sos"))
+    sc = filt(y, _sig().butter(4, [freq * 0.8, min(freq * 1.6, sr * 0.45)], "bandpass", fs=sr, output="sos"))
     _, g = compress(hp, sr, threshold_db, ratio, 1, 60, 4, sidechain=sc, block=16)
     g = np.maximum(g, -max_gr_db)
     return (y - hp) + hp * undb(g)[:, None], g
@@ -363,7 +405,7 @@ def reverb_ir(sr, decay_s=1.8, predelay_ms=20, damp_hz=6000, seed=1):
 
 def convolve(y, ir):
     y = stereo(y)
-    out = np.stack([fftconvolve(y[:, c], ir[:, c])[: len(y)] for c in range(2)], axis=1)
+    out = np.stack([_sig().fftconvolve(y[:, c], ir[:, c])[: len(y)] for c in range(2)], axis=1)
     return out
 
 
@@ -432,4 +474,4 @@ def matching_fir(src, ref, sr, max_db=3.0, smooth_oct=1 / 2, ntaps=4097):
 
 def apply_fir(y, h):
     d = (len(h) - 1) // 2
-    return np.stack([fftconvolve(y[:, c], h)[d:d + len(y)] for c in range(y.shape[1])], axis=1)
+    return np.stack([_sig().fftconvolve(y[:, c], h)[d:d + len(y)] for c in range(y.shape[1])], axis=1)

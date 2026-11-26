@@ -290,8 +290,11 @@ render();
 
 
 def load(sd):
-    data = json.loads((sd / "findings.json").read_text())
-    dec = json.loads((sd / "decisions.json").read_text()) if (sd / "decisions.json").exists() else {}
+    from hypnomix.core import atomic
+    data = atomic.load_json(sd / "findings.json")
+    if data is None:
+        raise FileNotFoundError(f"no findings.json in {sd}")
+    dec = atomic.load_json(sd / "decisions.json", {})
     ab = json.loads((sd / "ab" / "ab.json").read_text()) if (sd / "ab" / "ab.json").exists() else {}
     return data, dec, ab
 
@@ -384,7 +387,7 @@ def record(sd, fid, decision, note="", amount=None, by=None, via=None):
     if old.get("conflicts"):                 # a conflict stays visible until it is settled
         e["conflicts"] = old["conflicts"]
     dec[fid] = e
-    (sd / "decisions.json").write_text(json.dumps(dec, indent=1))
+    O.save_decisions(sd, dec)
     return e
 
 
@@ -405,7 +408,7 @@ def record_like(sd, fid, decision, amount=None, by=None, band=0.5):
     for f in matched:
         dec[f["id"]] = O.entry(decision, "", amount, by=by, via=f"like:{fid}")
         done.append(f["id"])
-    (sd / "decisions.json").write_text(json.dumps(dec, indent=1))
+    O.save_decisions(sd, dec)
     return done
 
 

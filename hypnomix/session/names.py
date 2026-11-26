@@ -71,8 +71,54 @@ def device_names(t):
     return out
 
 
-def audio_features(y, sr=44100):
-    """Features on up to 60 s of the track's loudest active audio (22.05 kHz)."""
+FEATURES_VERSION = 1       # raise it whenever the measurements below change: older cached results are then ignored
+FEATURES_STATS = {"hits": 0, "misses": 0}
+
+
+def _features_file(y, sr):
+    """Where this audio's features are kept: <hypnomix home>/cache/names/, named by a hash of the samples, the
+    sample rate and FEATURES_VERSION. The callers hand over samples, not a path, so the key is the audio itself:
+    it changes whenever the file's path, modification time or size would, and a copy of the same audio hits too."""
+    import hashlib
+    from hypnomix.core.atomic import cache_root
+    a = np.ascontiguousarray(y, dtype=np.float32)
+    nz = np.flatnonzero(np.abs(a).reshape(len(a), -1).max(axis=1)) if len(a) else []
+    a = a[: (int(nz[-1]) + 1) if len(nz) else 0]              # padding with digital silence (stems made equal length) is not a different file
+    h = hashlib.sha1(a.tobytes())
+    h.update(f"|{sr}|{a.shape}|v{FEATURES_VERSION}".encode())
+    k = h.hexdigest()
+    return cache_root() / "names" / k[:2] / f"{k}.json"
+
+
+def audio_features(y, sr=44100, cache=True):
+    """Features on up to 60 s of the track's loudest active audio (22.05 kHz).
+
+    The measurement takes about 7 s a file (pitch tracking and harmonic/percussive split), and one scan asks for
+    the same file more than once (the recordings group, then the stems group, then the lead picker), each time in
+    its own process. So the result is kept on disk, written whole and renamed (parallel readers never see half a
+    file), and the second ask costs a read. `cache=False` measures again."""
+    f = _features_file(y, sr) if cache else None
+    if f is not None and f.exists():
+        try:
+            F = json.loads(f.read_text())["features"]
+            FEATURES_STATS["hits"] += 1
+            return F
+        except Exception:                               # cut off by an old crash: measure again below
+            pass
+    F = _audio_features(y, sr)
+    if f is not None:
+        FEATURES_STATS["misses"] += 1
+        try:
+            from hypnomix.core.atomic import write_text
+            text = json.dumps({"features": F}, default=float)
+            write_text(f, text, backup=False)
+            F = json.loads(text)["features"]            # a first run and a cached run hand back the same values
+        except Exception:
+            pass                                        # a cache that cannot be written is just a cache
+    return F
+
+
+def _audio_features(y, sr=44100):
     z = librosa.resample(y.astype(np.float32), orig_sr=sr, target_sr=22050); sr = 22050
     hop = 512
     rms = librosa.feature.rms(y=z, hop_length=hop)[0]

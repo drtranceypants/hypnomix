@@ -1,0 +1,27 @@
+<!--
+title: Instrumental, a cappella, TV mix, radio edit
+sub: versions · from your own exported stems, no separation model
+group: How-to
+teaser: Export your stems, say which are vocals, and get an instrumental, an a cappella, a TV mix and a radio edit. It first checks that the stems really add up to your mix and says so plainly if they do not, matches each version to the mix's loudness with gain only, and runs the release checks on every file.
+-->
+<div class="prose paper">
+      <p>A release often wants more than the song: an instrumental, an a cappella, a TV mix, a shorter radio edit. If you export your stems, <code>versions</code> makes them from those files. There is no separation and no guessing: you say which stems are vocals, and the rest is addition. Your stems and mix are only read; everything lands in a new folder.</p>
+    </div>
+    <h3 class="sub-h">1 · Plan first: --check</h3>
+    <div class="term" data-label="check"><pre><span class="p">$</span> hypnomix versions --stems "Song stems/" --vocals "Lead*,Harm*" --mix "Song master.wav" \
+      --tv -6 --cut 1:12-1:40 --bpm 120 --check</pre></div>
+    <p class="lead">Read-only: it sorts the stems into vocals and the rest, runs the null test, and prints each file it would write with its gain and the radio-edit cuts. Nothing is written.</p>
+    <h3 class="sub-h">2 · What you get</h3>
+    <ul>
+      <li><b>Instrumental</b>: the stems that are not vocals, added up. <b>A cappella</b>: the vocal stems.</li>
+      <li><b>TV mix</b>: the instrumental plus the vocals at <code>--tv</code> dB (<code>--tv 0</code> is the full song). Only when you give <code>--tv</code>.</li>
+      <li><b>Radio edit</b>: the song with each <code>--cut</code> range taken out, joined by short equal-power crossfades (<code>--fade</code> ms, default 30). It is cut from your <code>--mix</code> when you give one, so it keeps the master exactly; otherwise from all the stems. With <code>--bpm</code> each edge snaps to the nearest bar line, and the plan says where it landed. The bar grid is found from the audio to within about 30 ms, so an edge that lands within 50 ms of a drum hit (or another sudden hit) is moved onto the start of that hit; if there is no hit to land on, it stays on the grid. The plan says which edges were moved. Check the joins by ear.</li>
+    </ul>
+    <p><code>--vocals</code> takes names or patterns, comma separated, in any case, matched against the file name with and without its extension (<code>Lead*</code>, <code>*Vox*</code>, <code>Harm 1</code>). A reverb or delay exported as its own stem that you did not name stays in the instrumental, so name it if the a cappella should carry it.</p>
+    <h3 class="sub-h">3 · The null test</h3>
+    <p>With <code>--mix</code> it first adds all the stems up and subtracts that from your mix. If the leftover is tiny, the stems really are the mix. If it is not, it says why in plain words: only level is different (a gain after the stems), the mix starts at a different point, or something real happens after the stems (master-bus compression, EQ, a limiter, a missing stem). In that case the versions are built from the stems, not carved out of the mix, and will not carry what your master bus does.</p>
+    <p>Each version is then <b>gain-matched to the mix's loudness</b>: gain only, no limiter, no EQ. If matching would push a true peak past the lower of the mix's own peak and -1 dBTP, the gain stops there and the report says how far short it landed. Without <code>--mix</code> no loudness is matched.</p>
+    <h3 class="sub-h">4 · The folder</h3>
+    <div class="term" data-label="versions"><pre><span class="p">$</span> hypnomix versions --stems "Song stems/" --vocals "Lead*,Harm*" --mix "Song master.wav" --tv -6 --cut 1:12-1:40 --bpm 120
+<span class="c"># → hypnomix-out/versions/Song master (versions)/: instrumental, a cappella, TV mix, radio edit, VERSIONS.md, versions.json</span></pre></div>
+    <p><code>qc</code> runs on every file and <b>VERSIONS.md</b> has the results with the null test, the gains and the cut list. A cappellas and instrumentals often warn about a cut-off ending or silence at the start: that is what stems are like. Then <code>release</code> can package any of them.</p>
