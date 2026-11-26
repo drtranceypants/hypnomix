@@ -103,7 +103,7 @@ def checkout():
     _, t = git("log", "-1", "--format=%ct", "--", str(HERE))
     t = t.strip()
     _, st = git("status", "--porcelain", "--", str(HERE))
-    return Path(top), int(t) if t.isdigit() else 0, [ln[3:] for ln in st.splitlines() if ln.strip()]
+    return Path(top), int(t) if t.isdigit() else 0, [ln[3:].split(" -> ")[-1] for ln in st.splitlines() if ln.strip()]
 
 
 # ---------------------------------------------------------------- the live copy on the website
