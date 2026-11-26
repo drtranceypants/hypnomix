@@ -23,6 +23,8 @@ Part of the first clean-up, with `name` and `order`. ON BY DEFAULT in scan/fix (
    A different fader is made up with clip gain, so every clip plays at the same level as before. When every clip
    fits, the emptied track is removed; clips that don't fit stay where they are (the review says which).
    Check it afterwards with `hypnomix render` (both tracks before, the one track after: they should match).
+   The silence check renders one track at a time into a scratch folder (hypnomix-tidy-… under ~/.hypnomix/cache/tmp),
+   deletes each render as soon as it is read, and removes the folder when the command ends (an error or Ctrl-C too).
 
 Usage:
   hypnomix tidy SET.als [--names names.json] [--json OUT.json]
@@ -321,18 +323,25 @@ def cut(c, edge, new, tempo):
 def silence_probe(set_path, tempo, floor_db=-55.0):
     """silent(track, a, b): renders a track (once) and says whether it stays under floor_db (RMS, 20 ms windows)
     from beat a to beat b."""
-    import subprocess, tempfile
+    import subprocess
     import numpy as np
-    from hypnomix.core import dsp
-    tmp, cache, spb = Path(tempfile.mkdtemp(prefix="tidy-")), {}, 60.0 / tempo
+    from hypnomix.core import dsp, tmp as TMP
+    box, cache, spb = [], {}, 60.0 / tempo           # box: the render folder, made at the first track, removed by close()
 
     def silent(t, a, b):
         nm = name(t)
         if nm not in cache:
+            if not box:
+                box.append(TMP.make("tidy", big=True))
+            tmp = box[0]
             subprocess.run([sys.executable, "-m", "hypnomix.cli", "render", str(set_path), "--tracks", nm, "--out", str(tmp)],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
             f = tmp / (re.sub(r'[\\/:*?"<>|]', "-", nm) + ".wav")
             cache[nm] = dsp.load(f) if f.exists() else None
+            try:
+                f.unlink()                               # heard once and kept in memory: never more than one render on disk
+            except OSError:
+                pass
         if cache[nm] is None:
             return False                                 # could not hear it: never cut
         y, sr = cache[nm]
@@ -346,6 +355,11 @@ def silence_probe(set_path, tempo, floor_db=-55.0):
         frames = seg[:k * w].reshape(k, w) if k else seg[None, :]
         rms = np.sqrt((frames ** 2).mean(axis=1)) if k else np.sqrt((seg ** 2).mean(keepdims=True))
         return bool(20 * np.log10(max(float(rms.max()), 1e-9)) < floor_db)
+
+    def close():
+        while box:
+            TMP.remove(box.pop())
+    silent.close = close                                 # the caller ends with this, in a finally
     return silent
 
 
@@ -425,7 +439,7 @@ def tweaks(items):
 def labels_from(names_json):
     if not names_json or not Path(names_json).exists():
         return {}
-    rows = json.loads(Path(names_json).read_text()).get("tracks", [])
+    rows = json.loads(Path(names_json).read_text(encoding="utf-8", errors="replace")).get("tracks", [])
     return {r["old"]: (r.get("final") or r.get("label")) for r in rows
             if float(r.get("confidence") or 0) >= 0.5 and (r.get("final") or r.get("label"))}
 
@@ -450,14 +464,20 @@ def main():
     root = ET.fromstring(read_gz(src))
     rplan = [] if a.no_retire else retire_plan(root, tweaks(a.tweak))
     tempo = float(v(root, ".//Tempo/Manual") or 120)
-    mplan = [] if a.no_merge else merge_plan(root, labels_from(a.names), silence_probe(src, tempo, a.silence_db))
+    from hypnomix.core import tmp as TMP
+    probe = silence_probe(src, tempo, a.silence_db)
+    try:
+        with TMP.terminate_cleans():
+            mplan = [] if a.no_merge else merge_plan(root, labels_from(a.names), probe)
+    finally:
+        probe.close()                                    # its renders are removed, on an error or Ctrl-C too
     fs = findings(rplan, mplan, a.mode)
     for f in fs:
         print(f"{f['id']}: {f['problem']}\n   → {f['fix']}\n")
     if not fs:
         print("nothing to tidy: no switched-off tracks, no instrument split over matching tracks")
     if a.json:
-        Path(a.json).write_text(json.dumps({"tool": "tidy", "set": str(src), "findings": fs}, indent=1))
+        Path(a.json).write_text(json.dumps({"tool": "tidy", "set": str(src), "findings": fs}, indent=1), encoding="utf-8")
     if a.apply:
         want = {x.strip() for x in (a.ids or "").split(",") if x.strip()} or {f["id"] for f in fs if f.get("default") == "approve"}
         from hypnomix.session import liveversion as LV

@@ -28,12 +28,12 @@ def scan_once(als, od, full=False, log=print):
     if (Path(od) / "findings.json").exists():
         args += ["--since", str(od)]
     t0 = time.time()
-    r = subprocess.run(args, capture_output=True, text=True)
+    r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
     secs = time.time() - t0
     new = []
     fj = Path(od) / "findings.json"
     if r.returncode == 0 and fj.exists():
-        new = [f for f in json.loads(fj.read_text())["findings"] if f.get("new")]
+        new = [f for f in json.loads(fj.read_text(encoding="utf-8"))["findings"] if f.get("new")]
     elif r.returncode != 0:
         log(f"scan failed ({r.returncode}): {(r.stdout + r.stderr).strip()[-400:]}")
     return r.returncode, new, secs
@@ -48,7 +48,7 @@ def report(od, new, secs, log=print):
                 f"{str(f.get('problem'))[:90]}")
     else:
         log(f"[{stamp}] nothing new ({secs:.1f} s)")
-    with open(Path(od) / "WATCH.md", "a") as fh:
+    with open(Path(od) / "WATCH.md", "a", encoding="utf-8") as fh:
         fh.write(f"\n## {time.strftime('%Y-%m-%d %H:%M:%S')}: {len(new)} new\n\n"
                  + "".join(f"- [{f.get('severity')}] `{f['id']}` {f.get('track') or '-'} {f.get('where', '')}: "
                            f"{f.get('problem')}\n" for f in new))

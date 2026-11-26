@@ -40,14 +40,23 @@ uv venv && uv pip install -e .     # Python 3.9+
 hypnomix doctor                    # checks ffmpeg, Rubber Band, Live, AbletonOSC, BlackHole
 ```
 
-`tune` and `vocalign` need Rubber Band 3+ (`brew install rubberband`). Run commands with `hypnomix …` or
+`tune` needs Rubber Band 3+, and so do `vocalign`'s formant and transpose options (`brew install rubberband`; on Windows and Linux hypnomix says how to get it). Run commands with `hypnomix …` or
 `python -m hypnomix.cli …`. `hypnomix` with no arguments lists every command; `hypnomix <command> -h` gives full
 help (the module docstring). Output goes to `hypnomix-out/` unless `--out`.
 
 **Never run `hypnomix install` without asking.** It puts a remote script into the person's Live and needs a
 Live restart. `device`, `aligndevice` and `probe device` also write into the person's Live User Library: do not run
-them bare either (`--out FOLDER`, or `install --dry-run`, shows the result without touching it). In a test run, point
-`HOME`, `HYPNOMIX_HOME`, `HYPNOMIX_APP_HOME` and `HYPNOMIX_USER_HOME` at scratch folders (see CONTRIBUTING.md).
+them bare either (`--out FOLDER`, or `install --dry-run`, shows the result without touching it). `store install`,
+`store uninstall` and `store updates` use the internet and write into `~/Library/Audio/Plug-Ins` and
+`~/Music/Hypnomix Library` (Mac only): ask first, and in a test run set `HYPNOMIX_STORE_ROOT` to a scratch folder.
+`store check` is offline and read-only (it only validates the catalogue), and `store list`, `search` and `info` read it too.
+`als2ardour SET.als OUTDIR` writes a whole new session folder (OUTDIR must not exist yet or be empty); give it a
+folder you made for the purpose. `app --daw` and `chain … --ardour` start, or talk to, the Hypnomix engine (a separate
+program, GPL-2.0-or-later, in the full download only): ask first, never start it from a test run, and an `app --daw`
+session that was changed must be saved or discarded on purpose (the engine never saves by itself). In a test run,
+point `HOME`, `HYPNOMIX_HOME`, `HYPNOMIX_APP_HOME` and `HYPNOMIX_USER_HOME` at scratch folders that exist (see
+CONTRIBUTING.md); the unit tests move themselves onto temporary folders when you leave these unset
+(`tests/_isolate.py`).
 
 ## The loop (use this for every job)
 
@@ -238,7 +247,9 @@ which spots to compare between the old and new set. When the review is finished,
 | Fix a set | `fix` (approved findings); or `order --apply` (track order, vocal stacks), `smooth --apply`, `timing --apply`, `distortion --apply`, `sidechain --apply`, `automation offset/dip` | a new `.als` |
 | Keep it moving (last step before mixdown; see `docs/WORKFLOW.md` §5) | `motion --learn` (your moves from finished songs), `motion SET --mix MIX --plan` (riser, dip, drift, swell, throw, outro, stutter, gate, drop-out: all options), `borrow SET --mix MIX --plan` (unused loops from the song's original project, on switched-off tracks) | a scan folder; `fix` writes a new `.als` |
 | Tempo and variety (see `docs/TEMPO.md`) | `tempomap` (free-played take: `--click` check, then `--conform` or `--follow`), `loops`, `tighten`, `breathe`, `variations`, `colour` (new timbres where a part repeats itself: Live-device chains on switched-off copies, `--plan` for the review; Live sets only) | a new `.als`, or preview files |
-| Clicking, not typing (see `docs/APP.md`) | `app` (the first pass in a window; decisions land in the same `decisions.json`; its Teacher tab is the free course in the person's DAW), `device` (Max for Live: step through findings in Live, jump to each) | scans in `~/Documents/Hypnomix`; a new `.als` on Apply |
+| Clicking, not typing (see `docs/APP.md`) | `app` (the first pass in a window; decisions land in the same `decisions.json`; its Teacher tab is the free course in the person's DAW; `app --daw`: the Hypnomix DAW's window on its engine, the Assistant asking before each engine change), `device` (Max for Live: step through findings in Live, jump to each) | scans in `~/Documents/Hypnomix`; a new `.als` on Apply |
+| Free plug-ins and sounds (Mac only; see `docs/APP.md`) | `store` (`search`, `info`, `install`, `uninstall`, `updates`, with `--kind`, `--format`, `--open`, `--licence`, `--replace`; `--unverified` only after the person has confirmed that the download cannot be checked against a SHA-256) | files under `~/Library/Audio/Plug-Ins` and `~/Music/Hypnomix Library`; its own manifest |
+| Live set into Ardour, and mastering in Hypnomix (Ardour) | `als2ardour SET.als OUTDIR [--sr N]` (a new session folder plus `IMPORT-REPORT.md`; the set is only read), `chain master --ardour [--mcp-url URL] [--existing bypass|keep]` (builds the chain in the open session over MCP; `chain strips --ardour` is not built; not together with `--reaper`) | a new session folder; the open Hypnomix session |
 | Inside Live without renders (see `docs/LIVE.md`) | `probe device`, `probe insert SET.als` (new set with every device, no manual placing; also `scan --devices`), `probe listen` / `status` / `report` / `cards SET.als`, `abset SCAN_DIR` (every fix as a switched-off B for A / B / Blind on the device) | a new `.als`; captures in the app folder |
 | Learn the person's style first | `taste --library` (every set on the computer: standards, taste calls, where to improve), `tonal build` (a tone target from their releases) | `~/.hypnomix/` only |
 | Decide faster, stay in charge (see `docs/WORKFLOW.md` 4b) | `fix --decide ID=approve@60`, `--decide-like ID=approve --dry-run`, `review --export / --merge / --settle`, `history` (`--diff`, `--undo`, `--undo-item`) | decisions; undo writes a new `.als` |
@@ -338,18 +349,17 @@ judged by ear. Tell the person to keep their original and listen.
 - After the fixes: `fix` makes the changes it can, into new files. `handoff` turns what `fix` lists as by hand into a
   checklist and markers in the person's DAW's own words. It changes nothing in place.
 
-## Other DAWs (Logic Pro, Pro Tools, anything else)
+## Other DAWs (anything but Live, REAPER and Ardour)
 
 REAPER is supported directly (`scan`/`fix` on the `.rpp`, the bridge, `chain --reaper`: `docs/REAPER.md`), and
 Ardour sessions can be scanned and fixed into a new `.ardour` snapshot (fades, gain, dips, fader, pan and mute; the
-rest stays by hand; not yet opened in Ardour). There is NO reader for Logic Pro or Pro Tools sessions. For those and
-every other DAW:
+rest stays by hand; not yet opened in Ardour). There is NO reader for the sessions of any other DAW. For those:
 
 Today: the file tools and `scan FOLDER`. Ask the person to export each track as a full-length file from the
 same start point, with processing off. Scan the folder, review as above, and `fix` writes repaired copies to
 `<SCAN_DIR>/fixed/`. Anything that must happen in their DAW (an EQ cut, a fader move) is by hand:
 `hypnomix handoff "<SCAN_DIR>"` writes it as a checklist in their DAW's terms (`--daw generic` if unsure), with
-`markers.mid` and `markers.csv` to import as markers. You cannot edit a Logic or Pro Tools project file, and you
+`markers.mid` and `markers.csv` to import as markers. You cannot edit another DAW's project file, and you
 don't drive those apps. The plan for deeper support (later) is in `docs/ROADMAP.md`.
 
 ## Changing the code
@@ -377,12 +387,23 @@ don't drive those apps. The plan for deeper support (later) is in `docs/ROADMAP.
 - Names with spaces, slashes and non-ASCII characters are normal for tracks and files: quote and test them.
 - Tests: `python -m unittest discover -s tests` (synthetic audio and sets built in a temp folder; no audio in
   the repo). Add a test with every new check or writer, and for every bug you fix. Then test on real material in
-  report mode and compare before/after numbers (the README quotes them).
+  report mode and compare before/after numbers (the README quotes them). The run moves itself onto temporary folders
+  and scrubs the developer's keys from the environment (`tests/_isolate.py`), and names at its start what it will
+  skip (a missing extra or tool). Run one file as `python -m unittest tests.test_NAME`, or with discover as
+  `-s tests -t . -p 'test_NAME.py'`: without `-t .` the run is not isolated and writes into the real folders.
+  `.github/workflows/tests.yml` runs the suite on Linux (Python 3.9 to 3.12) for every push and pull request, so a test
+  that only passes on a Mac shows up there; read a red run before blaming the change.
 - A tool that makes many moves gets a `--plan` (see `hypnomix/workflow/plan.py`): each move is a finding with a
   `plan` dict (`tool`, `file`, and a `step` or `key`), and the tool accepts "only these moves" so `fix` can run
   the approved subset.
-- Before committing: no paid product names, no personal paths, no audio files. Other agents may be committing
-  here too: commit only the files you changed.
+- Before committing: no paid product names (nor the brand of a paid plug-in, a hardware product or its maker, an
+  artist, a song title or a person: describe by function, "a classic six-operator FM synth", "a concert grand"), no
+  home-folder paths of this computer, no audio files. The one exception is the Store catalogue
+  (`hypnomix/store/catalogue.json`): it may name a free or open-source project and its publisher as the project styles
+  it, and a credit that a licence requires (CC-BY, say), in the item's own `credit` field. `tests/test_repo_rules.py`
+  checks every tracked file (the names as fingerprints, never in plain text; a short list of older mentions that
+  cannot be reworded is kept in that file and can only shrink). Other agents may be committing here too: commit only
+  the files you changed.
 
 ## Keep the wiki current (every change)
 

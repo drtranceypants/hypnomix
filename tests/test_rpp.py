@@ -453,6 +453,38 @@ class Reaper(unittest.TestCase):
         self.assertEqual(done, [])
         self.assertIn("cross", skipped[0][1])
 
+    def test_timing_fix_text_names_the_sessions_daw(self):
+        """A REAPER project gets stretch markers written; an Ardour / Hypnomix session or a Live set is told how to do
+        it by hand in its own DAW, never 'in REAPER'."""
+        from unittest import mock
+        from hypnomix.session import timing as TM
+        from hypnomix.workflow import timing_project as TP
+        p = project.load(self.song)
+        lead = p.tracks[1]
+        c = lead.clips[0]
+        kind = next(iter(TM.SLOTS))
+        hit = dict(clip=c, src=0.5, beat=2.0, t=0.5, track=lead.name)
+        issue = dict(id="timing-1", hit=hit, kind=kind, off=0.03, move=-0.02, track=lead.name, ref="band", beat=2.0)
+        notes = {"looseness": 0.01, "all_onsets": {id(c): [0.2, 0.5, 0.9]}}
+        texts = {}
+        for daw in ("reaper", "ardour", "live"):
+            p.daw = daw
+            with mock.patch.object(TP, "fixable", return_value=None):
+                f = TP.findings(p, [(lead.name, lead, [hit])], [dict(issue)], notes)[0]
+            texts[daw] = f["fix"]
+        self.assertIn("with stretch markers", texts["reaper"])
+        self.assertNotIn("REAPER", texts["reaper"].split("(")[0])
+        self.assertIn("by hand in Hypnomix (Ardour)", texts["ardour"])
+        self.assertIn("by hand in Live", texts["live"])
+        for daw in ("ardour", "live"):
+            self.assertNotIn("in REAPER", texts[daw])
+        p.daw = "ardour"                                   # the reasons a nudge is by hand name the DAW too
+        with mock.patch.object(TP, "fixable", return_value=None):
+            tight = dict(issue, move=-0.2)                     # the hits either side are too close for it
+            f = TP.findings(p, [(lead.name, lead, [hit])], [tight], notes)[0]
+        self.assertIn("nudge it by hand in Hypnomix (Ardour)", f["fix"])
+        self.assertEqual(TP.daw_name(p), "Hypnomix (Ardour)")
+
     def test_crlf_project_roundtrips_byte_for_byte(self):
         """REAPER writes CRLF line ends, on macOS too: a load + save must not change a single byte."""
         crlf = RPP.replace("\n", "\r\n").encode()

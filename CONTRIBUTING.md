@@ -61,6 +61,9 @@ Your agent will find these in `AGENTS.md`, but they're worth knowing:
   forces one way of doing it.
 - **Keep the human feel.** Gentle, optional pitch and timing edits; nothing that quantises a performance flat.
 - **No audio in the repo.** Tests build synthetic audio and sets in a temp folder.
+- **Work on Windows and Linux too.** Name the encoding of every text file and pipe (`encoding="utf-8"`; a test walks the
+  source and fails on a bare `open`, `read_text`, `write_text` or `text=True`), and ask the system where a folder is
+  (`hypnomix.install.user_library()`, not a hard-coded Mac folder).
 - **No paid product names** in code, docs, tests or screenshots, and no personal paths or details.
 - **Keep the wiki current.** The wiki in the app and on the website is built from the Markdown in this repo:
   `README.md`, `AGENTS.md`, this file, `docs/*.md` and `docs/guides/`. A change people can see updates its
@@ -89,7 +92,15 @@ Library. To try a change safely, run it in an instance that cannot reach any of 
    `--dry-run` (`install`) so they write somewhere else, or show what they would do.
 4. **Do not start Live or REAPER from a test run** unless the test is about them. A test that needs them says so.
 5. **The unit tests need none of this:** `python -m unittest discover -s tests` builds synthetic audio and sets in a
-   temp folder. Run only the files for your area while you work.
+   temp folder, and moves itself onto temporary hypnomix folders when the four variables above are not set
+   (`tests/_isolate.py`; it removes them at the end). A tool or extra the tests use that is not installed (the
+   `assistant` extra, Node.js, Rubber Band, ffmpeg) is named in the first lines of the run, because the tests that
+   need it are skipped, and a skip still says OK. With `CI=true` a missing extra or Node.js fails the run instead.
+   The page scripts are all parsed by one helper (`tests/_jscheck.py`): with Node.js, else with the JavaScript engine
+   macOS ships (osascript), else the test is skipped and says that nothing could parse them.
+   Run only the files for your area while you work, as `python -m unittest tests.test_NAME` (several names are fine)
+   or `python -m unittest discover -s tests -t . -p 'test_NAME.py'`. Leave out the `-t .` and the run is NOT isolated: it
+   writes into your real `~/.hypnomix` and `~/Documents/Hypnomix`.
 
 ### Making it easier to use
 

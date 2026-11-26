@@ -36,21 +36,8 @@ def candidates(findings, ids=None):
 
 def fixed_copy(sd, fid, orig, extra=()):
     """This one fix, written into a temporary project next to the original (from a throwaway copy of the scan)."""
-    tmp = Path(tempfile.mkdtemp(prefix="hm-ab-"))
-    for p in Path(sd).iterdir():
-        if p.is_file():
-            shutil.copy2(p, tmp / p.name)
-        else:
-            os.symlink(p.resolve(), tmp / p.name)
-    (tmp / "decisions.json").write_text("{}")
-    out = orig.with_name(f".{orig.stem} (ab-{fid}-{int(time.time() * 1000) % 10 ** 8}).rpp")
-    cmd = [sys.executable, "-m", "hypnomix.cli", "fix", str(tmp), "--approve", fid, "--out", out.name,
-           "--stale-ok", "--no-verify", "--allow-protected"] + list(extra)
-    r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]))
-    shutil.rmtree(tmp, ignore_errors=True)
-    if r.returncode != 0 or not out.exists():
-        return None, (r.stderr or r.stdout).strip().splitlines()[-1:] or ["fix failed"]
-    return out, []
+    from hypnomix.workflow import abset as A      # the same throwaway copy and the same reason as for a Live set
+    return A.fixed_copy(sd, fid, orig, extra, ".rpp")
 
 
 def gid(t):
@@ -193,5 +180,5 @@ def build(sd, ids=None, out=None, extra=()):
     finalize(ab, items)
     E.save(ab, out)
     spec = dict(set=str(out), original=str(orig), daw="reaper", built=time.strftime("%Y-%m-%d %H:%M"), items=items)
-    (sd / "ab_live.json").write_text(json.dumps(spec, indent=1))
+    (sd / "ab_live.json").write_text(json.dumps(spec, indent=1), encoding="utf-8")
     return out, spec

@@ -134,7 +134,7 @@ def load(name):
     f = home() / f"{_slug(name)}.json"
     if not f.exists():
         raise KeyError(name)
-    return json.loads(f.read_text())
+    return json.loads(f.read_text(encoding="utf-8"))
 
 
 def save(name, chain):
@@ -148,8 +148,9 @@ def save(name, chain):
     d.mkdir(parents=True, exist_ok=True)
     f = d / f"{name}.json"
     tmp = f.with_suffix(".tmp")
-    tmp.write_text(json.dumps(chain, indent=1))
-    tmp.replace(f)
+    tmp.write_text(json.dumps(chain, indent=1), encoding="utf-8")
+    from hypnomix.core.atomic import replace as atomic_replace
+    atomic_replace(tmp, f)
     return {"name": name, "file": str(f), "devices": count(chain["devices"]), "skipped": chain.get("skipped", [])}
 
 

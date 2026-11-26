@@ -331,7 +331,7 @@ def run(daw, sid, kind, args):
 def _cli(*args):
     import subprocess
     import sys
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *args], capture_output=True, text=True, timeout=300)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
     if r.returncode:
         raise RuntimeError(f"hypnomix {' '.join(args)} failed: {(r.stderr or r.stdout).strip()[-400:]}")
     return r.stdout
@@ -517,14 +517,14 @@ def _run_reaper(step, kind, a):
 # ---------------------------------------------------------------- state
 def load_progress():
     try:
-        return json.loads(progress_file().read_text())
+        return json.loads(progress_file().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
 
 def save_progress(p):
     progress_file().parent.mkdir(parents=True, exist_ok=True)
-    progress_file().write_text(json.dumps(p, indent=1))
+    progress_file().write_text(json.dumps(p, indent=1), encoding="utf-8")
 
 
 def choice():

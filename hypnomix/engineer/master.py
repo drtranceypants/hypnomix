@@ -8,7 +8,8 @@ Usage:
 
 Targets: -14 LUFS suits Spotify/YouTube/Tidal (they turn louder songs down anyway); -9 to -11 for
 loud genres if you know why you want it; -16 for Apple Music-first or very dynamic music.
-Writes <name> (master).wav (24-bit), optional 16-bit/44.1 kHz CD version, and a MASTER notes .md.
+Writes <name> (master).wav (24-bit), optional 16-bit/44.1 kHz CD version, and a MASTER notes .md. Running it again
+never replaces an earlier master: the next run writes <name> (master 2).wav with its own notes, then (master 3)...
 
 Optional stages (all off unless asked for; see docs/MASTERING.md):
     --amount 0..100            scale every move (100 = the chain as described; 0 = only the safety ceiling)
@@ -27,6 +28,7 @@ Optional stages (all off unless asked for; see docs/MASTERING.md):
     --dither tpdf|shaped|off   on every 16- and 24-bit export (default tpdf)
 """
 from hypnomix.core.paths import out_at
+from hypnomix.core import args as A
 import argparse, json, sys
 from pathlib import Path
 
@@ -59,7 +61,7 @@ def codec_worst(y, sr):
     """Highest true peak after AAC 256 and MP3 320 round trips (None if ffmpeg can't encode)."""
     import tempfile
     from hypnomix.engineer.translate import codec_peak
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
         p = dsp.save(Path(td) / "m.wav", y, sr, 24)
         peaks = [codec_peak(p, c) for c in ("aac", "mp3")]
     peaks = [x for x in peaks if x is not None]
@@ -435,7 +437,7 @@ def _plan_opts(a, source):
     if not pj.exists():
         return {}
     try:
-        fs = json.loads(pj.read_text()).get("findings", [])
+        fs = json.loads(pj.read_text(encoding="utf-8")).get("findings", [])
     except Exception:
         return {}
     src = str(Path(source).resolve())
@@ -449,12 +451,12 @@ def _plan_opts(a, source):
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix master", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("mix")
-    ap.add_argument("--target", type=float, default=-14.0)
-    ap.add_argument("--ceiling", type=float, default=-1.0)
+    ap.add_argument("--target", type=A.number(-70, 0), default=-14.0, help="loudness to master to, LUFS (-70 to 0)")
+    ap.add_argument("--ceiling", type=A.number(-12, 0), default=-1.0, help="true-peak ceiling, dBTP (-12 to 0)")
     ap.add_argument("--reference")
-    ap.add_argument("--match", type=float, default=0.6, help="how far to move toward the reference tone (0–1)")
+    ap.add_argument("--match", type=A.number(0, 1), default=0.6, help="how far to move toward the reference tone (0–1)")
     ap.add_argument("--glue", type=float, default=1.5, help="target glue-compression dB (0 = off)")
-    ap.add_argument("--warmth", type=float, default=0.0, help="0–1 saturation amount")
+    ap.add_argument("--warmth", type=A.number(0, 1), default=0.0, help="0–1 saturation amount")
     ap.add_argument("--width", type=float, default=1.0)
     ap.add_argument("--cd", action="store_true", help="also write a 16-bit / 44.1 kHz dithered copy")
     ap.add_argument("--out")
@@ -506,25 +508,29 @@ def main():
                                      only=only, opts=opts)
     od = out_at(a.out, "master")
     od.mkdir(parents=True, exist_ok=True)
-    dest, k = od / f"{name} (master).wav", 1
-    while only and dest.exists():              # approved-moves runs never overwrite an earlier result
+    k = 1                                      # a run never overwrites an earlier one: (master), (master 2), (master 3) ...
+    while any((od / f"{name} ({lab}){suf}").exists() for lab, suf in
+              (("master" if k == 1 else f"master {k}", ".wav"), ("master" if k == 1 else f"master {k}", ".json"),
+               ("master notes" if k == 1 else f"master {k} notes", ".md"),
+               ("master 16-44" if k == 1 else f"master {k} 16-44", ".wav"))):
         k += 1
-        dest = od / f"{name} (master {k}).wav"
+    tag = "master" if k == 1 else f"master {k}"
+    dest = od / f"{name} ({tag}).wav"
     dith = after["settings"].get("dither")     # None: approved run without the dither move (legacy behaviour)
     files = [dsp.save(dest, out, sr, 24, dither=dith)]
     if a.cd:
         cd = out if sr == 44100 else resample_to(out, sr, 44100)
         cd_tp = dsp.true_peak(cd, 44100)
-        files.append(dsp.save(od / f"{name} (master 16-44).wav", cd, 44100, 16, dither=dith or "tpdf"))
+        files.append(dsp.save(od / f"{name} ({tag} 16-44).wav", cd, 44100, 16, dither=dith or "tpdf"))
         log.append(("CD copy", f"16-bit / 44.1 kHz from the float master, {dith or 'tpdf'} dither, true peak "
                                f"{cd_tp:+.2f} dBTP" + ("" if sr == 44100 else f" after resampling from {sr} Hz"),
                     "Made from the unrounded master, so it is dithered once, not twice."))
     text = notes(name, before, after, log, a.target, files)
-    (od / f"{name} (master notes).md").write_text(text)
+    (od / f"{name} ({'master notes' if k == 1 else f'master {k} notes'}).md").write_text(text, encoding="utf-8")
     after_j = dict(after, settings={k: v for k, v in after["settings"].items() if k != "eq_curve"})
-    (od / f"{name} (master).json").write_text(json.dumps(dict(before=before, after=after_j, opts=opts,
+    (od / f"{name} ({tag}).json").write_text(json.dumps(dict(before=before, after=after_j, opts=opts,
                                                               chain=[dict(step=s, setting=t, why=w) for s, t, w in log]),
-                                                         indent=1, default=str))
+                                                         indent=1, default=str), encoding="utf-8")
     print(text)
 
 

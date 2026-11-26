@@ -6,7 +6,7 @@ across the whole song. Optionally (--hz 2770) ranks stems by energy at one frequ
 the quickest way to find the source of a resonance.
 Usage: hypnomix stems "<Song> Project/Stems" [--hz 2770] [--out STEMS_REPORT.md]
 """
-import argparse, warnings
+import argparse, sys, warnings
 from pathlib import Path
 
 import numpy as np
@@ -17,7 +17,8 @@ BANDS = [("sub", 20, 60), ("bass", 60, 250), ("lowmid", 250, 500), ("mid", 500, 
 
 
 def analyse(path, hz):
-    y, sr = sf.read(str(path), always_2d=True)
+    from hypnomix.core import dsp
+    y, sr = dsp.load(path)
     mono = y.mean(axis=1)
     peak = float(np.max(np.abs(y))) if len(y) else 0.0
     if peak < 1e-6:
@@ -46,7 +47,14 @@ def main():
                                                help="Live also renders group tracks; they are skipped by default to avoid double counting")
     a = ap.parse_args()
     files = sorted(p for p in Path(a.folder).iterdir() if p.suffix.lower() in (".wav", ".aif", ".aiff"))
-    rows = [r for r in (analyse(p, a.hz) for p in files) if r]
+    from hypnomix.core import dsp
+
+    def one(p):                 # a file hypnomix cannot measure is named and left out, as in masking and scan
+        try:
+            return analyse(p, a.hz)
+        except dsp.AudioReadError as e:
+            print(f"skipped {p.name}: {str(e).split('as audio: ', 1)[-1]}", file=sys.stderr)
+    rows = [r for r in map(one, files) if r]
     skip = lambda r: (not a.include_groups and ("group" in r["name"].lower() or r["name"].isupper())) or any(k in r["name"].lower() for k in ("master", "main"))
     use = [r for r in rows if not skip(r)]
     tot = {b: sum(r["bands"][b] for r in use) or 1 for b, _, _ in BANDS}
@@ -66,7 +74,7 @@ def main():
             lines.append(f"| {r['name']} | {100 * r['at_hz'] / tot_hz:.0f}% |")
     text = "\n".join(lines) + "\n"
     if a.out:
-        Path(a.out).write_text(text)
+        Path(a.out).write_text(text, encoding="utf-8")
     print(text)
 
 

@@ -9,17 +9,37 @@ after (the device draws them), the previews, the new set, and any rendered pitch
   POST /api/align/choose        {path?}: the Live set (or REAPER project) to work on (no path: a file dialog)
   POST /api/align/run           {guide, parts, start_s?, end_s?, protect:[[a,b]], sync:[t], preset?, tightness?,
                                  pitch?, vibrato?, formant?, apply?}
-  POST /api/align/open          open the new set in Live (macOS: `open`; Live asks to save the current one first)
+  POST /api/align/open          open the new set in Live with the system's own opener (macOS `open`, Windows the program
+                                registered for .als, Linux `xdg-open`); Live asks to save the current one first. When nothing
+                                could be started the answer is {error}, which the device shows, never {opened}
 
 The REAPER panel (`hypnomix reaper align`) uses the same endpoints with a saved .rpp: the result is a NEW project
 with stretch markers and new takes on the parts' own items.
 
 Local only, like the rest of the app. Nothing is overwritten: alignset always writes a NEW set.
 """
-import json, subprocess, sys
+import json, os, shutil, subprocess, sys
 from pathlib import Path
 
 ALIGN = {"set": "", "result": None, "job": 0, "error": ""}
+
+
+def open_file(target):
+    """Open a file with the program this computer has for it. "" when it was started, else one plain sentence."""
+    try:
+        if sys.platform == "darwin":
+            if subprocess.run(["open", str(target)], capture_output=True).returncode != 0:
+                return f"the system could not open it: open {target} in Live yourself"
+        elif sys.platform == "win32":
+            os.startfile(str(target))
+        else:
+            opener = shutil.which("xdg-open")
+            if not opener:
+                return f"this computer has no opener (xdg-open): open {target} in Live yourself"
+            subprocess.Popen([opener, str(target)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        return f"the set could not be opened ({e}): open {target} in Live yourself"
+    return ""
 
 
 def _work():
@@ -36,7 +56,7 @@ def state():
     running = S.JOB["status"] == "running" and S.JOB.get("kind") == "align"
     if ALIGN["job"] and S.JOB["id"] == ALIGN["job"] and S.JOB["status"] in ("done", "failed") and rp.exists():
         try:
-            res = ALIGN["result"] = json.loads(rp.read_text())
+            res = ALIGN["result"] = json.loads(rp.read_text(encoding="utf-8"))
         except ValueError:
             pass
     st = S.JOB["status"] if S.JOB["id"] == ALIGN["job"] else "idle"
@@ -171,7 +191,8 @@ def handle_post(path, body):
             return 400, {"error": "no aligned set yet: run Align with Write set on"}
         if target.lower().endswith(".rpp"):           # REAPER: the panel opens it in a new tab through the bridge
             return 200, {"opened": target, "reaper": True}
-        if sys.platform == "darwin":
-            subprocess.run(["open", target])
+        why = open_file(target)
+        if why:
+            return 400, {"error": why, "set": target}
         return 200, {"opened": target}
     return None

@@ -145,8 +145,8 @@ jobs:
       - name: Stable names for the website's download buttons
         run: |
           cd dist
-          for f in *-mac-arm64.dmg;  do cp "$f" Hypnomix-mac-arm64.dmg; done
-          for f in *-mac-x86_64.dmg; do cp "$f" Hypnomix-mac-intel.dmg; done
+          for f in *-mac-arm64.dmg;  do case "$f" in *-full-*) continue;; esac; cp "$f" Hypnomix-mac-arm64.dmg; done
+          for f in *-mac-x86_64.dmg; do case "$f" in *-full-*) continue;; esac; cp "$f" Hypnomix-mac-intel.dmg; done
           for f in *-windows-x64-setup.exe; do cp "$f" Hypnomix-windows-setup.exe; done
           sha256sum Hypnomix-*.dmg Hypnomix-*.exe > SHA256SUMS.txt
           cat SHA256SUMS.txt

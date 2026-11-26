@@ -24,9 +24,18 @@ audio exported (--stems DIR, files named like the tracks).
 Every suggestion is an option; --apply writes a NEW set. The compressor is a model of Live's (see `hypnomix
 sidechain`): check by ear.
 
+The renders it listens to are a scratch copy of the tracks (about 10 MB per track-minute, so a 60-track, 5-minute set
+is about 3 GB). They are written to a folder named hypnomix-render-… under ~/.hypnomix/cache/tmp, announced in one line
+when it is over about 1 GB, and removed when the command ends (an error or Ctrl-C too). Nothing is left in the temp folder.
+
 Usage:
   hypnomix devices SET.als [--names names.json] [--stems DIR] [--track NAME …] [--json OUT.json]
   hypnomix devices SET.als --apply NEW.als --ids devices-2,devices-5
+  hypnomix devices SET.als --json OUT.json --focus "Lead Vocal" --focus Bass
+
+--apply --ids judges only the tracks that own those ids (the other tracks are numbered, not judged), and --focus does the
+same for a check: the ids and the findings of the tracks it names are exactly the whole-set run's. `fix` and `ab` use them,
+so one approved fix costs one track's analysis instead of every track's.
 """
 import argparse, gzip, json, math, re, subprocess, sys, tempfile
 from hypnomix.core.gz import read_gz
@@ -47,7 +56,7 @@ TARGET = {"lead": (3, 6), "harmony": (2, 5), "bass": (3, 6), "drums": (2, 4), "o
 
 
 def hx(*args):
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
@@ -140,7 +149,39 @@ def times_for(role, tempo, f0):
     return att, rel
 
 
-def review_track(name, role, t, x, tempo, root_tag="AudioTrack"):
+def id_numbers(ids):
+    """{12, 15} for "devices-12,devices-15" (a set or list of ids too); an empty set when there is nothing to go by (no ids,
+    or one that is not a devices id): the whole set is then judged, as it always was."""
+    nums = set()
+    for i in ([x for x in ids.split(",")] if isinstance(ids, str) else list(ids or [])):
+        m = re.fullmatch(r"\s*devices-(\d+)\s*", str(i))
+        if not m:
+            if str(i).strip():
+                return set()
+            continue
+        nums.add(int(m.group(1)))
+    return nums
+
+
+def count_items(name, role, t, wav, tempo):
+    """(how many items review_track will make for this track, its notes), without judging it: the same walk over the
+    chain on a few seconds of noise. When the count depends on the audio itself (an EQ Eight with no low cut gets one more
+    item when the part has rumble) the walk is made again on the track's own audio (`wav`, its render), with the
+    judging left out: only its path through the chain. None when the walk fails: the track is then judged for real.
+    Used to number the tracks that own none of the ids being applied or re-checked."""
+    try:
+        probe = {"light": True, "noise": True}
+        x = np.random.default_rng(0).normal(0.0, 0.05, SC.SR * 3) if wav is not None else None
+        items, notes = review_track(name, role, t, x, tempo, probe=probe)
+        if probe.get("audio_decides"):
+            probe = {"light": True}                             # the track's own audio this time, still no judging
+            items, notes = review_track(name, role, t, SC.load_mono(str(wav)), tempo, probe=probe)
+    except Exception:
+        return None
+    return len(items), notes
+
+
+def review_track(name, role, t, x, tempo, root_tag="AudioTrack", probe=None):
     """Walk the track's devices in order on its signal; return (findings, notes)."""
     from hypnomix.core import dsp
     out, notes = [], []
@@ -178,6 +219,10 @@ def review_track(name, role, t, x, tempo, root_tag="AudioTrack"):
                                 f"'{label}' is unknown, so it isn't judged"))
                 continue
             gr, m = measure_comp(x, act, c)
+            if probe is not None and probe.get("light"):     # counting on the real audio: its path through the chain, no judging
+                out.append(dict(kind="compressor"))
+                x = x * dsp.undb(gr) * dsp.undb(outgain)
+                continue
             lo, hi = TARGET[role]
             problems = []
             if m["median"] < 0.5 * lo:
@@ -237,6 +282,9 @@ def review_track(name, role, t, x, tempo, root_tag="AudioTrack"):
             x = np.clip(x * dsp.undb(gain), -dsp.undb(ceil), dsp.undb(ceil))
             continue
     if role not in ("bass", "drums") and not lo_cut_seen and devs is not None and any(d.tag == "Eq8" for d in devs):
+        if probe is not None and probe.get("noise"):        # counting on noise: one more item follows or not by the audio
+            probe["audio_decides"] = True
+            return out, notes
         spec = np.abs(np.fft.rfft(x[: SC.SR * 60] if len(x) > SC.SR else x))
         f = np.fft.rfftfreq(min(len(x), SC.SR * 60), 1 / SC.SR)
         e_low = 10 * math.log10(max(1e-12, (spec[f < 80] ** 2).sum() / max(1e-12, (spec ** 2).sum())))
@@ -246,41 +294,60 @@ def review_track(name, role, t, x, tempo, root_tag="AudioTrack"):
     return out, notes
 
 
-def propose(set_path, names_json=None, stems=None, tracks=None):
+def propose(set_path, names_json=None, stems=None, tracks=None, ids=None, focus=None):
+    """(items, notes, root, tempo). With `ids` (--apply --ids) or `focus` (the tracks of the approved findings, for the
+    checks before and after a fix) only the tracks that matter are judged; the others are still numbered (their items are
+    None in the list) so every id is the one the whole-set run gives."""
     set_path = Path(set_path)
     root = ET.fromstring(read_gz(set_path))
     tempo = float(v(root, ".//Tempo/Manual"))
     labels = {}
     if names_json and Path(names_json).exists():
-        labels = {r["old"]: str(r.get("final") or r.get("label") or "") for r in json.loads(Path(names_json).read_text())["tracks"]
+        labels = {r["old"]: str(r.get("final") or r.get("label") or "") for r in json.loads(Path(names_json).read_text(encoding="utf-8", errors="replace"))["tracks"]
                   if float(r.get("confidence") or 0) >= 0.5}
     pick = [t for t in root.find(".//Tracks") if t.tag in ("AudioTrack", "MidiTrack")
             and v(t, "./DeviceChain/Mixer/Speaker/Manual") != "false"
             and (not tracks or v(t, "./Name/EffectiveName") in tracks)
             and t.find("./DeviceChain/DeviceChain/Devices") is not None and len(t.find("./DeviceChain/DeviceChain/Devices"))]
-    rd = Path(tempfile.mkdtemp())
     audio_names = [v(t, "./Name/EffectiveName") for t in pick if t.tag == "AudioTrack"]
-    if audio_names:
-        hx("render", set_path, "--tracks", *audio_names, "--out", rd)
-    out, notes = [], []
-    for t in pick:
-        nm = v(t, "./Name/EffectiveName")
-        f = rd / f"{safe(nm)}.wav"
-        if t.tag == "MidiTrack" and stems:
-            cand = [p for p in Path(stems).glob("*.wav") if SC.norm(p.stem) == SC.norm(nm)]
-            f = cand[0] if cand else f
-        x = SC.load_mono(str(f)) if f.exists() else None
-        role = role_of(nm, labels.get(nm, ""), t)
-        fs, ns = review_track(nm, role, t, x, tempo)
-        for it in fs:
-            it.update(track=nm, role=role)
-        out += fs; notes += ns
+    from hypnomix.core import tmp as TMP
+    # the renders live in a folder that is removed when this ends (an error or Ctrl-C too), named hypnomix-render-…
+    with TMP.workdir("render", expect_bytes=TMP.render_bytes(root, len(audio_names))) as rd:
+        if audio_names:
+            hx("render", set_path, "--tracks", *audio_names, "--out", rd)
+        out, notes = [], []
+        want_n = id_numbers(ids)                       # the numbers of the ids asked for: only their tracks are judged
+        focus = set(focus or ())                       # tracks to judge whatever their ids (ids stay those of the whole set)
+        restricted = bool(want_n or focus)
+        last_focus = max((i for i, t in enumerate(pick) if v(t, "./Name/EffectiveName") in focus), default=-1)
+        for ti, t in enumerate(pick):
+            if restricted and ti > last_focus and (not want_n or len(out) >= max(want_n)):
+                break                                  # every id from here on is past the ones asked for
+            nm = v(t, "./Name/EffectiveName")
+            f = rd / f"{safe(nm)}.wav"
+            if t.tag == "MidiTrack" and stems:
+                cand = [p for p in Path(stems).glob("*.wav") if SC.norm(p.stem) == SC.norm(nm)]
+                f = cand[0] if cand else f
+            role = role_of(nm, labels.get(nm, ""), t)
+            if restricted:
+                counted = count_items(nm, role, t, f if f.exists() else None, tempo)
+                if counted is not None and nm not in focus and not any(len(out) < k <= len(out) + counted[0] for k in want_n):
+                    out += [None] * counted[0]         # owns none of the ids: numbered like the others, not judged
+                    notes += counted[1]
+                    continue
+            x = SC.load_mono(str(f)) if f.exists() else None
+            fs, ns = review_track(nm, role, t, x, tempo)
+            for it in fs:
+                it.update(track=nm, role=role)
+            out += fs; notes += ns
     return out, notes, root, tempo
 
 
 def findings(items):
     fs = []
     for n, it in enumerate(items, 1):
+        if it is None:                                  # numbered but not judged (see propose): no finding, the id is kept
+            continue
         base = dict(id=f"devices-{n}", tool="devices", track=it["track"], where="", device=it["device"])
         if it["kind"] == "compressor":
             c, w, m, m2 = it["cur"], it["new"], it["m"], it["m2"]
@@ -343,11 +410,18 @@ def main():
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als"); ap.add_argument("--names"); ap.add_argument("--stems"); ap.add_argument("--track", action="append")
     ap.add_argument("--json"); ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
+    ap.add_argument("--focus", action="append", metavar="TRACK",
+                    help="judge only this track (repeatable); ids stay those of the whole set. Used by `fix` to re-check "
+                         "just the tracks it changes")
     a = ap.parse_args()
     src = Path(a.als)
-    items, notes, root, tempo = propose(src, a.names, a.stems, a.track)
+    # applying ids judges only the tracks that own them; every id is still the one the whole-set run gives
+    items, notes, root, tempo = propose(src, a.names, a.stems, a.track, ids=a.ids if a.apply else None, focus=a.focus)
+    narrowed = bool(a.focus) or bool(a.apply and id_numbers(a.ids))
     fs = findings(items)
-    print(f"{src.name}: {len(fs)} device(s) checked on {len({f['track'] for f in fs})} track(s)")
+    items = [it for it in items if it is not None]
+    print(f"{src.name}: {len(fs)} device(s) checked on {len({f['track'] for f in fs})} track(s)"
+          + (" (only the tracks asked about; the ids are those of the whole set)" if narrowed else ""))
     for f in fs:
         flag = "  " if f["applies"] == "info" else "! "
         print(f"{flag}{f['id']:<11} {f['track'][:22]:<22} {f['problem'][:150]}")
@@ -356,7 +430,8 @@ def main():
     for n_ in notes:
         print("  note: " + n_)
     if a.json:
-        Path(a.json).write_text(json.dumps({"tool": "devices", "set": str(src), "findings": fs, "notes": notes}, indent=1, default=float))
+        Path(a.json).write_text(json.dumps({"tool": "devices", "set": str(src), "findings": fs, "notes": notes, **({"narrowed": True} if narrowed else {})},
+                                         indent=1, default=float), encoding="utf-8")
     if a.apply:
         if Path(a.apply).resolve() == src.resolve():
             sys.exit("refusing to overwrite the set; give a new file name")

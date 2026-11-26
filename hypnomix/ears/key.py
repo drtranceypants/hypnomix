@@ -18,6 +18,7 @@ disputed note named (e.g. "F or F#?"): that is the question to ask the person be
 """
 import argparse, gzip, json, sys
 from hypnomix.core.gz import read_gz
+from hypnomix.core import args as A
 import xml.etree.ElementTree as ET
 import numpy as np
 
@@ -72,10 +73,74 @@ def _load_mono(path, sr):
     return y.mean(axis=1).astype(np.float32)
 
 
+def _median31(S, axis, w=31):
+    """scipy.ndimage.median_filter(S, size=w along `axis`, mode="reflect") for a 2-D array, to the last bit, in worker
+    threads: the middle of each window of 31 by partial sort (numpy lets go of the GIL while it sorts), the edges
+    mirrored as scipy's "reflect" does. The median filters are most of the time HPSS takes."""
+    import os
+    from concurrent.futures import ThreadPoolExecutor
+    from numpy.lib.stride_tricks import sliding_window_view
+    r = w // 2
+    out = np.empty_like(S)
+    if axis == 1:
+        P = np.pad(S, ((0, 0), (r, r)), mode="symmetric")
+        step = max(1, int(8e6 // max(1, S.shape[1] * w * S.itemsize)))      # about 8 MB of windows per job
+        jobs = [(a, min(S.shape[0], a + step)) for a in range(0, S.shape[0], step)]
+
+        def run(j):
+            a, b = j
+            out[a:b] = np.partition(sliding_window_view(P[a:b], w, axis=1), r, axis=-1)[..., r]
+    else:
+        P = np.pad(S, ((r, r), (0, 0)), mode="symmetric")
+        step = max(1, int(8e6 // max(1, S.shape[0] * w * S.itemsize)))
+        jobs = [(a, min(S.shape[1], a + step)) for a in range(0, S.shape[1], step)]
+
+        def run(j):
+            a, b = j
+            out[:, a:b] = np.partition(sliding_window_view(P[:, a:b], w, axis=0), r, axis=-1)[..., r]
+    with ThreadPoolExecutor(max_workers=max(1, min(8, os.cpu_count() or 1))) as ex:
+        list(ex.map(run, jobs))
+    return out
+
+
+def _harmonic_block(y, margin, n_fft):
+    import librosa
+    D = librosa.stft(y, n_fft=n_fft, hop_length=None, win_length=None, center=True, pad_mode="constant")
+    S, phase = librosa.magphase(D)
+    del D
+    harm, perc = _median31(S, 1), _median31(S, 0)
+    mask = librosa.util.softmask(harm, perc * margin, power=2.0, split_zeros=False)
+    del harm, perc
+    H = (S * mask) * phase
+    del S, mask, phase
+    return librosa.istft(H, dtype=y.dtype, n_fft=n_fft, hop_length=None, win_length=None, center=True,
+                         length=y.shape[-1])
+
+
+def harmonic(y, margin=3, n_fft=2048, block_s=60.0, sr=22050):
+    """librosa.effects.harmonic(y, margin=margin), the same samples to the last bit, in two ways that cost less:
+    the median filters (most of the time HPSS takes) run in worker threads (_median31), and a long song is done a
+    minute at a time. Everything in HPSS looks only a few frames around the one it is working on, so a block with a
+    second of the song either side gives the same samples in its own part; one pass over a nine-minute song held
+    2 GB, one block at a time holds about a fifth of that."""
+    hop = n_fft // 4
+    L = max(hop, int(block_s * sr) // hop * hop)               # a block starts on a frame of the whole song
+    ctx = 64 * hop                                             # 64 frames either side: the median reaches 15, the overlap 3
+    n = y.shape[-1]
+    if n <= L + 2 * ctx:
+        return _harmonic_block(y, margin, n_fft)
+    out = np.empty_like(y)
+    for a in range(0, n, L):
+        b = min(n, a + L)
+        lo, hi = max(0, a - ctx), min(n, b + ctx)
+        out[a:b] = _harmonic_block(y[lo:hi], margin, n_fft)[a - lo:b - lo]
+    return out
+
+
 def audio_evidence(path, sr=22050):
     import librosa
     y = _load_mono(path, sr)
-    h = librosa.effects.harmonic(y, margin=3)
+    h = harmonic(y, margin=3)
     C = np.abs(librosa.cqt(h, sr=sr, hop_length=2048, fmin=librosa.note_to_hz("C1"), n_bins=84, bins_per_octave=12))
     pc = np.zeros(12); bass = np.zeros(12)
     for b in range(84):
@@ -103,7 +168,7 @@ def main():
     ap = argparse.ArgumentParser(prog="hypnomix key", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter); ap.add_argument("--set"); ap.add_argument("--audio"); ap.add_argument("--json")
     ap.add_argument("--sure", type=float, default=0.12, help="min winner margin (0-1 scale) to call it sure")
     ap.add_argument("--sections", action="store_true", help="also map the scale section by section (key changes, borrowed chords)")
-    ap.add_argument("--bars", type=int, default=8); ap.add_argument("--bpm", type=float)
+    ap.add_argument("--bars", type=A.whole(1), default=8); ap.add_argument("--bpm", type=A.number(20, 400))
     a = ap.parse_args()
     if not a.set and not a.audio: sys.exit("give --set and/or --audio")
     if a.sections and not a.set and not a.bpm:
@@ -135,7 +200,7 @@ def main():
     if a.sections:
         secs, tempo = section_map(a.set, a.audio, bars=a.bars, hop_bars=max(1, a.bars // 2), bpm=a.bpm)
         res["sections"] = secs; res["tempo"] = tempo; res["questions"] = questions(secs); print_sections(secs)
-    if a.json: json.dump(res, open(a.json, "w"), indent=1)
+    if a.json: json.dump(res, open(a.json, "w", encoding="utf-8"), indent=1)
 
 
 
@@ -193,7 +258,7 @@ def section_map(als=None, audio=None, bars=8, hop_bars=4, bpm=None, sure_cov=0.8
     bar_s = 4 * 60 / tempo
     C = None
     if audio:
-        sr = 22050; y = _load_mono(audio, sr); h = librosa.effects.harmonic(y, margin=3)
+        sr = 22050; y = _load_mono(audio, sr); h = harmonic(y, margin=3)
         hop = 2048; C = np.abs(librosa.cqt(h, sr=sr, hop_length=hop, fmin=librosa.note_to_hz("C1"), n_bins=84))
         fr_s = hop / sr; dur = len(y) / sr
     else:

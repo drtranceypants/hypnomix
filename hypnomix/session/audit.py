@@ -140,7 +140,7 @@ def main():
     for n, c in chains.items():
         md.append(f"| {n}{' (muted)' if c['muted'] else ''} | {c['type']} | {c['group'] or ''} | {c['fader_db']} | {', '.join(c['chain'])} |")
     out = out_dir("audit") / f"{name}.md"
-    out.write_text("\n".join(md))
+    out.write_text("\n".join(md), encoding="utf-8")
     print(f"{name}: {len(flags)} flags, {nlim} limiters before master -> {out}")
     for x in flags[:40]:
         print("  -", x)

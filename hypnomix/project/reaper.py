@@ -15,6 +15,8 @@ envelope shows fader scaling (VOLTYPE 1), checked against REAPER 7.86. FADEIN/FA
 length, auto-crossfade length (used when set). Stretch markers are followed (each segment at its own speed); reversed sections are reported; the renderer plays such takes
 straight (a warning says so).
 """
+import os
+import re
 from pathlib import Path
 
 from hypnomix.project import rpp
@@ -34,18 +36,25 @@ def num(x, default=0.0):
 
 
 def resolve(path, proj_dir, record_path=""):
-    """Where an item's file really is: absolute, next to the project, in the recording folder, or anywhere below."""
+    """Where an item's file really is: absolute, next to the project, in the recording folder, or anywhere below.
+    A project saved on Windows writes `Audio\\Drums.wav` and `C:\\Users\\...`: read on another system the backslashes are
+    folder separators too, and a path that starts with a drive letter is looked for by its file name."""
     if not path:
         return None
-    p = Path(path)
+    text = str(path)
+    if os.sep != "\\":
+        text = text.replace("\\", "/")
+        record_path = str(record_path or "").replace("\\", "/")
+    p = Path(text)
+    foreign = os.sep != "\\" and re.match(r"^[A-Za-z]:/", text) is not None       # a Windows path on a Mac or Linux
     cands = [p] if p.is_absolute() else []
-    cands += [proj_dir / p, proj_dir / record_path / p.name, proj_dir / p.name, proj_dir / "Audio" / p.name,
-              proj_dir / "Media" / p.name]
+    cands += ([] if foreign else [proj_dir / p])
+    cands += [proj_dir / record_path / p.name, proj_dir / p.name, proj_dir / "Audio" / p.name, proj_dir / "Media" / p.name]
     for c in cands:
         if c.exists():
             return c
     hits = list(proj_dir.rglob(p.name)) if proj_dir.exists() else []
-    return hits[0] if hits else (p if p.is_absolute() else proj_dir / p)
+    return hits[0] if hits else (p if p.is_absolute() or foreign else proj_dir / p)
 
 
 def _source(ch, proj_dir, rec):

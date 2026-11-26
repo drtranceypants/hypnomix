@@ -301,7 +301,8 @@ class Prefs(Temp):
         self.P = prefs
         patcher = mock.patch.object(prefs, "PREFS", self.d / "preferences.json")
         patcher.start(); self.addCleanup(patcher.stop)
-        env = mock.patch.dict(os.environ, {"HOME": str(self.d / "home")})
+        # the person's hypnomix folder is HYPNOMIX_HOME wherever it is set (the test run sets it), else ~/.hypnomix: setup.json lives in it
+        env = mock.patch.dict(os.environ, {"HOME": str(self.d / "home"), "HYPNOMIX_HOME": str(self.d / "home" / ".hypnomix")})
         env.start(); self.addCleanup(env.stop)
 
     def set(self, *items):

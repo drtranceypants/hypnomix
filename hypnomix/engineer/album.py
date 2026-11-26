@@ -50,7 +50,7 @@ import numpy as np
 
 warnings.filterwarnings("ignore")
 from hypnomix.core import dsp  # noqa: E402
-from hypnomix.core.paths import out_at  # noqa: E402
+from hypnomix.core.paths import out_at, check_out  # noqa: E402
 
 SILENCE = 10 ** (-60 / 20)                      # the same "silence" as `qc`: under -60 dBFS
 LOW_SHELF_HZ, HIGH_SHELF_HZ = 160.0, 5000.0
@@ -670,7 +670,7 @@ def render(kind, src, out_dir, db=None, tilt=None, head=None, tail=None, ceiling
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     side = out_dir / ".album-steps.json"
-    steps = json.loads(side.read_text()) if side.exists() else {}
+    steps = json.loads(side.read_text(encoding="utf-8")) if side.exists() else {}
     st = steps.get(str(src), {"latest": str(src), "done": []})
     if kind in st["done"]:
         print(f"{kind}: already applied to {src.name} in this folder: {st['latest']}")
@@ -728,7 +728,7 @@ def render(kind, src, out_dir, db=None, tilt=None, head=None, tail=None, ceiling
         dsp.save(dest, z, sr, bits if bits in (16, 24) else 24)       # 16-bit gets the usual TPDF dither
     after = dict(lufs=dsp.lufs(z, sr), tp=dsp.true_peak(z, sr))
     steps[str(src)] = {"latest": str(dest), "done": done}
-    side.write_text(json.dumps(steps, indent=1))
+    side.write_text(json.dumps(steps, indent=1), encoding="utf-8")
     print(f"{what}: {src.name} → {dest.name}\n  integrated {before['lufs']:.1f} → {after['lufs']:.1f} LUFS, "
           f"true peak {before['tp']:+.1f} → {after['tp']:+.1f} dBTP")
     return dest
@@ -781,22 +781,23 @@ def build_parser():
     ap = argparse.ArgumentParser(prog="hypnomix album", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("files", nargs="*", help="the songs (or one folder)")
     ap.add_argument("--order", help="song names (or numbers) in playing order, comma-separated; default: the order given")
-    ap.add_argument("--target", type=float, help="whole-song loudness (LUFS) to compare with, instead of the other songs")
+    from hypnomix.core import args as A
+    ap.add_argument("--target", type=A.number(-70, 0), help="whole-song loudness (LUFS) to compare with, instead of the other songs")
     ap.add_argument("--anchor", help="match the others to this song (its name)")
     ap.add_argument("--keep-quiet", default="", help="songs that are meant to be quieter (comma-separated): shown, never touched")
     ap.add_argument("--reading", choices=["both", "whole", "loudest"], default="both",
                     help="which loudness reading calls a song apart (default both)")
-    ap.add_argument("--tolerance", type=float, default=2.0, help="level: LU a song may differ before it counts as apart (2)")
-    ap.add_argument("--tone-tolerance", type=float, default=1.5, help="tone: dB a band group may differ (1.5)")
-    ap.add_argument("--width-tolerance", type=float, default=3.0, help="stereo width: dB (3)")
-    ap.add_argument("--tilt-amount", type=float, default=50.0, help="tonal tilt: percent of the gap to close (50)")
-    ap.add_argument("--max-tilt-db", type=float, default=2.0, help="tonal tilt: the most any shelf moves (2 dB)")
-    ap.add_argument("--ceiling", type=float, default=-1.0, help="true-peak ceiling for a raise, dBTP (-1)")
-    ap.add_argument("--gap", type=float, help="one gap in seconds for every transition, instead of suggesting each")
+    ap.add_argument("--tolerance", type=A.number(0, 40), default=2.0, help="level: LU a song may differ before it counts as apart (2)")
+    ap.add_argument("--tone-tolerance", type=A.number(0, 40), default=1.5, help="tone: dB a band group may differ (1.5)")
+    ap.add_argument("--width-tolerance", type=A.number(0, 40), default=3.0, help="stereo width: dB (3)")
+    ap.add_argument("--tilt-amount", type=A.number(0, 100), default=50.0, help="tonal tilt: percent of the gap to close (50)")
+    ap.add_argument("--max-tilt-db", type=A.number(0, 12), default=2.0, help="tonal tilt: the most any shelf moves (2 dB)")
+    ap.add_argument("--ceiling", type=A.number(-12, 0), default=-1.0, help="true-peak ceiling for a raise, dBTP (-1; from -12 to 0)")
+    ap.add_argument("--gap", type=A.number(0, 60), help="one gap in seconds for every transition, instead of suggesting each")
     ap.add_argument("--gap-style", choices=list(STYLE), default="normal", help="tight, normal or roomy gaps")
-    ap.add_argument("--head", type=float, help="lead-in each song keeps, seconds (0.1)")
-    ap.add_argument("--last-tail", type=float, default=2.0, help="silence after the last song, seconds (2)")
-    ap.add_argument("--gap-tolerance", type=float, default=0.3, help="silence moves smaller than this are not proposed (0.3 s)")
+    ap.add_argument("--head", type=A.number(0, 30), help="lead-in each song keeps, seconds (0.1)")
+    ap.add_argument("--last-tail", type=A.number(0, 60), default=2.0, help="silence after the last song, seconds (2)")
+    ap.add_argument("--gap-tolerance", type=A.number(0, 30), default=0.3, help="silence moves smaller than this are not proposed (0.3 s)")
     ap.add_argument("--suggest-order", action="store_true", help="list one or two orders to try, as options")
     ap.add_argument("--quick", action="store_true", help="skip key and tempo (the slow part; no key-based order then)")
     ap.add_argument("--plan", nargs="?", const=True, metavar="SCAN_DIR",
@@ -826,6 +827,7 @@ def main(argv=None):
     files = resolve_files(a.files)
     if len(files) < 2:
         sys.exit("an album needs at least two songs: hypnomix album SONG1.wav SONG2.wav ...")
+    check_out(a.plan if isinstance(a.plan, str) else a.out)   # an unwritable folder ends here, not after the analysis
     songs, notes = [], []
     for f in files:
         print(f"measuring {f.name} …", file=sys.stderr)
@@ -867,11 +869,11 @@ def main(argv=None):
     else:
         od = out_at(a.out, "album")
     od.mkdir(parents=True, exist_ok=True)
-    (od / "ALBUM.md").write_text(text)
+    (od / "ALBUM.md").write_text(text, encoding="utf-8")
     raw = od / "raw"
     raw.mkdir(exist_ok=True)
     (raw / "album.json").write_text(json.dumps(dict(songs=songs, order=[songs[i]["name"] for i in order], compare=cmp,
-                                                    transitions=trans, orders=orders, options=o), indent=1, default=float))
+                                                    transitions=trans, orders=orders, options=o), indent=1, default=float), encoding="utf-8")
     print(text)
     if plan:
         from hypnomix.workflow import plan as P

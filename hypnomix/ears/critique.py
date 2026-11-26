@@ -74,7 +74,7 @@ Finish with the three highest-impact changes, in priority order. Don't pad; skip
 # ---------------------------------------------------------------- keys and models
 def _conf():
     try:
-        return json.loads(CONF.read_text())
+        return json.loads(CONF.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
@@ -104,7 +104,7 @@ def listener(provider=None, model=None):
 
 def duration(path):
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     try:
         return float(r.stdout.strip())
     except ValueError:
@@ -226,7 +226,7 @@ def cache_key(path, provider, model, question="", context="", seconds_limit=None
 def cached(path, provider, model, question="", context="", seconds_limit=None):
     """The notes saved for this very listen (same file, model, question, context and length), or None."""
     try:
-        d = json.loads((CACHE_DIR / (cache_key(path, provider, model, question, context, seconds_limit) + ".json")).read_text())
+        d = json.loads((CACHE_DIR / (cache_key(path, provider, model, question, context, seconds_limit) + ".json")).read_text(encoding="utf-8"))
         return d if isinstance(d.get("notes"), str) and d["notes"].strip() else None
     except (OSError, ValueError):
         return None
@@ -275,7 +275,7 @@ def _context_file(path, what):
         raise ValueError(f"{what}: that file holds your saved keys")
     if p.stat().st_size > MAX_CONTEXT_FILE:
         raise ValueError(f"{what}: {p.name} is over {MAX_CONTEXT_FILE // 1_000_000} MB: use a smaller file")
-    with open(p, errors="replace") as fh:
+    with open(p, errors="replace", encoding="utf-8") as fh:
         return fh.read(6000)
 
 
@@ -289,7 +289,7 @@ def _scan_review(scan):
         return None
     if rv.resolve().parent != d.resolve() or rv.stat().st_size > MAX_CONTEXT_FILE:      # not a link out, not huge
         raise ValueError(f"--scan: {rv} is not a plain REVIEW.md of that folder")
-    with open(rv, errors="replace") as fh:
+    with open(rv, errors="replace", encoding="utf-8") as fh:
         return fh.read(10000)
 
 
@@ -322,7 +322,7 @@ def listen(path, question="", notes="", provider=None, model=None, seconds_limit
     except ImportError:
         raise ValueError("listening needs the OpenAI client library: in the app, Setup, then Extras (the installers "
                          "include it); from source, run uv pip install -e \".[critique]\" in the hypnomix folder")
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
         mp3 = Path(td) / "listen.mp3"
         cut = ["-t", str(seconds_limit)] if seconds_limit else []
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "22050",
@@ -439,7 +439,7 @@ def main():
     spent = f" · ${usage['cost']:.4f}" if usage.get("cost") else ""
     tokens = "saved notes, nothing sent" if usage.get("cached") else f"{usage.get('input') or 0:,} tokens in, {usage.get('output') or 0:,} out"
     out.write_text(f"# Second opinion by ear: {Path(a.file).name}\n\n{LISTENERS[provider]['label']} · {model} · "
-                   f"{tokens}{spent}\n\n{text}\n")
+                   f"{tokens}{spent}\n\n{text}\n", encoding="utf-8")
     print(out)
 
 

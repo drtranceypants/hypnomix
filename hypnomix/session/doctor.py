@@ -55,7 +55,7 @@ def main():
     out["devices"] = {n: l.devices(t) for t, n in tr}
     out["devices"]["Master"] = l.devices(-1)
     out["faders"] = {n: round(l.get_db(t), 1) for t, n in tr}
-    auto = subprocess.run([sys.executable, "-m", "hypnomix.cli", "automation", "list", a.set], capture_output=True, text=True).stdout
+    auto = subprocess.run([sys.executable, "-m", "hypnomix.cli", "automation", "list", a.set], capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
     out["automation"] = auto.strip().splitlines()
     # --- loudest section of the bounce
     y, sr = sf.read(a.bounce, always_2d=True)
@@ -76,7 +76,7 @@ def main():
         if t in muted:
             continue
         p = subprocess.run([sys.executable, "-m", "hypnomix.cli", "loop", "--bar", str(bar0), "--bars", str(a.bars),
-                            "--label", f"doctor-{t}", "--set", f"solo {t} 1"], capture_output=True, text=True)
+                            "--label", f"doctor-{t}", "--set", f"solo {t} 1"], capture_output=True, text=True, encoding="utf-8", errors="replace")
         l2 = Live(); l2.solo(t, 0); l2.close(); time.sleep(0.2)
         wav = next((ln.split("TAKE ", 1)[1].split("   ")[0].strip() for ln in p.stdout.splitlines() if "TAKE " in ln), None)
         if not wav:
@@ -95,7 +95,7 @@ def main():
         for n, v in res.items():
             if not v.get("silent"):
                 v[band + "_share"] = round(100 * 10 ** (v[band] / 10) / tot)
-    (out_dir("doctor") / f"{song}.json").write_text(json.dumps(out, indent=1))
+    (out_dir("doctor") / f"{song}.json").write_text(json.dumps(out, indent=1), encoding="utf-8")
     print(f"{'group':<30}{'level':>7}{'sub%':>6}{'bass%':>7}{'speech%':>9}{'lowcorr':>9}")
     for n, v in sorted(res.items(), key=lambda kv: -kv[1].get("rms", -999)):
         if v.get("silent"):

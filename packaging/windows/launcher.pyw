@@ -33,7 +33,7 @@ def message(text):
 
 def stop():
     if PID.exists():
-        pid = PID.read_text().strip()
+        pid = PID.read_text(encoding="utf-8").strip()
         subprocess.run(["taskkill", "/PID", pid, "/T", "/F"], capture_output=True,
                        creationflags=subprocess.CREATE_NO_WINDOW)
         PID.unlink(missing_ok=True)
@@ -50,11 +50,12 @@ def start(show=True):
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTHONNOUSERSITE"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"                                  # files and pipes default to UTF-8, not the Windows code page
     log = open(LOG, "w", encoding="utf-8")
     p = subprocess.Popen([str(PY), "-m", "hypnomix.cli", "app", "--no-open", "--port", str(PORT)],
                          cwd=str(STATE), env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                          creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP)
-    PID.write_text(str(p.pid))
+    PID.write_text(str(p.pid), encoding="utf-8")
     for _ in range(240):                                 # the first start compiles a little: up to a minute
         if up():
             if show:

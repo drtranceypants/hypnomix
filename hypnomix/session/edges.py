@@ -116,7 +116,7 @@ def ducked_onsets(reg, ramp, floor, loss):
 def pick_tracks(root, names=None, explicit=(), all_tracks=False):
     labels = {}
     if names and Path(names).exists():
-        for r in json.loads(Path(names).read_text()).get("tracks", []):
+        for r in json.loads(Path(names).read_text(encoding="utf-8", errors="replace")).get("tracks", []):
             labels[r["old"]] = str(r.get("final") or r.get("label") or "")
     out = []
     for t in root.find(".//Tracks"):
@@ -604,7 +604,7 @@ def main():
     for f in fs:
         print(f"  {f['id']:<9} {f['track']:<24} {f['kind']:<9} {f['where']}\n            {f['problem']}\n            → {f['fix']}")
     if a.json:
-        Path(a.json).write_text(json.dumps({"tool": "edges", "set": str(src), "findings": fs}, indent=1))
+        Path(a.json).write_text(json.dumps({"tool": "edges", "set": str(src), "findings": fs}, indent=1), encoding="utf-8")
     if a.apply:
         if Path(a.apply).resolve() == src.resolve():
             sys.exit("refusing to overwrite the set; give a new file name")

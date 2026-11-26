@@ -20,7 +20,7 @@ Read-only: writes SECTIONS.md (and --json) into the report folder.
 Usage:
     hypnomix sections MIX.wav [--bpm N] [--vocal VOCAL.wav] [--json OUT.json] [--out DIR]
 """
-from hypnomix.core.paths import out_at
+from hypnomix.core.paths import out_at, check_out
 import argparse, json, sys, warnings
 from pathlib import Path
 
@@ -50,6 +50,8 @@ def bar_grid(mono, sr, bpm=None):
     """Bar start times (s), 4 beats per bar. With --bpm the grid is fixed from the first strong onset."""
     dur = len(mono) / sr
     if bpm:
+        if not (isinstance(bpm, (int, float)) and 20 <= bpm <= 400):   # nan, inf and 1e9 made a grid of billions of beats
+            raise ValueError(f"the tempo {bpm} is not a number from 20 to 400")
         onset = librosa.onset.onset_strength(y=mono, sr=sr, hop_length=HOP)
         ot = librosa.frames_to_time(np.arange(len(onset)), sr=sr, hop_length=HOP)
         beat = 60.0 / bpm
@@ -290,11 +292,13 @@ def main():
     ap = argparse.ArgumentParser(prog="hypnomix sections", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("mix")
-    ap.add_argument("--bpm", type=float, help="tempo, if beat tracking gets it wrong")
+    from hypnomix.core import args as A
+    ap.add_argument("--bpm", type=A.number(20, 400), help="tempo, if beat tracking gets it wrong (20 to 400)")
     ap.add_argument("--vocal", help="vocal stem that starts at the same point as the mix")
     ap.add_argument("--json", help="write the sections + findings here")
     ap.add_argument("--out", help="report folder (default hypnomix-out/sections/<name>/)")
     a = ap.parse_args()
+    check_out(a.out)                                  # an unwritable --out ends here, not after the analysis
     r = analyse(a.mix, a.bpm, a.vocal)
     name = Path(a.mix).stem
     t = table(r)
@@ -306,9 +310,9 @@ def main():
     outdir = out_at(a.out, "sections", name)
     md = (f"# Sections: {name}\n\nTempo {r['bpm']} BPM. Labels are guesses from the audio: same letter = sounds alike; "
           f"\"chorus-like\" = loudest repeated group.\n\n" + (EVEN_NOTE + "\n\n" if r.get("even_split") else "") + f"{t}\n\n## Findings\n\n" + "\n".join(lines) + "\n")
-    (outdir / "SECTIONS.md").write_text(md)
+    (outdir / "SECTIONS.md").write_text(md, encoding="utf-8")
     if a.json:
-        Path(a.json).write_text(json.dumps(r, indent=2))
+        Path(a.json).write_text(json.dumps(r, indent=2), encoding="utf-8")
     print(f"\nreport: {outdir / 'SECTIONS.md'}", file=sys.stderr)
 
 

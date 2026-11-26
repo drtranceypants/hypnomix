@@ -586,11 +586,12 @@ def build(out, tpl=None):
     out = Path(out).expanduser()
     out.mkdir(parents=True, exist_ok=True)
     import copy as _copy
+    from hypnomix.app import masterchain as MC
+    probe_js, master_js = script(), MC.script(app_port())                   # both scripts made before anything is written
+    (out / "hypnomix_probe.js").write_text(probe_js, encoding="utf-8")      # UTF-8: Max reads the scripts as UTF-8
+    (out / "hypnomix_master.js").write_text(master_js, encoding="utf-8")
     write_amxd(out / "HypnomixProbe.amxd", head, build_patch(_copy.deepcopy(patch), "track"))
     write_amxd(out / "HypnomixMain.amxd", head, build_patch(_copy.deepcopy(patch), "main"))
-    (out / "hypnomix_probe.js").write_text(script())
-    from hypnomix.app import masterchain as MC
-    (out / "hypnomix_master.js").write_text(MC.script(app_port()))
     return out
 
 
@@ -654,7 +655,7 @@ def read_cards(set_path, cards_file=None):
     out["signature"] = signature(names)
     cf = Path(cards_file) if cards_file else Path(os.environ.get("HYPNOMIX_APP_HOME", "~/Documents/Hypnomix")).expanduser() / "cards.json"
     if cf.exists():
-        card = json.loads(cf.read_text()).get(out["signature"], {})
+        card = json.loads(cf.read_text(encoding="utf-8")).get(out["signature"], {})
         if card.get("chords"):
             out["song"]["chords"] = card["chords"]
     s = out["song"]
@@ -773,7 +774,7 @@ class Hub:
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         f = out_dir / f"capture-{time.strftime('%Y%m%d-%H%M%S')}{('-' + safe(cap['label'])) if cap['label'] else ''}.json"
-        f.write_text(json.dumps(cap))
+        f.write_text(json.dumps(cap), encoding="utf-8")
         return f
 
     def last_main(self, since):
@@ -1078,7 +1079,7 @@ def master_findings(wav, prefs, n0=0):
 
 def report(capture, out_dir, set_path="", bpb=4, target_name=None, mix=None):
     from hypnomix.workflow import prefs as P, scan as S
-    cap = json.loads(Path(capture).read_text())
+    cap = json.loads(Path(capture).read_text(encoding="utf-8"))
     card = cap.get("card") or {}
     prefs = card_prefs(P.load(), card)
     target = None
@@ -1109,19 +1110,24 @@ def report(capture, out_dir, set_path="", bpb=4, target_name=None, mix=None):
             f["n"] = i
         notes.insert(0, f"Recorded master: {Path(mix).name}, {m['seconds']:.0f} s, {m['lufs']} LUFS, {m['true_peak']:+} dBTP. "
                         "It is what Live played (a real-time bounce): use it as the mix for `master`, `qc` and `translate`.")
-    (od / "findings.json").write_text(json.dumps({"set": set_path, "notes": notes, "findings": F}, indent=1))
+    (od / "findings.json").write_text(json.dumps({"set": set_path, "notes": notes, "findings": F}, indent=1), encoding="utf-8")
     # as a group too, so a later `master --plan` (or any merge into this folder) keeps these findings
     (od / "live.json").write_text(json.dumps({"group": "live", "set": set_path, "seconds": cap.get("ended", 0) - cap.get("started", 0),
-                                              "findings": F, "notes": notes}, indent=1))
+                                              "findings": F, "notes": notes}, indent=1), encoding="utf-8")
     (od / "scan.json").write_text(json.dumps({"mode": "live", "capture": str(Path(capture).resolve()), "card": card,
                                               "mix": str(mix or ""), "set": set_path,
-                                              "at": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
+                                              "at": time.strftime("%Y-%m-%d %H:%M")}, indent=1), encoding="utf-8")
     S.write_review(od, set_path, F, notes, {"live": cap.get("ended", 0) - cap.get("started", 0)}, P.summary(prefs))
     return F
 
 
 # ---------------------------------------------------------------- putting probes into a new set
-LIBRARY = Path("~/Music/Ableton/User Library").expanduser()
+def library_dir():
+    """Live's User Library on this computer (where `hypnomix device` writes the devices)."""
+    from hypnomix.install import user_library
+    return user_library()
+
+
 DEVICES = Path("Presets/Audio Effects/Max Audio Effect/Hypnomix")     # where `hypnomix device` / `probe device` write
 
 # How Live saves a Max for Live audio effect that comes from a file (copied from a set Live saved with the Hypnomix
@@ -1157,7 +1163,7 @@ def device_element(name, library=None):
     the .amxd in the User Library. Raises FileNotFoundError when the device isn't installed there."""
     import xml.etree.ElementTree as ET
     from xml.sax.saxutils import quoteattr
-    lib = Path(library).expanduser() if library else LIBRARY
+    lib = Path(library).expanduser() if library else library_dir()
     f = lib / DEVICES / f"{name}.amxd"
     if not f.exists():
         raise FileNotFoundError(f"{f} is not there: run `hypnomix device` and `hypnomix probe device` once to install "
@@ -1256,19 +1262,34 @@ def insert(set_path, out=None, include_returns=True, main=False, review=False, l
 
 # ---------------------------------------------------------------- CLI
 def app_up():
-    import urllib.request
+    from hypnomix.core import loopback
     try:
-        urllib.request.urlopen(f"http://127.0.0.1:{app_port()}/api/probe/status", timeout=1).read()
+        with loopback.urlopen(f"http://127.0.0.1:{app_port()}/api/probe/status", timeout=1) as r:      # never through a proxy variable
+            r.read()
         return True
     except Exception:
         return False
 
 
+def app_token():
+    """The running app's page token, read from its own page the way a browser gets it (this computer only)."""
+    import urllib.request
+    from hypnomix.core import loopback
+    with loopback.urlopen(urllib.request.Request(f"http://127.0.0.1:{app_port()}/"), timeout=10) as r:
+        m = re.search(r'const TOKEN = "([^"]+)"', r.read().decode("utf-8", "replace"))
+    return m.group(1) if m else ""
+
+
 def app_call(path, body=None):
     import urllib.request
+    from hypnomix.core import loopback
+    headers = {"Content-Type": "application/json"}
+    if body is not None and path in ("/api/probe/start", "/api/probe/stop"):      # the routes that need the page's token
+        headers["X-Hypnomix"] = app_token()
     req = urllib.request.Request(f"http://127.0.0.1:{app_port()}{path}", data=json.dumps(body or {}).encode() if body is not None else None,
-                                 headers={"Content-Type": "application/json"})
-    return json.loads(urllib.request.urlopen(req, timeout=10).read())
+                                 headers=headers)
+    with loopback.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())
 
 
 def out_home():
@@ -1318,10 +1339,11 @@ def main():
         return
 
     if a.cmd == "device":
-        lib = Path("~/Music/Ableton/User Library").expanduser()
+        from hypnomix.install import user_library_words
+        lib = library_dir()
         out = a.out or (lib / "Presets" / "Audio Effects" / "Max Audio Effect" / "Hypnomix")
         if not a.out and not lib.is_dir():
-            sys.exit("no Live User Library at ~/Music/Ableton/User Library: say where to write with --out FOLDER")
+            sys.exit(f"no Live User Library at {user_library_words()}: say where to write with --out FOLDER")
         try:
             od = build(out, a.template)
         except FileNotFoundError as e:

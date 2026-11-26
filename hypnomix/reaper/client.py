@@ -70,7 +70,7 @@ class Reaper:
         boot = self.dir / "start-bridge.lua"
         lua_dir = str(self.dir).replace("\\", "/").replace('"', '\\"')
         lua_bridge = str(BRIDGE).replace("\\", "/").replace('"', '\\"')
-        boot.write_text(f'HYPNOMIX_DIR = "{lua_dir}"\ndofile("{lua_bridge}")\n')
+        boot.write_bytes(f'HYPNOMIX_DIR = "{lua_dir}"\ndofile("{lua_bridge}")\n'.encode("utf-8"))      # UTF-8 bytes, plain \n, on every system
         subprocess.Popen([exe, "-nosplash", str(boot)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True)
         t0 = time.time()
@@ -93,7 +93,7 @@ class Reaper:
         if any("\n" in str(v) for v in args.values() if v is not None):
             raise ValueError("bridge values are one line each")
         tmp, req = self.dir / f"req-{rid}.tmp", self.dir / f"req-{rid}.txt"
-        tmp.write_text(body)
+        tmp.write_bytes(body.encode("utf-8"))               # a track named with an accent or a CJK letter reaches REAPER intact
         tmp.rename(req)
         res = self.dir / f"res-{rid}.json"
         t0 = time.time()

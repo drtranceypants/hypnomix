@@ -7,7 +7,18 @@ teaser: The installers, the guided setup, and the four ways to work (just the ap
 
 # Setting up
 
-There are two ways to install hypnomix. The **installer** is for most people: download it, open it, done. It
+Today there is one download: the **Hypnomix Assistant**, the app for people who keep their own DAW (Live, REAPER,
+Ardour, or any DAW from exported tracks): that's the installer below, available now. The full **Hypnomix** is a DAW
+of its own (based on Ardour) with the engineer and the Assistant built in. It is **coming soon**: it runs as a local
+test build on a Mac but is not released, so the download page does not offer it yet, and there is no way to add it to the Assistant.
+**Setup → Extras** says what it is and that it is not available yet; once it is released, the download page will offer it.
+When it is, it's one app called Hypnomix that opens on its own DAW (File → New Session / Open Session). Its engine
+is a separate program under the GNU General Public License (version 2 or later), a rebranded fork of Ardour; hypnomix
+itself stays MIT and contains none of its code, and the source will be published with the first release that
+includes the engine. What has been tried so far: it runs against the real engine on a silent test backend only
+(no sound card, no recording, no native File menu, no signed or Intel build).
+
+There are two ways to install the Assistant. The **installer** is for most people: download it, open it, done. It
 carries its own Python and ffmpeg, and the first time the app opens a short **guided setup** asks how you want to
 work. The **source install** (the Getting Started guide and the README) is for people who use a terminal or want to work
 on hypnomix itself. The installed app gets every optional extra too (the setup's **Extras** step), and the Claude
@@ -15,7 +26,7 @@ Code skills (the **A desktop AI app** option).
 
 ## Install the app
 
-1. Go to **hypnomix.bradfieldenterprises.org/download**, pick your computer (Mac with Apple silicon, Mac with an
+1. Go to **hypnomix.bradfieldenterprises.org/download**, choose **Hypnomix Assistant**, pick your computer (Mac with Apple silicon, Mac with an
    Intel chip, or Windows 10/11), tick the box to agree to the terms, and download.
 2. **Mac**: open the `.dmg` and drag **Hypnomix** onto **Applications**. **Windows**: run the setup `.exe`. It
    installs for you only and doesn't need administrator rights.
@@ -64,11 +75,12 @@ hypnomix's own settings and state files in `~/.hypnomix` (updates, setup, Disk c
 
 | step | what it asks |
 |---|---|
+| Your download | the Hypnomix Assistant (what you have, for Live, REAPER and Ardour) or the full Hypnomix with its own DAW. The full one is coming soon: choosing it only notes that you want it, setup carries on with the Assistant, and the Extras step says what the Hypnomix DAW is and that it is not available yet |
 | How you work | just the app, an AI key, a model on your computer, or a desktop AI app (compared below) |
 | Your DAW | Ableton Live, REAPER, Ardour or something else (the Wiki puts your DAW's pages first), and **teacher mode**: no thanks, the tour of hypnomix in your DAW (for engineers), the 101 crash course, or the complete course, A to Z (for people new to audio). The wiki's Teacher mode page has all three |
 | Connect | for an AI key: which company, your key, a test. For a local model: Ollama or LM Studio, and a test. For a desktop app: a `hypnomix` command and an agent folder |
 | your DAW's step | Live: copies the AbletonOSC remote script into Live's User Library, on your click (and offers to update an older copy for teacher mode). REAPER: starts the bridge. Ardour or another DAW: nothing to install |
-| Extras | the optional extras, each on a click |
+| Extras | the optional extras, each on a click, and a card for the Hypnomix DAW that says it is not available yet |
 | Done | where to start (the Teacher tab, with teacher mode on) |
 
 ## Choosing how to work with AI
@@ -208,7 +220,8 @@ wiki's "Run your own AI, free and offline".
 2. Search for a model with tool use (gpt-oss 20B, or Qwen3 8B with 8 GB of memory), download it and load it
    with a context length of 64k.
 3. Open the **Developer** tab and switch on **Start server** (port 1234).
-4. In hypnomix: **Setup → A model on this computer → LM Studio**, **Test the connection**.
+4. In hypnomix: **Setup → A model on this computer → LM Studio**, **Test the connection**. Type the model's name
+   as LM Studio shows it; left empty, hypnomix uses the first model LM Studio lists and says which.
 
 ## A desktop AI app
 
@@ -227,7 +240,8 @@ usage limits; the work happens in the agent's chat, not inside the app.
    Install Claude Code from claude.com/product/claude-code.
 2. In hypnomix: **Setup → A desktop AI app → Make the command and folder**. This makes:
    - a `hypnomix` command that runs the app's own copy (Mac: `~/.local/bin/hypnomix`; Windows: in your user's
-     WindowsApps folder, which is already on your PATH)
+     WindowsApps folder, which is already on your PATH). A command that is already there and was not made by
+     this setup (pipx and `pip --user` leave one) is never replaced: the setup says so and leaves it as it is
    - a folder **Documents/Hypnomix/AI agent** with `CLAUDE.md`, `AGENTS.md` and `GUIDE.md`: the instructions
      the agent reads first
    - the repository's **Claude Code skills** in that folder's `.claude/skills` (first-pass, mix-engineer,

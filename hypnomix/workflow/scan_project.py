@@ -456,16 +456,19 @@ def g_clips(p, R, od, a, vocals=()):
         from hypnomix.project.rpp_edit import locator
     from hypnomix.session.smooth import HIT_DB, PLOSIVE_HZ, PLOSIVE_MAX_DIP, PLOSIVE_SHARE, SPIKES_PER_MIN
     out, n, notes, regular, onsets = [], 0, [], [], 0
+    short_fade = 0.002        # shorter than this counts as no fade; Ardour's own default fade (64 samples) is enough of one
+    if p.daw == "ardour":
+        short_fade = min(short_fade, 64.0 / (p.sample_rate or 44100) - 1e-9)
     for t in p.audio_tracks():
         clips = sorted((c for c in t.clips if not c.muted and c.kind == "audio"), key=lambda c: c.start)
         for c in clips:
-            if c.fade_in >= 0.002 and c.fade_out >= 0.002:
+            if c.fade_in >= short_fade and c.fade_out >= short_fade:
                 continue
             seg = render_clip(replace(c, fade_in=0.0, fade_out=0.0), SR, [], t.name)
             if seg is None or not len(seg):
                 continue
-            for edge, short, lvl, at in (("start", c.fade_in < 0.002, abs(seg[0]), c.start),
-                                         ("end", c.fade_out < 0.002, abs(seg[-1]), c.end)):
+            for edge, short, lvl, at in (("start", c.fade_in < short_fade, abs(seg[0]), c.start),
+                                         ("end", c.fade_out < short_fade, abs(seg[-1]), c.end)):
                 if short and lvl > 0.01:
                     n += 1
                     which = "in" if edge == "start" else "out"
@@ -623,7 +626,7 @@ def g_vocals(p, R, od, a, role):
                                          "key-error.txt"))
         else:
             kf = j
-            d = json.loads(j.read_text())
+            d = json.loads(j.read_text(encoding="utf-8"))
             notes.append(f"key map: {d['key']} ({'sure' if d.get('sure') else 'UNSURE'}), "
                          f"{len(d.get('sections', []))} sections")
             for n, q in enumerate(d.get("questions", []), 1):
@@ -658,7 +661,7 @@ def g_vocals(p, R, od, a, role):
                 notes.append(SC.check_failed(od, f"tuning check on {t}", out, "so that vocal has no pitch findings",
                                              f"tune-{files[t].stem}-error.txt"))
                 continue
-            d = json.loads(j.read_text())
+            d = json.loads(j.read_text(encoding="utf-8"))
             for f in d["findings"]:
                 f.update(track=t, key=d["key"], tuning_cents=d["tuning_cents"], flagged_notes=d["flagged"],
                          asked_notes=d.get("asked", []))
@@ -835,7 +838,7 @@ def g_stems(p, R, od, a):
     if not a.deep:
         return [], ["stems: skipped (add --deep to check frequency fights and mic phase between tracks)"]
     from hypnomix.engineer import masking as M
-    stems, sr = M.load_stems(R.dir)
+    stems, sr = M.load_stems(R.dir, lazy=True)
     if len(stems) < 2:
         return [], ["stems: fewer than two heard audio tracks"]
     real = {t.safe_name: t.name for t in p.tracks} if p.daw == "reaper" else None   # only REAPER projects can be written

@@ -166,13 +166,14 @@ function wikiList() {
       group = a.group; out += `<h4>${esc(group)}${a.group === mine ? ' · yours' : ''}</h4>`;
     }
     const n = a.no ? a.no.replace(/^lesson\s*/i, '') : '';
-    out += `<a data-wart="${esc(a.id)}" class="${a.id === W.id ? 'on' : ''}">${n ? `<small>${esc(n)}</small>` : ''}${esc(a.title)}${hit ? `<span class="hit">${esc(hit)}</span>` : ''}</a>`;
+    out += `<a href="#" data-wart="${esc(a.id)}"${a.id === W.id ? ' aria-current="page"' : ''} class="${a.id === W.id ? 'on' : ''}">${n ? `<small>${esc(n)}</small>` : ''}${esc(a.title)}${hit ? `<span class="hit">${esc(hit)}</span>` : ''}</a>`;
   }
   return out;
 }
 
 async function wikiView() {
-  await wikiLoad();
+  if (!(W.keep && W.index)) await wikiLoad();       // the list of articles (2 MB with their text) is fetched when the Wiki is opened, not again for each article opened from it
+  W.keep = false;
   const all = W.index.articles;
   if (!all.length) return `<h1>Wiki</h1><p class="sub">No articles yet. From the hypnomix folder run
     <code>python -m hypnomix.app.wiki_sync</code> to copy them from the website.</p>`;
@@ -219,7 +220,8 @@ function wikiAfter() {
 function wikiOpen(id) {
   W.id = id; try { localStorage.setItem('hypnomix.wiki', id); } catch (e) {}
   if (S.view !== 'wiki') { go('wiki'); return; }
-  render().then(() => window.scrollTo(0, 0));
+  W.keep = true;
+  render().then(() => { W.keep = false; window.scrollTo(0, 0); const h = document.querySelector('.wa h1'); if (h) { h.tabIndex = -1; h.focus({preventScroll: true}); } });   // the keyboard follows to the article
 }
 
 document.addEventListener('click', e => {      // a link to a section of the same article

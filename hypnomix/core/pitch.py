@@ -81,7 +81,8 @@ def track(path, fmin=65.0, fmax=1000.0, sr=22050, hop=256, floor_db=35.0, cache=
         cdir.mkdir(parents=True, exist_ok=True)
         tmp = f.with_name(f"{k}.{os.getpid()}.{threading.get_ident()}.tmp.npz")
         np.savez_compressed(tmp, t=t, f0=f0, db=db)
-        os.replace(tmp, f)
+        from hypnomix.core.atomic import replace as atomic_replace
+        atomic_replace(tmp, f)
     return t, f0, db
 
 

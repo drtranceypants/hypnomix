@@ -11,7 +11,9 @@ temporary copy of the set that is deleted afterwards. `hypnomix review` puts pla
 What can be previewed without Live:
   clip fixes (smooth)     clicks, cuts, spikes, steps: the track is rendered from the set with and without the
                           fix (clip gain, fades and the track's volume automation; no devices)
-  vocal tuning (tune)     the rendered vocal against the tuned one, around the first flagged note
+  vocal tuning (tune)     the rendered vocal against the tuned one, around the first flagged note. Tuning checks the
+                          chord under every note first, as `fix` does: it needs the scan's instrumental (scan
+                          --backing INSTRUMENTAL.wav) or mix (--ref); without one the pair says to scan again
   repaired recordings     de-hiss, clean-up, de-ess, breaths, prep steps: the file against the repaired copy
   timing nudges           the clip rendered along its warp markers (the markers the nudge writes, one on every onset
                           it holds and one on the hit it moves), stretched with Rubber Band so the pitch stays, the
@@ -47,13 +49,26 @@ import soundfile as sf
 
 
 def hx(*args, timeout=3600):
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True,
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8", errors="replace",
                        timeout=timeout)
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
 def safe(s):
     return re.sub(r'[\\/:*?"<>|]', "-", str(s))
+
+
+NEEDS_BACKING = ("tuning checks the chord under every note first, and this scan has no instrumental to read the chords "
+                 "from: scan again with --backing INSTRUMENTAL.wav (the song without the vocals)")
+
+
+def why_failed(txt, limit=160):
+    """The last line a failed command said, as one plain phrase (never the tail of a path cut mid-word). The tune
+    command's own advice is about flags `ab` does not have, so that one is turned into what to do here."""
+    from hypnomix.workflow.fix import last_line
+    if "without checking the chord" in (txt or ""):
+        return NEEDS_BACKING
+    return last_line(txt, limit) or "the command gave no reason"
 
 
 def beats_of(where, bpb):
@@ -202,7 +217,7 @@ def preview_timing(tm, orig, scan, sd, pre, post, manifest, sr):
         code, txt = hx(*timing_args(sd, orig, tmp, [f["id"] for f in todo], any(f.get("unroll") for f in todo)))
         if code != 0 or not tmp.exists():
             for f in todo:
-                manifest[f["id"]] = dict(note="preview failed: the nudges could not be built (" + txt.strip()[-120:] + ")")
+                manifest[f["id"]] = dict(note="preview failed: the nudges could not be built (" + why_failed(txt, 120) + ")")
             return
         names = sorted({f["track"] for f in todo})
         print(f"rendering {len(names)} track(s) along their warp markers with and without {len(todo)} nudge(s) …")
@@ -278,11 +293,16 @@ def main():
                     help="also preview device changes through the track's plug-in chain (needs pedalboard)")
     a = ap.parse_args()
     sd = Path(a.scan_dir)
+    if not sd.exists():
+        sys.exit(f"{sd}: no such folder (looked in {Path.cwd()}): give the scan folder `hypnomix scan` wrote")
     data = atomic.load_json(sd / "findings.json", None)            # a cut-off file falls back to findings.json.bak
     if not isinstance(data, dict) or "findings" not in data:
         sys.exit(f"{sd / 'findings.json'} could not be read: scan again (or `hypnomix scan --merge {sd}`)")
     scan = atomic.load_json(sd / "scan.json", {}) or {}
     want = {x.strip() for x in a.ids.split(",") if x.strip()}
+    unknown = sorted(want - {f.get("id") for f in data["findings"]})
+    if unknown:                                    # the same wording as `fix --approve`
+        sys.exit(f"unknown ids: {', '.join(unknown)}")
     findings = [f for f in data["findings"] if f.get("applies") in ("set", "audio") and (not want or f["id"] in want)]
     od = sd / "ab"
     od.mkdir(exist_ok=True)
@@ -302,7 +322,7 @@ def main():
             code, txt = hx("smooth", orig, "--apply", tmp, "--ids", ",".join(ids))
             if code != 0 or not tmp.exists():
                 for f in sm:
-                    manifest[f["id"]] = dict(note="preview failed: the fix could not be built (" + txt.strip()[-120:] + ")")
+                    manifest[f["id"]] = dict(note="preview failed: the fix could not be built (" + why_failed(txt, 120) + ")")
             else:
                 names = sorted({f["track"] for f in sm})
                 print(f"rendering {len(names)} track(s) with and without {len(sm)} clip fix(es) …")
@@ -367,12 +387,13 @@ def main():
                                       "file with the original")
             continue
         if f.get("run"):
-            with tempfile.TemporaryDirectory() as td:
+            with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
                 code, txt = hx(*[str(x).replace("{out}", td) for x in f["run"]])
                 made = sorted(Path(td).glob("*.wav"), key=lambda p: p.stat().st_mtime)
                 src = next((Path(x) for x in f["run"][1:] if Path(str(x)).is_file()), None)
                 if code != 0 or not made or src is None:
-                    manifest[fid] = dict(note="preview failed: " + txt.strip()[-160:])
+                    manifest[fid] = dict(note="preview failed: " + (why_failed(txt) if code != 0 else
+                                         "the recording is gone (moved?)" if src is None else "the tool wrote no file"))
                     continue
                 ya, sra = sf.read(str(src), dtype="float32", always_2d=True)
                 yb, srb = sf.read(str(made[-1]), dtype="float32", always_2d=True)
@@ -388,14 +409,20 @@ def main():
             if not rendered.exists() or not key:
                 manifest[fid] = dict(note="no preview: the rendered vocal or the key is missing")
                 continue
-            with tempfile.TemporaryDirectory() as td:
+            backing = scan.get("backing")             # the chord check `fix` makes: the instrumental, else the mix
+            if not backing and not scan.get("ref"):
+                manifest[fid] = dict(note="no preview: " + NEEDS_BACKING)
+                continue
+            with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
                 dest = Path(td) / "tuned.wav"
                 args = ["tune", rendered, dest, "--key", key]
+                if backing:
+                    args += ["--chords", backing]
                 if scan.get("ref"):
                     args += ["--ref", scan["ref"]]
                 code, txt = hx(*args)
                 if code != 0 or not dest.exists():
-                    manifest[fid] = dict(note="preview failed: " + txt.strip()[-160:])
+                    manifest[fid] = dict(note="preview failed: " + why_failed(txt))
                     continue
                 ya, sra = sf.read(str(rendered), dtype="float32", always_2d=True)
                 yb, srb = sf.read(str(dest), dtype="float32", always_2d=True)
@@ -407,7 +434,7 @@ def main():
             continue
         if orig is not None and orig.suffix.lower() == ".rpp":
             manifest[fid] = dict(note="no offline preview: `ab` plays Live sets. Apply this one fix into a new project "
-                                      "(fix --approve) and listen there.")
+                                      "(fix --approve) and listen there, or build the A/B project with `hypnomix abset`.")
         elif fid not in manifest:
             manifest[fid] = dict(note="no offline preview: this kind of fix has no model here. Apply this one fix into "
                                       "a new set (fix --approve) and listen there.")

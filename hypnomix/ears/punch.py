@@ -50,7 +50,8 @@ def main(files):
     ref = None
     rows = []
     for f in files:
-        y, sr = sf.read(f, always_2d=True)
+        from hypnomix.core import dsp
+        y, sr = dsp.load(f)
         s = stats(y, sr, ref)
         if ref is None:
             ref = s["lufs"]

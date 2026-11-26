@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     var web: WKWebView!
     var server: Process?
     var tries = 0
+    var quitting = false       // a quit is under way (the question asked, the server being stopped)
+    var forceQuit = false      // SIGTERM: the updater's helper (it refused while the session was unsaved), a logout, `kill`
 
     func applicationDidFinishLaunching(_ note: Notification) {
         buildMenu()
@@ -19,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         web.navigationDelegate = self
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 800),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "hypnomix"
+        window.title = dawMode ? "Hypnomix" : "hypnomix"
         window.contentView = web
         window.center()
         window.setFrameAutosaveName("HypnomixMain")
@@ -53,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         guard let py = pythonPath() else { askForFolder(); return }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: py)
-        p.arguments = ["-m", "hypnomix.cli", "app", "--no-open", "--port", "\(port)"]
+        p.arguments = ["-m", "hypnomix.cli", "app", "--no-open", "--port", "\(port)"] + (dawMode ? ["--daw"] : [])
         p.environment = serverEnv()
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
@@ -65,6 +67,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         waitForServer()
     }
 
+    // DAW mode: the full download carries the engine kit (Contents/Resources/engine, from the DAW's
+    // `osx_build --hypnomix`; packaging/mac/build_dmg.sh --daw KIT). The app then opens on the DAW view, and the server's
+    // supervisor (hypnomix/app/daw.py) finds Contents/Resources/engine/bin/hypnomix-engine by itself.
+    var dawMode: Bool {
+        // ONE place makes this the full app, the same one the server (daw.app_edition) and the updater look at: the engine
+        // program in Resources/engine/bin. HYPNOMIX_DAW=1 only opens the DAW view first (a developer's switch).
+        let kit = Bundle.main.bundlePath + "/Contents/Resources/engine/bin/hypnomix-engine"
+        return FileManager.default.isExecutableFile(atPath: kit) || ProcessInfo.processInfo.environment["HYPNOMIX_DAW"] == "1"
+    }
+
     func serverEnv() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
         var path = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")   // ffmpeg, rubberband
@@ -74,6 +86,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
             env["PYTHONNOUSERSITE"] = "1"                 // the user's own pip packages stay out of it
         }
         env["PATH"] = path
+        // a developer build (macapp/build.sh --daw KIT) runs the checkout's Python, which can't see the kit from where
+        // it is: name it. The installer's copy needs nothing (the server finds Contents/Resources/engine by itself).
+        let kit = Bundle.main.bundlePath + "/Contents/Resources/engine/bin/hypnomix-engine"
+        if bundled == nil, env["HYPNOMIX_ENGINE"] == nil, FileManager.default.isExecutableFile(atPath: kit) { env["HYPNOMIX_ENGINE"] = kit }
         return env
     }
 
@@ -126,8 +142,118 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         web.loadHTMLString("<body style='font:16px system-ui;padding:40px;color:#555'>\(safe)</body>", baseURL: nil)
     }
 
+    // ---- quitting (⌘Q, closing the window, the Dock's Quit)
+    // In the full app the session in the engine may have changes nobody saved, and stopping the server stops the engine.
+    // So: ask the server (GET /api/daw/state "dirty"); if it is, offer Save / Don't Save / Cancel; then stop the server
+    // and WAIT for it to exit (it stops the engine first, up to about 15 s) before the app itself quits.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if quitting { return .terminateLater }
+        guard let p = server, p.isRunning else { return .terminateNow }        // a server this app did not start is left running
+        quitting = true
+        let stop = { self.stopServer { NSApp.reply(toApplicationShouldTerminate: true) } }
+        if forceQuit || !dawMode { stop(); return .terminateLater }
+        serverIsDirty { dirty in
+            if dirty == nil {                                                  // no answer is not "nothing unsaved"
+                if self.askQuitUnchecked() { stop() } else { self.quitting = false; NSApp.reply(toApplicationShouldTerminate: false) }
+                return
+            }
+            if dirty == false { stop(); return }
+            switch self.askToSave() {
+            case .save:
+                self.saveSession { error in
+                    if error == nil { stop(); return }
+                    if self.askQuitAnyway(error ?? "") { stop() } else { self.quitting = false; NSApp.reply(toApplicationShouldTerminate: false) }
+                }
+            case .discard: stop()
+            case .cancel: self.quitting = false; NSApp.reply(toApplicationShouldTerminate: false)
+            }
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ note: Notification) { server?.terminate() }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    /// Ends the server this app started and calls `done` on the main queue once it has exited (after 25 s it is killed).
+    func stopServer(_ done: @escaping () -> Void) {
+        guard let p = server, p.isRunning else { done(); return }
+        p.terminate()
+        DispatchQueue.global().async {
+            let end = Date().addingTimeInterval(25)
+            while p.isRunning && Date() < end { Thread.sleep(forTimeInterval: 0.1) }
+            if p.isRunning { kill(p.processIdentifier, SIGKILL) }
+            DispatchQueue.main.async { done() }
+        }
+    }
+
+    /// true / false as the server says; nil when it could not be asked (timeout, connection error, not a 200 with a "dirty" answer).
+    func serverIsDirty(_ done: @escaping (Bool?) -> Void) {
+        var req = URLRequest(url: home.appendingPathComponent("api/daw/state"))
+        req.timeoutInterval = 3
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            var dirty: Bool? = nil
+            if (resp as? HTTPURLResponse)?.statusCode == 200, let d = data,
+               let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] { dirty = j["dirty"] as? Bool }
+            DispatchQueue.main.async { done(dirty) }
+        }.resume()
+    }
+
+    enum SaveAnswer { case save, discard, cancel }
+
+    func askToSave() -> SaveAnswer {
+        let a = NSAlert()
+        a.messageText = "Save the session before quitting?"
+        a.informativeText = "It has changes that are not saved. If you don't save, they are lost."
+        a.addButton(withTitle: "Save")
+        a.addButton(withTitle: "Cancel")
+        a.addButton(withTitle: "Don't Save")
+        switch a.runModal() {
+        case .alertFirstButtonReturn: return .save
+        case .alertThirdButtonReturn: return .discard
+        default: return .cancel
+        }
+    }
+
+    func askQuitUnchecked() -> Bool {
+        let a = NSAlert()
+        a.messageText = "Could not check for unsaved changes"
+        a.informativeText = "The session did not answer. If it has changes that are not saved, quitting now loses them."
+        a.addButton(withTitle: "Don't Quit")
+        a.addButton(withTitle: "Quit Anyway")
+        return a.runModal() == .alertSecondButtonReturn
+    }
+
+    func askQuitAnyway(_ why: String) -> Bool {
+        let a = NSAlert()
+        a.messageText = "The session could not be saved"
+        a.informativeText = "\(why)\n\nQuit anyway and lose the unsaved changes?"
+        a.addButton(withTitle: "Don't Quit")
+        a.addButton(withTitle: "Quit Without Saving")
+        return a.runModal() == .alertSecondButtonReturn
+    }
+
+    /// POST /api/daw/save with the page's own token (the page holds it: HX_TOKEN in the DAW view, TOKEN in the other pages).
+    /// `done` gets nil when the server answered ok and the session is clean, otherwise the reason in words.
+    func saveSession(_ done: @escaping (String?) -> Void) {
+        web.evaluateJavaScript("typeof HX_TOKEN !== 'undefined' ? HX_TOKEN : (typeof TOKEN !== 'undefined' ? TOKEN : '')") { tok, _ in
+            guard let token = tok as? String, !token.isEmpty else { done("The window does not hold the page's key right now."); return }
+            var req = URLRequest(url: home.appendingPathComponent("api/daw/save"))
+            req.httpMethod = "POST"
+            req.timeoutInterval = 60
+            req.setValue(token, forHTTPHeaderField: "X-Hypnomix")
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = Data("{}".utf8)
+            URLSession.shared.dataTask(with: req) { data, resp, err in
+                var why: String? = "No answer from the engine."
+                if let err = err { why = err.localizedDescription }
+                else if let d = data, let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
+                    if (resp as? HTTPURLResponse)?.statusCode == 200, (j["dirty"] as? Bool) == false { why = nil }
+                    else { why = (j["error"] as? String) ?? "The engine did not confirm the save." }
+                }
+                DispatchQueue.main.async { done(why) }
+            }.resume()
+        }
+    }
 
     // ---- the page's alert() and confirm()
     func webView(_ w: WKWebView, runJavaScriptAlertPanelWithMessage msg: String, initiatedByFrame f: WKFrameInfo, completionHandler done: @escaping () -> Void) {
@@ -153,15 +279,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
 
     @objc func reload() { web.reload() }
 
+    // ---- File → New Session… / Open Session… (DAW mode): a file panel here, then the DAW view asks the app's
+    // supervisor (POST /api/daw/new or /api/daw/open, with the page's own token) through HX.menuSession
+    var pendingSession: [String: String]?
+
+    @objc func newSession() {
+        let panel = NSSavePanel()
+        panel.title = "New Session"
+        panel.message = "Name the new session. Hypnomix makes a folder of that name here, with the session inside it."
+        panel.prompt = "Create"
+        panel.nameFieldStringValue = "New Song"
+        panel.canCreateDirectories = true
+        panel.directoryURL = FileManager.default.urls(for: .musicDirectory, in: .userDomainMask).first
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        sendSession(["op": "new", "folder": url.deletingLastPathComponent().path, "name": url.lastPathComponent])
+    }
+
+    @objc func openSession() {
+        let panel = NSOpenPanel()
+        panel.title = "Open Session"
+        panel.message = "Choose a session: its .ardour file, or its folder."
+        panel.prompt = "Open"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        sendSession(["op": "open", "path": url.path])
+    }
+
+    func sendSession(_ req: [String: String]) {
+        if web.url?.host == "127.0.0.1", web.url?.path.hasPrefix("/daw") == true { callMenu(req); return }
+        pendingSession = req                                   // another page (or still starting): the DAW view first
+        web.load(URLRequest(url: home.appendingPathComponent("daw/")))
+    }
+
+    func callMenu(_ req: [String: String]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: req), let json = String(data: data, encoding: .utf8) else { return }
+        web.evaluateJavaScript("window.HX && HX.menuSession ? (HX.menuSession(\(json)), true) : false") { ok, _ in
+            if (ok as? Bool) != true { self.alert("The DAW view is not ready yet: try again in a moment.") }
+        }
+    }
+
+    func webView(_ w: WKWebView, didFinish nav: WKNavigation!) {
+        guard let req = pendingSession, w.url?.path.hasPrefix("/daw") == true else { return }
+        pendingSession = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.callMenu(req) }   // its scripts set HX up first
+    }
+
+    func alert(_ text: String) { let a = NSAlert(); a.messageText = text; a.runModal() }
+
     func buildMenu() {
         let main = NSMenu()
         let app = NSMenuItem(); main.addItem(app)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About hypnomix", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: dawMode ? "About Hypnomix" : "About hypnomix", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide hypnomix", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: "Quit hypnomix", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         app.submenu = appMenu
+        if dawMode {
+            let file = NSMenuItem(); main.addItem(file)
+            let fileMenu = NSMenu(title: "File")
+            let n = fileMenu.addItem(withTitle: "New Session…", action: #selector(newSession), keyEquivalent: "n"); n.target = self
+            let o = fileMenu.addItem(withTitle: "Open Session…", action: #selector(openSession), keyEquivalent: "o"); o.target = self
+            file.submenu = fileMenu
+        }
         let edit = NSMenuItem(); main.addItem(edit)
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
@@ -187,5 +369,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
+// SIGTERM (the updater's helper, a logout, `kill`) quits like ⌘Q: the server is told to stop, and it stops the engine
+signal(SIGTERM, SIG_IGN)
+let quitOnTerm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+quitOnTerm.setEventHandler { delegate.forceQuit = true; NSApp.terminate(nil) }   // no question here: the updater refuses while unsaved
+quitOnTerm.resume()
 app.setActivationPolicy(.regular)
 app.run()

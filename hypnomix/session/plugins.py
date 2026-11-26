@@ -8,7 +8,8 @@ and only when you ask (--save).
                                         process with a time limit, so a plug-in that crashes or hangs is
                                         reported and skipped and never stops the run  [extra: plugins]
   hypnomix plugins --save               keep the list in your preferences (tools.plugins and friends)
-  hypnomix plugins --json [OUT.json]    the same as data for an agent (no file name: printed to the screen)
+  hypnomix plugins --json [OUT.json]    the same as data for an agent (no file name: printed to the screen; a file
+                                        is a NEW one in a folder that exists: an existing file is never replaced)
 
 Where it looks (the standard folders of each system; add your own with --folder FORMAT=DIR, repeatable):
   Mac      VST3 /Library/Audio/Plug-Ins/VST3 and ~/Library/...; Audio Units .../Components; CLAP .../CLAP;
@@ -31,7 +32,8 @@ hypnomix". They are marked so a proposal can use them; every other plug-in is li
                                       `colour` and other proposals may name. Entries you added by hand are kept
                                       unless you give --replace
                 tools.plugins_found   every plug-in found: name, format, folder, and (with --check) whether it loaded
-              Without --save nothing is written, and the report says how.
+              Without --save nothing is written, and the report says how. --save always keeps the whole list, so it
+              is refused together with --only or --free (they only narrow what is shown).
 
 Measured from the folders, not from a host: a plug-in in a folder hypnomix doesn't know isn't listed (use
 --folder). Audio Units are read from their Info.plist; the others by their file name.
@@ -74,9 +76,6 @@ FREE = [
     dict(name="CHOWTapeModel", keys=["chowtapemodel", "chowtape"], use="grit"),
     dict(name="Dragonfly Reverb", keys=["dragonflyhallreverb", "dragonflyroomreverb", "dragonflyplatereverb",
                                           "dragonflyearlyreflections", "dragonfly"], use="space"),
-    dict(name="Valhalla Supermassive", keys=["valhallasupermassive", "supermassive"], use="space"),
-    dict(name="Space Modulator", keys=["valhallaspacemodulator", "spacemodulator"], use="movement"),
-    dict(name="Freq Echo", keys=["valhallafreqecho", "freqecho"], use="movement"),
     dict(name="Surge XT", keys=["surgext", "surgextfx", "surgexteffects"], use="instrument"),
     dict(name="SPAN", exact=["span", "voxengospan"], keys=[], use=""),
     dict(name="Youlean Loudness Meter 2", keys=["youleanloudnessmeter"], use=""),
@@ -256,7 +255,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="hypnomix plugins", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="load each VST3 / AU without its window (each in its own process)")
-    ap.add_argument("--timeout", type=int, default=60, help="seconds a plug-in gets to load (default 60)")
+    from hypnomix.core import args as A
+    ap.add_argument("--timeout", type=A.whole(1, 3600), default=60, help="seconds a plug-in gets to load (default 60)")
     ap.add_argument("--only", action="append", default=[], metavar="TEXT", help="only plug-ins whose name contains TEXT")
     ap.add_argument("--free", action="store_true", help="only the plug-ins on the free list")
     ap.add_argument("--no-system", action="store_true", help="do not look in the standard folders, only in --folder ones")
@@ -266,6 +266,15 @@ def main(argv=None):
     ap.add_argument("--prefs-file", help=argparse.SUPPRESS)
     ap.add_argument("--json", nargs="?", const="-", metavar="OUT.json", help="the list as data (no name: printed)")
     a = ap.parse_args(argv)
+    if a.save and (a.only or a.free):          # the saved list is everything found: a narrowed one would drop the rest
+        sys.exit("--save keeps the whole list in your preferences: leave out --only and --free "
+                 "(they only narrow what is shown here)")
+    jfile = Path(a.json).expanduser() if a.json and a.json != "-" else None
+    if jfile is not None:                      # decided before the (slow) scan; nothing of yours is overwritten
+        if jfile.exists():
+            sys.exit(f"{a.json} already exists: give a new file name for --json (nothing is overwritten)")
+        if not jfile.parent.is_dir():
+            sys.exit(f"the folder for {a.json} does not exist: make it first, or give a file in a folder that exists")
 
     extra = []
     for item in a.folder:
@@ -301,6 +310,9 @@ def main(argv=None):
         p, kept = save_prefs(found, a.check, a.replace, a.prefs_file)
         saved = str(p)
         print(f"saved {len(kept)} free plug-in(s) as tools.plugins in {p}", file=out)
+    elif jfile is not None:
+        print(f"your preferences were not changed (only the --json file is written). `--save` keeps this list in your "
+              "preferences so proposals only name what is installed.", file=out)
     else:
         print("nothing was written. `--save` keeps this list in your preferences so proposals only name what is installed.", file=out)
     if a.json:
@@ -310,7 +322,13 @@ def main(argv=None):
         if a.json == "-":
             print(json.dumps(doc, indent=1))
         else:
-            Path(a.json).write_text(json.dumps(doc, indent=1))
+            try:
+                with open(jfile, "x", encoding="utf-8") as fh:           # "x": never replaces a file that appeared meanwhile
+                    fh.write(json.dumps(doc, indent=1))
+            except FileExistsError:
+                sys.exit(f"{a.json} already exists: give a new file name for --json (nothing is overwritten)")
+            except OSError as e:
+                sys.exit(f"could not write {a.json}: {e.strerror or e}")
             print(f"→ {a.json}")
     failed = [r for r in found if r.get("loads") is False]
     if failed:

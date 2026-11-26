@@ -59,7 +59,7 @@ def menus():
     out = {}
     for f in ("hypnomix_probe.jsfx", "hypnomix_main.jsfx"):
         rows = []
-        for line in (JSFX / f).read_text().splitlines():
+        for line in (JSFX / f).read_text(encoding="utf-8").splitlines():
             m = re.match(r"slider\d+:(\w+)=[^<]*<[^{>]*(\{([^}]*)\})?>(-?)", line)
             if m and not m.group(4):                          # "-" = hidden (the slot)
                 rows.append((m.group(1), m.group(3).split(",") if m.group(3) else None))
@@ -110,7 +110,7 @@ def read_cards(path, cards_file=None):
         out["song"] = card
     out["sig"] = signature(names)
     if cards_file and Path(cards_file).exists():
-        kept = json.loads(Path(cards_file).read_text()).get(out["sig"], {})
+        kept = json.loads(Path(cards_file).read_text(encoding="utf-8")).get(out["sig"], {})
         if kept.get("chords"):
             out["song"]["chords"] = kept["chords"]
     return out

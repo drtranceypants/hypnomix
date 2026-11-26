@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hypnomix</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/live.css">
+<script>
+  /* served by the hypnomix app (/daw/): its token goes with every engine call (POST /mcp) and Assistant request */
+  window.HX_TOKEN = "__TOKEN__";
+  window.HX_VERSION = "__VERSION__";           /* the app's own version (the MCP handshake names this client with it) */
+</script>
+<script>
+  /* theme before first paint: the saved choice, else the system's */
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('hx.theme'); } catch (e) {}
+    if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
+</head>
+<body>
+<div class="app" id="app" data-view="arrange">
+
+  <!-- ───────────── top bar ───────────── -->
+  <header class="topbar">
+    <div class="brand" data-info="Hypnomix: the DAW view of the hypnomix app">
+      <svg viewBox="0 0 20 20" class="brand-mark" aria-hidden="true">
+        <circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <circle cx="10" cy="10" r="5.2" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".7"/>
+        <circle cx="10" cy="10" r="1.9" fill="currentColor"/>
+      </svg>
+      <span class="brand-name">Hypnomix</span>
+      <span class="session-name" id="sessionName" data-info="The open session; a dot after the name means it has changes that are not saved">—</span>
+      <span class="demo-badge" id="demoBadge" hidden data-info="This is the made-up practice song: it plays no sound, saves nothing and sends nothing to an engine">Demo song</span>
+    </div>
+
+    <nav class="views seg" id="viewTabs" role="tablist">
+      <button data-view="arrange" data-info="Arrangement view · ⌘1">Arrange</button>
+      <button data-view="session" data-info="Session clip grid · ⌘2">Session</button>
+      <button data-view="mixer" data-info="Mixer · ⌘3">Mixer</button>
+      <button data-view="review" data-info="Hypnomix review loop: scan findings, A/B, approve · ⌘4">Review <span class="badge" id="reviewBadge"></span></button>
+    </nav>
+
+    <div class="transport" id="transport">
+      <div class="field tempo" data-info="Tempo · drag up/down, shift for fine">
+        <span class="num" id="tempo">92.00</span><span class="unit">BPM</span>
+      </div>
+      <div class="field" data-info="Time signature"><span class="num" id="timeSig">4 / 4</span></div>
+      <button class="tbtn" id="btnMetro" data-info="Metronome · K" aria-label="Metronome">
+        <svg viewBox="0 0 16 16"><path d="M5 14h6L9.2 3H6.8L5 14zm3-8.5 4-3" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+      </button>
+      <span class="sep"></span>
+      <button class="tbtn" id="btnStart" data-info="Go to start · Home / Return" aria-label="Go to start">
+        <svg viewBox="0 0 16 16"><path d="M4 3v10M13 3 6 8l7 5z" fill="currentColor"/></svg>
+      </button>
+      <button class="tbtn play" id="btnPlay" data-info="Play / stop · Space" aria-label="Play">
+        <svg viewBox="0 0 16 16" class="i-play"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg>
+      </button>
+      <button class="tbtn" id="btnStop" data-info="Stop · Space while playing; twice returns to start" aria-label="Stop">
+        <svg viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" fill="currentColor"/></svg>
+      </button>
+      <button class="tbtn rec" id="btnRec" data-info="Arm global record · F9" aria-label="Record">
+        <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.6" fill="currentColor"/></svg>
+      </button>
+      <button class="tbtn" id="btnLoop" data-info="Loop · L" aria-label="Loop">
+        <svg viewBox="0 0 16 16"><path d="M3 9.5V7a2 2 0 0 1 2-2h7m-2-2 2 2-2 2M13 6.5V9a2 2 0 0 1-2 2H4m2 2-2-2 2-2" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
+      </button>
+      <span class="sep"></span>
+      <div class="field pos" data-info="Song position (bars . beats . sixteenths) · ←/→ move by bar">
+        <span class="num big" id="posBBT">1. 1. 1</span>
+      </div>
+      <div class="field pos" data-info="Song position (minutes:seconds)"><span class="num" id="posTime">0:00.000</span></div>
+    </div>
+
+    <nav class="appnav seg" id="appNav" data-info="The rest of the hypnomix app: songs and their reviews, the Assistant tab, the Wiki">
+      <a href="/#home" data-info="Songs: scan a song, review each finding, apply what you approve">Songs</a>
+      <a href="/#chat" data-info="The Assistant tab: its settings (provider, key, model) and the whole conversation">Assistant</a>
+      <a href="/#wiki" data-info="Lessons, how-to guides, every command and the FAQ">Wiki</a>
+    </nav>
+
+    <div class="top-right">
+      <div class="cpu" data-info="Engine DSP load (simulated on the demo song)"><span>DSP</span><div class="cpu-bar"><i id="cpuBar"></i></div></div>
+      <button class="btn save" id="btnSave" disabled aria-label="Save" data-info="Save the session · ⌘S (or Ctrl+S)">Save</button>
+      <button class="connect" id="btnConnect" data-info="The Hypnomix engine: its state, Start, Restart, Stop, Open and New. Click for the panel.">
+        <i class="dot"></i><span id="connectLabel">Engine</span>
+      </button>
+      <button class="tbtn" id="btnTheme" data-info="Light / dark theme · ⇧T" aria-label="Theme">
+        <svg viewBox="0 0 16 16"><path d="M8 2.5a5.5 5.5 0 1 0 0 11z" fill="currentColor"/><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+      <button class="tbtn" id="btnHelp" data-info="Keyboard shortcuts · ?" aria-label="Shortcuts">?</button>
+    </div>
+  </header>
+
+  <!-- ───────────── browser ───────────── -->
+  <aside class="browser" id="browser"></aside>
+
+  <!-- ───────────── main view ───────────── -->
+  <main class="main" id="main">
+    <section class="view view-arrange" id="viewArrange"></section>
+    <section class="view view-session" id="viewSession"></section>
+    <section class="view view-mixer" id="viewMixer"></section>
+    <section class="view view-review" id="viewReview"></section>
+  </main>
+
+  <!-- ───────────── device chain ───────────── -->
+  <section class="devices" id="devices"></section>
+
+  <!-- ───────────── assistant dock ───────────── -->
+  <section class="assistant" id="assistant"></section>
+
+  <!-- ───────────── status / info view ───────────── -->
+  <footer class="status">
+    <span class="info" id="infoLine">Hover any control to see what it does.</span>
+    <span class="status-engine" id="engineStatus">Looking for the engine…</span>
+    <span class="status-sel" id="selStatus"></span>
+  </footer>
+</div>
+
+<!-- shown while there is no engine and the demo song was not chosen: says so, and what to do -->
+<section class="noeng" id="noEngine" role="region" aria-labelledby="noEngineTitle" hidden>
+  <div class="noeng-box">
+    <h2 id="noEngineTitle">Looking for the engine…</h2>
+    <p id="noEngineBody"></p>
+    <pre id="noEngineErr" class="eng"></pre>
+    <div class="row" id="noEngineBtns"></div>
+  </div>
+</section>
+
+<div class="overlay" id="helpOverlay" hidden></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="js/util.js"></script>
+<script src="js/mock.js"></script>
+<script src="js/mcp.js"></script>
+<script src="js/store.js"></script>
+<script src="js/regions.js"></script>
+<script src="js/transport.js"></script>
+<script src="js/live.js"></script>
+<script src="js/arrange.js"></script>
+<script src="js/clips.js"></script>
+<script src="js/mixer.js"></script>
+<script src="js/devices.js"></script>
+<script src="js/browser.js"></script>
+<script src="js/review.js"></script>
+<script src="js/assistant.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

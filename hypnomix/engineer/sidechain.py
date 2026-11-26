@@ -51,6 +51,7 @@ from scipy.signal import resample_poly
 
 from hypnomix.core import dsp
 from hypnomix.core.paths import out_at
+from hypnomix.core import args as A
 
 SR = 22050          # analysis rate: ducking lives in the low end and the envelope, not in the air band
 BLOCK = 16          # gain-computer block (0.7 ms at 22.05 kHz)
@@ -177,7 +178,8 @@ def find_sidechains(root):
 
 # ---------------------------------------------------------------- audio
 def load_mono(path):
-    y, sr = sf.read(str(path), always_2d=True, dtype="float64")
+    from hypnomix.core import dsp
+    y, sr = dsp.load(path)                    # the checked loader: a broken file ends in one sentence
     return to_sr(y.mean(axis=1), sr)
 
 
@@ -789,7 +791,7 @@ def main():
     ap.add_argument("--host", help="only compressors on tracks whose name contains this")
     ap.add_argument("--use", action="append", default=[], metavar="TRACK=FILE",
                     help="audio file for a track (e.g. a stem from `hypnomix separate`); repeatable")
-    ap.add_argument("--trigger"); ap.add_argument("--target"); ap.add_argument("--bpm", type=float)
+    ap.add_argument("--trigger"); ap.add_argument("--target"); ap.add_argument("--bpm", type=A.number(20, 400))
     ap.add_argument("--out")
     ap.add_argument("--apply", metavar="OUT.als", help="write the suggestions to this new set")
     ap.add_argument("--glue-to-compressor", action="store_true",

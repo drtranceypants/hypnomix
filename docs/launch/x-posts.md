@@ -12,7 +12,7 @@ I built a mixing and mastering engineer for Ableton Live, REAPER and Ardour.
 
 Hand it raw stems → it cleans them, mixes them, masters the song, and writes down why it made every move.
 
-Free, open source, 94 commands, and it works with Claude Code.
+Free, open source, 96 commands, and it works with Claude Code.
 
 github.com/drtranceypants/hypnomix
 

@@ -381,16 +381,16 @@ def main():
     for f in fs:
         print(f"  {f['id']:<10} {f['where']:<12} {f['track']}: {f['problem'].split(': ', 1)[-1][:110]}")
     if a.json:
-        Path(a.json).write_text(json.dumps({"tool": "borrow", "set": str(src), "findings": fs, "meta": meta}, indent=1, default=str))
+        Path(a.json).write_text(json.dumps({"tool": "borrow", "set": str(src), "findings": fs, "meta": meta}, indent=1, default=str), encoding="utf-8")
     if a.plan:
         from hypnomix.workflow import plan as PL
         od = PL.scan_dir(a.plan if isinstance(a.plan, str) else None, src, " (borrow)")
         PL.write(od, "borrow", src, fs, [f"borrow: originals {', '.join(meta['originals'])}",
                                          "borrow: every loop is an OPTION on a new switched-off track"])
         sj = Path(od) / "scan.json"
-        info = json.loads(sj.read_text()) if sj.exists() else {}
+        info = json.loads(sj.read_text(encoding="utf-8")) if sj.exists() else {}
         info.update(mode="set", mix=a.mix, borrow_from=meta["originals"])
-        sj.write_text(json.dumps(info, indent=1))
+        sj.write_text(json.dumps(info, indent=1), encoding="utf-8")
     if a.apply:
         if Path(a.apply).resolve() == src.resolve():
             sys.exit("refusing to overwrite the set; give a new file name")

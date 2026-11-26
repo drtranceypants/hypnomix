@@ -193,14 +193,15 @@ def tune_takes(p, f, key, scan, sd, log, failed):
             dest = tdir / f"{safe_name(take.stem)} (tuned {k}).wav"
         sec0 = lambda c: (c.take.section[0] if c.take.section else 0.0)
         spans = [(c.start, c.end, sec0(c) + c.take.offset, sec0(c) + c.take.offset + c.length * c.take.rate) for c in clips]
-        npz = tdir / f"{safe_name(take.stem)} (chords).npz"
+        npz = tdir / f"{safe_name(take.stem)} (chords{'' if k == 1 else f' {k}'}).npz"      # follows the tuned file's number
         CHD.save(npz, CHD.take_time(song_ch, spans, int(sf.info(str(take)).duration / CHD.HOP_S) + 1))
         code, txt = hx("tune", take, dest, "--key", key, "--chords", npz, *(["--ref", scan["ref"]] if scan.get("ref") else []))
         ok = code == 0 and dest.exists()
         log += [f"### tune {f['track']}, take {take.name}: {'written ' + dest.name if ok else 'FAILED'}", "",
                 "```", txt.strip()[-1200:], "```", ""]
         if not ok:
-            failed.append(f"{f['id']}: tune failed on take {take.name}")
+            from hypnomix.workflow.fix import last_line
+            failed.append(f"{f['id']}: tune failed on take {take.name}: {last_line(txt)}")
             continue
         for c in clips:
             E.add_take(c, dest, f"{take.stem} (tuned)")
@@ -285,7 +286,7 @@ def verify_clips(out, sd, items, renamed=None):
             + (f"; smaller but still measured: {', '.join(sizes)} (a gentle fix by design: listen there, and approve "
                "again with a note like `amount=0.8` for more)" if still else ""))
     print("verify     " + line[2:])
-    (Path(sd) / "raw" / "verify.json").write_text(json.dumps({"still": still, "found": now}, indent=1, default=str))
+    (Path(sd) / "raw" / "verify.json").write_text(json.dumps({"still": still, "found": now}, indent=1, default=str), encoding="utf-8")
     return ["### verify (the new project, measured again)", "", line, ""]
 
 
@@ -299,8 +300,11 @@ def verify_timing(out, sd, items, renamed=None):
     tracks = rn(ro.get("tracks") or sorted({f["track"] for f in items}))
     tr, issues, notes = TP.analyse(p, tracks, False, rn(ro.get("melodic", [])), rn(ro.get("bass", [])),
                                    rn(ro.get("drums", [])))
-    left = {(i["track"], TP.TM.where(i["beat"])) for i in issues}
-    still = [f["id"] for f in items if ((renamed or {}).get(f["track"], f["track"]), f["where"]) in left]
+    from hypnomix.workflow.fix import timing_still, where_beats
+    # a nudge moves the hit, so its position text is not the same any more: pair each approved hit with the nearest
+    # remaining one on its track instead of comparing the text
+    still = timing_still([(f["id"], (renamed or {}).get(f["track"], f["track"]), where_beats(f["where"])) for f in items],
+                         [(i["track"], where_beats(TP.TM.where(i["beat"]))) for i in issues])
     line = (f"- timing: {len(items) - len(still)} of {len(items)} approved hits no longer out of time"
             + (f"; still measured: {', '.join(still)} (a partial move by design: listen there)" if still else ""))
     print("verify     " + line[2:])

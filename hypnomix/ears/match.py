@@ -197,9 +197,9 @@ def main():
     outdir = out_at(a.out, "match", f"{Path(a.mix).stem} vs {Path(a.reference).stem}")
     (outdir / "MATCH.md").write_text(f"# Match: {Path(a.mix).name} vs {Path(a.reference).name}\n\n"
                                      f"Loudest ~{int(WINDOW_S)} s of each, at matched loudness.\n\n{t}\n\n"
-                                     "## Proposals\n\n" + "\n".join(lines) + "\n")
+                                     "## Proposals\n\n" + "\n".join(lines) + "\n", encoding="utf-8")
     if a.json:
-        Path(a.json).write_text(json.dumps(r, indent=2))
+        Path(a.json).write_text(json.dumps(r, indent=2), encoding="utf-8")
     print(f"\nreport: {outdir / 'MATCH.md'}", file=sys.stderr)
 
 

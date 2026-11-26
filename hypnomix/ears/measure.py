@@ -6,8 +6,9 @@ Writes one JSON per file and prints a short summary.
 
 A file under about 3 seconds gets every measurement that is possible and a plain note about the rest
 (the short-term loudness curve needs 3 s). A silent file is reported as silent. Exit code: 0 when every
-file was measured, 1 if a file was silent, 2 if a file could not be read as audio; a batch still measures
-the other files first.
+file was measured, 1 if a file was silent, 2 if a file could not be read as audio (that includes a file with
+no samples in it, more than five channels, or broken NaN / infinite samples: it says which); a batch still
+measures the other files first.
 """
 from hypnomix.core.paths import out_at
 import argparse, json, re, subprocess, sys, warnings
@@ -32,7 +33,7 @@ def ffmpeg_ebur128(path):
     try:
         p = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path),
                             "-af", "ebur128=peak=true", "-f", "null", "-"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
     except FileNotFoundError:                       # ffmpeg not installed: the pyloudnorm figures still work
         return {"integrated_lufs": None, "lra_lu": None, "true_peak_dbtp": None}
     summary = p.stderr[p.stderr.rfind("Summary:"):]
@@ -151,7 +152,7 @@ def main():
                 print(f"FAIL {f}: {type(e).__name__}: {e}", file=sys.stderr)
             unreadable += 1
             continue
-        (outdir / (Path(f).stem + ".json")).write_text(json.dumps(m, indent=2))
+        (outdir / (Path(f).stem + ".json")).write_text(json.dumps(m, indent=2), encoding="utf-8")
         if m.get("silent"):
             silent += 1
             print(f"{Path(f).name}: SILENT: every sample is zero, so there is nothing to measure", file=sys.stderr)

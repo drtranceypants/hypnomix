@@ -34,8 +34,9 @@ Your own plug-ins are read and listed, never needed.
 ## 0. Try it on a demo project
 
 ```bash
-hypnomix demo --kind reaper       # → hypnomix-out/demo/Hypnomix Demo Song/Hypnomix Demo Song.rpp, the stems, DEMO.md
-hypnomix scan "hypnomix-out/demo/Hypnomix Demo Song/Hypnomix Demo Song.rpp" --key "A minor"
+hypnomix demo --kind reaper       # → hypnomix-out/demo/Hypnomix Demo Song/Hypnomix Demo Song.rpp, the stems, Instrumental.wav, DEMO.md
+hypnomix scan "hypnomix-out/demo/Hypnomix Demo Song/Hypnomix Demo Song.rpp" --key "A minor" \
+  --backing "hypnomix-out/demo/Hypnomix Demo Song/Instrumental.wav"
 ```
 
 A 40-second synthetic song (nothing downloaded, nothing recorded) with six problems put in on purpose: a click where

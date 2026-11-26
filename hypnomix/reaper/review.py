@@ -23,6 +23,7 @@ import sys
 import time
 import urllib.request
 
+from hypnomix.core import loopback
 from hypnomix.reaper.client import Reaper, ReaperError
 
 DEFAULT_PORT = 8791
@@ -48,7 +49,8 @@ def app_url():
 def app(path, body=None, timeout=5):
     req = urllib.request.Request(app_url() + path, data=json.dumps(body).encode() if body is not None else None,
                                  headers={"Content-Type": "application/json"})
-    return json.loads(urllib.request.urlopen(req, timeout=timeout).read())
+    with loopback.urlopen(req, timeout=timeout) as r:      # this computer only: never through a proxy variable
+        return json.loads(r.read())
 
 
 class Panel:

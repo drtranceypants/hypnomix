@@ -23,6 +23,8 @@ Options, never one rule:
     --min-move DB          leave a part alone when its move is smaller than this (default 0.5)
     --max-move DB          never move a part further than this (default 12)
 
+A big folder is read one stem at a time (see `hypnomix masking -h`), so memory does not grow with the number of stems.
+
 Usage:
     hypnomix balance STEMS_DIR [options]                  report only
     hypnomix balance STEMS_DIR --plan [SCAN_DIR] [options]   the moves become findings for the normal review;
@@ -36,8 +38,8 @@ from pathlib import Path
 
 import numpy as np
 
-from hypnomix.core import dsp
-from hypnomix.core.paths import out_at
+from hypnomix.core import args as A, dsp
+from hypnomix.core.paths import out_at, check_out
 from hypnomix.engineer import roles, masking
 
 ANCHOR_LUFS = -20.0        # where the anchor part sits (before the optional shift to 0 dB)
@@ -46,7 +48,7 @@ ANCHOR_LUFS = -20.0        # where the anchor part sits (before the optional shi
 # ---------------------------------------------------------------- measuring
 def measure(folder):
     """-> (stems [(name, y)], sr, rows {name: dict(role, how, lufs)})."""
-    stems, sr = masking.load_stems(folder)
+    stems, sr = masking.load_stems_saying(folder, lazy=True)       # a big folder stays on disk, one stem in memory at a time
     if not stems:
         raise SystemExit(f"no audio files in {folder}")
     cls = roles.classify_all(stems, sr)
@@ -65,16 +67,25 @@ def parse_offsets(text):
         k = k.strip().lower().replace(" ", "_")
         if k not in roles.ROLES:
             raise SystemExit(f"unknown role {k!r}; roles: {', '.join(roles.ROLES)}")
-        out[k] = float(v)
+        out[k] = A.check(v.strip(), f"--offset {k}", -60, 60)
     return out
 
 
 def band_lufs(stems, sr, gains, skip):
     """Loudness (while playing) of every stem not in `skip`, summed with its gain."""
-    parts = [y * dsp.undb(gains.get(n, 0.0)) for n, y in stems if n not in skip]
-    if not parts:
+    acc = None                      # added up one stem at a time, in the same order (no list of every stem's copy)
+    for n, y in masking.only(stems, [n for n in masking.names_of(stems) if n not in skip]):
+        part = y * dsp.undb(gains.get(n, 0.0))
+        if acc is None:
+            acc = part
+        elif acc.shape == part.shape and acc.dtype == part.dtype:
+            acc += part                                     # the usual case: add in place, no new copy
+        else:
+            acc = acc + part                                # a mono stem beside a stereo one (either order): broadcast, as sum() did
+        del part
+    if acc is None:
         return None
-    return float(dsp.active_lufs(sum(parts), sr))
+    return float(dsp.active_lufs(acc, sr))
 
 
 def propose(stems, sr, rows, anchor=None, vocal_over_band=None, offsets=None, keep_level=False,
@@ -82,7 +93,7 @@ def propose(stems, sr, rows, anchor=None, vocal_over_band=None, offsets=None, ke
     """The fader moves. Returns dict(moves=[...], anchor=name, vocal=dict(before, after, wanted), notes=[...])."""
     offsets = offsets or {}
     notes = []
-    names = [n for n, _ in stems]
+    names = masking.names_of(stems)
     if anchor:
         hit = next((n for n in names if n.lower() == anchor.lower()), None) or \
             next((n for n in names if anchor.lower() in n.lower()), None)
@@ -155,7 +166,7 @@ def load_profile():
     try:
         from hypnomix.core.paths import PROFILE
         p = Path(PROFILE)
-        return json.loads(p.read_text()) if p.exists() else None
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
     except Exception:
         return None
 
@@ -206,7 +217,7 @@ def render(folder, gains, out, keys=None, name=None):
     """Write each moved stem (fader move baked in) and a trial mix into `out`. `gains`: {stem: dB}; `keys`: only these.
     Returns the list of files written. Never overwrites."""
     out = Path(out)
-    stems, sr = masking.load_stems(folder)
+    stems, sr = masking.load_stems_saying(folder, say=False, lazy=True)
     use = {n: g for n, g in gains.items() if keys is None or n in keys}
     if not use:
         raise SystemExit("no approved moves to render")
@@ -255,11 +266,11 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("folder")
     ap.add_argument("--anchor")
-    ap.add_argument("--vocal-over-band", type=float, metavar="DB")
+    ap.add_argument("--vocal-over-band", type=A.number(-60, 60), metavar="DB")
     ap.add_argument("--offset", default="", metavar="ROLE=DB,...")
     ap.add_argument("--keep-level", action="store_true")
-    ap.add_argument("--min-move", type=float, default=0.5)
-    ap.add_argument("--max-move", type=float, default=12.0)
+    ap.add_argument("--min-move", type=A.number(0, 60), default=0.5)
+    ap.add_argument("--max-move", type=A.number(above=0, hi=60), default=12.0)
     ap.add_argument("--plan", nargs="?", const=True, metavar="SCAN_DIR",
                     help="change nothing: every fader move becomes a finding for review")
     ap.add_argument("--render", action="store_true", help="render every proposed move into new files")
@@ -267,10 +278,14 @@ def main(argv=None):
     ap.add_argument("--out")
     a = ap.parse_args(argv)
     folder = Path(a.folder)
+    if not folder.exists():
+        sys.exit(f"{folder}: no such folder (looked in {Path.cwd()}); check the spelling")
     if not folder.is_dir():
-        sys.exit(f"{folder} is not a folder of stems")
+        sys.exit(f"{folder} is a file, not a folder of stems")
+    if a.render or a.only or a.plan:
+        check_out(a.plan if isinstance(a.plan, str) else a.out)  # an unwritable folder ends here, not after the render
     if a.only:
-        gains = json.loads(Path(a.only).read_text())
+        gains = json.loads(Path(a.only).read_text(encoding="utf-8", errors="replace"))
         od = out_at(a.out, "balance", folder.resolve().name)
         files = render(folder, gains, od)
         print(f"{len(files) - 1} moved stem(s) written to {od}")
@@ -289,14 +304,14 @@ def main(argv=None):
                 "approved moves are rendered into fixed/balance/ as new stems plus a trial mix"]
         PL.write(sd, "balance", folder, plan_findings(folder, res, options, rng), note, time.time() - t0)
         (sd / "raw").mkdir(exist_ok=True)
-        (sd / "raw" / "balance.md").write_text(text)
+        (sd / "raw" / "balance.md").write_text(text, encoding="utf-8")
         print(text)
         return
     print(text)
     if a.render:
         od = out_at(a.out, "balance", folder.resolve().name)
         files = render(folder, {m["name"]: m["gain_db"] for m in res["moves"] if not m["silent"] and not m["small"]}, od)
-        (od / "BALANCE.md").write_text(text)
+        (od / "BALANCE.md").write_text(text, encoding="utf-8")
         print(f"→ {od}")
     else:
         print("Report only: nothing was written. `--plan` sends the moves to the review; `--render` writes new files.")

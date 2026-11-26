@@ -776,10 +776,16 @@ class AlignPort(unittest.TestCase):
         seen = []
 
         class Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
             def read(self):
                 return b"{}"
         with mock.patch.dict(os.environ, {"HYPNOMIX_PORT": "9124"}), \
-                mock.patch("urllib.request.urlopen", side_effect=lambda req, timeout=0: seen.append(req.full_url) or Resp()):
+                mock.patch("hypnomix.core.loopback.urlopen", side_effect=lambda req, timeout=0: seen.append(req.full_url) or Resp()):   # this computer only, never through a proxy
             self.A.app("/api/align/state")
         self.assertEqual(seen, ["http://127.0.0.1:9124/api/align/state"])
 

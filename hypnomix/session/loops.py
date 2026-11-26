@@ -22,6 +22,7 @@ Check the tempo map first (`hypnomix tempomap TAKE.wav --click CHECK.wav`): loop
 lines are useless. Pass the same --downbeat / --double / --half here. Close the set before --apply.
 """
 import argparse, copy, json, math, re, sys
+from hypnomix.core import args as A
 from pathlib import Path
 
 import numpy as np
@@ -143,7 +144,7 @@ def main():
     ap = argparse.ArgumentParser(prog="hypnomix loops", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("source"); ap.add_argument("--track"); ap.add_argument("--clip", type=int)
     ap.add_argument("--bars", type=int, nargs="+", default=[1, 2, 4, 8]); ap.add_argument("--top", type=int, default=8)
-    ap.add_argument("--bpb", type=int, default=4); ap.add_argument("--bpm", type=float)
+    ap.add_argument("--bpb", type=int, default=4); ap.add_argument("--bpm", type=A.number(20, 400))
     ap.add_argument("--downbeat", type=float); ap.add_argument("--double", action="store_true"); ap.add_argument("--half", action="store_true")
     ap.add_argument("--out"); ap.add_argument("--apply", metavar="NEW.als")
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
@@ -189,8 +190,8 @@ def main():
         print(f"{c['n']:>2}  {g:<10} {c['bars']:>4} {c['bar']:>8} {c['bpm']:>6.1f} {c['steady']:>6.2f} {c['seam']:>5.2f}  {c['score']:.2f}")
         md.append(f"| {c['n']} | {g} | {c['bars']} | {c['bar']} | {int(c['start'] // 60)}:{c['start'] % 60:04.1f} | {c['bpm']:.1f} | "
                   f"{c['steady']:.2f} | {c['seam']:.2f} | {c['score']:.2f} |")
-    (od / "LOOPS.md").write_text("\n".join(md) + "\n")
-    (od / "loops.json").write_text(json.dumps(dict(file=str(audio), bpm=round(m["bpm"], 2), loops=picked), indent=1))
+    (od / "LOOPS.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    (od / "loops.json").write_text(json.dumps(dict(file=str(audio), bpm=round(m["bpm"], 2), loops=picked), indent=1), encoding="utf-8")
     print(f"\n→ {od}")
     if not a.apply:
         if is_set:

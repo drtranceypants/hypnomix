@@ -182,7 +182,7 @@ def verify(r, plan, ctx, bars=8, rounds=3):
     fx, gain, ceiling = lim["_fx"], lim["gain_db"], lim["ceiling_db"]
     lines = [f"Calibrating on bars {bar}-{bar + bars - 1} ({t0:.1f}-{t0 + secs:.1f} s): the offline master measures "
              f"{want:.1f} LUFS there."]
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
         for k in range(rounds):
             wav = r.render_master(t0, t0 + secs, Path(td) / f"verify-{k}.wav")
             y, sr = dsp.load(wav)
@@ -226,7 +226,7 @@ def verify(r, plan, ctx, bars=8, rounds=3):
 def build_strips(r, recipe, dry=False):
     import json
     import re
-    rec = json.loads(Path(recipe).read_text())
+    rec = json.loads(Path(recipe).read_text(encoding="utf-8", errors="replace"))
     tracks = {} if dry else {re.sub(r"^\d+\s*", "", t["name"]).lower(): t["index"] for t in r.tracks()}
     out = []
     for t in rec["tracks"]:

@@ -150,7 +150,7 @@ def take(live, a, folder, label):
             meta["mix"] = live.snapshot()
         except Exception as e:                                  # snapshot is a bonus, never fatal
             meta["mix_error"] = str(e)
-    wav.with_suffix(".json").write_text(json.dumps(meta, indent=1))
+    wav.with_suffix(".json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
     return wav, m
 
 
@@ -202,7 +202,7 @@ def main():
     folder = out_dir("loop", section)
     prof = profile_ranges()
     prev_json = sorted(folder.glob("*.json"))
-    prev = json.loads(prev_json[-1].read_text())["metrics"] if prev_json else None
+    prev = json.loads(prev_json[-1].read_text(encoding="utf-8"))["metrics"] if prev_json else None
 
     for c in a.set:
         run_cmd(live, c)

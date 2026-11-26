@@ -41,7 +41,7 @@ def profile_ranges(path=PROFILE):
     p = Path(path)
     if not p.exists():
         return {}
-    return {k: v for k, v in json.loads(p.read_text())["audio"].items() if isinstance(v, dict)}
+    return {k: v for k, v in json.loads(p.read_text(encoding="utf-8"))["audio"].items() if isinstance(v, dict)}
 
 
 def build(files, sets=(), name="mine", out=PROFILE):
@@ -69,8 +69,8 @@ def build(files, sets=(), name="mine", out=PROFILE):
             "send_a_db_when_used": stats(sends), "devices_by_set_count": dict(dev.most_common(60)),
             "master_chains": {s["name"]: [d for d in s["master_chain"] if not d.startswith(">")] for s in sess}}
     out = Path(out); out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(prof, indent=2))
-    out.with_suffix(".md").write_text(to_markdown(prof))
+    out.write_text(json.dumps(prof, indent=2), encoding="utf-8")
+    out.with_suffix(".md").write_text(to_markdown(prof), encoding="utf-8")
     return out
 
 
@@ -98,7 +98,7 @@ def main():
         print(build(a.files, a.sets, a.name, a.out))
     else:
         md = PROFILE.with_suffix(".md")
-        print(md.read_text() if md.exists() else "no profile yet: hypnomix profile build song1.wav song2.wav …")
+        print(md.read_text(encoding="utf-8") if md.exists() else "no profile yet: hypnomix profile build song1.wav song2.wav …")
 
 
 if __name__ == "__main__":

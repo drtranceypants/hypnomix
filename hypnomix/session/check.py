@@ -16,6 +16,8 @@ What it checks (errors make the exit code 1; warnings don't):
 
 It cannot prove Live will open the set: only Live can. It catches the ways a script usually breaks one.
 `hypnomix fix` runs it on every set it writes.
+It reads Live sets (.als) only. Given a REAPER project or an Ardour session it says so in one sentence: `fix` reads
+those back itself after writing them and lists any problem in fix-log.md.
 """
 import argparse, gzip, json, math, sys
 from hypnomix.core.gz import read_gz
@@ -30,6 +32,10 @@ def is_pointee(tag):
 def load_root(path):
     try:
         raw = read_gz(path)
+    except FileNotFoundError:
+        return None, f"no such file: {path}"
+    except IsADirectoryError:
+        return None, f"{path} is a folder, not a Live set (.als file)"
     except OSError as e:
         return None, f"not a gzip file ({e})"
     except ValueError as e:                       # unpacks past the size cap
@@ -249,9 +255,13 @@ def main():
     ap.add_argument("--allow-removed", action="store_true",
                     help="tracks were retired or merged on purpose (order --retire-off, consolidate): missing tracks are info")
     a = ap.parse_args()
+    from hypnomix.core import args as A
+    A.live_set_only(a.als, "check")                 # a REAPER / Ardour project is not "an error in a Live set"
+    if a.against:
+        A.live_set_only(a.against, "check")
     err, warn, facts = check(a.als, a.against, allow_removed=a.allow_removed)
     if a.json:
-        Path(a.json).write_text(json.dumps(dict(set=str(a.als), ok=not err, errors=err, warnings=warn, facts=facts), indent=1))
+        Path(a.json).write_text(json.dumps(dict(set=str(a.als), ok=not err, errors=err, warnings=warn, facts=facts), indent=1), encoding="utf-8")
     name = Path(a.als).name
     print(f"{name}: {facts.get('creator') or '?'}; {facts.get('tracks', 0)} tracks, {facts.get('audio_clips', 0)} "
           f"audio clips, {facts.get('envelopes', 0)} automation envelopes, {facts.get('targets', 0)} targets")

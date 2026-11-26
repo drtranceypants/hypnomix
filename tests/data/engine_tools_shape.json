@@ -1,0 +1,2267 @@
+{
+ "note": "The SHAPE of the Hypnomix engine's tools/list (111 tools): each tool's name, its arguments (name, type, limits) and the LENGTH of its texts. Made from the engine's list; none of the engine's own wording is kept here. tests/test_daw_assistant.py rebuilds a stand-in list from it (filler words of the same length) to check the Assistant's rules against the real names and sizes. Regenerate it when the engine's tool list changes.",
+ "tools": [
+  {
+   "name": "hello_world",
+   "desc_len": 30,
+   "properties": {
+    "name": {
+     "type": "string"
+    }
+   },
+   "required": [],
+   "title_len": 11
+  },
+  {
+   "name": "session_get_info",
+   "desc_len": 40,
+   "properties": {},
+   "required": [],
+   "title_len": 12
+  },
+  {
+   "name": "session_save",
+   "desc_len": 58,
+   "properties": {
+    "snapshotName": {
+     "type": "string"
+    },
+    "switchToSnapshot": {
+     "type": "boolean"
+    }
+   },
+   "required": [],
+   "title_len": 12
+  },
+  {
+   "name": "session_undo",
+   "desc_len": 49,
+   "properties": {
+    "count": {
+     "type": "integer",
+     "minimum": 1
+    }
+   },
+   "required": [],
+   "title_len": 4
+  },
+  {
+   "name": "session_redo",
+   "desc_len": 49,
+   "properties": {
+    "count": {
+     "type": "integer",
+     "minimum": 1
+    }
+   },
+   "required": [],
+   "title_len": 4
+  },
+  {
+   "name": "session_rename",
+   "desc_len": 23,
+   "properties": {
+    "newName": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "newName"
+   ],
+   "title_len": 14
+  },
+  {
+   "name": "session_quick_snapshot",
+   "desc_len": 69,
+   "properties": {
+    "switchToSnapshot": {
+     "type": "boolean"
+    }
+   },
+   "required": [],
+   "title_len": 14
+  },
+  {
+   "name": "session_store_mixer_scene",
+   "desc_len": 27,
+   "properties": {
+    "index": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "index"
+   ],
+   "title_len": 17
+  },
+  {
+   "name": "session_recall_mixer_scene",
+   "desc_len": 28,
+   "properties": {
+    "index": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "index"
+   ],
+   "title_len": 18
+  },
+  {
+   "name": "transport_get_state",
+   "desc_len": 55,
+   "properties": {},
+   "required": [],
+   "title_len": 15
+  },
+  {
+   "name": "transport_locate_sample",
+   "desc_len": 45,
+   "properties": {
+    "sample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "sample"
+   ],
+   "title_len": 26
+  },
+  {
+   "name": "transport_locate_bbt",
+   "desc_len": 88,
+   "properties": {
+    "bar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "beat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "bar",
+    "beat"
+   ],
+   "title_len": 28
+  },
+  {
+   "name": "transport_goto_start",
+   "desc_len": 78,
+   "properties": {
+    "andRoll": {
+     "type": "boolean"
+    }
+   },
+   "required": [],
+   "title_len": 21
+  },
+  {
+   "name": "transport_goto_end",
+   "desc_len": 29,
+   "properties": {},
+   "required": [],
+   "title_len": 19
+  },
+  {
+   "name": "transport_prev_marker",
+   "desc_len": 60,
+   "properties": {},
+   "required": [],
+   "title_len": 25
+  },
+  {
+   "name": "transport_next_marker",
+   "desc_len": 56,
+   "properties": {},
+   "required": [],
+   "title_len": 21
+  },
+  {
+   "name": "transport_loop_toggle",
+   "desc_len": 80,
+   "properties": {
+    "enabled": {
+     "type": "boolean"
+    }
+   },
+   "required": [],
+   "title_len": 21
+  },
+  {
+   "name": "transport_loop_location_samples",
+   "desc_len": 47,
+   "properties": {
+    "startSample": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "endSample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "startSample",
+    "endSample"
+   ],
+   "title_len": 34
+  },
+  {
+   "name": "transport_loop_location_bbt",
+   "desc_len": 39,
+   "properties": {
+    "startBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "startBeat": {
+     "type": "number",
+     "minimum": 1
+    },
+    "endBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "endBeat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "startBar",
+    "startBeat",
+    "endBar",
+    "endBeat"
+   ],
+   "title_len": 35
+  },
+  {
+   "name": "transport_set_record_enable",
+   "desc_len": 49,
+   "properties": {
+    "enabled": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "enabled"
+   ],
+   "title_len": 24
+  },
+  {
+   "name": "transport_set_speed",
+   "desc_len": 52,
+   "properties": {
+    "speed": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "speed"
+   ],
+   "title_len": 19
+  },
+  {
+   "name": "transport_play",
+   "desc_len": 25,
+   "properties": {},
+   "required": [],
+   "title_len": 14
+  },
+  {
+   "name": "transport_stop",
+   "desc_len": 24,
+   "properties": {},
+   "required": [],
+   "title_len": 14
+  },
+  {
+   "name": "markers_list",
+   "desc_len": 54,
+   "properties": {},
+   "required": [],
+   "title_len": 12
+  },
+  {
+   "name": "markers_add",
+   "desc_len": 186,
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "type": {
+     "type": "string",
+     "enum": [
+      "mark",
+      "section",
+      "scene",
+      "arrangement"
+     ]
+    },
+    "bar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "beat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [],
+   "title_len": 10
+  },
+  {
+   "name": "markers_add_range_samples",
+   "desc_len": 53,
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "startSample": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "endSample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "startSample",
+    "endSample"
+   ],
+   "title_len": 27
+  },
+  {
+   "name": "markers_add_range_bbt",
+   "desc_len": 45,
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "startBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "startBeat": {
+     "type": "number",
+     "minimum": 1
+    },
+    "endBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "endBeat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "startBar",
+    "startBeat",
+    "endBar",
+    "endBeat"
+   ],
+   "title_len": 28
+  },
+  {
+   "name": "markers_set_auto_loop_samples",
+   "desc_len": 52,
+   "properties": {
+    "startSample": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "endSample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "startSample",
+    "endSample"
+   ],
+   "title_len": 30
+  },
+  {
+   "name": "markers_set_auto_loop_bbt",
+   "desc_len": 44,
+   "properties": {
+    "startBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "startBeat": {
+     "type": "number",
+     "minimum": 1
+    },
+    "endBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "endBeat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "startBar",
+    "startBeat",
+    "endBar",
+    "endBeat"
+   ],
+   "title_len": 31
+  },
+  {
+   "name": "markers_hide_auto_loop",
+   "desc_len": 72,
+   "properties": {
+    "hidden": {
+     "type": "boolean"
+    }
+   },
+   "required": [],
+   "title_len": 20
+  },
+  {
+   "name": "markers_set_auto_punch_samples",
+   "desc_len": 53,
+   "properties": {
+    "startSample": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "endSample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "startSample",
+    "endSample"
+   ],
+   "title_len": 31
+  },
+  {
+   "name": "markers_set_auto_punch_bbt",
+   "desc_len": 45,
+   "properties": {
+    "startBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "startBeat": {
+     "type": "number",
+     "minimum": 1
+    },
+    "endBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "endBeat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "startBar",
+    "startBeat",
+    "endBar",
+    "endBeat"
+   ],
+   "title_len": 32
+  },
+  {
+   "name": "markers_hide_auto_punch",
+   "desc_len": 73,
+   "properties": {
+    "hidden": {
+     "type": "boolean"
+    }
+   },
+   "required": [],
+   "title_len": 21
+  },
+  {
+   "name": "markers_delete_by_location_id",
+   "desc_len": 41,
+   "properties": {
+    "locationId": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "locationId"
+   ],
+   "title_len": 28
+  },
+  {
+   "name": "markers_delete_by_name",
+   "desc_len": 77,
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "sample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "title_len": 21
+  },
+  {
+   "name": "markers_rename_by_location_id",
+   "desc_len": 41,
+   "properties": {
+    "locationId": {
+     "type": "string"
+    },
+    "newName": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "locationId",
+    "newName"
+   ],
+   "title_len": 28
+  },
+  {
+   "name": "markers_rename_by_name",
+   "desc_len": 77,
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "sample": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "newName": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "newName"
+   ],
+   "title_len": 21
+  },
+  {
+   "name": "tracks_list",
+   "desc_len": 73,
+   "properties": {
+    "includeHidden": {
+     "type": "boolean"
+    }
+   },
+   "required": [],
+   "title_len": 11
+  },
+  {
+   "name": "tracks_add",
+   "desc_len": 155,
+   "properties": {
+    "type": {
+     "type": "string",
+     "enum": [
+      "audio",
+      "midi"
+     ]
+    },
+    "count": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "name": {
+     "type": "string"
+    },
+    "inputChannels": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "outputChannels": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "strictIo": {
+     "type": "boolean"
+    },
+    "insert": {
+     "type": "string",
+     "enum": [
+      "end",
+      "before",
+      "after"
+     ]
+    },
+    "relativeToId": {
+     "type": "string"
+    }
+   },
+   "required": [],
+   "title_len": 9
+  },
+  {
+   "name": "buses_add",
+   "desc_len": 154,
+   "properties": {
+    "type": {
+     "type": "string",
+     "enum": [
+      "audio",
+      "midi"
+     ]
+    },
+    "count": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "name": {
+     "type": "string"
+    },
+    "inputChannels": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "outputChannels": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "strictIo": {
+     "type": "boolean"
+    },
+    "insert": {
+     "type": "string",
+     "enum": [
+      "end",
+      "before",
+      "after"
+     ]
+    },
+    "relativeToId": {
+     "type": "string"
+    }
+   },
+   "required": [],
+   "title_len": 7
+  },
+  {
+   "name": "track_get_info",
+   "desc_len": 126,
+   "properties": {
+    "id": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "title_len": 14
+  },
+  {
+   "name": "track_get_regions",
+   "desc_len": 79,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "includeHidden": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "title_len": 17
+  },
+  {
+   "name": "region_get_info",
+   "desc_len": 148,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "includeAnalysis": {
+     "type": "boolean"
+    }
+   },
+   "required": [],
+   "title_len": 15
+  },
+  {
+   "name": "region_set_gain_linear",
+   "desc_len": 86,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "linear": {
+     "type": "number",
+     "minimum": 0
+    },
+    "invertPolarity": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "linear"
+   ],
+   "title_len": 22
+  },
+  {
+   "name": "region_set_gain_db",
+   "desc_len": 77,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "db": {
+     "type": "number"
+    },
+    "invertPolarity": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "db"
+   ],
+   "title_len": 18
+  },
+  {
+   "name": "region_normalize",
+   "desc_len": 58,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "targetDb": {
+     "type": "number"
+    }
+   },
+   "required": [],
+   "title_len": 16
+  },
+  {
+   "name": "region_split",
+   "desc_len": 174,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "sample": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "bar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "beat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [],
+   "title_len": 12
+  },
+  {
+   "name": "region_resize_samples",
+   "desc_len": 145,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "startSample": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "endSample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [],
+   "title_len": 24
+  },
+  {
+   "name": "region_resize_bbt",
+   "desc_len": 157,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "startBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "startBeat": {
+     "type": "number",
+     "minimum": 1
+    },
+    "endBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "endBeat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [],
+   "title_len": 25
+  },
+  {
+   "name": "region_copy_to_sample",
+   "desc_len": 175,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "trackId": {
+     "type": "string"
+    },
+    "sample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "sample"
+   ],
+   "title_len": 21
+  },
+  {
+   "name": "region_copy_to_bbt",
+   "desc_len": 176,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "trackId": {
+     "type": "string"
+    },
+    "bar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "beat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "bar",
+    "beat"
+   ],
+   "title_len": 23
+  },
+  {
+   "name": "region_copy_by_samples",
+   "desc_len": 162,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "trackId": {
+     "type": "string"
+    },
+    "deltaSamples": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "deltaSamples"
+   ],
+   "title_len": 27
+  },
+  {
+   "name": "region_copy_by_beats",
+   "desc_len": 190,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "trackId": {
+     "type": "string"
+    },
+    "deltaBeats": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "deltaBeats"
+   ],
+   "title_len": 25
+  },
+  {
+   "name": "region_move_to_sample",
+   "desc_len": 174,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "trackId": {
+     "type": "string"
+    },
+    "sample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "sample"
+   ],
+   "title_len": 21
+  },
+  {
+   "name": "region_move_to_bbt",
+   "desc_len": 175,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "trackId": {
+     "type": "string"
+    },
+    "bar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "beat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "bar",
+    "beat"
+   ],
+   "title_len": 23
+  },
+  {
+   "name": "region_move_by_samples",
+   "desc_len": 161,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "trackId": {
+     "type": "string"
+    },
+    "deltaSamples": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "deltaSamples"
+   ],
+   "title_len": 27
+  },
+  {
+   "name": "region_move_by_beats",
+   "desc_len": 189,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "trackId": {
+     "type": "string"
+    },
+    "deltaBeats": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "deltaBeats"
+   ],
+   "title_len": 25
+  },
+  {
+   "name": "plugin_get_description",
+   "desc_len": 64,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "pluginIndex": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "id",
+    "pluginIndex"
+   ],
+   "title_len": 18
+  },
+  {
+   "name": "plugin_set_parameter_by_index_value",
+   "desc_len": 92,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "pluginIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "parameterIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "value": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "id",
+    "pluginIndex",
+    "parameterIndex",
+    "value"
+   ],
+   "title_len": 35
+  },
+  {
+   "name": "plugin_set_parameter_by_index_interface",
+   "desc_len": 102,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "pluginIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "parameterIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "interface": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "id",
+    "pluginIndex",
+    "parameterIndex",
+    "interface"
+   ],
+   "title_len": 39
+  },
+  {
+   "name": "plugin_set_parameter_by_control_value",
+   "desc_len": 87,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "pluginIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "controlId": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "value": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "id",
+    "pluginIndex",
+    "controlId",
+    "value"
+   ],
+   "title_len": 37
+  },
+  {
+   "name": "plugin_set_parameter_by_control_interface",
+   "desc_len": 97,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "pluginIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "controlId": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "interface": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "id",
+    "pluginIndex",
+    "controlId",
+    "interface"
+   ],
+   "title_len": 41
+  },
+  {
+   "name": "plugin_set_enabled",
+   "desc_len": 44,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "pluginIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "enabled": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id",
+    "pluginIndex",
+    "enabled"
+   ],
+   "title_len": 18
+  },
+  {
+   "name": "plugin_remove",
+   "desc_len": 33,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "pluginIndex": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "id",
+    "pluginIndex"
+   ],
+   "title_len": 13
+  },
+  {
+   "name": "plugin_reorder",
+   "desc_len": 48,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "fromIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "toIndex": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "id",
+    "fromIndex",
+    "toIndex"
+   ],
+   "title_len": 14
+  },
+  {
+   "name": "plugin_set_position",
+   "desc_len": 64,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "pluginIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "postFader": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id",
+    "pluginIndex",
+    "postFader"
+   ],
+   "title_len": 19
+  },
+  {
+   "name": "plugin_list_available",
+   "desc_len": 122,
+   "properties": {
+    "search": {
+     "type": "string"
+    },
+    "type": {
+     "type": "string"
+    },
+    "includeHidden": {
+     "type": "boolean"
+    },
+    "includeInternal": {
+     "type": "boolean"
+    }
+   },
+   "required": [],
+   "title_len": 22
+  },
+  {
+   "name": "plugin_add_by_plugin_id",
+   "desc_len": 83,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "pluginId": {
+     "type": "string"
+    },
+    "position": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "enabled": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id",
+    "pluginId"
+   ],
+   "title_len": 23
+  },
+  {
+   "name": "plugin_add_by_unique_id",
+   "desc_len": 92,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "uniqueId": {
+     "type": "string"
+    },
+    "type": {
+     "type": "string"
+    },
+    "position": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "enabled": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id",
+    "uniqueId",
+    "type"
+   ],
+   "title_len": 23
+  },
+  {
+   "name": "track_get_fader",
+   "desc_len": 54,
+   "properties": {
+    "id": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "title_len": 15
+  },
+  {
+   "name": "track_select",
+   "desc_len": 25,
+   "properties": {
+    "id": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "title_len": 12
+  },
+  {
+   "name": "track_rename",
+   "desc_len": 23,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "newName": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "newName"
+   ],
+   "title_len": 12
+  },
+  {
+   "name": "track_set_mute",
+   "desc_len": 21,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "value": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id",
+    "value"
+   ],
+   "title_len": 14
+  },
+  {
+   "name": "track_set_solo",
+   "desc_len": 21,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "value": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id",
+    "value"
+   ],
+   "title_len": 14
+  },
+  {
+   "name": "track_set_rec_enable",
+   "desc_len": 30,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "value": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id",
+    "value"
+   ],
+   "title_len": 17
+  },
+  {
+   "name": "track_set_rec_safe",
+   "desc_len": 28,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "value": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id",
+    "value"
+   ],
+   "title_len": 15
+  },
+  {
+   "name": "track_set_pan",
+   "desc_len": 76,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "position": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1
+    }
+   },
+   "required": [
+    "id",
+    "position"
+   ],
+   "title_len": 7
+  },
+  {
+   "name": "track_set_send_level_position",
+   "desc_len": 74,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "sendIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "position": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1
+    }
+   },
+   "required": [
+    "id",
+    "sendIndex",
+    "position"
+   ],
+   "title_len": 23
+  },
+  {
+   "name": "track_set_send_level_db",
+   "desc_len": 104,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "sendIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "db": {
+     "type": "number",
+     "minimum": -193.0,
+     "maximum": 6.0
+    }
+   },
+   "required": [
+    "id",
+    "sendIndex",
+    "db"
+   ],
+   "title_len": 17
+  },
+  {
+   "name": "track_add_send",
+   "desc_len": 204,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "targetId": {
+     "type": "string"
+    },
+    "position": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1
+    },
+    "db": {
+     "type": "number",
+     "minimum": -193.0,
+     "maximum": 6.0
+    },
+    "enabled": {
+     "type": "boolean"
+    },
+    "postFader": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id",
+    "targetId"
+   ],
+   "title_len": 8
+  },
+  {
+   "name": "track_set_send_position",
+   "desc_len": 67,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "sendIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "postFader": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "id",
+    "sendIndex",
+    "postFader"
+   ],
+   "title_len": 17
+  },
+  {
+   "name": "track_remove_send",
+   "desc_len": 104,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "sendIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "targetId": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "sendIndex"
+   ],
+   "title_len": 11
+  },
+  {
+   "name": "track_set_fader_position",
+   "desc_len": 55,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "position": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1
+    }
+   },
+   "required": [
+    "id",
+    "position"
+   ],
+   "title_len": 24
+  },
+  {
+   "name": "track_set_fader_db",
+   "desc_len": 85,
+   "properties": {
+    "id": {
+     "type": "string"
+    },
+    "db": {
+     "type": "number",
+     "minimum": -193.0,
+     "maximum": 6.0
+    }
+   },
+   "required": [
+    "id",
+    "db"
+   ],
+   "title_len": 18
+  },
+  {
+   "name": "midi_region_add_samples",
+   "desc_len": 76,
+   "properties": {
+    "trackId": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "startSample": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "endSample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "trackId",
+    "startSample",
+    "endSample"
+   ],
+   "title_len": 26
+  },
+  {
+   "name": "midi_region_add_bbt",
+   "desc_len": 68,
+   "properties": {
+    "trackId": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "startBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "startBeat": {
+     "type": "number",
+     "minimum": 1
+    },
+    "endBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "endBeat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "trackId",
+    "startBar",
+    "startBeat",
+    "endBar",
+    "endBeat"
+   ],
+   "title_len": 27
+  },
+  {
+   "name": "midi_note_add_region_beat",
+   "desc_len": 91,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "note": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 127
+    },
+    "velocity": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 127
+    },
+    "channel": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 16
+    },
+    "lengthBeats": {
+     "type": "number"
+    },
+    "regionBeat": {
+     "type": "number",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "regionId",
+    "note",
+    "lengthBeats",
+    "regionBeat"
+   ],
+   "title_len": 28
+  },
+  {
+   "name": "midi_note_add_sample",
+   "desc_len": 79,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "note": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 127
+    },
+    "velocity": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 127
+    },
+    "channel": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 16
+    },
+    "lengthBeats": {
+     "type": "number"
+    },
+    "sample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "regionId",
+    "note",
+    "lengthBeats",
+    "sample"
+   ],
+   "title_len": 23
+  },
+  {
+   "name": "midi_note_add_bbt",
+   "desc_len": 80,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "note": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 127
+    },
+    "velocity": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 127
+    },
+    "channel": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 16
+    },
+    "lengthBeats": {
+     "type": "number"
+    },
+    "bar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "beat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "regionId",
+    "note",
+    "lengthBeats",
+    "bar",
+    "beat"
+   ],
+   "title_len": 25
+  },
+  {
+   "name": "midi_note_list",
+   "desc_len": 37,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "regionId"
+   ],
+   "title_len": 15
+  },
+  {
+   "name": "midi_note_edit",
+   "desc_len": 53,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "edits": {
+     "type": "array",
+     "items": {
+      "type": "object"
+     }
+    }
+   },
+   "required": [
+    "regionId",
+    "edits"
+   ],
+   "title_len": 15
+  },
+  {
+   "name": "midi_note_import_json_into_region",
+   "desc_len": 856,
+   "properties": {
+    "midi": {
+     "type": "object"
+    },
+    "regionId": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "midi",
+    "regionId"
+   ],
+   "title_len": 37
+  },
+  {
+   "name": "midi_note_import_json_to_new_region_samples",
+   "desc_len": 897,
+   "properties": {
+    "midi": {
+     "type": "object"
+    },
+    "trackId": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "startSample": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "endSample": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "midi",
+    "trackId",
+    "startSample",
+    "endSample"
+   ],
+   "title_len": 41
+  },
+  {
+   "name": "midi_note_import_json_to_new_region_bbt",
+   "desc_len": 889,
+   "properties": {
+    "midi": {
+     "type": "object"
+    },
+    "trackId": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "startBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "startBeat": {
+     "type": "number",
+     "minimum": 1
+    },
+    "endBar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "endBeat": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "midi",
+    "trackId",
+    "startBar",
+    "startBeat",
+    "endBar",
+    "endBeat"
+   ],
+   "title_len": 42
+  },
+  {
+   "name": "midi_note_get_json",
+   "desc_len": 190,
+   "properties": {
+    "regionId": {
+     "type": "string"
+    },
+    "ticksPerQuarter": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "timeSignature": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "regionId"
+   ],
+   "title_len": 16
+  },
+  {
+   "name": "session_import_audio",
+   "desc_len": 386,
+   "properties": {
+    "paths": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "desc_len": 65
+    },
+    "mode": {
+     "type": "string",
+     "enum": [
+      "new_tracks",
+      "to_track"
+     ]
+    },
+    "track_id": {
+     "type": "string",
+     "desc_len": 42
+    },
+    "position_samples": {
+     "type": "integer",
+     "minimum": 0,
+     "desc_len": 50
+    },
+    "names": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "desc_len": 49
+    }
+   },
+   "required": [
+    "paths"
+   ],
+   "title_len": 12
+  },
+  {
+   "name": "region_get_peaks",
+   "desc_len": 458,
+   "properties": {
+    "region_id": {
+     "type": "string",
+     "desc_len": 49
+    },
+    "width_px": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 40000
+    },
+    "samples_per_pixel": {
+     "type": "number",
+     "minimum": 1
+    },
+    "channel": {
+     "type": "integer",
+     "minimum": 0,
+     "desc_len": 35
+    },
+    "start_samples": {
+     "type": "integer",
+     "minimum": 0,
+     "desc_len": 40
+    },
+    "length_samples": {
+     "type": "integer",
+     "minimum": 1,
+     "desc_len": 26
+    }
+   },
+   "required": [
+    "region_id"
+   ],
+   "title_len": 12
+  },
+  {
+   "name": "meters_get",
+   "desc_len": 416,
+   "properties": {
+    "route_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "desc_len": 29
+    },
+    "ensure_rms": {
+     "type": "boolean"
+    }
+   },
+   "required": [],
+   "title_len": 6
+  },
+  {
+   "name": "region_set_fades",
+   "desc_len": 105,
+   "properties": {
+    "region_id": {
+     "type": "string",
+     "desc_len": 49
+    },
+    "fade_in_samples": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "fade_out_samples": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "shape": {
+     "type": "string",
+     "enum": [
+      "linear",
+      "fast",
+      "slow",
+      "constant_power",
+      "symmetric"
+     ],
+     "desc_len": 10
+    },
+    "shape_in": {
+     "type": "string",
+     "enum": [
+      "linear",
+      "fast",
+      "slow",
+      "constant_power",
+      "symmetric"
+     ]
+    },
+    "shape_out": {
+     "type": "string",
+     "enum": [
+      "linear",
+      "fast",
+      "slow",
+      "constant_power",
+      "symmetric"
+     ]
+    }
+   },
+   "required": [
+    "region_id"
+   ],
+   "title_len": 16
+  },
+  {
+   "name": "region_set_envelope",
+   "desc_len": 217,
+   "properties": {
+    "region_id": {
+     "type": "string",
+     "desc_len": 49
+    },
+    "points": {
+     "type": "array",
+     "items": {
+      "type": "array"
+     }
+    }
+   },
+   "required": [
+    "region_id",
+    "points"
+   ],
+   "title_len": 19
+  },
+  {
+   "name": "region_get_warp",
+   "desc_len": 201,
+   "properties": {
+    "region_id": {
+     "type": "string",
+     "desc_len": 49
+    }
+   },
+   "required": [
+    "region_id"
+   ],
+   "title_len": 19
+  },
+  {
+   "name": "region_set_warp",
+   "desc_len": 775,
+   "properties": {
+    "region_id": {
+     "type": "string",
+     "desc_len": 49
+    },
+    "anchors": {
+     "type": "array",
+     "items": {
+      "type": "object"
+     }
+    }
+   },
+   "required": [
+    "region_id",
+    "anchors"
+   ],
+   "title_len": 19
+  },
+  {
+   "name": "region_clear_warp",
+   "desc_len": 137,
+   "properties": {
+    "region_id": {
+     "type": "string",
+     "desc_len": 49
+    }
+   },
+   "required": [
+    "region_id"
+   ],
+   "title_len": 21
+  },
+  {
+   "name": "region_mute",
+   "desc_len": 59,
+   "properties": {
+    "region_id": {
+     "type": "string",
+     "desc_len": 49
+    },
+    "muted": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "region_id"
+   ],
+   "title_len": 11
+  },
+  {
+   "name": "region_remove",
+   "desc_len": 98,
+   "properties": {
+    "region_id": {
+     "type": "string",
+     "desc_len": 49
+    }
+   },
+   "required": [
+    "region_id"
+   ],
+   "title_len": 13
+  },
+  {
+   "name": "track_set_color",
+   "desc_len": 87,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 42
+    },
+    "color": {
+     "type": "string",
+     "desc_len": 7
+    }
+   },
+   "required": [
+    "track_id",
+    "color"
+   ],
+   "title_len": 15
+  },
+  {
+   "name": "track_reorder",
+   "desc_len": 203,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 42
+    },
+    "index": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "order": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [],
+   "title_len": 14
+  },
+  {
+   "name": "track_remove",
+   "desc_len": 147,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 42
+    },
+    "confirm": {
+     "type": "boolean",
+     "desc_len": 12
+    }
+   },
+   "required": [
+    "track_id",
+    "confirm"
+   ],
+   "title_len": 12
+  },
+  {
+   "name": "session_export_mix",
+   "desc_len": 386,
+   "properties": {
+    "path": {
+     "type": "string",
+     "desc_len": 89
+    },
+    "format": {
+     "type": "string",
+     "enum": [
+      "wav"
+     ]
+    },
+    "start_samples": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "end_samples": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "bit_depth": {
+     "type": "integer",
+     "enum": [
+      16,
+      24,
+      32
+     ],
+     "desc_len": 10
+    },
+    "normalize": {
+     "type": "boolean"
+    },
+    "normalize_dbfs": {
+     "type": "number",
+     "minimum": -60,
+     "maximum": 0
+    },
+    "wait_ms": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 600000,
+     "desc_len": 46
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "title_len": 10
+  },
+  {
+   "name": "export_status",
+   "desc_len": 153,
+   "properties": {
+    "job_id": {
+     "type": "string"
+    }
+   },
+   "required": [],
+   "title_len": 13
+  },
+  {
+   "name": "session_list_snapshots",
+   "desc_len": 189,
+   "properties": {},
+   "required": [],
+   "title_len": 14
+  }
+ ]
+}

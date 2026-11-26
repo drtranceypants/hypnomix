@@ -24,8 +24,11 @@ HEADERS = {
 
 
 # gzip writes under hypnomix/ that are NOT a Live set (so need no version check), as {"relative/path.py": "why"}.
-# Every other gzip write must call the Live version guard in the same function. There are none today.
-NOT_SETS = {}
+# Every other gzip write must call the Live version guard in the same function.
+NOT_SETS = {
+    "app/server.py": "gzip_body() compresses an HTTP answer for a browser that accepts it; no set is written",
+    "app/wiki.py": "go() only unpacks a downloaded answer (GzipFile on bytes it read); no set is written",
+}
 
 
 def set_xml(header):

@@ -61,7 +61,9 @@ Saved in `~/.hypnomix/preferences.json`. Every scan reads it:
 
 Every answer is checked when it is saved: `hypnomix prefs set targets.lufs=abc` is refused with "targets.lufs must
 be a number from -40 to -1", and a choice that is not on the list names the choices that are. Nothing in the
-command is saved unless every answer in it is good; the app's Preferences tab uses the same check.
+command is saved unless every answer in it is good; the app's Preferences tab uses the same check. A key that is
+not one of the questions is refused too, with the nearest one suggested (`targets.lufz` says "did you mean
+targets.lufs?"): a misspelt key used to be saved as junk and reported as saved.
 - **learned**: after each review, `hypnomix prefs learn DIR` counts what you approved and skipped per kind of
   finding. The next review shows it ("in past reviews you skipped 9 of 10 like this"). It is advice for the
   reviewer. Nothing is ever applied because of it.
@@ -113,6 +115,14 @@ Live 12). A set saved by a newer major version of Live is still read and scanned
 that writes a new set refuses to write from such a set, because the format may have changed, unless you set
 `HYPNOMIX_FORCE_LIVE_VERSION=1` (or pass `--force-live-version` to a command that has that flag: `-h` shows it).
 
+A folder of recordings is measured file by file: `--mix`, `--ref`, `--key`, `--like`, `--deep` and the track options are
+not used for it (the scan says so and does not record them), and `--since` and `--quick` are for a Live set. A file
+that cannot be measured (no audio in it, NaN samples, more than five channels) is a finding of its own and is left
+out of the comparison of how the files sit together. A path that is not a Live set, a REAPER project, an Ardour
+session or a folder of recordings, or a project that cannot be read, ends in one plain sentence before any scan
+folder is made. An Ardour session folder with several snapshots and none named like the folder is read from the
+newest, and the scan says which.
+
 Output in `hypnomix-out/scan/<song>/`: `REVIEW.md`, `findings.json`, `scan.json` (what was scanned, and when the
 set was last saved), one `<group>.json` per group, and `raw/` (each tool's own report, renders of the vocals).
 
@@ -121,6 +131,8 @@ that did not run means nothing.
 
 ### What a set scan also tells you
 
+- **recordings**: every audio file the set plays, measured whole (clipping, levels, steady noise floor and hiss, DC offset,
+  clicks): the same check a folder of stems gets, so hiss or clipping in a source file is not missed because the song is a set.
 - **noise**: takes boosted +12 dB or more with clip gain whose own noise floor comes up with them.
 - **doubles**: how far each harmony or double sits from the lead in time (part of the vocals group).
 - **ducking**: whether the vocal reverb and delay returns duck while the singer sings (`duck`): tune the ducking you have, or add a Compressor fed by the vocals. Options only; when the vocals' own effects come before the sidechain, the item says to check the gain-reduction meter in Live first.
@@ -187,7 +199,8 @@ builds a project with each fix switched off next to yours (guide 8).
 
 The page shows every finding with its players and saves each click to `decisions.json` (with `--serve`, on this
 computer only). Without `--serve` it is a static `REVIEW.html`: download your decisions from it, then
-`hypnomix review DIR --import ~/Downloads/decisions.json`.
+`hypnomix review DIR --import ~/Downloads/decisions.json`. A long review (more than 300 findings) shows its first
+100 cards of each list and a "Show 100 more" button, so the page stays quick; "Approve all low" still covers every finding.
 
 ## 2. Review (one item at a time)
 
@@ -234,8 +247,12 @@ warp-marker nudges → track order and vocal-stack clip moves → track names. I
 anything, `fix` prints which defaults it is adding and every file it is about to create (the new set, the
 "(archive, all takes)" copy that tidy keeps, repaired audio, the log). At the end it prints "Not applied": what you
 decided as "change" (with your note), what you approved that has to be done by hand, and what was no longer found,
-each with what to do next. To hear each change before the next, apply one id per run and chain them with
-`--from "Song (fixed 1).als" --out "Song (fixed 2).als"`.
+each with what to do next. A vocal-level move is a "by hand" finding in a fresh scan: approve it and `fix` lists it
+under "approved, but by hand", writes nothing for it and exits 0 (to write the vocal-level fixes, run `vocallevel --apply`).
+An approved finding that no step of `fix` can write (a kind this version does not know, or a vocal-level move in a scan
+made by an older version) is listed under FAILED with what to do, and the run exits with 1. `fix ... --dry-run` prints
+that list of files and what it would apply, and writes nothing. To hear each change before the next, apply one id
+per run and chain them with `--from "Song (fixed 1).als" --out "Song (fixed 2).als"`.
 
 What `fix` checks itself, and stops on:
 
@@ -243,6 +260,8 @@ What `fix` checks itself, and stops on:
 |---|---|
 | the set was saved again after the scan | stops; re-scan (or `--stale-ok` if you know the change is unrelated) |
 | the output name already exists, or is the original | stops; nothing is ever overwritten |
+| a repaired copy of a recording would take the name of one already in `fixed/` | it gets a number (`Harmony (dehiss 2).wav`); the earlier file is left as it is |
+| an approved finding has no step in `fix` | listed under FAILED with what to do, exit code 1; nothing is logged as a version if nothing was written |
 | an id was recorded as skip or change | stops; record the new decision first |
 | a finding is on a protected track | stops; ask again, then `--allow-protected` |
 | vocal tuning without a confirmed key | that item is refused; pass `--key "F# major"`, or `--key sections` to follow the scan's key map section by section |
@@ -253,8 +272,10 @@ What `fix` checks itself, and stops on:
 | after writing: what changed | every change is listed in plain words in `fix-log.md` (`hypnomix diff OLD NEW`) |
 | after writing: result | the new set is measured again: "N of M approved problems no longer measured" |
 
-Tuned vocals go to `<project>/Samples/Tuned/` (a new numbered file if one exists): put each on a new track at
-bar 1, warp off, and A/B with the original's mute. Folder scans write repaired copies to `<scan>/fixed/`.
+Tuned vocals go to `<project>/Samples/Tuned/` for a Live set and `<project>/Tuned/` for a REAPER project (a new
+numbered file if one exists, with its notes, picture and chords beside it): in Live put each on a new track at
+bar 1, warp off, and A/B with the original's mute; in REAPER each is a new take on the items. Folder scans write
+repaired copies to `<scan>/fixed/` (a taken name gets a number, so an earlier copy is never overwritten).
 `fix-log.md` records every run: approved, applied, skipped and why, failed, and the verification.
 
 ## 4. Listen, then learn
@@ -330,8 +351,10 @@ conflict (shown on the page and in `fix --list`) until you settle it.
 
 ### History and undo
 
-Every `fix` run that applies something is a version in `DIR/history/` (the approved ids with amounts, the list of
-changes, and a copy of the set it started from and the set it wrote).
+Every `fix` run that wrote something is a version in `DIR/history/` (the approved ids with amounts, the list of
+changes, and a copy of the set it started from and the set it wrote: `.als`, `.rpp` or `.ardour`; for a REAPER or
+Ardour version `--diff` shows the changed lines of the project file). A run that wrote nothing is not a version. A
+folder of recordings has no set to go back to: its repaired copies are new files in `DIR/fixed/`.
 
 ```bash
 hypnomix history DIR                    # every version

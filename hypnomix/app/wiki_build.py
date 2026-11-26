@@ -153,7 +153,7 @@ def refresh_page(path, arts):
     """Rewrite every <!--wiki:ID-->…<!--/wiki:ID--> region of a page with a short summary, and every
     <!--wiki-full:ID-->…<!--/wiki-full:ID--> region with the whole article. -> (changed, ids not in the wiki)."""
     p = Path(path)
-    s = p.read_text()
+    s = p.read_text(encoding="utf-8")
     by = {a["id"]: a for a in arts}
     missing = []
 
@@ -179,7 +179,7 @@ def refresh_page(path, arts):
 
     new = re.sub(r"<!--wiki-full:([\w-]+)-->.*?<!--/wiki-full:\1-->", full, new, flags=re.S)
     if new != s:
-        p.write_text(new)
+        p.write_text(new, encoding="utf-8")
     return new != s, missing
 
 
@@ -208,7 +208,7 @@ def commit_time(root):
         paths.append(str(cli))
     try:
         r = subprocess.run(["git", "log", "-1", "--format=%ct %h", "--", *paths], cwd=root,
-                           capture_output=True, text=True, timeout=20)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
         t, sha = r.stdout.split()
         return int(t), sha
     except Exception:
@@ -229,13 +229,13 @@ def main():
         sys.exit(f"no articles in {src / 'articles'}")
     if W.COURSE_ERROR:                     # never publish a wiki that silently lost the teacher-mode course
         sys.exit(f"the teacher-mode course articles could not be built ({W.COURSE_ERROR[0]}): not building the site")
-    tpl = Path(a.template).read_text()
+    tpl = Path(a.template).read_text(encoding="utf-8")
     if "<!--WIKI-->" not in tpl:
         sys.exit("the template has no <!--WIKI--> marker")
     t, sha = commit_time(src)
     built = datetime.datetime.fromtimestamp(t or datetime.datetime.now().timestamp()).strftime("%Y-%m-%d")
     out.mkdir(parents=True, exist_ok=True)
-    (out / "index.html").write_text(tpl.replace("<!--WIKI-->", page(arts, built)))
+    (out / "index.html").write_text(tpl.replace("<!--WIKI-->", page(arts, built)), encoding="utf-8")
     assets = sorted(p.name for p in (src / "assets").iterdir() if p.is_file())
     (out / "assets").mkdir(exist_ok=True)
     for name in assets:
@@ -247,7 +247,7 @@ def main():
             old.unlink()
     (out / "articles.json").write_text(json.dumps({
         "commit_time": t, "commit": sha, "built": built, "assets": assets,
-        "articles": [{k: v for k, v in x.items() if k != "file"} for x in arts]}, ensure_ascii=False))
+        "articles": [{k: v for k, v in x.items() if k != "file"} for x in arts]}, ensure_ascii=False), encoding="utf-8")
     print(f"{len(arts)} articles, {len(assets)} images and videos → {out} (source {sha or 'not in git'})")
     for pg in a.page:
         changed, missing = refresh_page(pg, arts)

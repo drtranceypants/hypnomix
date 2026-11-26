@@ -3,7 +3,7 @@
 
   hypnomix prefs                          show what is saved (and what is still unanswered)
   hypnomix prefs questions                the first-run questions as JSON (for an AI agent to ask one by one)
-  hypnomix prefs set KEY=VALUE [...]      save answers, e.g.  targets.lufs=-14  review.batch_low=yes
+  hypnomix prefs set KEY=VALUE [...]      save answers, e.g.  targets.lufs=-14  review.style=batch-low
                                           lists take commas:  protect.tracks="Lead Vox,Strings"
   hypnomix prefs learn SCAN_DIR           after a review: count what you approved / skipped per kind of finding,
                                           so the next review can say "you usually skip these"
@@ -11,6 +11,9 @@
 Saved in ~/.hypnomix/preferences.json (HYPNOMIX_HOME to change). Nothing is uploaded anywhere.
 An answer that makes no sense is refused with the values that would work, e.g. targets.lufs=abc says the
 target must be a number between -40 and -1; the file is only written when every answer in the command is good.
+A key that is not one of the questions is refused too (`hypnomix prefs questions` lists them), with the nearest
+key suggested, e.g. targets.lufz says "did you mean targets.lufs?"; review.name, taste.profile and tools.plugins_found
+are also kept.
 
 What the workflow does with them:
   targets.*        the loudness / true-peak target the mix check compares against
@@ -28,7 +31,7 @@ What the workflow does with them:
                    cleanup.consolidate (on or off)
   learned          approve / skip / change counts per finding kind from past reviews (advice, never auto-apply)
 """
-import json, sys, time
+import json, os, sys, time
 from pathlib import Path
 
 from hypnomix.core import atomic
@@ -124,9 +127,9 @@ def _daw_name(v):
 
 def setup_daw(setup_path=None):
     """The DAW chosen on the app's Setup page (live, reaper, ardour, other), or "" when it was never chosen."""
-    p = Path(setup_path) if setup_path else Path("~/.hypnomix/setup.json").expanduser()     # where setup.py keeps it
+    p = Path(setup_path) if setup_path else Path(os.environ.get("HYPNOMIX_HOME") or "~/.hypnomix").expanduser() / "setup.json"   # where setup.py keeps it
     try:
-        return _daw_name(json.loads(p.read_text()).get("daw"))
+        return _daw_name(json.loads(p.read_text(encoding="utf-8")).get("daw"))
     except (OSError, ValueError, AttributeError):
         return ""
 
@@ -176,6 +179,12 @@ NUMBERS = {   # key: (lowest, highest, integer only, example)
 }
 ON_OFF = {"on": "on", "yes": "on", "true": "on", "1": "on", "off": "off", "no": "off", "false": "off", "0": "off"}
 EXTRA_CHOICES = {"review.teach": ["on", "off"]}       # read by the code but not asked as first-run questions
+EXTRA_KEYS = ("review.name", "taste.profile", "tools.plugins_found")   # read or written by the code, free-form, not asked
+
+
+def known_keys():
+    """Every key `prefs set` accepts: the questions, the choices read by the code, and the few free-form ones."""
+    return sorted({q["key"] for q in QUESTIONS} | set(EXTRA_CHOICES) | set(EXTRA_KEYS))
 
 
 def choices(key):
@@ -335,13 +344,18 @@ def main():
     elif args[0] == "questions":
         print(json.dumps([dict(q, current=get(prefs, q["key"])) for q in QUESTIONS], indent=1))
     elif args[0] == "set":
-        known = {q["key"] for q in QUESTIONS}
+        known = known_keys()
         for item in args[1:]:
             if "=" not in item:
                 sys.exit(f"expected KEY=VALUE, got {item!r}")
             k, v = item.split("=", 1)
-            if k not in known and not k.startswith(("review.", "taste.", "targets.", "tools.", "protect.")):
-                sys.exit(f"unknown key {k!r}; see `hypnomix prefs questions`")
+            if k not in known:                       # a misspelt key used to be saved as junk and reported as saved
+                import difflib
+                near = difflib.get_close_matches(k, known, n=1, cutoff=0.6)
+                if not near and "." in k:            # same section, nothing close: offer one of its keys
+                    near = [x for x in known if x.split(".")[0] == k.split(".")[0]][:1]
+                hint = f"did you mean {near[0]}? " if near else ""
+                sys.exit(f"not saved: unknown key {k!r}; {hint}`hypnomix prefs questions` lists the keys")
             try:
                 put(prefs, k, parse(k, v))
             except PrefError as e:

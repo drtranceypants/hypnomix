@@ -18,10 +18,12 @@ It writes (nothing is changed in place):
                                     spot (read back and compared with the original)
                       anything else markers.mid (a MIDI file with a marker per spot, import it as a marker or
                                     tempo track) and markers.csv (name, seconds, bar.beat, m:ss)
-                    markers.mid and markers.csv are written for every scan, too.
+                    markers.mid and markers.csv are written for every scan, too, whenever at least one item has a
+                    position (when none has, only HANDOFF.md is written).
 
-Positions come from the finding's own "where"; with no tempo (a folder of stems) only times written as m:ss or
-seconds can be placed, and bar.beat needs `--bpm`. An item with no position is listed at the end, unmarked.
+Positions come from the finding's own "where" (or, when that has none, a "first at m:ss" in its problem text); with
+no tempo (a folder of stems) only times written as m:ss or seconds can be placed, and bar.beat needs `--bpm`
+(20 to 400; `--beats-per-bar` is a whole number from 1 to 32). An item with no position is listed at the end, unmarked.
 
 The wording follows your DAW preference (`hypnomix prefs set tools.daw=…`) or `--daw live|reaper|ardour|generic`.
 
@@ -195,6 +197,20 @@ def positions(where, tempo=None, bpb=4):
     return []
 
 
+FIRST_AT = re.compile(r"\bfirst at (\d+):(\d\d(?:\.\d+)?)\b")
+
+
+def finding_positions(f, tempo=None, bpb=4):
+    """Where a finding is: its `where`, else the time its own problem text states ("first at 0:15.0": a stems-folder
+    scan keeps the time of the first clipped peak there and leaves `where` empty)."""
+    ps = positions(f.get("where"), tempo, bpb)
+    if not ps:
+        m = FIRST_AT.search(str(f.get("problem") or ""))
+        if m:
+            ps = [int(m.group(1)) * 60 + float(m.group(2))]
+    return ps
+
+
 def mmss(t):
     return f"{int(t // 60)}:{t % 60:04.1f}"
 
@@ -251,7 +267,7 @@ def build(items, tempo, bpb):
     rows = []
     for it in items:
         f = it["f"]
-        ps = positions(f.get("where"), tempo, bpb)
+        ps = finding_positions(f, tempo, bpb)
         for t in (ps or [None]):
             rows.append(dict(item=it, t=t))
     rows.sort(key=lambda r: (r["t"] is None, r["t"] or 0, r["item"]["f"].get("track") or ""))
@@ -296,7 +312,7 @@ def marker_names(rows):
 
 
 def write_csv(path, rows, names, tempo, bpb):
-    with open(path, "w", newline="") as fh:
+    with open(path, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["name", "seconds", "bar.beat", "m:ss", "track", "finding", "to do"])
         for nm, r in zip(names, rows):
@@ -308,6 +324,7 @@ def write_csv(path, rows, names, tempo, bpb):
 
 
 def _vlq(n):
+    n = max(0, int(n))                          # a negative number would never reach 0 below
     out = [n & 0x7F]
     n >>= 7
     while n:
@@ -432,7 +449,7 @@ def handoff(sd, daw=None, bpm=None, bpb=None, undecided=False, markers=True, out
     while md.exists():
         k += 1
         md = od / f"HANDOFF {k}.md"
-    md.write_text(checklist(song, rows, daw, tempo, bar_len))
+    md.write_text(checklist(song, rows, daw, tempo, bar_len), encoding="utf-8")
     written = [md]
     placed = [r for r in rows if r["t"] is not None]
     if markers and placed:
@@ -455,8 +472,9 @@ def main(argv=None):
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("scan_dir")
     ap.add_argument("--daw", choices=DAWS, help="wording for this DAW (default: your tools.daw preference, else the scanned project's)")
-    ap.add_argument("--bpm", type=float, help="tempo for bar.beat when the scan has none (a folder of stems)")
-    ap.add_argument("--beats-per-bar", type=int, dest="bpb")
+    from hypnomix.core import args as A
+    ap.add_argument("--bpm", type=A.number(20, 400), help="tempo for bar.beat when the scan has none (a folder of stems; 20 to 400)")
+    ap.add_argument("--beats-per-bar", type=A.whole(1, 32), dest="bpb", help="beats in a bar (1 to 32; default: the project's, else 4)")
     ap.add_argument("--undecided", action="store_true", help="also list by-hand findings you have not decided yet")
     ap.add_argument("--no-markers", action="store_true", help="the checklist only")
     ap.add_argument("--out")

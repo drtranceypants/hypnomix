@@ -13,7 +13,9 @@ clips. A clip more than --under dB (4) under their median is proposed for a clip
 Usage:
   hypnomix cliplevel SET.als [--names names.json] [--renders DIR] [--json OUT.json]
   hypnomix cliplevel SET.als --apply NEW.als --ids cliplevel-1,cliplevel-3
-Renders come from DIR if given (the scan's vocal renders), otherwise the vocal tracks are rendered (no Live).
+Renders come from DIR if given (the scan's vocal renders), otherwise the vocal tracks are rendered (no Live) into a
+scratch folder (hypnomix-render-… under ~/.hypnomix/cache/tmp, announced when it is over about 1 GB) that is removed
+when the command ends, an error or Ctrl-C included.
 """
 import argparse, gzip, json, math, re, subprocess, sys, tempfile
 from hypnomix.core.gz import read_gz
@@ -29,12 +31,12 @@ safe = lambda n: re.sub(r'[\\/:*?"<>|]', "-", n)
 
 
 def hx(*args):
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
 def vocal_roles(names_json):
-    rows = json.loads(Path(names_json).read_text())["tracks"]
+    rows = json.loads(Path(names_json).read_text(encoding="utf-8", errors="replace"))["tracks"]
     lab = lambda r: str(r.get("final") or r.get("label") or "")
     lead = next((r["old"] for r in rows if lab(r).startswith("Lead Vocal") and r.get("on", True)), None)
     harm = [r["old"] for r in rows if r.get("kind") == "Audio" and r.get("on", True) and float(r.get("confidence") or 0) >= 0.5
@@ -48,14 +50,24 @@ def propose(set_path, names_json=None, renders=None, under=4.0, max_raise=6.0, l
     root = ET.fromstring(read_gz(set_path))
     tempo = float(v(root, ".//Tempo/Manual"))
     spb = 60.0 / tempo
+    from hypnomix.core import tmp as TMP
     if names_json is None:
-        nd = Path(tempfile.mkdtemp())
-        hx("name", set_path, "--out", nd)
-        names_json = nd / "names.json"
-    lead, harm = vocal_roles(names_json)
+        with TMP.workdir("work", big=False) as nd:           # names.json is read here and the folder removed
+            hx("name", set_path, "--out", nd)
+            lead, harm = vocal_roles(nd / "names.json")
+    else:
+        lead, harm = vocal_roles(names_json)
     if len(harm) < 2:
         return [], dict(note="fewer than two harmony tracks: nothing to compare")
-    rd = Path(renders) if renders else Path(tempfile.mkdtemp())
+    if renders:
+        return _levels(set_path, root, spb, lead, harm, Path(renders), under, max_raise, lead_margin)
+    # no renders given: they go in a folder that is removed when this ends (an error or Ctrl-C too)
+    with TMP.workdir("render", expect_bytes=TMP.render_bytes(root, len(harm) + (1 if lead else 0))) as rd:
+        return _levels(set_path, root, spb, lead, harm, rd, under, max_raise, lead_margin)
+
+
+def _levels(set_path, root, spb, lead, harm, rd, under, max_raise, lead_margin):
+    from hypnomix.core import dsp, pitch
     need = [n for n in harm + ([lead] if lead else []) if not (rd / f"{safe(n)}.wav").exists()]
     if need:
         hx("render", set_path, "--tracks", *need, "--out", rd)
@@ -152,7 +164,7 @@ def main():
     for f in fs:
         print(f"  {f['id']:<13} {f['track']:<22} {f['where']:<8} {f['fix'].split('. An option')[0]}")
     if a.json:
-        Path(a.json).write_text(json.dumps({"tool": "cliplevel", "set": str(src), "findings": fs}, indent=1))
+        Path(a.json).write_text(json.dumps({"tool": "cliplevel", "set": str(src), "findings": fs}, indent=1), encoding="utf-8")
     if a.apply:
         if Path(a.apply).resolve() == src.resolve():
             sys.exit("refusing to overwrite the set; give a new file name")

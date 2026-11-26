@@ -10,7 +10,9 @@ only partway and as an option.
 A fix (only approved items, into the new .rpp) puts stretch markers on the item's active take: one on the hit,
 moved part of the way to its reference, and one on the hit either side holding it, so only that short stretch of
 audio is stretched (REAPER keeps the pitch when the take keeps pitch). Everything stays editable in REAPER: drag a
-marker, or delete it to undo one fix. Not moved (listed instead): items that already have stretch markers, items
+marker, or delete it to undo one fix. In an Ardour (Hypnomix) or Live project the same hits are found, but the nudge is
+never written: the finding is `applies: manual` with the how-to for that DAW, so it shows on the hand-off checklist
+once approved. Not moved (listed instead): items that already have stretch markers, items
 that loop past the end of their file, MIDI items, and moves the neighbouring hits leave too little room for.
 """
 import re
@@ -20,21 +22,76 @@ import numpy as np
 
 from hypnomix.session import timing as TM
 
+DAW_NAMES = {"reaper": "REAPER", "ardour": "Hypnomix (Ardour)", "live": "Live"}
+
+
+def daw_name(p):
+    """The DAW a project is for, in the words the fix text uses ("REAPER", "Hypnomix (Ardour)", "Live")."""
+    return DAW_NAMES.get(str(getattr(p, "daw", "") or "reaper").lower(), str(getattr(p, "daw", "") or "your DAW"))
+
+
+def by_hand(p, ms, lock=False):
+    """The fix text for a nudge the project's own DAW gets by hand (hypnomix writes timing into REAPER projects only)."""
+    d = str(getattr(p, "daw", "") or "reaper").lower()
+    how = {"ardour": "split the region around the hit and slide that piece, or stretch it with the Stretch tool",
+           "live": "with a warp marker on the hit"}.get(d, "with stretch markers")
+    return (f"nudge {ms:+.0f} ms by hand in {daw_name(p)}" + (" toward the drums" if lock else "") + f": {how} "
+            "(hypnomix writes timing nudges into REAPER projects only)")
+
+
 MELODIC_ROLES = {"guitar", "keys", "synth", "strings", "pad", "brass"}
 DRUM_ROLES = {"kick", "snare", "hats", "toms", "overheads", "drums"}
+
+
+_CHECKED = {}                    # (path, size, modification time) of files dsp.load has passed once in this run
+_CHECKED_MAX = 4096
+_SEEK_EXACT = {"WAV", "WAVEX", "RF64", "W64", "AIFF", "FLAC", "OGG", "CAF", "AU"}   # seek + read gives the whole-file read's samples to the bit
+
+
+def item_audio(path, s0, s1):
+    """(mono audio from 50 ms before `s0` to 50 ms after `s1` (file seconds), the frame it starts at, the file's sample
+    rate). The first time a file is met it is read and checked whole, exactly as dsp.load does (so a file that cannot be
+    measured still stops the check with the same plain sentence); every later item on that file reads only its own
+    stretch, so 24,000 items on 24 files cost 24 whole reads, not 24,000. The values are those of the whole-file read,
+    to the bit, for the formats in _SEEK_EXACT (wav, aiff, flac, ogg...); any other (mp3) is read whole for every item,
+    as before, because a seek in it can differ from the whole read at the 1e-7 level."""
+    from hypnomix.core import dsp
+    path = Path(path)
+    try:
+        st = path.stat()
+        key = (str(path), st.st_size, st.st_mtime_ns)
+    except OSError:
+        key = None
+    if key is not None and key in _CHECKED:
+        try:
+            import soundfile as sf
+            with sf.SoundFile(str(path)) as f:
+                if f.format.upper() not in _SEEK_EXACT:
+                    raise ValueError("seeking is not sample-exact in this format")   # (mp3 differs at the 1e-7 level): read it whole
+                sr, n = int(f.samplerate), int(f.frames)
+                a, b = max(0, int((s0 - 0.05) * sr)), min(n, int((s1 + 0.05) * sr))
+                if b <= a:
+                    return np.zeros(0), a, sr
+                f.seek(a)
+                return f.read(b - a, dtype="float64", always_2d=True).mean(1), a, sr
+        except Exception:
+            pass                                          # a format only the whole-file reader opens: read it whole
+    y, sr = dsp.load(path)
+    if key is not None:
+        if len(_CHECKED) >= _CHECKED_MAX:
+            _CHECKED.clear()
+        _CHECKED[key] = True
+    a, b = max(0, int((s0 - 0.05) * sr)), min(len(y), int((s1 + 0.05) * sr))
+    return y[a:b].mean(1), a, sr
 
 
 def item_onsets(c, sr_o=TM.SR_O, hop=TM.HOP_O):
     """[{beat-less hit: t (timeline s), src (source s), strength}] heard from one item's active take."""
     import librosa
-    from hypnomix.core import dsp
     tk = c.take
     s0 = (tk.section[0] if tk.section else 0.0) + tk.offset
     s1 = s0 + c.length * tk.rate
-    y, sr = dsp.load(tk.path)
-    mono = y.mean(1)
-    a, b = max(0, int((s0 - 0.05) * sr)), min(len(mono), int((s1 + 0.05) * sr))
-    seg = mono[a:b]
+    seg, a, sr = item_audio(tk.path, s0, s1)
     if len(seg) < sr // 2:
         return []
     seg = librosa.resample(seg, orig_sr=sr, target_sr=sr_o) if sr != sr_o else seg
@@ -58,13 +115,13 @@ def item_onsets(c, sr_o=TM.SR_O, hop=TM.HOP_O):
     return [dict(t=float(x), src=float(s), strength=float(st)) for x, s, st in zip(t[keep], src[keep], strength[keep])]
 
 
-def fixable(c):
-    """None when stretch markers can be written on this item, else why not."""
+def fixable(c, where="REAPER"):
+    """None when stretch markers can be written on this item, else why not (`where`: the DAW, for the by-hand text)."""
     tk = c.take
     if tk is None or tk.kind != "audio":
         return "not an audio item"
     if tk.stretch:
-        return "the item already has stretch markers: nudge it by hand in REAPER"
+        return f"the item already has stretch markers: nudge it by hand in {where}"
     import soundfile as sf
     try:
         dur = sf.info(str(tk.path)).duration
@@ -77,7 +134,7 @@ def fixable(c):
             return "its file could not be read"
     s0 = (tk.section[0] if tk.section else 0.0) + tk.offset
     if c.loop and s0 + c.length * tk.rate > (tk.section[0] + tk.section[1] if tk.section else dur) + 1e-3:
-        return "the item loops past the end of its file: nudge it by hand in REAPER"
+        return f"the item loops past the end of its file: nudge it by hand in {where}"
     return None
 
 
@@ -129,6 +186,7 @@ def findings(p, tracks, issues, notes, strength=1.0):
         for h in hs:
             hits_by_clip.setdefault(id(h["clip"]), []).append(h)
     out = []
+    writes = str(getattr(p, "daw", "") or "reaper").lower() == "reaper"     # only a REAPER project gets the markers written
     for i in issues:
         h, c = i["hit"], i["hit"]["clip"]
         tol = max(TM.SLOTS[i["kind"]][0], TM.SLOTS[i["kind"]][1] * notes["looseness"])
@@ -136,7 +194,7 @@ def findings(p, tracks, issues, notes, strength=1.0):
                                                          i["kind"] == "downbeat") else "medium"
         late = "late" if i["off"] > 0 else "early"
         move = i["move"] * strength
-        why = fixable(c)
+        why = fixable(c, daw_name(p))
         # anchors: the onsets either side, quiet ones included (a hit the ghost filter set aside still has to stay
         # where it is: anchoring past it would drag it along with the fix)
         every = notes.get("all_onsets", {}).get(id(c)) or sorted(x["src"] for x in hits_by_clip[id(c)])
@@ -146,17 +204,18 @@ def findings(p, tracks, issues, notes, strength=1.0):
         next_s = after[0] if after else h["src"] + 0.25 * spb * c.take.rate
         room = min(h["src"] - prev_s, next_s - h["src"]) / c.take.rate
         if why is None and room < 2.5 * abs(move):
-            why = "the hits either side are too close for a gentle stretch: nudge it by hand in REAPER"
+            why = f"the hits either side are too close for a gentle stretch: nudge it by hand in {daw_name(p)}"
         f = dict(id=i["id"], tool="timing", kind=i["kind"], severity=sev, track=i["track"], where=TM.where(i["beat"]),
                  problem=(("OPTIONAL (melodic part: its looseness is part of the feel). " if i.get("optional") else "")
                           + ("LOW END: " if i.get("low") else "")
                           + (f"bass {abs(i['off']) * 1000:.0f} ms {late} against the drums on the {i['kind']}" if i.get("lock")
                              else f"{i['kind']} hit {abs(i['off']) * 1000:.0f} ms {late} against the {i['ref']}")),
-                 fix=(why if why else f"nudge {move * 1000:+.0f} ms with stretch markers"
-                      + (" toward the drums" if i.get("lock") else "")
+                 fix=(why if why else (f"nudge {move * 1000:+.0f} ms with stretch markers"
+                                       + (" toward the drums" if i.get("lock") else "")
+                                       if writes else by_hand(p, move * 1000, i.get("lock")))
                       + (" (a gentle partial move, not onto the grid; skip it to keep the feel)" if i.get("optional") else "")),
-                 applies="manual" if why else "set", optional=bool(i.get("optional")))
-        if not why:
+                 applies="manual" if (why or not writes) else "set", optional=bool(i.get("optional")))
+        if not why and writes:             # by hand (Ardour, Live): no edit to apply; the hand-off checklist lists it
             f["edit"] = dict(op="timing", item=locator(track_of[i["track"]], c), src=h["src"], move=move,
                              prev=prev_s, next=next_s)
         out.append(f)

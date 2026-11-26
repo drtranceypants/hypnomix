@@ -1,0 +1,51 @@
+# Runs the whole test suite on every push and pull request, on Linux, with each Python version the package supports
+# (pyproject.toml: requires-python >=3.9). The tests build synthetic audio and sessions in temporary folders and move
+# themselves onto temporary hypnomix folders (tests/_isolate.py), so the job needs no setup of its own.
+#
+# CI=true makes the tests that need an optional extra (the Assistant's SDKs) or a tool (Node.js, for the page-script
+# parse check) fail when it is missing instead of skipping: a skipped safety test says "OK" (tests/test_repo_rules.py).
+#
+# NOT YET RUN: this file was written without access to GitHub. The first run may show tests that assume a Mac (the
+# suite has so far run on macOS only); those need a skip with a stated reason or a fix, not a quieter job.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12"]
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+      - name: System programs the tests use (audio libraries, ffmpeg, Rubber Band)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg rubberband-cli libsndfile1 libportaudio2
+      - name: Install hypnomix with the Assistant extra
+        run: |
+          uv venv --python ${{ matrix.python }}
+          uv pip install -e ".[assistant]"
+      - name: Say what is installed
+        run: |
+          .venv/bin/python --version
+          node --version
+          ffmpeg -version | head -n 1
+          rubberband --version || true
+      - name: Run the tests
+        run: .venv/bin/python -m unittest discover -s tests -v

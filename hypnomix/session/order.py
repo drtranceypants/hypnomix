@@ -337,7 +337,7 @@ def read_names(path):
     if not p.is_file():
         sys.exit(f"{what}; '{path}' is not a file")
     try:
-        data = json.loads(p.read_text())
+        data = json.loads(p.read_text(encoding="utf-8"))
     except (ValueError, UnicodeDecodeError):
         sys.exit(f"{what}; '{path}' is not a names.json file (it is not valid JSON)")
     rows = data.get("tracks") if isinstance(data, dict) else None
@@ -372,7 +372,7 @@ def main():
     if not fs:
         print("tracks are already in working order; no vocal-stack moves")
     if a.json:
-        Path(a.json).write_text(json.dumps({"tool": "order", "set": str(src), "findings": fs}, indent=1, default=str))
+        Path(a.json).write_text(json.dumps({"tool": "order", "set": str(src), "findings": fs}, indent=1, default=str), encoding="utf-8")
     if a.apply:
         want = {x.strip() for x in (a.ids or "").split(",") if x.strip()} or {f["id"] for f in fs}
         done = 0

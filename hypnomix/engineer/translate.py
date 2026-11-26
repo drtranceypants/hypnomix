@@ -15,6 +15,8 @@ Usage:
               can play them: MP3 320, AAC 256, and "as Spotify plays it" (AAC 256 turned to -14 LUFS the way
               its default normalisation does: louder songs down, quieter songs up only as far as -1 dBTP allows).
               Same length and start as the original, for A/B.
+Running it again into the same folder never replaces an earlier run: the new files are numbered ((translation 2).md,
+(phone 2).wav ...), and the first run's files stay as they were.
 """
 from hypnomix.core.paths import out_at
 import argparse, subprocess, sys, tempfile
@@ -45,7 +47,7 @@ def sim(y, sr, kind):
 
 
 def codec_peak(path, codec):
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
         enc = Path(td) / ("x.mp3" if codec == "mp3" else "x.m4a")
         args = ["-b:a", "320k", "-c:a", "libmp3lame"] if codec == "mp3" else ["-b:a", "256k", "-c:a", "aac"]
         r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), *args, str(enc)], capture_output=True)
@@ -69,23 +71,59 @@ def _decode(path, codec, td):
     return dsp.load(dec)[0]
 
 
-def codec_preview(path, outdir, normalise_to=-14.0):
+def _run_label(label, n):
+    """'phone' for the first run, 'phone 2' for the second ... (the way master numbers its files)."""
+    return label if n <= 1 else f"{label} {n}"
+
+
+def _names(stem, a_render, a_preview, n):
+    """The file names (relative to the report folder: the report; relative to the versions folder: the rest) a run
+    number n would write, for finding the first run number whose names are all free."""
+    rep = [f"{stem} ({_run_label('translation', n)}).md"]
+    other = []
+    if a_render:
+        other += [f"{stem} ({_run_label(k, n)}).wav" for k in ("phone", "earbuds", "car", "mono")]
+    if a_preview:
+        other += [f"{stem} ({_run_label(k, n)}).wav" for k in ("mp3 320", "aac 256", "as Spotify plays it")]
+    return rep, other
+
+
+def next_run(file, out, render=False, preview=False):
+    """The smallest run number (1, 2, 3 ...) whose report and listening files do not exist yet, so running translate
+    again never replaces an earlier run. Creates nothing."""
+    from hypnomix.core import paths
+    stem = Path(file).stem
+    if out:
+        rep_dir = wav_dir = Path(out).expanduser()
+    else:
+        rep_dir = paths.OUT / "translate"
+        wav_dir = rep_dir / stem
+    n = 1
+    while True:
+        rep, other = _names(stem, render, preview, n)
+        if not any((rep_dir / f).exists() for f in rep) and not any((wav_dir / f).exists() for f in other):
+            return n
+        n += 1
+
+
+def codec_preview(path, outdir, normalise_to=-14.0, n=1):
     """Write decoded MP3 320 / AAC 256 WAVs and an 'as Spotify plays it' WAV next to each other in outdir.
-    Returns {kind: {path, true_peak, lufs}}; a kind whose encoder is missing is left out (key 'skipped')."""
+    Returns {kind: {path, true_peak, lufs}}; a kind whose encoder is missing is left out (key 'skipped').
+    n > 1 numbers the file names (the Nth run in this folder), so an earlier run's files are never replaced."""
     y, sr = dsp.load(path)
     n = len(y)
     od = Path(outdir)
     od.mkdir(parents=True, exist_ok=True)
     stem = Path(path).stem
     res, skipped = {}, []
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
         for codec, label in (("mp3", "mp3 320"), ("aac", "aac 256")):
             z = _decode(path, codec, td)
             if z is None:
                 skipped.append(label)
                 continue
             z = np.pad(z, ((0, max(0, n - len(z))), (0, 0)))[:n]      # same length as the original, for A/B
-            p = dsp.save(od / f"{stem} ({label}).wav", z, sr, 32)       # float: overshoots kept as decoded
+            p = dsp.save(od / f"{stem} ({_run_label(label, n)}).wav", z, sr, 32)       # float: overshoots kept as decoded
             res[label] = dict(path=str(p), true_peak=dsp.true_peak(z, sr), lufs=dsp.lufs(z, sr))
             if codec == "aac":
                 L, tp = dsp.lufs(z, sr), dsp.true_peak(z, sr)
@@ -93,7 +131,7 @@ def codec_preview(path, outdir, normalise_to=-14.0):
                 if gain > 0:
                     gain = min(gain, -1.0 - tp)                       # quiet songs go up only to -1 dBTP
                 s = z * dsp.undb(gain)
-                q = dsp.save(od / f"{stem} (as Spotify plays it).wav", s, sr, 32)
+                q = dsp.save(od / f"{stem} ({_run_label('as Spotify plays it', n)}).wav", s, sr, 32)
                 res["as Spotify plays it"] = dict(path=str(q), gain_db=round(float(gain), 2),
                                                   true_peak=dsp.true_peak(s, sr), lufs=dsp.lufs(s, sr))
     if skipped:
@@ -101,7 +139,7 @@ def codec_preview(path, outdir, normalise_to=-14.0):
     return res
 
 
-def analyse(path, render=False, outdir=None):
+def analyse(path, render=False, outdir=None, n=1):
     y, sr = dsp.load(path)
     y = dsp.stereo(y)
     if not len(y) or float(np.max(np.abs(y))) < 1e-9:
@@ -174,8 +212,8 @@ def analyse(path, render=False, outdir=None):
     if render:
         od = out_at(outdir, "translate", Path(path).stem)
         for kind in ("phone", "earbuds", "car"):
-            dsp.save(od / f"{Path(path).stem} ({kind}).wav", sims[kind] * dsp.undb(min(0, -1 - dsp.true_peak(sims[kind], sr))), sr)
-        dsp.save(od / f"{Path(path).stem} (mono).wav", mono, sr)
+            dsp.save(od / f"{Path(path).stem} ({_run_label(kind, n)}).wav", sims[kind] * dsp.undb(min(0, -1 - dsp.true_peak(sims[kind], sr))), sr)
+        dsp.save(od / f"{Path(path).stem} ({_run_label('mono', n)}).wav", mono, sr)
     return dict(lufs=L, tp=tp, rows=rows, notes=notes)
 
 
@@ -184,15 +222,18 @@ def main():
     ap.add_argument("file"); ap.add_argument("--render", action="store_true"); ap.add_argument("--out")
     ap.add_argument("--preview", action="store_true", help="write decoded MP3 / AAC / as-Spotify-plays-it WAVs")
     a = ap.parse_args()
-    r = analyse(a.file, a.render, a.out)
+    n = next_run(a.file, a.out, a.render, a.preview)          # an earlier run's report and WAVs are never replaced
+    r = analyse(a.file, a.render, a.out, n)
     if r.get("silent"):
         text = (f"# Translation check: {Path(a.file).name}\n\nThis file is silent (every sample is zero), so there is "
                 f"nothing to check. Bounce or export it again.\n")
-        (out_at(a.out, "translate") / f"{Path(a.file).stem} (translation).md").write_text(text)
+        silent_report = out_at(a.out, "translate") / f"{Path(a.file).stem} ({_run_label('translation', n)}).md"
+        silent_report.write_text(text, encoding="utf-8")
         print(text)
+        print(f"wrote the report {silent_report}")
         sys.exit(1)
     if a.preview:
-        pv = codec_preview(a.file, out_at(a.out, "translate", Path(a.file).stem))
+        pv = codec_preview(a.file, out_at(a.out, "translate", Path(a.file).stem), n=n)
         for k, v in pv.items():
             if k == "skipped":
                 r["rows"].append(("Preview", f"encoder missing: {', '.join(v)}", "SKIP"))
@@ -205,8 +246,16 @@ def main():
     md += ["## What to listen for", *[f"- {n}" for n in r["notes"]]] if r["notes"] else ["Nothing worrying. Still: listen on a phone."]
     text = "\n".join(md) + "\n"
     od = out_at(a.out, "translate")
-    (od / f"{Path(a.file).stem} (translation).md").write_text(text)
+    report = od / f"{Path(a.file).stem} ({_run_label('translation', n)}).md"
+    report.write_text(text, encoding="utf-8")
     print(text)
+    if n > 1:
+        print(f"an earlier run's files are kept; this run's files are numbered {n}")
+    print(f"wrote the report {report}")                                   # where everything went, so nobody has to look
+    if a.render:
+        print(f"wrote the four listening versions (mono, phone, earbuds, car) in {out_at(a.out, 'translate', Path(a.file).stem)}")
+    if a.preview:
+        print(f"wrote the decoded streaming previews in {out_at(a.out, 'translate', Path(a.file).stem)}")
 
 
 if __name__ == "__main__":

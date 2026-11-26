@@ -243,7 +243,7 @@ def sections_of(y, sr, bpm):
     note = None
     try:
         from hypnomix.ears import sections as S
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
             p = Path(td) / "a.wav"
             sf.write(str(p), y.astype(np.float32), sr, subtype="FLOAT")
             r = S.analyse(p, bpm)
@@ -541,25 +541,27 @@ def compare(path_a, path_b, names=None, out=None, bpm=None, resample=False, forc
         spot_rows.append(dict(n=n, at=row["at"], section=where, note=f"{what}. For the A / B, {nm[1]} is turned {row['matched_db']:+.1f} dB to match.",
                               a=row["a"], b=row["b"]))
     if manifest:
-        (adir / "ab.json").write_text(json.dumps(manifest, indent=1))
+        (adir / "ab.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
     text = build_report(nm, A, B, lag / sra, conf, sim, notes, secs, sec_rows, spot_rows, len(ya) / sra, lens, resampled, line)
     (od / "COMPARE.md").write_text(text, encoding="utf-8")
     (od / "COMPARE.json").write_text(json.dumps(dict(
         names=nm, files=[str(path_a), str(path_b)], summary=line, offset_s=round(lag / sra, 4), similarity=round(sim, 3),
         compared_s=round(len(ya) / sra, 2), a=A, b=B, sections=[dict(s, a_lufs=float(r[2]), b_lufs=float(r[3])) for s, r in zip(secs, sec_rows)],
-        spots=[dict(manifest[f"spot-{r['n']}"], section=r["section"]) for r in spot_rows]), indent=1))
+        spots=[dict(manifest[f"spot-{r['n']}"], section=r["section"]) for r in spot_rows]), indent=1), encoding="utf-8")
     return dict(folder=od, line=line, text=text, offset_s=lag / sra, similarity=sim, A=A, B=B, spots=spot_rows, sections=sec_rows)
 
 
 def main():
+    from hypnomix.core import args as A
     ap = argparse.ArgumentParser(prog="hypnomix compare", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("old"); ap.add_argument("new")
     ap.add_argument("--names", help='two names for the report, like "old,new"')
     ap.add_argument("--out", help="report folder (default hypnomix-out/compare/<old> vs <new>)")
-    ap.add_argument("--bpm", type=float, help="the song's tempo, if the section finder gets it wrong")
+    ap.add_argument("--bpm", type=A.number(20, 400), help="the song's tempo, if the section finder gets it wrong (20 to 400)")
     ap.add_argument("--resample", action="store_true", help="bring the second file to the first's sample rate")
     ap.add_argument("--force", action="store_true", help="compare even if the two do not look like the same song")
     a = ap.parse_args()
+    paths.check_out(a.out)                    # an unwritable --out ends here, not after the measuring
     try:
         r = compare(a.old, a.new, a.names, a.out, a.bpm, a.resample, a.force, log=lambda s: print(s, file=sys.stderr))
     except CompareError as e:

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Release QC: the checks a mastering engineer runs before a file goes to a distributor.
-PASS / WARN / FAIL per check; exit code 1 if anything fails, so it can gate a script.
+PASS / WARN / FAIL per check; exit code 1 if anything fails, so it can gate a script. A file that cannot be
+checked at all (no samples in it, more than five channels, NaN / infinite samples) ends with one sentence and
+exit code 2, so a script can tell "failed the checks" from "could not read it".
 
 Usage:
     hypnomix qc master.wav [more.wav …] [--target -14] [--for streaming|cd|vinyl]
@@ -12,6 +14,7 @@ import numpy as np
 import soundfile as sf
 
 from hypnomix.core import dsp
+from hypnomix.core import args as A
 from hypnomix.engineer.translate import codec_peak
 
 
@@ -78,7 +81,7 @@ def check(path, target=-14.0, kind="streaming"):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix qc", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("files", nargs="+"); ap.add_argument("--target", type=float, default=-14.0)
+    ap.add_argument("files", nargs="+"); ap.add_argument("--target", type=A.number(-70, 0), default=-14.0)
     ap.add_argument("--for", dest="kind", choices=["streaming", "cd", "vinyl"], default="streaming")
     a = ap.parse_args()
     bad = 0

@@ -19,11 +19,13 @@ from hypnomix.studio import tune as T
 
 
 def _rb(x, sr, semis, keep_formant):
-    with tempfile.TemporaryDirectory() as td:
+    from hypnomix.core.tools import need_rubberband
+    need_rubberband("a formant or transpose change")
+    with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
         fi, fo = Path(td) / "i.wav", Path(td) / "o.wav"
         sf.write(str(fi), x, sr, subtype="FLOAT")
         cmd = ["rubberband", "-3", "-q", "-p", f"{semis:.5f}"] + (["-F"] if keep_formant else []) + [str(fi), str(fo)]
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if r.returncode != 0:
             raise RuntimeError(r.stderr[-300:])
         y, _ = sf.read(str(fo), dtype="float32", always_2d=True)

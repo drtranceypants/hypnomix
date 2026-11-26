@@ -31,7 +31,7 @@ with several warp markers that bend the timing will drift between markers. Unwar
 Output is 32-bit float, so nothing clips. Write re-renders to a NEW folder: Live caches audio by file
 path and keeps playing the old audio if you overwrite a file it has loaded.
 """
-import argparse, gzip, os, re, shutil, subprocess, sys, tempfile
+import argparse, gzip, heapq, os, re, shutil, subprocess, sys, tempfile, threading, time
 from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from fractions import Fraction
@@ -65,11 +65,12 @@ def clip_source(c, als, sources):
 # Each rendered clip is kept under <hypnomix home>/cache/render/, keyed by a hash of: the source file (path, mtime,
 # size), the clip's XML (warp markers, loop, fades, gain: everything but where it sits on the timeline), its
 # length, the tempo, the sample rate, --tighten and the stretcher in use. A changed clip or file is a new key, so
-# a stale render is never reused. Size cap: HYPNOMIX_RENDER_CACHE_MB (default 2048), oldest-used removed first.
+# a stale render is never reused. Size cap: HYPNOMIX_RENDER_CACHE_MB (default 2048), oldest-used removed first,
+# kept with a running total (CacheIndex below): the folder is listed once, not again every few writes.
 # Off with --no-cache or HYPNOMIX_NO_CACHE=1. Clips are kept as 32-bit float (what render writes; clips on one
 # Arrangement track never overlap, so the written files are bit for bit the same with or without the cache).
 CACHE_VERSION = 1
-CACHE_STATS = {"hits": 0, "misses": 0, "writes": 0}
+CACHE_STATS = {"hits": 0, "misses": 0, "writes": 0, "scans": 0}      # scans: full listings of the cache folder
 _PUTS = [0]
 _HAVE_RB = [bool(shutil.which("rubberband"))]       # the stretcher in use is part of every key
 # A preview of timing nudges (`hypnomix ab`) turns this on: every warped clip is then stretched ALONG its markers by
@@ -141,40 +142,125 @@ def cache_put(key, seg):
         d.mkdir(parents=True, exist_ok=True)
         tmp = d / f".{key}.{os.getpid()}.tmp.npy"
         np.save(tmp, np.asarray(seg, dtype=np.float32), allow_pickle=False)
-        os.replace(tmp, d / f"{key}.npy")
+        final = d / f"{key}.npy"
+        os.replace(tmp, final)
         CACHE_STATS["writes"] += 1
     except OSError:
         return
     _PUTS[0] += 1
-    if _PUTS[0] % 50 == 1:
-        cache_trim()
+    _after_put(final)
+
+
+class CacheIndex:
+    """What the render cache holds, kept in memory so a write does not list the whole folder again: path -> (mtime,
+    size), a heap of (mtime, size, path) with the least recently used first, and the running total in bytes. ONE scan
+    builds it (`scan`); after that each write adds to it (`add`) and `trim` removes the oldest entries while the total
+    is over the cap, checking each one on disk first (a file used or replaced since is newer now and is put back;
+    one another program already removed is just forgotten). The result is the same set of removals a full scan would
+    pick."""
+
+    def __init__(self, root):
+        self.root, self.files, self.heap, self.total, self.seen = Path(root), {}, [], 0, time.monotonic()
+        self.lock = threading.Lock()
+
+    def scan(self):
+        files = {}
+        try:
+            subs = [e.path for e in os.scandir(self.root) if e.is_dir(follow_symlinks=False)]
+        except OSError:
+            subs = []
+        for sd in subs:
+            try:
+                with os.scandir(sd) as it:
+                    for e in it:
+                        if e.name.endswith(".npy"):
+                            try:
+                                st = e.stat()
+                                files[e.path] = (st.st_mtime, st.st_size)
+                            except OSError:
+                                pass
+            except OSError:
+                pass
+        self.files = files
+        self.heap = [(mt, sz, p) for p, (mt, sz) in files.items()]
+        heapq.heapify(self.heap)
+        self.total = sum(sz for _, sz in files.values())
+        self.seen = time.monotonic()
+        CACHE_STATS["scans"] = CACHE_STATS.get("scans", 0) + 1
+
+    def add(self, path, mtime, size):
+        old = self.files.get(path)
+        if old:
+            self.total -= old[1]
+        self.files[path] = (mtime, size)
+        self.total += size
+        heapq.heappush(self.heap, (mtime, size, path))
+
+    def drop(self, path):
+        old = self.files.pop(path, None)
+        if old:
+            self.total -= old[1]
+
+    def trim(self, cap):
+        removed = 0
+        while self.total > cap and self.heap:
+            mt, sz, p = heapq.heappop(self.heap)
+            if self.files.get(p) != (mt, sz):
+                continue                                    # an old heap entry: that file was added again or is gone
+            try:
+                st = os.stat(p)
+            except OSError:
+                self.drop(p)                                # another program removed it
+                continue
+            if st.st_mtime != mt or st.st_size != sz:
+                self.add(p, st.st_mtime, st.st_size)        # used or replaced since we looked: newer, so it waits
+                continue
+            try:
+                os.unlink(p)
+                removed += sz
+            except OSError:
+                pass
+            self.drop(p)
+        return removed
+
+
+_INDEX = [None]
+_INDEX_LOCK = threading.Lock()
+RESCAN_S = 600.0              # look at the whole folder again after this long, for what other programs wrote or removed
+
+
+def _cap_bytes(cap_mb=None):
+    return float(cap_mb if cap_mb is not None else os.environ.get("HYPNOMIX_RENDER_CACHE_MB", 2048)) * 1e6
+
+
+def _after_put(final):
+    """A clip was just written: keep the running total, and trim (oldest first) only when it is over the cap. The folder is
+    listed once, at the first write and then at most every RESCAN_S seconds, never every few writes."""
+    root = cache_dir()
+    with _INDEX_LOCK:
+        ix = _INDEX[0]
+        if ix is None or ix.root != root or time.monotonic() - ix.seen > RESCAN_S:
+            ix = _INDEX[0] = CacheIndex(root)
+            ix.scan()                                       # lists the file just written too
+        else:
+            try:
+                st = os.stat(final)
+                ix.add(str(final), st.st_mtime, st.st_size)
+            except OSError:
+                pass
+        ix.trim(_cap_bytes())
 
 
 def cache_trim(cap_mb=None):
-    """Remove the least recently used entries until the cache is under its cap. Returns bytes removed."""
-    cap = float(cap_mb if cap_mb is not None else os.environ.get("HYPNOMIX_RENDER_CACHE_MB", 2048)) * 1e6
+    """Remove the least recently used entries until the cache is under its cap (one full look at the folder). Returns
+    bytes removed. Called once when a render command ends; writes use the running total instead (`_after_put`)."""
     root = cache_dir()
     if not root.exists():
         return 0
-    files = []
-    for f in root.glob("*/*.npy"):
-        try:
-            st = f.stat()
-            files.append((st.st_mtime, st.st_size, f))
-        except OSError:
-            pass
-    total = sum(sz for _, sz, _ in files)
-    removed = 0
-    for _, sz, f in sorted(files):
-        if total <= cap:
-            break
-        try:
-            f.unlink()
-            total -= sz
-            removed += sz
-        except OSError:
-            pass
-    return removed
+    with _INDEX_LOCK:
+        ix = _INDEX[0] = CacheIndex(root)
+        ix.scan()
+        return ix.trim(_cap_bytes(cap_mb))
 
 
 _STRETCH = {}
@@ -190,7 +276,7 @@ def stretched(src, k, SR):
     a = a.mean(1)
     if abs(k - 1) >= 1e-5:
         if shutil.which("rubberband"):
-            with tempfile.TemporaryDirectory() as td:
+            with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
                 fi, fo = os.path.join(td, "i.wav"), os.path.join(td, "o.wav")
                 sf.write(fi, a.astype(np.float32), sr, subtype="FLOAT")
                 subprocess.run(["rubberband", "-3", "-q", "-t", f"{k:.8f}", fi, fo], check=True, capture_output=True)
@@ -248,10 +334,10 @@ def _timemap_read(srcm, SR, sec, ms, mb, cb, spb, clip_len):
     if len(ok) < 2 or b - a < 2048:
         return None
     try:
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
             fi, fo, fm = (os.path.join(td, n) for n in ("i.wav", "o.wav", "m.txt"))
             sf.write(fi, srcm[a:b].astype(np.float32), SR, subtype="FLOAT")
-            Path(fm).write_text("".join(f"{x} {y}\n" for x, y in ok))
+            Path(fm).write_text("".join(f"{x} {y}\n" for x, y in ok), encoding="utf-8")
             subprocess.run(["rubberband", "-3", "-q", "-M", fm, "-D", f"{clip_len / SR:.6f}", fi, fo],
                            check=True, capture_output=True)
             y = sf.read(fo, always_2d=True)[0].mean(1)

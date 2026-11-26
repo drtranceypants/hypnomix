@@ -1,10 +1,12 @@
 """The updater trusts nothing in the release it reads: names, addresses, redirects and the staged file are all checked."""
-import hashlib, json, os, stat, tempfile, threading, unittest
+import hashlib, json, os, shutil, signal, stat, subprocess, sys, tempfile, threading, time, unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest import mock
 
 from hypnomix.app import update as UP
+
+REAL_ASSET_NAME = UP.asset_name           # Base replaces it; the edition tests put the real one back
 
 NAME = "Hypnomix-mac-arm64.dmg"
 BLOB = b"pretend this is a disk image" * 100
@@ -25,6 +27,8 @@ class Feed(BaseHTTPRequestHandler):
         elif self.path == "/sums":
             body = Feed.sums.encode()
         elif self.path == "/asset":
+            body = Feed.blob
+        elif self.path == "/full":
             body = Feed.blob
         elif self.path == "/to-evil":
             self.send_response(302)
@@ -132,6 +136,27 @@ class Names(Base):
              dict(name="Other.dmg", browser_download_url=self.base + "/asset"),
              dict(name=NAME, browser_download_url=self.base + "/asset", size=3)]
         self.assertEqual(list(UP._clean_assets({"assets": a})), [NAME])
+
+
+class Editions(unittest.TestCase):
+    def test_the_full_app_only_takes_the_full_download(self):
+        """The full Hypnomix (the engine kit inside the app) never updates to the Assistant-only image."""
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as td:
+            app = Path(td).resolve() / "Hypnomix.app"
+            py = app / "Contents" / "Resources" / "python" / "bin" / "python3"
+            with mock.patch.object(UP.sys, "executable", str(py)), mock.patch.object(UP.sys, "platform", "darwin"), \
+                    mock.patch.object(UP.platform, "machine", lambda: "arm64"):
+                self.assertEqual(UP.asset_name(), "Hypnomix-mac-arm64.dmg")
+                kit = app / "Contents" / "Resources" / "engine" / "bin" / "hypnomix-engine"
+                kit.parent.mkdir(parents=True)
+                kit.write_text("#!/bin/sh\n")
+                kit.chmod(0o755)
+                self.assertEqual(UP.asset_name(), "Hypnomix-full-mac-arm64.dmg")
+                self.assertIn(UP.asset_name(), UP.ASSETS)
+                with mock.patch.object(UP.platform, "machine", lambda: "x86_64"):
+                    self.assertEqual(UP.asset_name(), "Hypnomix-full-mac-intel.dmg")
 
 
 class Addresses(unittest.TestCase):
@@ -461,15 +486,273 @@ class PrivateFolders(unittest.TestCase):
             home = Path(t) / "home"
             home.mkdir()
             home.chmod(0o755)
-            old = os.environ.get("HYPNOMIX_HOME")
-            os.environ["HYPNOMIX_HOME"] = str(home)
-            try:
-                with mock.patch.object(Path, "home", classmethod(lambda cls: home)):
-                    DC.settings({"auto": True})
-            finally:
-                os.environ.pop("HYPNOMIX_HOME") if old is None else os.environ.update(HYPNOMIX_HOME=old)
+            # HYPNOMIX_USER_HOME too: Disk care reads the free space of that folder, which may not exist on a run set up by hand
+            with mock.patch.dict(os.environ, {"HYPNOMIX_HOME": str(home), "HYPNOMIX_USER_HOME": str(home)}), \
+                    mock.patch.object(Path, "home", classmethod(lambda cls: home)):
+                DC.settings({"auto": True})
             self.assertEqual(stat.S_IMODE(home.stat().st_mode), 0o755)
             self.assertEqual(stat.S_IMODE((home / "diskcare.json").stat().st_mode), 0o600)
+
+
+
+FULL = "Hypnomix-full-mac-arm64.dmg"
+FULL_BLOB = b"the full image" * 100
+
+
+class EditionReleases(Base):
+    """The two Mac editions against every kind of release: each only ever takes its own download."""
+    def setUp(self):
+        super().setUp()
+        self.extra = [mock.patch.object(UP, "asset_name", REAL_ASSET_NAME),
+                      mock.patch.object(UP.platform, "machine", lambda: "arm64")]
+        for p in self.extra:
+            p.start()
+        Feed.sums = SUMS_OK + f"{hashlib.sha256(FULL_BLOB).hexdigest()}  {FULL}\n"
+
+    def tearDown(self):
+        for p in self.extra:
+            p.stop()
+        super().tearDown()
+
+    def release(self, *names):
+        assets = [dict(name="SHA256SUMS.txt", browser_download_url=self.base + "/sums", size=10)]
+        for n in names:
+            assets.append(dict(name=n, browser_download_url=self.base + ("/asset" if n == NAME else "/full"), size=len(BLOB)))
+        Feed.release["assets"] = assets
+        UP.save({})
+        return UP.check(True)
+
+    def edition(self, name):
+        return mock.patch.object(UP, "edition", lambda: name)
+
+    def test_the_assistant_never_takes_the_full_download(self):
+        with self.edition("assistant"):
+            for names, want in (((NAME,), True), ((NAME, FULL), True), ((FULL,), False)):
+                v = self.release(*names)
+                self.assertEqual(UP.asset_name(), NAME)
+                self.assertEqual((v["one_click"], v["no_full_download"]), (want, False), names)
+
+    def test_the_full_app_never_takes_the_assistant_download(self):
+        with self.edition("full"):
+            for names, want in (((NAME,), False), ((NAME, FULL), True), ((FULL,), True)):
+                v = self.release(*names)
+                self.assertEqual(UP.asset_name(), FULL)
+                self.assertEqual(v["one_click"], want, names)
+                self.assertEqual(v["no_full_download"], not want, names)      # said plainly, and nothing is offered
+                self.assertTrue(v["newer"])
+                self.assertEqual(v["edition"], "full")
+
+    def test_the_full_app_on_a_release_without_it_downloads_and_installs_nothing(self):
+        with self.edition("full"):
+            self.release(NAME)
+            with self.assertRaises(ValueError):
+                UP.download()
+            self.assertEqual(UP.JOB["status"], "idle")
+            with self.assertRaises(ValueError):
+                UP.install()
+            # even a stray state file naming the Assistant image does not make _download fetch it
+            UP._download()
+            self.assertEqual(UP.JOB["status"], "error")
+            self.assertEqual(list(UP.DIR.glob("*.dmg")) + list(UP.DIR.glob("*.part")), [])
+
+    def test_the_full_download_is_fetched_and_checked_by_its_own_name(self):
+        Feed.blob = FULL_BLOB
+        with self.edition("full"):
+            self.release(NAME, FULL)
+            UP._download()
+            self.assertEqual(UP.JOB["status"], "ready", UP.JOB)
+            self.assertEqual(Path(UP.JOB["file"]).name, f"9.9.9-{FULL}")
+            self.assertEqual(UP.JOB["sha"], hashlib.sha256(FULL_BLOB).hexdigest())
+
+    def test_a_release_with_no_checksum_line_for_the_full_file_installs_nothing(self):
+        Feed.blob = FULL_BLOB
+        Feed.sums = SUMS_OK                                       # a line for the Assistant image only
+        with self.edition("full"):
+            self.release(NAME, FULL)
+            UP._download()
+            self.assertEqual(UP.JOB["status"], "error")
+            self.assertIn("no checksum", UP.JOB["error"])
+            self.assertEqual(list(UP.DIR.glob("*.dmg")), [])
+
+    def test_one_definition_of_the_edition(self):
+        """update.edition() is daw.app_edition(): a kit anywhere but Resources/engine/bin does not make the full app."""
+        from hypnomix.app import daw
+        self.assertIs(UP.edition.__module__, UP.__name__)
+        with tempfile.TemporaryDirectory() as td:
+            app = Path(td).resolve() / "Hypnomix.app"
+            py = app / "Contents" / "Resources" / "python" / "bin" / "python3"
+            other = app / "Contents" / "MacOS" / "hypnomix-engine"
+            other.parent.mkdir(parents=True)
+            other.write_text("#!/bin/sh\n")
+            other.chmod(0o755)
+            with mock.patch.object(UP.sys, "executable", str(py)), mock.patch.object(UP.sys, "platform", "darwin"), \
+                    mock.patch.object(daw.sys, "executable", str(py)):
+                self.assertEqual((UP.edition(), daw.app_edition()), ("assistant", "assistant"))
+                self.assertEqual(REAL_ASSET_NAME(), NAME)
+                kit = app / "Contents" / "Resources" / "engine" / "bin" / "hypnomix-engine"
+                kit.parent.mkdir(parents=True)
+                kit.write_text("#!/bin/sh\n")
+                self.assertEqual(UP.edition(), "assistant")           # not executable: the same answer as the DAW tab's
+                kit.chmod(0o755)
+                self.assertEqual((UP.edition(), daw.app_edition(), REAL_ASSET_NAME()), ("full", "full", FULL))
+
+    def test_the_swift_app_and_the_updater_look_at_the_same_file(self):
+        swift = (Path(__file__).resolve().parents[1] / "macapp" / "Hypnomix.swift").read_text()
+        start = swift.index("var dawMode: Bool")
+        block = swift[start:swift.index("func serverEnv", start)]
+        self.assertIn("Resources/engine/bin/hypnomix-engine", block)
+        self.assertNotIn("/MacOS/", block)                            # no second place that makes it the full app
+
+
+class UnsavedSession(Base):
+    """Install and restart closes the app, and the DAW session with it: refused while it has unsaved changes."""
+    def run_install(self):
+        app = self.r / "Hypnomix.app"
+        app.mkdir(exist_ok=True)
+        with mock.patch.object(UP, "app_root", lambda: app), mock.patch.object(UP.subprocess, "Popen") as P, \
+                mock.patch.object(UP.subprocess, "run", return_value=mock.Mock(stdout="")):
+            try:
+                UP.install()
+            finally:
+                self.P = P
+
+    def test_refused_while_the_session_is_dirty(self):
+        from hypnomix.app import daw
+        self.download()
+        with mock.patch.object(daw, "dirty", lambda: True, create=True):
+            with self.assertRaises(UP.Unsaved):
+                self.run_install()
+            self.P.assert_not_called()
+            self.assertTrue(Path(UP.JOB["file"]).exists())             # the checked download stays for later
+            code, body = UP.handle_post("/api/update/install", {})
+            self.assertEqual((code, body["dirty"]), (409, True))
+            self.assertIn("not saved", body["error"])
+        self.assertEqual(UP.JOB["status"], "ready")                    # nothing was started
+        with mock.patch.object(daw, "dirty", lambda: False, create=True):
+            self.run_install()
+            self.P.assert_called_once()
+
+    def test_a_clean_session_or_an_app_without_the_function_installs(self):
+        from hypnomix.app import daw
+        self.download()
+        had = hasattr(daw, "dirty")
+        with mock.patch.object(daw, "dirty", lambda: False, create=True):
+            self.assertFalse(UP.unsaved())
+        if not had:
+            self.assertFalse(UP.unsaved())                             # no daw.dirty() at all: nothing to lose
+        with mock.patch.object(daw, "dirty", mock.Mock(side_effect=RuntimeError("boom")), create=True):
+            self.assertFalse(UP.unsaved())                             # a fault there never blocks updates for good
+
+    def test_the_command_line_install_asks_too(self):
+        from hypnomix.app import daw
+        f = self.r / "x.dmg"
+        f.write_bytes(b"x")
+        with mock.patch.object(daw, "dirty", lambda: True, create=True), mock.patch.object(UP.subprocess, "Popen") as P:
+            with self.assertRaises(UP.Unsaved):
+                UP.install(str(f))
+        P.assert_not_called()
+
+    def test_the_helper_is_told_the_engine_to_wait_for(self):
+        from hypnomix.app import daw
+        self.download()
+        eng = mock.Mock(mode="engine", proc=mock.Mock(pid=4242, poll=lambda: None))
+        with mock.patch.object(daw, "ENGINE", eng), mock.patch.object(daw, "dirty", lambda: False, create=True):
+            self.run_install()
+        args = self.P.call_args[0][0]
+        self.assertEqual(args[6], "4242")                              # after the server's pid, before the log
+        self.assertEqual(args[-1], "9.9.9")
+        with mock.patch.object(daw, "ENGINE", mock.Mock(mode="attached", proc=None)):
+            self.assertEqual(UP.engine_pid(), "")                      # a window it only attached to is not waited for
+
+
+class HelperWaitsForTheEngine(unittest.TestCase):
+    """The Mac helper's stop step, run for real against stand-in processes: it waits for the app, the server and the
+    engine, longer than the engine's own stop time, and only then kills what is left (the engine's whole group)."""
+    def block(self):
+        h = UP.MAC_HELPER
+        return h[h.index("# stop-begin"):h.index("# stop-end")]
+
+    def start(self, code, **kw):
+        """A process that is not our child (so it is not a zombie after it ends): its pid is printed by a parent that exits."""
+        out = subprocess.run([sys.executable, "-c",
+                              "import subprocess,sys;p=subprocess.Popen([sys.executable,'-c',sys.argv[1]],start_new_session=True,"
+                              "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,stdin=subprocess.DEVNULL);print(p.pid)", code],
+                             capture_output=True, text=True).stdout.strip()
+        pid = int(out)
+        self.addCleanup(self.kill, pid)
+        return pid
+
+    @staticmethod
+    def kill(pid):
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+    @staticmethod
+    def alive(pid):
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    def run_block(self, grace, app="", server="", engine=""):
+        bash = shutil.which("bash")
+        if not bash:
+            self.skipTest("no bash")
+        t = time.time()
+        r = subprocess.run([bash, "-c", self.block()], capture_output=True, text=True, timeout=60,
+                           env=dict(os.environ, APP_PID=str(app), SERVER_PID=str(server), ENGINE_PID=str(engine), HYPNOMIX_UPDATE_GRACE=str(grace)))
+        return time.time() - t, r.stdout
+
+    SLOW_QUIT = "import signal,time\nsignal.signal(signal.SIGTERM,lambda *a:(time.sleep(2.5),exit(0)))\ntime.sleep(60)"
+    DEAF = "import signal,time\nsignal.signal(signal.SIGTERM,signal.SIG_IGN)\ntime.sleep(60)"
+
+    def test_it_waits_for_a_slow_server_instead_of_killing_it(self):
+        server = self.start(self.SLOW_QUIT)
+        time.sleep(0.5)                                               # its handler is set
+        took, out = self.run_block(20, server=server)
+        self.assertGreaterEqual(took, 2.0)                           # it waited out the slow quit...
+        self.assertLess(took, 10)
+        self.assertNotIn("stopping it now", out)                     # ...and killed nothing
+        self.assertFalse(self.alive(server))
+
+    def test_it_waits_for_a_lingering_engine_when_the_server_is_already_gone(self):
+        # the server pid is not running at all, so only the engine holds the wait open; it is let finish, not killed
+        with tempfile.TemporaryDirectory() as td:
+            marker = os.path.join(td, "ended-by-itself")
+            engine = self.start("import time\ntime.sleep(3)\nopen(%r,'w').write('done')" % marker)
+            gone = self.start("pass")
+            time.sleep(0.5)
+            took, out = self.run_block(20, server=gone, engine=engine)
+            self.assertGreaterEqual(took, 2.0)                       # it waited for the engine...
+            self.assertNotIn("stopping it now", out)
+            time.sleep(0.3)
+            self.assertTrue(os.path.exists(marker))                  # ...which finished its own way, not killed early
+            self.assertFalse(self.alive(engine))
+
+    def test_what_will_not_quit_is_killed_after_the_wait_engine_group_included(self):
+        server, engine = self.start(self.DEAF), self.start(self.DEAF)
+        time.sleep(0.5)
+        took, out = self.run_block(2, server=server, engine=engine)
+        self.assertGreaterEqual(took, 2.0)
+        self.assertIn("stopping it now", out)
+        time.sleep(0.5)
+        self.assertFalse(self.alive(server))
+        self.assertFalse(self.alive(engine))
+
+    def test_the_wait_is_longer_than_the_engine_stop_time(self):
+        from hypnomix.app import daw
+        import inspect
+        default = int(__import__("re").search(r'HYPNOMIX_UPDATE_GRACE:-(\d+)', UP.MAC_HELPER).group(1))
+        sig = inspect.signature(daw.Engine.stop).parameters["timeout"].default
+        self.assertGreater(default, sig + 5 + 5)                      # the engine's stop (TERM wait, then 5 s after a kill) plus margin
+        self.assertIn("kill -9 -- \"-$ENGINE_PID\"", UP.MAC_HELPER)   # its whole process group
+
+    def test_with_nothing_to_wait_for_it_does_not_wait(self):
+        took, _ = self.run_block(30)
+        self.assertLess(took, 2)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,8 @@
 
   hypnomix scan SET.als [--mix MIX.wav] [--ref INSTRUMENTAL.wav] [--out DIR] [--only GROUP ...]
   hypnomix scan SONG.rpp             (a REAPER project: see `hypnomix.workflow.scan_project` for its groups)
-  hypnomix scan SONG.ardour          (an Ardour session, or its session folder: the same groups as REAPER)
+  hypnomix scan SONG.ardour          (an Ardour session, or its session folder: the same groups as REAPER; a folder with
+                                     several snapshots and none named like it is read from the newest, and it says so)
   hypnomix scan FOLDER               (raw recordings or exported stems, any DAW: no Live set needed)
   hypnomix scan --merge DIR          (rebuild REVIEW.md from group results, e.g. after parallel agents)
 
@@ -22,8 +23,9 @@ Groups (each can run on its own with --only, so several agents can scan in paral
   devices  every Live device on every track, judged by what it does to that track's own audio   (devices)
   mix      loudness, true peak, release checks, translation     (measure, qc, translate; needs --mix)
            and, if `hypnomix profile build` was run, the mix against your own ranges (--no-profile skips it)
+  recordings  every source file the set plays, measured whole: clipping, levels, noise floor (hiss), DC offset, clicks
   noise    takes whose big clip-gain boost lifts their noise floor into the mix
-  intent   "is this deliberate?": every automated control, big clip gains, hard pans, switched-off tracks
+  intent  "is this deliberate?": every automated control, big clip gains, hard pans, switched-off tracks
   structure  the set's structure and level extremes, from the XML alone
   stems    with --deep only (renders every track): frequency fights between tracks, mic phase and polarity
 
@@ -42,6 +44,13 @@ A FOLDER of audio files is scanned in two groups instead:
   recordings  per file: clipping, hot or very quiet levels, noise floor, DC offset, clicks
   stems       how the files sit together: each frequency fight between two parts as its own finding
               (masking), and phase / polarity between files that record the same source (align)
+
+A folder is measured file by file: --mix, --ref, --key, --like, --backing, --deep, --devices and the track options
+are not used for it (the scan says so, once on screen and once in REVIEW.md, and does not record them); --since and
+--quick are for a Live set. A file that cannot be measured (no audio, NaN samples, more than five channels) is a
+finding of its own, and is left out of the comparison of how the files sit together instead of stopping it. Anything
+that is not a Live set, a REAPER project, an Ardour session or a folder of recordings, and any project that cannot be
+read, ends in one plain sentence (before any scan folder is made). `--merge DIR` needs a folder a scan wrote.
 
 Output folder (default hypnomix-out/scan/<song>/):
   <group>.json      normalised findings from that group (id, severity, track, where, problem, fix, applies)
@@ -74,7 +83,7 @@ from pathlib import Path
 
 from hypnomix.core import atomic as AT
 
-GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "devices", "mix", "noise", "intent", "structure", "stems"]
+GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "devices", "mix", "recordings", "noise", "intent", "structure", "stems"]
 FOLDER_GROUPS = ["recordings", "stems"]
 AUDIO_EXT = (".wav", ".aif", ".aiff", ".flac")
 PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow", "balance", "colour", "album", "preflight"]         # written by `prep|automix|master|balance|colour|album|preflight --plan`
@@ -86,13 +95,13 @@ VOCAL_LABELS = ("Lead Vocal", "Vocal", "Harmony", "Backing Vocal")
 def hx(*args, timeout=3600):
     """Run a hypnomix command; return (exit code, stdout+stderr text)."""
     r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)],
-                       capture_output=True, text=True, timeout=timeout)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
     return r.returncode, (r.stdout or "") + (("\n" + r.stderr) if r.stderr.strip() else "")
 
 
 def save(path, text):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Path(path).write_text(text)
+    Path(path).write_text(text, encoding="utf-8")
 
 
 def strip_warnings(text):
@@ -165,7 +174,7 @@ def roles(als, od):
         save(od / "raw" / "names.txt", strip_warnings(out))
         if code != 0 or not path.exists():
             return {}
-    rows = json.loads(path.read_text()).get("tracks", [])
+    rows = json.loads(path.read_text(encoding="utf-8")).get("tracks", [])
     return {r["old"]: dict(label=str(r.get("final") or r.get("label") or ""), kind=r.get("kind", ""),
                            active=float((r.get("features") or {}).get("active_s") or 0))
             for r in rows}
@@ -201,7 +210,7 @@ def g_names(als, od, a):
     if not path.exists():
         return [], ["names: failed (hypnomix name did not finish), so no track names are proposed and the "
                     "other checks lack track roles. Full output: raw/names.txt"]
-    rows = json.loads(path.read_text()).get("tracks", [])
+    rows = json.loads(path.read_text(encoding="utf-8")).get("tracks", [])
     out, n = [], 0
     for r in rows:
         if r.get("kind") == "Return" or r.get("new") in (None, r.get("old")):
@@ -225,7 +234,7 @@ def g_names(als, od, a):
         code, txt = hx("order", als, "--names", path, "--json", j)
         save(od / "raw" / "order.txt", strip_warnings(txt))
         if j.exists():
-            out += json.loads(j.read_text())["findings"]
+            out += json.loads(j.read_text(encoding="utf-8"))["findings"]
             notes.append("order: track order and vocal stacks are ON by default (skip the order items to opt out, or "
                          "`hypnomix prefs set cleanup.order=off` for every song)")
         else:
@@ -239,7 +248,7 @@ def g_names(als, od, a):
         code, txt = hx("tidy", als, "--names", path, "--json", j, *extra)
         save(od / "raw" / "tidy.txt", strip_warnings(txt))
         if j.exists():
-            out += json.loads(j.read_text())["findings"]
+            out += json.loads(j.read_text(encoding="utf-8"))["findings"]
             notes.append("tidy: retiring switched-off tracks (after an archive copy) and merging one instrument's "
                          "matching tracks are ON by default (skip retire-1 / merge-N to opt out, or `hypnomix prefs set "
                          "cleanup.retire=off` / `cleanup.consolidate=off`)")
@@ -261,7 +270,7 @@ def g_devices(als, od, a):
     save(od / "raw" / "devices.txt", strip_warnings(out))
     if not j.exists():
         return [], [check_failed(od, "devices", out, "so no device settings were judged", "devices-error.txt")]
-    d = json.loads(j.read_text())
+    d = json.loads(j.read_text(encoding="utf-8"))
     return d["findings"], [f"devices: {len(d['findings'])} Live device(s) checked; third-party plug-ins are skipped"] + \
         [f"devices: {n_}" for n_ in d.get("notes", [])[:6]]
 
@@ -284,7 +293,7 @@ def g_clips(als, od, a):
     if not j.exists():
         return [], [check_failed(od, "clips (smooth)", out, "so clicks and level jumps at cuts were not checked",
                                  "smooth-error.txt")]
-    d = json.loads(j.read_text())
+    d = json.loads(j.read_text(encoding="utf-8"))
     notes = []
     if d["notes"].get("regular"):
         notes.append("spikes not checked on tracks with regular hits (drums): " + ", ".join(d["notes"]["regular"]))
@@ -295,7 +304,7 @@ def g_clips(als, od, a):
     save(od / "raw" / "edges.txt", strip_warnings(txt))
     found = list(d["findings"])
     if je.exists():
-        ef = json.loads(je.read_text())["findings"]
+        ef = json.loads(je.read_text(encoding="utf-8"))["findings"]
         found += ef
         rec = sum(1 for f in ef if f.get("recommended"))
         notes.append(f"edges: {len(ef)} item(s) on vocal clip edges, {rec} clear-cut fade fix(es) recommended; "
@@ -304,6 +313,25 @@ def g_clips(als, od, a):
         notes.append(check_failed(od, "edges", txt, "so clip edges that cut into a word were not checked",
                                   "edges-error.txt"))
     return found, notes
+
+
+def low_end_tracks(tracks, role):
+    """(bass tracks, drum tracks) among `tracks`, the way the REAPER and Ardour scans choose them: what the track is CALLED
+    first (engineer.roles.by_name), and only when its name says nothing the sound-based label from `hypnomix name`. A
+    kick-heavy track called "Drums" is drums, not the bass."""
+    from hypnomix.engineer import roles as RO
+    bass, drums = [], []
+    for t in tracks:
+        r = RO.by_name(t)
+        if r is None:
+            lab = role.get(t, {}).get("label", "")
+            r = ("bass" if lab.startswith("Bass") else "drums" if lab.startswith(("Drums", "Kick", "Snare", "Hats", "Perc"))
+                 else None)
+        if r == "bass":
+            bass.append(t)
+        elif r in ("kick", "snare", "hats", "toms", "overheads", "drums"):
+            drums.append(t)
+    return bass, drums
 
 
 def g_timing(als, od, a, role):
@@ -320,8 +348,7 @@ def g_timing(als, od, a, role):
     melodic = [t for t in tracks if is_melodic(role.get(t, {}).get("label", ""))]
     for t in melodic:
         args += ["--melodic", t]
-    bass = [t for t in tracks if role.get(t, {}).get("label", "").startswith("Bass")]
-    drums = [t for t in tracks if role.get(t, {}).get("label", "").startswith(("Drums", "Kick", "Snare", "Hats", "Perc"))]
+    bass, drums = low_end_tracks(tracks, role)
     for t in bass:
         args += ["--bass", t]
     for t in drums:
@@ -330,7 +357,7 @@ def g_timing(als, od, a, role):
     save(od / "raw" / "timing.txt", strip_warnings(out))
     if not j.exists():
         return [], [check_failed(od, "timing", out, "so no timing nudges are proposed", "timing-error.txt")]
-    d = json.loads(j.read_text())
+    d = json.loads(j.read_text(encoding="utf-8"))
     if pref_wants("timing") == "off":        # "off = never propose": nothing is proposed, and the person is told why
         n_t = sum(1 for f in d["findings"] if f.get("tool") == "timing")
         return [f for f in d["findings"] if f.get("tool") != "timing"], [
@@ -405,7 +432,7 @@ def g_vocals(als, od, a, role):
                 notes.append(check_failed(od, f"tuning check on {t}", out, "so that vocal has no pitch findings",
                                           f"tune-{files[t].stem}-error.txt"))
                 continue
-            d = json.loads(j.read_text())
+            d = json.loads(j.read_text(encoding="utf-8"))
             for f in d["findings"]:
                 f["track"] = t
                 f["key"], f["tuning_cents"] = d["key"], d["tuning_cents"]
@@ -438,7 +465,7 @@ def g_vocals(als, od, a, role):
         code, out = hx(*args)
         save(od / "raw" / "cliplevel.txt", strip_warnings(out))
         if j.exists():
-            findings += json.loads(j.read_text())["findings"]
+            findings += json.loads(j.read_text(encoding="utf-8"))["findings"]
         else:
             notes.append(check_failed(od, "clip levels of lower harmonies", out,
                                       "so harmony clips sitting too low were not checked", "cliplevel-error.txt"))
@@ -452,7 +479,7 @@ def g_vocals(als, od, a, role):
         code, out = hx(*args)
         save(od / "raw" / "vocallevel.txt", strip_warnings(out))
         if j.exists():
-            findings += json.loads(j.read_text())["findings"]
+            findings += json.loads(j.read_text(encoding="utf-8"))["findings"]
             notes.append("vocal levels: measured from renders x faders x automation (compressors not modelled); "
                          "before the final export re-run `hypnomix vocallevel SET --heard DIR` on solo exports")
         else:
@@ -466,7 +493,7 @@ def g_vocals(als, od, a, role):
         code, out = hx(*args)
         save(od / "raw" / "duck.txt", strip_warnings(out))
         if j.exists():
-            findings += json.loads(j.read_text())["findings"]
+            findings += json.loads(j.read_text(encoding="utf-8"))["findings"]
         else:
             notes.append(check_failed(od, "vocal reverb/delay ducking", out, "so ducking was not checked",
                                       "duck-error.txt"))
@@ -478,17 +505,37 @@ def g_vocals(als, od, a, role):
     tuned = any(f.get("tool") == "tune" for f in findings)
     if tuned:
         first = next(f for f in findings if f.get("tool") == "tune")
-        notes.append(f"vocals: key {first['key']} (confirm it before tuning: --key, or the section map's answers); lead taken as "
+        notes.append(f"vocals: key {first['key']} ("
+                     + ("the key you gave with --key" if a.key else "confirm it before tuning: --key, or the section map's answers")
+                     + f"); lead taken as "
                      f"'{lead}' ({how}; harmonies are checked against it; --lead-track to change)")
     return findings, notes
+
+
+def set_has_notes(als):
+    """True when the Live set holds any MIDI note (what the key is read from when there is no audio to read it from)."""
+    from hypnomix.session import automation as aa
+    try:
+        return next(aa.load(als).getroot().iter("MidiNoteEvent"), None) is not None
+    except Exception:
+        return True                  # cannot tell: let the key check run and say what it finds
 
 
 def key_map(als, od, a):
     """Key section by section (`hypnomix key --sections`): songs change key and borrow chords.
 
     Returns (path of the map or None, {findings, notes}). Each question the map can't settle (two scales that
-    differ by one note in some bars) becomes a finding to ask the person before any tuning."""
+    differ by one note in some bars) becomes a finding to ask the person before any tuning.
+
+    With no MIDI notes in the set and no --ref there is no audio to read a key from: the map is not made (nothing to
+    fail), and it says so unless the person already gave the key with --key. A set with MIDI notes still gets its map
+    when --key is given, so `fix --key sections` can follow it section by section."""
     j = od / "raw" / "key.json"
+    if not a.ref and not set_has_notes(als):
+        if a.key:
+            return None, {"findings": [], "notes": []}
+        return None, {"findings": [], "notes": ["key map: not made, the set has no MIDI notes; give --mix or --ref to read "
+                                                "the key from the audio (vocal tuning uses one key for the whole song)"]}
     args = ["key", "--set", als, "--sections", "--json", j]
     if a.ref:
         args += ["--audio", a.ref]
@@ -497,7 +544,7 @@ def key_map(als, od, a):
     if not j.exists():
         return None, {"findings": [], "notes": [check_failed(od, "key map", out, "so vocal tuning uses one key for the "
                                                               "whole song", "key-error.txt")]}
-    d = json.loads(j.read_text())
+    d = json.loads(j.read_text(encoding="utf-8"))
     secs, qs = d.get("sections", []), d.get("questions", [])
     main = d["key"]
     moves = sorted({s["scale"] for s in secs})
@@ -599,7 +646,7 @@ def g_effects(als, od, a):
     code, out = hx(*args)
     save(od / "raw" / "distortion.txt", strip_warnings(out))
     if j.exists():
-        d = json.loads(j.read_text())
+        d = json.loads(j.read_text(encoding="utf-8"))
         for f in d.get("findings", []):
             fid = (f.get("evidence") or {}).get("id")
             pure = bool(f.get("changes"))
@@ -877,6 +924,18 @@ def check_recording(path):
     y, sr = sf.read(str(path), dtype="float32", always_2d=True)
     if not len(y):
         return [("empty", "high", "the file has no audio", "export it again", None)], {}
+    pre = []
+    if y.shape[1] > 5:         # the loudness meter reads mono up to five channels: qc, release and translate refuse more
+        pre.append(("channels", "medium", f"has {y.shape[1]} channels; hypnomix's measuring tools read up to five",
+                    "export it as stereo or mono (or one file per channel); nothing was changed", None))
+    bad = ~np.isfinite(y)
+    if bad.any():              # NaN or infinite samples: report them, and measure the rest as if they were zero
+        at = float(np.flatnonzero(bad.any(axis=1))[0]) / sr
+        pre.append(("non-finite", "high", f"{int(bad.sum())} invalid sample{'s' if int(bad.sum()) != 1 else ''} (NaN or infinite; "
+                    f"the first at {int(at // 60)}:{at % 60:04.1f}): players and encoders misbehave on them; "
+                    "the measurements below treat them as zero",
+                    "export it again from the DAW (an effect in the chain probably produced them); nothing was changed", None))
+        y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
     mono = y.mean(1)
     peak = float(np.abs(y).max())
     peak_db = 20 * np.log10(max(peak, 1e-9))
@@ -885,9 +944,9 @@ def check_recording(path):
     rms = np.sqrt((mono[: n * blk] ** 2).reshape(n, blk).mean(1) + 1e-14)
     db = 20 * np.log10(rms)
     live = db[db > -90]  # digital silence (gaps in a render) says nothing about the noise
-    out, name = [], path.name
+    out, name = list(pre), path.name
     if not len(live):
-        return [("silent", "medium", "the file is silent", "check the export (wrong track or range?)", None)], {}
+        return pre + [("silent", "medium", "the file is silent", "check the export (wrong track or range?)", None)], {}
     active = live[live > np.percentile(live, 95) - 30]
     level = float(np.median(active))
     floor = float(np.percentile(live, 5))
@@ -1007,9 +1066,22 @@ def g_recordings(folder, od, a):
     save(od / "raw" / "clicks.txt", strip_warnings(out))
     save(od / "raw" / "recordings.json", json.dumps(facts, indent=1))
     notes.append(f"recordings: {len(files)} files measured; click report in raw/clicks.txt")
+    ign = getattr(a, "ignored_opts", None)
+    if ign:
+        notes.append(f"{', '.join(ign)} {'was' if len(ign) == 1 else 'were'} given but {'is' if len(ign) == 1 else 'are'} not used for a "
+                     "folder of recordings (it is measured file by file); to check a bounce, run `hypnomix qc` or "
+                     "`translate` on it")
     notes.append("the whole folder can be prepared in one go (`hypnomix prep FOLDER`: copies, never the originals) "
                  "once the person has seen this list")
     return findings, notes
+
+
+def g_recordings_set(als, od, a):
+    """The folder scan's recordings check, on the audio files a Live set plays (the same one the REAPER and Ardour scans
+    run), so hiss, DC offset, clipping and levels in the source files are not missed because the song is a set."""
+    from hypnomix import project as PJ
+    from hypnomix.workflow import scan_project as SP
+    return SP.g_recordings(PJ.load(als), None, od, a)
 
 
 PAIR_WORDS = {"in", "out", "top", "bottom", "btm", "bot", "di", "amp", "mic", "close", "far", "room", "inside",
@@ -1026,8 +1098,9 @@ def pair_base(name):
 def phase_findings(stems, sr, paths=None):
     """Files that record the same source (by name): time offset and polarity between them."""
     from hypnomix.engineer import align as A
+    from hypnomix.engineer import masking as M
     groups, out = {}, []
-    for n, y in stems:
+    for n, y in M.only(stems, [n for n in M.names_of(stems) if pair_base(n)]):     # only the pairs are read (a StemSet stays on disk)
         b = pair_base(n)
         if b:
             groups.setdefault(b, []).append((n, y))
@@ -1095,8 +1168,16 @@ def g_stems(folder, od, a):
     files = audio_files(folder)
     if len(files) < 2:
         return [], ["stems: fewer than two files, nothing to compare"]
-    stems, sr = M.load_stems(folder)
-    return stem_findings(stems, sr, {p.stem: p for p in files})
+    bad = []
+    stems, sr = M.load_stems(folder, skipped=bad, lazy=True)
+    silent = [p.name for p in files if p.stem not in {n for n, _ in stems} and p.name not in {n for n, _ in bad}]
+    lead = [f"stems: {n} was left out of the comparison ({why}); the recordings group lists it" for n, why in bad]
+    if silent:
+        lead.append(f"stems: left out of the comparison (silent): {', '.join(silent)}")
+    if len(stems) < 2:
+        return [], lead + ["stems: fewer than two files with sound, nothing to compare"]
+    found, notes = stem_findings(stems, sr, {p.stem: p for p in files})
+    return found, lead + notes
 
 
 # ---------------------------------------------------------------- deeper checks on a set
@@ -1113,8 +1194,8 @@ def g_stems_set(als, od, a):
     if len(keep) < 2:
         return [], [check_failed(od, "stems", out, "so frequency fights and mic phase between tracks were not checked "
                                  "(it needs two or more rendered tracks)", "stems-error.txt")]
-    stems, sr = M.load_stems(rd)
-    stems = [(n, y) for n, y in stems if n in on]
+    stems, sr = M.load_stems(rd, lazy=True)
+    stems = M.only(stems, on)
     if len(stems) < 2:
         return [], ["stems: fewer than two switched-on audio tracks with clips"]
     real = {re.sub(r'[\\/:*?"<>|]', "-", n): n for n in sorted(tracks_on(als))}      # rendered file name -> track name
@@ -1413,7 +1494,8 @@ def carry_decisions(od, old_findings, findings):
         return 0
     kept, dropped = remap_decisions(old_findings or [], findings, dec)
     if kept != dec:
-        AT.write_json(dp, kept)
+        with AT.decisions_lock(od):
+            AT.write_json(dp, kept)
     set_aside(od, dropped)
     return len(dropped)
 
@@ -1437,7 +1519,7 @@ def merge(od, remap=True):
     for g in ALL_GROUPS:
         p = od / f"{g}.json"
         if p.exists():
-            d = json.loads(p.read_text())
+            d = json.loads(p.read_text(encoding="utf-8"))
             for f in d["findings"]:
                 f["group"] = g
             findings += d["findings"]
@@ -1457,7 +1539,7 @@ def merge(od, remap=True):
         h = P.habit(prefs, f)
         if h:
             f["history"] = h
-    sets = {json.loads((od / f"{g}.json").read_text()).get("set") for g in ALL_GROUPS if (od / f"{g}.json").exists()}
+    sets = {json.loads((od / f"{g}.json").read_text(encoding="utf-8")).get("set") for g in ALL_GROUPS if (od / f"{g}.json").exists()}
     if len(sets) > 1:
         notes.insert(0, "WARNING: the group results in this folder come from different sets or folders: "
                      + "; ".join(sorted(map(str, sets))) + ". Scan again into an empty folder.")
@@ -1530,10 +1612,10 @@ def item_lines(f, ov, show, kc=None):
     also = f" (same audio again at {', '.join(f['also_at'][:5])})" if f.get("also_at") else ""
     mark = " · NEW since the last scan" if f.get("new") else " · carried over from the last scan" if f.get("carried") else ""
     L = [f"### {f.get('n', '')}. [{f.get('severity')}] {f['tool']}: {show(f.get('track')) if f['tool'] != 'name' else f.get('track')}{where}{also}"]
-    like = ov["like"].get(f["id"]) if ov else None
+    like = ((ov.get("like_n") or {}).get(f["id"]) or len((ov.get("like") or {}).get(f["id"]) or [])) if ov else 0     # how many (like="count"), or the lists
     L.append(f"- id: `{f['id']}` · applies: **{f.get('applies')}**"
              + (" · **PROTECTED track: ask again before changing**" if f.get("protected") else "") + mark
-             + (f" · {len(like)} like it" if like and f.get("applies") not in ("info", "answer") else ""))
+             + (f" · {like} like it" if like and f.get("applies") not in ("info", "answer") else ""))
     if f.get("history"):
         L.append(f"- history: {f['history']}")
     L.append(f"- problem: {f.get('problem')}")
@@ -1578,7 +1660,7 @@ def show_item(od, f, findings, dec=None):
     from hypnomix.workflow import prefs as P, review as RV
     od = Path(od)
     prefs = P.load()
-    ov = RV.oversight_payload(od, findings, prefs)
+    ov = RV.oversight_payload(od, findings, prefs, like="count")
     kc = kind_context(findings, ov)
     L = item_lines(f, ov, names_map(od), kc)
     d = (dec or {}).get(f["id"])
@@ -1598,7 +1680,7 @@ def write_review(od, setp, findings, notes, meta, pref_lines=(), prefs=None):
     try:
         from hypnomix.workflow import oversight as O, review as RV, prefs as P
         prefs = P.load() if prefs is None else prefs
-        ov = RV.oversight_payload(od, findings, prefs)
+        ov = RV.oversight_payload(od, findings, prefs, like="count")        # REVIEW.md prints how many are like each, not which
     except Exception as e:  # the review must still be written
         ov = None
         notes = list(notes) + [f"WARNING: oversight lines failed ({e})"]
@@ -1607,10 +1689,12 @@ def write_review(od, setp, findings, notes, meta, pref_lines=(), prefs=None):
     from hypnomix import project as PJ
     daw = PJ.daw_of(setp) if setp else None
     rpp_ = daw in ("reaper", "ardour")
+    files_ = bool(setp) and not rpp_ and not str(setp).lower().endswith(".als")      # a folder of recordings (or one file)
     L = [f"# First-pass review: {Path(setp).stem if setp else od.name}", "",
-         f"{'Project' if rpp_ else 'Set'}: `{setp}`  ", "Nothing has been changed. Go through the items one at a time: "
+         f"{'Project' if rpp_ else 'Folder' if files_ else 'Set'}: `{setp}`  ", "Nothing has been changed. Go through the items one at a time: "
          "**approve**, **skip** or **change** each" + (", then `hypnomix fix` writes them into ONE new project." if daw == "reaper" else
                                                        ", then make the approved changes (see Apply)." if rpp_ else
+                                                       ", then `hypnomix fix` writes a repaired copy of each approved file (see Apply)." if files_ else
          ", then `hypnomix fix` writes every approved set change into ONE new set."), "",
          f"**{len(findings)} findings:** {counts['high']} high, {counts['medium']} medium, {counts['low']} low, "
          f"{counts['info']} info", ""]
@@ -1691,6 +1775,14 @@ def write_review(od, setp, findings, notes, meta, pref_lines=(), prefs=None):
               "kinds are done by hand."]
         AT.write_text(od / "REVIEW.md", "\n".join(L) + "\n", backup=False)
         return
+    if files_:
+        L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision',
+              f'hypnomix fix "{od}" --approved   # apply only what was approved', "```",
+              f"Audio files: `fix` writes a repaired COPY of each approved file into `{od / 'fixed'}` (no --out: the originals "
+              "are never touched, and a file that is already there is never overwritten). *Manual* items are listed for you, "
+              "with what to do. Nothing in a folder of recordings is a Live set, so there is no set to close or to write."]
+        AT.write_text(od / "REVIEW.md", "\n".join(L) + "\n", backup=False)
+        return
     L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision',
           f'hypnomix fix "{od}" --approved --out "<Song> (fixed).als"   # apply only what was approved', "```",
           "Close the set in Live first. `fix` writes approved *set* changes in one new set next to the original; "
@@ -1709,7 +1801,7 @@ def incremental_plan(als, od, prev, groups, a):
     if not (prev / "findings.json").exists():
         sys.exit(f"--since: no scan in {prev}")
     snap = prev / "raw" / Q.SNAPSHOT
-    old_groups = {g: json.loads((prev / f"{g}.json").read_text()) for g in ALL_GROUPS if (prev / f"{g}.json").exists()}
+    old_groups = {g: json.loads((prev / f"{g}.json").read_text(encoding="utf-8")) for g in ALL_GROUPS if (prev / f"{g}.json").exists()}
     old_findings = (AT.load_json(prev / "findings.json", {}) or {}).get("findings") or []
     old_dec = AT.load_json(prev / "decisions.json", {}) or {}
     if not snap.exists():
@@ -1721,7 +1813,7 @@ def incremental_plan(als, od, prev, groups, a):
         nj = prev / "raw" / "names" / "names.json"
         labels = {}
         if nj.exists():
-            labels = {r["old"]: str(r.get("final") or r.get("label") or "") for r in json.loads(nj.read_text()).get("tracks", [])}
+            labels = {r["old"]: str(r.get("final") or r.get("label") or "") for r in json.loads(nj.read_text(encoding="utf-8")).get("tracks", [])}
         rerun, why = Q.changed_groups(rows, groups, labels)
         for g in groups:                       # a group the previous scan never ran has nothing to carry
             if g not in old_groups and g not in rerun:
@@ -1769,7 +1861,7 @@ def incremental_finish(od, since):
         p = od / f"{g}.json"
         if not p.exists():
             continue
-        d = json.loads(p.read_text())
+        d = json.loads(p.read_text(encoding="utf-8"))
         for f in d["findings"]:
             f.pop("carried", None)
             if Q.fp(f) not in old_fp:
@@ -1783,7 +1875,8 @@ def incremental_decisions(od, since):
     new = AT.load_json(od / "findings.json")["findings"]
     dec, dropped = remap_decisions(since["old_findings"], new, since["old_dec"])
     if dec or (od / "decisions.json").exists():
-        AT.write_json(od / "decisions.json", dec)
+        with AT.decisions_lock(od):
+            AT.write_json(od / "decisions.json", dec)
     set_aside(od, dropped)
     return dec, dropped
 
@@ -1804,13 +1897,13 @@ def same_source(recorded, als):
         return str(recorded) == str(als)
 
 
-def scan_folder(custom, als):
+def scan_folder(custom, als, name=None):
     """The folder this scan writes into. A folder that already holds the scan of a DIFFERENT source ("Song.als" and
     then an Ardour session also called "Song") is never mixed with it: its decisions, fix log and history would
     be inherited by the wrong song. The next free "<name> (2)", "(3)" ... is used instead, and the person is told."""
     from hypnomix.core import paths
     als = Path(als)
-    base = Path(custom).expanduser() if custom else paths.OUT / "scan" / (als.name if als.is_dir() else als.stem)
+    base = Path(custom).expanduser() if custom else paths.OUT / "scan" / (name or (als.name if als.is_dir() else als.stem))
     cand, k = base, 1
     while (cand / "scan.json").exists():
         prev = (AT.load_json(cand / "scan.json", {}) or {}).get("set")
@@ -1821,7 +1914,7 @@ def scan_folder(custom, als):
     if cand != base:
         print(f"{base} already holds a scan of a different source ({prev}); not mixing the two songs: "
               f"writing to {cand}")
-    cand.mkdir(parents=True, exist_ok=True)
+    paths.make_dir(cand)                  # an unwritable folder ends in one plain sentence (exit 2), not a traceback
     return cand
 
 
@@ -1855,11 +1948,17 @@ def main():
                     "the scan in DIR, and keep its other findings")
     a = ap.parse_args()
     if a.merge:
+        md = Path(a.merge).expanduser()
+        if not md.is_dir() or not any((md / f"{g}.json").exists() for g in ALL_GROUPS):
+            sys.exit(f"{a.merge} is not a scan folder (no group .json files in it): give the folder a scan wrote")
         findings, notes = merge(a.merge)
         print(f"{len(findings)} findings → {Path(a.merge) / 'REVIEW.md'}")
         return
     if not a.als:
         ap.error("give a set (.als), or --merge DIR")
+    given = [o for o, v in (("--mix", a.mix), ("--ref", a.ref), ("--backing", a.backing), ("--key", a.key), ("--like", a.like),
+                            ("--deep", a.deep), ("--devices", a.devices), ("--vocal-track", a.vocal_track),
+                            ("--lead-track", a.lead_track), ("--timing-track", a.timing_track)) if v]
     a.ref = a.ref or a.mix
     als = Path(a.als).expanduser().resolve()
     if not als.exists():
@@ -1867,19 +1966,30 @@ def main():
     from hypnomix import project as PJ
     daw = PJ.daw_of(als)
     reaper = daw in ("reaper", "ardour")      # a project read through the shared model (an Ardour folder too)
-    if a.since and reaper:
-        sys.exit(f"--since is for a Live set (.als): a {PJ.NAMES[daw]} project is scanned in full each time, so leave it out "
-                 "(your decisions are kept by what each finding is about).")
     folder = als.is_dir() and not reaper
+    # everything that can be refused is refused here, before a scan folder is made
+    if not folder and daw is None:             # a single file that is neither a set nor a project
+        sys.exit(f"{als.name}: not something scan can read: give a Live set (.als), a REAPER project (.rpp), an Ardour "
+                 "session (.ardour, or its folder) or a folder of recordings" + ("; to look at one audio file use `hypnomix measure`"
+                                                         if als.suffix.lower() in AUDIO_EXT + (".mp3", ".m4a", ".aac", ".ogg") else ""))
+    if a.since and (reaper or folder):
+        what = "a folder of recordings" if folder else f"{'an' if PJ.NAMES[daw][0] in 'AEIOU' else 'a'} {PJ.NAMES[daw]} project"
+        sys.exit(f"--since is for a Live set (.als): {what} is scanned in full each time, so leave it out "
+                 "(your decisions are kept by what each finding is about).")
     if folder and not audio_files(als):
         sys.exit(f"no audio files (wav, aif, flac) in {als}")
-    if als.is_file() and als.suffix.lower() == ".als":      # a set from a newer Live: one warning line, the scan goes on
-        from hypnomix.session import liveversion as LV
+    if a.since and not (Path(a.since).expanduser().resolve() / "findings.json").exists():
+        sys.exit(f"--since: no scan in {Path(a.since).expanduser().resolve()}")
+    if reaper:
+        PJ.load(als)                          # a damaged or wrong file ends here in one plain sentence (ProjectReadError)
+    elif not folder:
+        from hypnomix.session import automation as _aa
+        try:
+            _aa.load(als)
+        except PJ.unreadable_errors() as e:
+            raise PJ.ProjectReadError(als.name, "live") from e
+        from hypnomix.session import liveversion as LV     # a set from a newer Live: one warning line, the scan goes on
         LV.warn_read(als)
-    od = scan_folder(a.out, als)
-    from hypnomix.core import paths as _paths
-    _paths.OUT = od / "raw" / "tools"                   # a scan writes only under its own folder: a tool that
-    os.environ["HYPNOMIX_OUT"] = str(_paths.OUT)        # defaults to hypnomix-out/ (audit does) lands here instead
     if reaper:
         from hypnomix.workflow import scan_project as SP
         mine = SP.GROUPS
@@ -1894,6 +2004,19 @@ def main():
     wrong = [g for g in groups if g not in mine]
     if wrong:
         sys.exit(f"{', '.join(wrong)}: not a group for a {'folder' if folder else PJ.NAMES[daw] + ' project' if reaper else 'Live set'} (use {', '.join(mine)})")
+    a.ignored_opts = given if folder else []
+    if a.ignored_opts:                         # a folder of recordings is measured file by file: say so, and do not record them
+        print(f"note: {', '.join(a.ignored_opts)} {'is' if len(a.ignored_opts) == 1 else 'are'} not used for a folder of "
+              "recordings (it is measured file by file); to check a bounce, run `hypnomix qc` or `translate` on it")
+        a.mix = a.ref = a.backing = a.key = None
+    alts = PJ.ardour_alternatives(als) if daw == "ardour" else []
+    if alts:
+        print(f"note: {als.name} holds several Ardour snapshots and none is named like the folder: scanning the newest, "
+              f"{PJ.ardour_session(als).name} (the others: {', '.join(x.name for x in alts[:4])}); give a .ardour file to choose")
+    od = scan_folder(a.out, als)
+    from hypnomix.core import paths as _paths
+    _paths.OUT = od / "raw" / "tools"                   # a scan writes only under its own folder: a tool that
+    os.environ["HYPNOMIX_OUT"] = str(_paths.OUT)        # defaults to hypnomix-out/ (audit does) lands here instead
     told = told_in_live(als, a) if not folder and not reaper else {}
     info = {"set": str(als), "mode": "folder" if folder else daw if reaper else "set", "mix": a.mix, "ref": a.ref, "backing": a.backing, "key": a.key, "lead": None,
             "set_mtime": als.stat().st_mtime}
@@ -1935,7 +2058,7 @@ def main():
               "effects": lambda: g_effects(als, od, a), "mix": lambda: g_mix(als, od, a),
               "noise": lambda: g_noise(als, od, a), "intent": lambda: g_intent(als, od, a),
               "structure": lambda: __import__("hypnomix.workflow.quick", fromlist=["g_structure"]).g_structure(als, od, a),
-              "recordings": lambda: g_recordings(als, od, a),
+              "recordings": lambda: g_recordings(als, od, a) if folder else g_recordings_set(als, od, a),
               "stems": lambda: (g_stems(als, od, a) if folder else g_stems_set(als, od, a))}[g]
         try:
             f, notes = fn()

@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from hypnomix.core import dsp
+from hypnomix.core import args as A
 from hypnomix.core.paths import out_at
 from hypnomix.engineer import stages
 
@@ -49,7 +50,7 @@ def main(argv=None):
     ap.add_argument("--range", default="2000:6000", help="lo:hi Hz")
     ap.add_argument("--thresh", type=float, default=6.0, help="dB over the song's usual balance")
     ap.add_argument("--min", type=float, default=0.25, dest="min_s", help="shortest moment that counts, s")
-    ap.add_argument("--top", type=int, default=20, help="list this many (strongest first)")
+    ap.add_argument("--top", type=A.whole(1), default=20, help="list this many (strongest first)")
     ap.add_argument("--json")
     ap.add_argument("--out")
     a = ap.parse_args(argv)
@@ -65,9 +66,9 @@ def main(argv=None):
                "No sustained build-ups (measured; still listen on bright earbuds at a high level).")
             + "\n\nMeasured, not heard: listen at each time before turning anything down.\n")
     od = out_at(a.out, "harsh")
-    (od / f"{Path(a.file).stem} (harsh).md").write_text(text)
+    (od / f"{Path(a.file).stem} (harsh).md").write_text(text, encoding="utf-8")
     if a.json:
-        Path(a.json).write_text(json.dumps(r, indent=1))
+        Path(a.json).write_text(json.dumps(r, indent=1), encoding="utf-8")
     print(text)
     print(f"report: {od / (Path(a.file).stem + ' (harsh).md')}", file=sys.stderr)
 

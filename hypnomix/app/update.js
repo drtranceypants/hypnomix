@@ -8,7 +8,7 @@ const css = `
 #upd .later{background:transparent;color:var(--mute);border:1px solid var(--line)}#upd .small{color:var(--mute);font-size:.86rem}
 #upd .bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:8px}#upd .bar i{display:block;height:100%;background:var(--accent);width:0}
 #upd pre{white-space:pre-wrap;font:inherit;font-size:.9rem;margin:8px 0 0;max-height:260px;overflow:auto}
-#upd .err{color:var(--hi)}#hxver{background:none;border:0;color:var(--mute);font:inherit;font-size:.8rem;cursor:pointer;padding:4px 8px}
+#upd a,#updpop a{color:var(--accent)}#upd .err{color:var(--hi)}#hxver{background:none;border:0;color:var(--mute);font:inherit;font-size:.8rem;cursor:pointer;padding:4px 8px}
 #hxver:hover{color:var(--accent)}
 #updpop{position:absolute;right:12px;top:48px;z-index:20;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
   box-shadow:0 10px 30px rgba(0,0,0,.18);width:300px;font-size:.92rem}#updpop label{display:flex;gap:8px;margin-top:8px}`;
@@ -47,6 +47,8 @@ function draw() {
     act = `<span class="small">Downloaded and checked.</span><button class="go" data-upd="install">Install and restart</button><button class="later" data-upd="skip">Later</button>`;
   } else if (U.one_click) {
     act = `<button class="go" data-upd="get">Update now${U.size ? ` (${mb(U.size)})` : ''}</button><button class="later" data-upd="skip">Later</button>`;
+  } else if (U.no_full_download) {
+    act = `<span class="small">This version has no full download yet, so this app stays as it is. It is not replaced by the Assistant app.</span>${U.page ? `<a href="${esc(U.page)}" target="_blank" rel="noopener">release notes</a>` : ''}<button class="later" data-upd="skip">Later</button>`;
   } else {
     act = `<a href="https://hypnomix.bradfieldenterprises.org/download/" target="_blank" rel="noopener">Download it</a><button class="later" data-upd="skip">Later</button>`;
   }
@@ -85,7 +87,9 @@ function popup() {
     <div class="small" style="color:var(--mute);margin-top:4px">${U && U.error ? esc(U.error) : U && U.newer ? `${esc(U.latest)} is available.` : 'Up to date.'} Last checked: ${esc(when)}.</div>
     <label><input type="checkbox" id="updauto" ${U && U.auto ? 'checked' : ''}> Check once a day</label>
     <div style="margin-top:10px;display:flex;gap:8px"><button class="go" id="updnow" style="border:0;border-radius:8px;padding:6px 12px;background:var(--accent);color:var(--accent-ink);cursor:pointer">Check now</button></div>`;
+  p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Updates'); p.tabIndex = -1;
   document.body.appendChild(p);
+  p.focus({preventScroll: true});                       // the keyboard goes into the popup; Escape closes it and gives the keyboard back
   p.querySelector('#updauto').addEventListener('change', async e => { U = await post('/api/update/settings', { auto: e.target.checked }); });
   p.querySelector('#updnow').addEventListener('click', async () => {
     p.querySelector('#updnow').textContent = 'Checking…'; await load(true);
@@ -95,6 +99,7 @@ function popup() {
 }
 
 ver.addEventListener('click', popup);
+document.addEventListener('keydown', e => { const p = document.getElementById('updpop'); if (e.key === 'Escape' && p) { e.preventDefault(); p.remove(); ver.focus(); } });
 document.addEventListener('click', async e => {
   if (!e.target.closest('#updpop') && e.target !== ver) { const p = document.getElementById('updpop'); if (p) p.remove(); }
   const b = e.target.closest('[data-upd]'); if (!b) return;

@@ -170,10 +170,10 @@ def warp_render(y, sr, pairs, crisp=True):
     y = y[: int(clean[-1][0] * sr)]
     out = None
     if shutil.which("rubberband"):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
             fi, fo, fm = os.path.join(td, "i.wav"), os.path.join(td, "o.wav"), os.path.join(td, "m.txt")
             sf.write(fi, y, sr, subtype="FLOAT")
-            with open(fm, "w") as f:
+            with open(fm, "w", encoding="utf-8") as f:
                 for s, d in clean:
                     f.write(f"{int(round(s * sr))} {int(round((d - lead) * sr))}\n")
             cmd = ["rubberband", "-3", "-q", "-D", f"{dst_end:.6f}", "--timemap", fm]

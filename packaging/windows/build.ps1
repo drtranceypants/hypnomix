@@ -32,6 +32,8 @@ Remove-Item -Recurse -Force "$Work\pythons"
 Remove-Item Env:UV_PYTHON_INSTALL_DIR
 $Py = "$App\python\python.exe"
 Remove-Item -Force -ErrorAction SilentlyContinue "$App\python\Lib\EXTERNALLY-MANAGED"
+# tkinter and tcl are left out on purpose (about 15 MB, and the app is a local web page): the installed Windows app has no
+# file chooser, so its Songs page shows only the Path boxes (docs/APP.md). Keeping the chooser means keeping both Lib\tkinter and python\tcl.
 foreach ($d in "test", "idlelib", "tkinter", "turtledemo", "ensurepip") {
   Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$App\python\Lib\$d"
 }

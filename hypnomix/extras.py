@@ -134,7 +134,7 @@ def _env():
         base = base_dir()
         base.mkdir(parents=True, exist_ok=True)
         pins = base / "app-packages.txt"
-        pins.write_text(_pins())
+        pins.write_text(_pins(), encoding="utf-8")
         env["PYTHONUSERBASE"] = str(base)
         cmd += ["--user", "--constraint", str(pins)]
     return env, cmd
@@ -177,7 +177,7 @@ def _run(name, cmds, env):
             if i:
                 with _lock:
                     job["log"] += _show(cmd)
-            p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, **kw)
+            p = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1, **kw)
             for line in p.stdout:
                 with _lock:
                     job["log"] += line

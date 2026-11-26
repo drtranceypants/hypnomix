@@ -5,21 +5,49 @@ decisions.json, and the song then disappears from the app. These helpers write t
 in the same folder, flush it to disk, and only then swap it in (`os.replace` is all-or-nothing). The version that
 was there before is kept next to it as "<name>.bak".
 
+    replace(src, dst)               os.replace that tries again for a moment on Windows when another program holds dst open
     write_json(path, data)          decisions.json, findings.json, scan.json
     write_text(path, text)          any other small file
     append_text(path, text)         a log (fix-log.md): the old text plus the new, swapped in whole
     load_json(path, default)        reads it; if the file is cut off, falls back to the .bak with a warning
+    decisions_lock(folder)          one writer of a scan folder's decisions.json at a time, across programs
+                                    (every read-then-write of that file happens inside it; it can be nested)
 
     cache_root()                    where caches live: <hypnomix home>/cache (HYPNOMIX_HOME decides the home)
 """
+import contextlib
+import errno
 import json
 import os
 import shutil
 import sys
 import threading
+import time
 from pathlib import Path
 
 BAK = ".bak"
+RETRIES = 6                 # Windows only: about a third of a second in all (0.01 s, doubling)
+
+
+def _windows():
+    return sys.platform == "win32"
+
+
+def replace(src, dst):
+    """`os.replace`, and on Windows a few quick tries again when the target is held open for a moment by another program (a
+    reader, a virus scanner, a search indexer). Still refused after that: PermissionError whose text says what to do."""
+    delay = 0.01
+    for n in range(RETRIES):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError as e:
+            if not _windows():
+                raise
+            if n == RETRIES - 1:
+                raise PermissionError(errno.EACCES, "it is open in another program; close it and try again", str(dst)) from e
+            time.sleep(delay)
+            delay *= 2
 
 
 def _tmp(p):
@@ -69,10 +97,10 @@ def write_text(path, text, backup=True, only_if_json=False):
             btmp = _tmp(bak)
             try:
                 shutil.copyfile(p, btmp)
-                os.replace(btmp, bak)
+                replace(btmp, bak)
             finally:
                 _drop(btmp)
-        os.replace(tmp, p)
+        replace(tmp, p)
         _sync_dir(p.parent)
     finally:
         _drop(tmp)
@@ -118,6 +146,52 @@ def load_json(path, default=None, warn=True):
         print(f"warning: {why} and there is no usable backup; the broken file is kept as {p.name}.corrupt",
               file=sys.stderr)
     return default
+
+
+_DEC_GUARD = threading.Lock()
+_DEC_LOCKS = {}             # folder -> (RLock, [depth]): a thread that holds the lock may take it again
+
+
+@contextlib.contextmanager
+def decisions_lock(sd):
+    """One writer of a scan folder's decisions.json at a time: the app's threads, `hypnomix fix --decide` in another
+    program, an agent beside the review page. Every read-then-write of that file (and the whole-file writes of a
+    re-scan or a restore) happens inside it. It can be taken again by the thread that holds it (the app's record
+    functions call each other). If the folder cannot hold the lock file, the threads of this program are still kept
+    in line and the write itself says what is wrong with the folder."""
+    folder = Path(sd)
+    key = str(folder.resolve())             # one lock for every spelling of the folder (a link, a relative path)
+    with _DEC_GUARD:
+        lock, depth = _DEC_LOCKS.setdefault(key, (threading.RLock(), [0]))
+    with lock:
+        if depth[0]:
+            depth[0] += 1
+            try:
+                yield
+            finally:
+                depth[0] -= 1
+            return
+        fh = None
+        try:
+            fh = open(folder / "decisions.json.lock", "a+", encoding="utf-8")
+            try:
+                import fcntl
+                fcntl.flock(fh, fcntl.LOCK_EX)
+            except ImportError:                       # Windows
+                import msvcrt
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+        except OSError:
+            if fh is not None:
+                fh.close()
+            fh = None
+        depth[0] = 1
+        try:
+            yield
+        finally:
+            depth[0] = 0
+            if fh is not None:
+                fh.close()                            # closing the file releases the lock
 
 
 def cache_root():

@@ -101,10 +101,12 @@ def stretch(seg, off_frames, sr, sung=None):
     tgt = np.clip(tgt, 1, len(seg) - 1)
     keep = np.r_[True, np.diff(tgt) > 0]
     src, tgt = src[keep].astype(int), np.round(tgt[keep]).astype(int)
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
         fi, fo, fm = [os.path.join(td, x) for x in ("in.wav", "out.wav", "map.txt")]
         sf.write(fi, seg.astype(np.float32), sr, subtype="FLOAT")
         np.savetxt(fm, np.c_[src, tgt], fmt="%d")
+        from hypnomix.core.tools import need_rubberband
+        need_rubberband("this alignment")
         subprocess.run(["rubberband", "-3", "-q", "-M", fm, "-D", f"{len(seg) / sr:.6f}", fi, fo],
                        check=True, capture_output=True)
         Y, _ = sf.read(fo)

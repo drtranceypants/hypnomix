@@ -20,9 +20,12 @@ Usage:
                     [--stems-out] [--dry] [--out DIR]
 
 Writes <Song> (automix).wav, <Song> (master).wav, MIX NOTES.md and recipe.json (the same settings in
-EQ Eight / Compressor / Utility terms, so Claude can rebuild the mix in Live with the Ableton MCP).
+EQ Eight / Compressor / Utility terms, so Claude can rebuild the mix in Live with the Ableton MCP), into
+hypnomix-out/automix/<Song>, or "<Song> (2)", "(3)" ... when that folder already holds an earlier run. Nothing earlier
+is overwritten: an --out folder that already holds an earlier automix (any name) is refused (exit code 2).
 """
 from hypnomix.core.paths import out_at
+from hypnomix.core import args as A
 import argparse, json, sys, time
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -211,6 +214,15 @@ def automix(folder, name=None, target=-14.0, reference=None, do_master=True, ste
     """allow: a set of approved move keys (see `plan_findings`); only those moves are made. None = every move."""
     t0 = time.time()
     ok = lambda key: allow is None or key in allow
+    if not outdir:                              # the default place: a new numbered folder, never over an earlier run
+        from hypnomix.core import paths as _paths
+        name = name or Path(folder).resolve().name
+        base = _paths.OUT / "automix" / name
+        cand, k = base, 1
+        while cand.exists() and any(cand.iterdir()):
+            k += 1
+            cand = base.with_name(f"{base.name} ({k})")
+        outdir = str(cand)
     if prep_first:
         from hypnomix.studio.prep import prep
         pod = (out_at(outdir, "automix", name or Path(folder).resolve().name)) / "prepped stems"
@@ -321,12 +333,12 @@ def automix(folder, name=None, target=-14.0, reference=None, do_master=True, ste
         mlog = []
         out, before, after, mlog = mastering.master(mix, sr, target, -1.0, reference, log=mlog)
         files.append(dsp.save(od / f"{name} (master).wav", out, sr, 24))
-        (od / f"{name} (master notes).md").write_text(mastering.notes(name, before, after, mlog, target, files[-1:]))
+        (od / f"{name} (master notes).md").write_text(mastering.notes(name, before, after, mlog, target, files[-1:]), encoding="utf-8")
         master_info = dict(before=before, after=after)
 
     notes = mix_notes(name, role_of, how, log, pans, fixed, bus_note, master_info, files, time.time() - t0)
-    (od / "MIX NOTES.md").write_text(notes)
-    (od / "recipe.json").write_text(json.dumps(recipe(name, sr, role_of, log, bus_note), indent=1))
+    (od / "MIX NOTES.md").write_text(notes, encoding="utf-8")
+    (od / "recipe.json").write_text(json.dumps(recipe(name, sr, role_of, log, bus_note), indent=1), encoding="utf-8")
     return od, notes, dict(log=log, role_of=role_of, bus=bus_note, pans=pans)
 
 
@@ -444,11 +456,19 @@ def recipe(name, sr, role_of, log, bus):
                 drum_bus=bus, note="Recreate with the Ableton MCP (create tracks, load devices) and hypnomix live (exact dB, params).")
 
 
+def _holds_automix(d):
+    """True when this folder already holds an automix's files (any song's mix or master, the notes or the recipe)."""
+    if not d.is_dir():
+        return False
+    return (d / "MIX NOTES.md").exists() or (d / "recipe.json").exists() or any(d.glob("* (automix).wav")) \
+        or any(d.glob("* (master).wav"))
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix automix", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("folder")
     ap.add_argument("--name")
-    ap.add_argument("--target", type=float, default=-14.0)
+    ap.add_argument("--target", type=A.number(-70, 0), default=-14.0, help="loudness to aim for, LUFS (-70 to 0)")
     ap.add_argument("--reference")
     ap.add_argument("--no-master", action="store_true")
     ap.add_argument("--no-prep", action="store_true", help="skip the prep pass (stems are already edited)")
@@ -470,7 +490,11 @@ def main():
                 "approved moves are mixed into fixed/automix/ (no master: `hypnomix master --plan` is its own review)"]
         PL.write(sd, "automix", a.folder, plan_findings(a.folder, info), note, time.time() - t0)
         return
-    allow = set(json.loads(Path(a.only).read_text())) if a.only else None
+    allow = set(json.loads(Path(a.only).read_text(encoding="utf-8", errors="replace"))) if a.only else None
+    if a.out and _holds_automix(Path(a.out).expanduser()):
+        print(f"{a.out} already holds an earlier automix and nothing is overwritten: choose another folder with --out, "
+              "or leave --out off to get a new numbered folder.", file=sys.stderr)
+        sys.exit(2)
     od, notes, _ = automix(a.folder, a.name, a.target, a.reference, not a.no_master, a.stems_out, a.out, not a.no_prep,
                            allow)
     print(notes)

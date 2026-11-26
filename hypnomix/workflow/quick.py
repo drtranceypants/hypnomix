@@ -135,6 +135,7 @@ def changed_groups(rows, groups, role_labels=None):
             need("files", f"{tr}: {what}")
             need("clips", f"{tr}: {what}")
             need("noise", f"{tr}: {what}")
+            need("recordings", f"{tr}: {what}")
             need("stems", f"{tr}: {what}")
             need("names", f"{tr}: {what}")
             if not role_labels:                       # roles unknown: either could be affected

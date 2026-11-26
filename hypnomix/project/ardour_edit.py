@@ -15,6 +15,7 @@ Region gain envelopes and fades are region-relative; a fader, pan or mute that p
 """
 import copy
 import math
+import os
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -325,7 +326,16 @@ def save(p, out):
     out = Path(out)
     p.native.set("name", out.stem)
     tree = ET.ElementTree(p.native)
-    tree.write(out, encoding="UTF-8", xml_declaration=True)
+    tmp = out.with_name(f".{out.name}.{os.getpid()}.tmp")          # whole or not at all: never a cut-off snapshot that the
+    try:                                                          # engine would list (its name does not end in .ardour)
+        tree.write(tmp, encoding="UTF-8", xml_declaration=True)
+        os.replace(tmp, out)
+    except BaseException:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
     return out
 
 

@@ -11,6 +11,8 @@ Also the tempo and tracks added, removed or renamed.
 Use it after any tool writes a new set, to see exactly what it did, and before opening the set in Live.
 `hypnomix fix` writes this list into its log. Plug-in internals that Live stores as opaque data are not
 compared; --all also lists changes to parameters that are not plain numbers or switches.
+Live sets (.als) only: a REAPER project or an Ardour session is refused with one sentence (`fix` lists what it changed
+there in fix-log.md).
 """
 import argparse, json, math, sys
 from pathlib import Path
@@ -279,9 +281,12 @@ def main():
     ap.add_argument("--json", metavar="OUT.json")
     ap.add_argument("--all", action="store_true", help="also list parameters that are not plain numbers or switches")
     a = ap.parse_args()
+    from hypnomix.core import args as A
+    A.live_set_only(a.old, "diff")
+    A.live_set_only(a.new, "diff")
     rows = diff(a.old, a.new, a.all)
     if a.json:
-        Path(a.json).write_text(json.dumps(dict(old=str(a.old), new=str(a.new), changes=rows), indent=1))
+        Path(a.json).write_text(json.dumps(dict(old=str(a.old), new=str(a.new), changes=rows), indent=1), encoding="utf-8")
     print(f"{Path(a.old).name} → {Path(a.new).name}: {len(rows)} change(s)\n")
     print(text(rows))
 

@@ -17,8 +17,10 @@ Usage:
 
 For each track: its clips are rendered like `hypnomix render` (clip gain, fades, warps), then every device
 that is switched on runs in order:
-  VST3 and AU plug-ins     loaded from /Library/Audio/Plug-Ins and ~/Library/Audio/Plug-Ins, found by name
-                           (AUs by their component codes), with the settings Live saved in the set
+  VST3 and AU plug-ins     loaded from the standard plug-in folders of this system (/Library/Audio/Plug-Ins and
+                           ~/Library/Audio/Plug-Ins on a Mac; Common Files\\VST3 on Windows; ~/.vst3 and /usr/lib/vst3
+                           on Linux), found by name (AUs, Mac only, by their component codes), with the settings
+                           Live saved in the set
   Live's own devices       only those hypnomix models: Utility gain, Compressor and Glue Compressor (also
                            with a sidechain from another track), Limiter (a hard ceiling), Gate and EQ Eight
                            (hypnomix's own models in session/devmodel.py: plain stereo EQ Eight only, and a
@@ -56,8 +58,20 @@ import numpy as np
 from hypnomix.core.paths import out_at
 
 HOME = Path.home()
-VST3_DIRS = [HOME / "Library/Audio/Plug-Ins/VST3", Path("/Library/Audio/Plug-Ins/VST3")]
-AU_DIRS = [HOME / "Library/Audio/Plug-Ins/Components", Path("/Library/Audio/Plug-Ins/Components")]
+
+
+def plugin_folders(platform=None, home=None):
+    """(VST3 folders, Audio Unit folders) for this operating system, the person's own folder first on a Mac. Audio Units
+    exist on a Mac only."""
+    from hypnomix.session.plugins import system_folders
+    platform = platform or sys.platform
+    f = system_folders(platform, home)
+    if platform == "darwin":
+        return list(reversed(f["vst3"])), list(reversed(f["au"]))
+    return list(f["vst3"]), []
+
+
+VST3_DIRS, AU_DIRS = plugin_folders()
 STOCK = {"StereoGain": "Utility (gain)", "Compressor2": "Compressor", "GlueCompressor": "Glue Compressor",
          "Limiter": "Limiter", "Eq8": "EQ Eight", "Gate": "Gate"}          # the Live devices hypnomix has a model of
 RACKS = {"AudioEffectGroupDevice", "InstrumentGroupDevice", "MidiEffectGroupDevice", "DrumGroupDevice"}
@@ -225,6 +239,14 @@ def chain_of(t):
 _AU_INDEX = None
 
 
+def _tidy(d):
+    """A folder as the person knows it: ~/Library/... for one under their home."""
+    try:
+        return "~/" + Path(d).relative_to(HOME).as_posix()
+    except ValueError:
+        return str(d)
+
+
 def au_index():
     """[(path, type, subtype, manufacturer, plugin name)] for every installed Audio Unit bundle."""
     global _AU_INDEX
@@ -250,12 +272,14 @@ def norm(s):
 def find_vst3(name):
     want = norm(name)
     cands = [p for d in VST3_DIRS if d.exists() for p in sorted(d.glob("*.vst3"))]
+    if sys.platform != "darwin":                # Windows and Linux installers often put each maker's plug-ins in a folder of their own
+        cands += [p for d in VST3_DIRS if d.exists() for p in sorted(d.glob("*/*.vst3"))]
     hit = [p for p in cands if norm(p.stem) == want]
     if not hit:
         for p in cands:                         # newer bundles list their classes in moduleinfo.json
             mi = p / "Contents" / "Resources" / "moduleinfo.json"
             try:
-                classes = json.loads(mi.read_text()).get("Classes", []) if mi.exists() else []
+                classes = json.loads(mi.read_text(encoding="utf-8")).get("Classes", []) if mi.exists() else []
             except Exception:
                 classes = []
             if any(norm(c.get("Name")) == want for c in classes):
@@ -292,7 +316,7 @@ def juce_state_of_au(info):
 # ---------------------------------------------------------------- loading, safely
 def _probe_main(job_file):
     """Child-process side of probe(): load, restore, report. Runs in its own process so a crash stays there."""
-    job = json.loads(Path(job_file).read_text())
+    job = json.loads(Path(job_file).read_text(encoding="utf-8"))
     import pedalboard
     res = dict(ok=False)
     p = pedalboard.load_plugin(job["path"], plugin_name=job.get("plugin_name") or None)
@@ -328,19 +352,19 @@ def bypass_params(info):
 
 def probe(path, plugin_name, state, timeout=120, set_params_=None):
     """Load a plug-in and restore its state in a separate process. dict(ok, error, params, …)."""
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
         job = dict(path=str(path), plugin_name=plugin_name, set_params=set_params_ or {})
         if state:
             sp = Path(td) / "state.bin"
             sp.write_bytes(state)
             job["state_file"] = str(sp)
         jp = Path(td) / "job.json"
-        jp.write_text(json.dumps(job))
+        jp.write_text(json.dumps(job), encoding="utf-8")
         try:
             pkg = str(Path(__file__).resolve().parents[2])
             env = dict(os.environ, PYTHONPATH=pkg + os.pathsep + os.environ.get("PYTHONPATH", ""))
             r = subprocess.run([sys.executable, "-m", "hypnomix.session.plugrender", "--probe", str(jp)],
-                               capture_output=True, text=True, timeout=timeout, env=env)
+                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env)
         except subprocess.TimeoutExpired:
             return dict(ok=False, error=f"did not load within {timeout} s")
         line = next((l for l in (r.stdout or "").splitlines() if l.startswith("PROBE ")), None)
@@ -423,8 +447,11 @@ def prepare(info, do_probe=True):
             tries.append((twin[0], twin[1], "vst3", vst3_state(js), "played as the VST3 of the same plug-in "
                           "(the AU did not load; its saved JUCE state was handed to the VST3)"))
     if not tries:
-        where = "VST3 folders" if info["kind"] == "vst3" else "Components folders"
-        return dict(ok=False, error=f"not installed (looked in the {where} under /Library and ~/Library)")
+        looked = VST3_DIRS if info["kind"] == "vst3" else AU_DIRS
+        where = "VST3 folders" if info["kind"] == "vst3" else "Audio Unit folders"
+        if not looked:
+            return dict(ok=False, error=f"not installed ({where} exist on a Mac only)")
+        return dict(ok=False, error=f"not installed (looked in the {where}: {', '.join(_tidy(d) for d in looked)})")
     errs = []
     for path, pname, fmt, st, note in tries:
         if not do_probe:
@@ -896,7 +923,7 @@ def main():
                     st = f"FAIL {plan['error']}"
                 print(f"{nm(t)[:22]:<22} {info['name'][:26]:<26} {'' if info['on'] else '(off) '}{st}")
         od = out_at(a.out, "plugrender", Path(a.als).stem)
-        (od / "check.json").write_text(json.dumps(rows, indent=1, default=str))
+        (od / "check.json").write_text(json.dumps(rows, indent=1, default=str), encoding="utf-8")
         print(f"{len(rows) - bad} of {len(rows)} plug-in(s) load and restore → {od / 'check.json'}")
         return
 
@@ -924,7 +951,7 @@ def main():
     (od / "plugrender.json").write_text(json.dumps(dict(set=str(a.als), sr=a.sr, tracks=sr_.report,
                                                          warnings=sorted(set(sr_.warn)),
                                                          not_rendered="sends to return tracks; the Main track"),
-                                                    indent=1, default=str))
+                                                    indent=1, default=str), encoding="utf-8")
     for w_ in sorted(set(sr_.warn)):
         print("  !", w_, file=sys.stderr)
     print("(sends to return tracks are not rendered)")

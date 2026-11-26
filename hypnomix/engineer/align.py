@@ -90,7 +90,7 @@ def main():
            "is then a best guess, so trust your ears. A few dB more low end once fixed is the classic sign that "
            "two mics were fighting."]
     text = "\n".join(md) + "\n"
-    (od / "ALIGN.md").write_text(text)
+    (od / "ALIGN.md").write_text(text, encoding="utf-8")
     print(text)
 
 

@@ -18,7 +18,8 @@ same seed always gives the same audio). On purpose, six things are wrong with it
 --kind folder (the default) writes the stems as WAV files in a new folder, as you would export them from any DAW:
 the click and the level jump are already in the audio (the comps are flattened).
 --kind reaper also writes a REAPER project that plays them, with the comps as separate items on separate takes,
-so the scan can see every one of the six at its cut or its bar. (There is no Live set kind: a set written from
+so the scan can see every one of the six at its cut or its bar. It also writes Instrumental.wav, the song without the
+vocals: scan it with --backing so the chord under every note can be checked (the tuning fix needs that). (There is no Live set kind: a set written from
 scratch has not been opened in Live, so it is left out until it has.)
 
 DEMO.md in the new folder lists each problem with its time and the command that finds it. Nothing is written
@@ -287,6 +288,12 @@ def write_demo(out, kind="folder", seed=7):
         ["Drums", "Bass", "Keys take 1", "Keys take 2", "Lead Vocal take 1", "Lead Vocal take 2", "Harmony"]
     for nm in names:
         dsp.save(audio / f"{nm}.wav", parts[nm].reshape(-1, 1), SR, 24)
+    backing = None
+    if kind == "reaper":      # the song without the vocals: tuning reads the chords under every note from it
+        mix = parts["Drums"] + parts["Bass"] + parts["Keys"]
+        mix = mix * (0.9 / (np.abs(mix).max() + 1e-9))
+        backing = (folder / "Instrumental.wav").resolve()
+        dsp.save(backing, mix.reshape(-1, 1), SR, 24)
     prob = problems()
     lines = [f"# {TITLE}", "",
              f"A synthetic song of {DUR:.0f} seconds ({BPM:g} BPM, A minor): drums, bass, keys, a sung-like lead and a harmony. "
@@ -299,20 +306,22 @@ def write_demo(out, kind="folder", seed=7):
                   "and `hypnomix clicks` lists 1. Problems 2, 5 and 6 need the project: `hypnomix demo --kind reaper` writes one "
                   "in which the comps are separate items, and `scan` finds all six."]
     else:
-        lines += ["", f"Open `{TITLE}.rpp` in REAPER if you like, or leave REAPER closed: `scan` reads the file without it."]
-    target = folder / (TITLE + ".rpp") if kind == "reaper" else folder
-    fixed = folder / (TITLE + " (fixed).rpp")
-    lines += ["", "## Try the loop", "", "```", f'hypnomix scan "{target}" --key "A minor"      # about a minute; nothing is changed',
+        lines += ["", f"Open `{TITLE}.rpp` in REAPER if you like, or leave REAPER closed: `scan` reads the file without it. "
+                  "`Instrumental.wav` is the song without the vocals: pass it as `--backing` so the scan can check the chord "
+                  "under every note, which the tuning fix (5) needs."]
+    target = (folder / (TITLE + ".rpp") if kind == "reaper" else folder).resolve()     # whole paths work from any folder
+    fixed = TITLE + " (fixed).rpp"        # a bare name: `fix` puts it next to the project (a relative path would be joined twice)
+    lines += ["", "## Try the loop", "", "```", f'hypnomix scan "{target}" --key "A minor"' + (f' --backing "{backing}"' if backing else "") + "      # about a minute; nothing is changed",
               "hypnomix ab     <the scan folder it prints>             # hear before and after, level-matched",
               "hypnomix review <the scan folder> --serve               # or decide in a page",
               "hypnomix fix    <the scan folder> --decide ID=approve   # the ids are in REVIEW.md",
               f'hypnomix fix    <the scan folder> --approved{(" --out " + chr(34) + str(fixed) + chr(34)) if kind == "reaper" else ""}', "```",
               "", "The song's key is A minor; telling the scan saves it a question. Your original files are never changed: "
               "fixes are new files" + (" and a new project next to this one." if kind == "reaper" else "."), ""]
-    (folder / "DEMO.md").write_text("\n".join(lines))
-    (folder / "demo.json").write_text(json.dumps(dict(title=TITLE, kind=kind, seed=seed, seconds=DUR, bpm=BPM, problems=prob), indent=1))
+    (folder / "DEMO.md").write_text("\n".join(lines), encoding="utf-8")
+    (folder / "demo.json").write_text(json.dumps(dict(title=TITLE, kind=kind, seed=seed, seconds=DUR, bpm=BPM, problems=prob), indent=1), encoding="utf-8")
     if kind == "reaper":
-        (folder / f"{TITLE}.rpp").write_text(rpp_text())
+        (folder / f"{TITLE}.rpp").write_text(rpp_text(), encoding="utf-8")
         return folder / f"{TITLE}.rpp", folder
     return folder, folder
 
@@ -322,13 +331,14 @@ def main(argv=None):
     ap.add_argument("--out", help="where the new folder is made (default hypnomix-out/demo)")
     ap.add_argument("--kind", choices=["folder", "reaper"], default="folder",
                     help="folder: the stems as WAV files (default); reaper: also a REAPER project that plays them")
-    ap.add_argument("--seed", type=int, default=7, help="the same seed gives the same song (7)")
+    from hypnomix.core import args as A
+    ap.add_argument("--seed", type=A.whole(0, 2**32 - 1), default=7, help="the same seed gives the same song (7; a whole number from 0)")
     a = ap.parse_args(argv)
     od = out_at(a.out, "demo")
     path, folder = write_demo(od, a.kind, a.seed)
     print(f"demo song ({a.kind}) written to {folder}")
     print(f"problems, with times: {folder / 'DEMO.md'}")
-    print(f'next: hypnomix scan "{path}"')
+    print(f'next: hypnomix scan "{path}"' + (f' --backing "{folder / "Instrumental.wav"}"' if a.kind == "reaper" else ""))
 
 
 if __name__ == "__main__":

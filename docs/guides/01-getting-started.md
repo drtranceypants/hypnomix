@@ -46,7 +46,8 @@ approved fixes are written into a new file of the same kind. Any other DAW works
 
 ## Install
 
-Most people should use the **installer** for Mac or Windows from hypnomix.bradfieldenterprises.org/download: no
+Most people should use the **Hypnomix Assistant installer** for Mac or Windows from hypnomix.bradfieldenterprises.org/download (the
+full Hypnomix, with its own DAW built in, is not released yet; there is no way to add it to the Assistant yet): no
 terminal, and a guided setup on first open. The guide "Setting Up, and Choosing an AI" covers it. The steps below are the
 **source install**, for the terminal and for working on hypnomix itself. (The installed app also installs the
 optional extras from its setup, and gives Claude Code the hypnomix skills.)
@@ -59,7 +60,8 @@ files from any DAW.
 brew install ffmpeg rubberband
 git clone https://github.com/drtranceypants/hypnomix && cd hypnomix
 uv venv && uv pip install -e .
-hypnomix install          # copies the Live remote script (AbletonOSC) into your User Library
+source .venv/bin/activate # puts `hypnomix` on your path; do it in each new terminal (Windows: .venv\Scripts\activate)
+hypnomix install          # Live users only: copies the Live remote script (AbletonOSC) into your User Library
 hypnomix doctor           # checks everything is connected
 ```
 
@@ -146,7 +148,7 @@ Open the new set, compare the changed spots with the original, and keep what you
 | new sets and projects | next to the original, with a new name |
 | the by-hand checklist | `handoff/` inside the scan folder (guide 2) |
 | the files you upload | `hypnomix-out/release/<Artist> - <Title>/` (guide 6) |
-| tuned vocals from a set | `<project>/Samples/Tuned/` |
+| tuned vocals from a set | `<project>/Samples/Tuned/` (a REAPER project: `<project>/Tuned/`) |
 | the Live devices | Live's User Library → Presets → Audio Effects → Max Audio Effect |
 
 Every tool writes a Markdown report next to its audio: what it found, what it did, and the numbers before and

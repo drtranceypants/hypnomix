@@ -48,8 +48,11 @@ def clean(y, sr, strength=0.6, do_hum=True, do_noise=True, trim=True):
         except ImportError:
             sys.exit("noise reduction needs noisereduce: uv pip install noisereduce  (or pass --no-noise)")
         prof = quietest_segment(y, sr)
+        n_fft = 2048                      # the library smooths over 50 ms and needs a hop (n_fft / 4) no longer than that,
+        while n_fft > 256 and n_fft > 0.2 * sr:     # so a low sample rate (8 kHz) gets a shorter window
+            n_fft //= 2
         out = np.stack([nr.reduce_noise(y=y[:, c], sr=sr, y_noise=prof[:, c], stationary=True,
-                                        prop_decrease=float(np.clip(strength, 0, 1)), n_fft=2048)
+                                        prop_decrease=float(np.clip(strength, 0, 1)), n_fft=n_fft)
                         for c in range(y.shape[1])], axis=1)
         y = out[: len(y)]
         log.append(f"noise reduction at {int(strength * 100)}%: floor {floor0:.0f} → {dsp.noise_floor_db(y, sr):.0f} dBFS")

@@ -31,7 +31,8 @@ Volume automation acts after a track's devices, so the fixes below change the he
                in a "Vocals" group) is never automated: those moves go on each vocal track instead. Every change is
                a smooth S-curve about 1.2 s long (raised cosine, a point every 0.1 s), centred in the gap between
                lines, so close lines blend instead of stepping; the steepest move is reported in dB/s. Existing
-               automation is kept and offset.
+               automation is kept and offset. In a scan these are findings to make by hand: `hypnomix fix` does not
+               write them (it lists an approved one under "Not applied"); --apply writes all of them at once.
   --keep-ending  the song's last N lines are never raised (an ending that dies away is usually on purpose).
 
 Track names default to every file in the folder. The pitch order (which parts are above the melody) comes from
@@ -252,7 +253,7 @@ def plan(sig, sr, melody=None, order=None, jump=1.5, upper_under=1.5, keep_endin
         ggain.append((r["t0"], r["t1"], g))
     gains["__group__"] = ggain
     for i, f in enumerate(findings, 1):
-        f.update(id=f"vocallevel-{i}", tool="vocallevel", applies="set")
+        f.update(id=f"vocallevel-{i}", tool="vocallevel", applies="manual")   # `fix` has no step for these: --apply here writes them all
         f.setdefault("track", "vocals")
     return rows, findings, gains
 
@@ -435,8 +436,9 @@ def main(argv=None):
     ap.add_argument("--order", help="vocal tracks low to high, comma-separated, or scan's order.json (else measured)")
     ap.add_argument("--lines-from", help="take the lines from this track's phrases (default: the whole vocal "
                                          "stack, so lines where only the harmonies sing count too)")
-    ap.add_argument("--jump", type=float, default=1.5)
-    ap.add_argument("--upper-under", type=float, default=1.5)
+    from hypnomix.core import args as A
+    ap.add_argument("--jump", type=A.number(above=0, hi=24), default=1.5)
+    ap.add_argument("--upper-under", type=A.number(0, 24), default=1.5)
     ap.add_argument("--keep-ending", type=int, default=2)
     ap.add_argument("--json")
     ap.add_argument("--apply", help="write the fixes to this NEW set")
@@ -447,6 +449,9 @@ def main(argv=None):
     tracks = [t for t in tracks if (folder / f"{t}.wav").exists()]
     if not tracks:
         sys.exit("no vocal files found")
+    for opt, val in (("--melody", a.melody), ("--lines-from", a.lines_from)):
+        if val and val not in tracks:             # a misspelt name used to be accepted and measured as silence
+            sys.exit(f"{opt}: no track called {val!r} (the tracks are: {', '.join(tracks)})")
     melody = a.melody or next((t for t in tracks if t.lower().startswith("lead")), None)
     x = read_gz(a.als).decode()
     sig, sr = {}, None
@@ -459,7 +464,7 @@ def main(argv=None):
         sig[t] = y
     order = None
     if a.order and Path(a.order).exists():
-        for f in json.loads(Path(a.order).read_text()).get("findings", []):
+        for f in json.loads(Path(a.order).read_text(encoding="utf-8", errors="replace")).get("findings", []):
             if f.get("kind") == "vocal-stack":
                 order = [t.strip() for t in f["track"].split(",")]
     elif a.order:
@@ -484,7 +489,7 @@ def main(argv=None):
     if a.json:
         Path(a.json).write_text(json.dumps(dict(tool="vocallevel", set=str(a.als), measured=how, order=order,
                                                 melody=melody, lines=rows, findings=findings, gains=gains),
-                                           default=float, indent=1))
+                                           default=float, indent=1), encoding="utf-8")
     if a.apply:
         if Path(a.apply).resolve() == Path(a.als).resolve():
             sys.exit("refusing to overwrite the source set: give a new file name")

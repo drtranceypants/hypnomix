@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Build a mastering chain or channel strips in your Live set from Live's own devices: no paid plug-ins.
 With --reaper, the same chain in the REAPER that is open, from REAPER's stock plug-ins (see chain_reaper.py).
+With --ardour, the same chain in the open Hypnomix (Ardour) session over MCP, from the ACE plug-ins plus Hypnomix
+Utility and Hypnomix Limiter (true peak) (see chain_ardour.py).
 
   master   Analyses a bounce of your mix with `hypnomix master`, then builds the same chain on the Main
            track from stock devices and dials in every value:
@@ -17,6 +19,11 @@ Usage:
                          [--existing bypass|keep] [--dry-run]
     hypnomix chain strips recipe.json [--dry-run]
     hypnomix chain master BOUNCE.wav --reaper [--verify]   (and `strips … --reaper`)
+    hypnomix chain master BOUNCE.wav --ardour [--mcp-url http://127.0.0.1:4820/mcp]
+        (--ardour: the address must be on this computer; the chain is built on the master bus and, if a step fails,
+        what this run added is taken back out and yours are switched on again; a stage that could not be built or
+        set reads NOT BUILT / NOT SET in the table and the command exits with an error; yours are bypassed only once
+        the whole chain is in)
 
 The bounce must start at bar 1 of the set (export the whole song). Existing devices on Main are never
 deleted: with --existing bypass they are switched off (a third-party limiter, for example), with keep the new chain goes after them.
@@ -28,6 +35,7 @@ from pathlib import Path
 import numpy as np
 
 from hypnomix.core import dsp
+from hypnomix.core import args as A
 
 EQ_TYPES = {"lowcut48": 0, "lowcut12": 1, "lowshelf": 2, "bell": 3, "notch": 4, "highshelf": 5, "highcut12": 6, "highcut48": 7}
 GLUE_RATIOS = [2, 4, 10]
@@ -204,7 +212,7 @@ def verify(live, plan, ctx, bars=8, rounds=2):
     lines = [f"Calibrating on bars {bar}–{bar + bars - 1}: the offline master measures {want:.1f} LUFS there."]
     gain = lim["gain_db"]
     for r in range(rounds):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
             wav = Path(td) / "cap.wav"
             live.stop(); time.sleep(0.3)
             rc = rec_start(secs + 3, wav)
@@ -232,7 +240,7 @@ def verify(live, plan, ctx, bars=8, rounds=2):
 # ---------------------------------------------------------------- strips from an automix recipe
 def build_strips(live, recipe, dry=False):
     import re, json
-    r = json.loads(Path(recipe).read_text())
+    r = json.loads(Path(recipe).read_text(encoding="utf-8", errors="replace"))
     names = {re.sub(r"^\d+\s*", "", n).lower(): tid for tid, n in live.tracks() if tid >= 0} if not dry else {}
     out = []
     for t in r["tracks"]:
@@ -282,7 +290,7 @@ def main():
     ap = argparse.ArgumentParser(prog="hypnomix chain", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("master"); m.add_argument("bounce")
-    m.add_argument("--target", type=float, default=-14.0); m.add_argument("--ceiling", type=float, default=-1.0)
+    m.add_argument("--target", type=A.number(-70, 0), default=-14.0); m.add_argument("--ceiling", type=A.number(-12, 0), default=-1.0)
     m.add_argument("--reference"); m.add_argument("--match", type=float, default=0.6)
     m.add_argument("--warmth", type=float, default=0.0); m.add_argument("--width", type=float, default=1.0)
     m.add_argument("--existing", choices=["bypass", "keep", "refuse"], default="refuse")
@@ -291,10 +299,20 @@ def main():
     for p_ in (m, s):
         p_.add_argument("--reaper", action="store_true", help="build it in the REAPER that is open (stock ReaEQ, "
                         "ReaComp, ReaLimit and JS plug-ins) instead of Live")
+        p_.add_argument("--ardour", action="store_true", help="build it in the open Hypnomix (Ardour) session over "
+                        "MCP (ACE plug-ins, Hypnomix Utility, Hypnomix Limiter) instead of Live")
+        p_.add_argument("--mcp-url", help="Hypnomix's MCP address (default $HYPNOMIX_MCP_URL or "
+                        "http://127.0.0.1:4820/mcp)")
     a = ap.parse_args()
 
+    if a.reaper and a.ardour:
+        sys.exit("choose one of --reaper and --ardour")
     if a.reaper:
         return main_reaper(a)
+    if a.ardour:
+        from hypnomix.engineer import chain_ardour as CA
+        CA.main_ardour(a, plan_master)
+        return
     live = None
     if not a.dry_run:
         from hypnomix.live.osc import Live
@@ -305,7 +323,7 @@ def main():
         from hypnomix.core.paths import out
         import json
         sp = out("snapshots") / f"before-chain-{time.strftime('%Y%m%d-%H%M%S')}.json"
-        sp.write_text(json.dumps(snap, indent=1))
+        sp.write_text(json.dumps(snap, indent=1), encoding="utf-8")
         print(f"mixer snapshot saved: {sp}", file=sys.stderr)
 
     if a.cmd == "master":

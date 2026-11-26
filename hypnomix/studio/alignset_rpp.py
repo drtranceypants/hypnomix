@@ -162,6 +162,12 @@ def item_files(track, final, sr, out_dir, label):
 
 # ---------------------------------------------------------------- the run
 def run(a, defaults=None):
+    from hypnomix.core import tmp as TMP
+    with TMP.scope():                      # the renders it makes (hypnomix-alignset-…) are removed when it ends
+        return _run(a, defaults)
+
+
+def _run(a, defaults=None):
     from hypnomix import project
     from hypnomix.project import rpp_edit as E
     src = Path(a.set).expanduser().resolve()
@@ -185,8 +191,8 @@ def run(a, defaults=None):
     N = int((end + 1.0) * SR)
     od = out_at(a.out, "alignset")
     warn, files = [], {}
-    import tempfile
-    tmp = Path(tempfile.mkdtemp(prefix="hypnomix-alignset-"))
+    from hypnomix.core import tmp as TMP
+    tmp = TMP.scratch("alignset")
     for t in [guide] + parts:
         print(f"rendering {t.name} from the project …", file=sys.stderr)
         y = p.render(t, SR, end, warn)[:N]
@@ -327,9 +333,9 @@ def run(a, defaults=None):
     from hypnomix.studio.alignset import energy
     result["energy"] = energy([guide.name] + [t.name for t in parts], files, timing_outs if not result["rendered"]
                               else {k: v for k, v in outs.items()}, span or (0.0, N / SR))
-    (od / "ALIGNSET.md").write_text("\n".join(md) + "\n")
+    (od / "ALIGNSET.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     result["markdown"] = "\n".join(md)
     if a.json:
-        Path(a.json).write_text(json.dumps(result, indent=1, default=str))
+        Path(a.json).write_text(json.dumps(result, indent=1, default=str), encoding="utf-8")
     print("\n".join(md))
     return result

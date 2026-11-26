@@ -99,7 +99,7 @@ def song(set_path, labels=None, require_lead=True, root=None):
         if not nj.exists():
             return dict(song=set_path.stem, skipped="not studied yet: run `hypnomix voices --learn` on it first")
         labels = {r["old"]: (str(r.get("final") or r.get("label") or ""), float(r.get("confidence") or 0))
-                  for r in json.loads(nj.read_text())["tracks"]}
+                  for r in json.loads(nj.read_text(encoding="utf-8"))["tracks"]}
     if root is None:
         root = ET.fromstring(read_gz(set_path))
     tempo = float(v(root, ".//Tempo/Manual"))
@@ -354,7 +354,7 @@ def main():
     prof = across(songs)
     atomic.write_json(profile_path(), dict(profile=prof, songs=songs), default=str)
     od = out_at(a.out, "taste")
-    (od / "TASTE.md").write_text(report(prof, songs))
+    (od / "TASTE.md").write_text(report(prof, songs), encoding="utf-8")
     print(report(prof, songs))
     print(f"→ {od / 'TASTE.md'} and {profile_path()}")
 

@@ -17,6 +17,7 @@ What it looks for, each as a finding with what to do:
   fake stereo               stereo files whose left and right are identical (really mono); one empty channel;
                             plus a list of the mono files
   silent files              nothing in them, or so quiet nothing can be done with them
+  broken files              NaN or infinite samples (a plug-in that blew up while exporting); more than five channels
   DC offset, clipping       a steady offset away from zero; flat-topped peaks that are already in the file
   lossy sources             mp3, aac, ogg and other compressed files in a project
   missing or offline files  the project points at a file that is not there
@@ -29,7 +30,9 @@ flat-topped peaks: step declip, fake stereo: step mono) are planned as prep step
 as new files; `prep` also puts its usual 5 ms and 50 ms fades on the ends of those files. Different sample rates,
 bit depths and lengths are made uniform by `hypnomix prep FOLDER --plan` (its format step); the rest are listed for
 you to do: re-export, find the file again, rename. Without --plan the report is PREFLIGHT.md in --out
-(default hypnomix-out/preflight); the exit code is 1 when something high is found, so it can gate a script.
+(default hypnomix-out/preflight/<name of the source>, and "<name> (2)" and so on when that one already holds a report:
+an earlier report is never overwritten; an --out folder that already holds one is refused, exit code 2); the exit code is
+1 when something high is found, so it can gate a script.
 
 Measured, not heard: a file the check calls silent may be an empty track on purpose. Say so and skip it.
 """
@@ -40,7 +43,7 @@ import numpy as np
 
 warnings.filterwarnings("ignore")
 from hypnomix.core import dsp  # noqa: E402
-from hypnomix.core.paths import out_at  # noqa: E402
+from hypnomix.core.paths import out_at, check_out  # noqa: E402
 
 LOSSY_EXT = {".mp3", ".aac", ".m4a", ".ogg", ".oga", ".opus", ".wma", ".mp2"}
 PCM_BITS = {"PCM_U8": 8, "PCM_S8": 8, "PCM_16": 16, "PCM_24": 24, "PCM_32": 32, "FLOAT": "32 float", "DOUBLE": "64 float"}
@@ -64,11 +67,16 @@ def inspect(path, envelope=False):
     except Exception:
         pass                                      # mp3 on an old libsndfile: dsp.load falls back to ffmpeg
     try:
-        y, sr2 = dsp.load(path)
+        y, sr2 = (getattr(dsp, "read", None) or dsp.load)(path)      # read(): no verdict on what is inside; the checks below say it
     except Exception as e:
         f.update(readable=False, error=str(e).strip().splitlines()[-1][:120] if str(e).strip() else "unreadable")
         return f
     y = y.astype(np.float32)
+    bad = ~np.isfinite(y)
+    if bad.any():                      # NaN or infinite samples: say so, and measure the rest as if they were zero
+        f["nonfinite"] = int(bad.sum())
+        f["nonfinite_at"] = float(np.flatnonzero(bad.any(axis=1))[0] / (sr or sr2))
+        y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
     if sr is None:
         sr = int(sr2)
         f.update(sr=sr, channels=int(y.shape[1]), subtype="", format="")
@@ -124,7 +132,8 @@ def lags(envs, max_s=5.0):
     """{name: (lag seconds, correlation at the best lag, correlation at 0, repeats)}: where each file's envelope lines
     up best with the average of the others. Positive: its sound arrives that much ahead of the others. `repeats`:
     other lags match about as well (a steady rhythm), so the lag may be a whole number of beats off."""
-    names = [n for n, e in envs.items() if e is not None and len(e) > 50 and float(np.std(e)) > 0]
+    names = [n for n, e in envs.items() if e is not None and len(e) > 50 and np.isfinite(e).all()
+             and float(np.std(e)) > 1e-6 * max(float(np.mean(e)), 1e-9)]      # a constant level has no rhythm to line up
     out = {}
     if len(names) < 2:
         return out
@@ -149,6 +158,8 @@ def lags(envs, max_s=5.0):
             if a.std() < 1e-9 or r.std() < 1e-9:
                 continue
             c = float(np.corrcoef(a, r)[0, 1])
+            if not np.isfinite(c):                  # no usable correlation at this lag
+                continue
             cs[lag] = c
             if c > best[1]:
                 best = (lag, c)
@@ -156,6 +167,8 @@ def lags(envs, max_s=5.0):
             # a steady rhythm matches just as well one or more periods away: among lags that are about as good as
             # the best, report the nearest to zero, and say when others tie
             ties = [l for l, c in cs.items() if c >= best[1] - 0.02]
+            if not ties:
+                continue
             pick = min(ties, key=lambda l: (abs(l), -cs[l]))
             far = any(abs(l - pick) * HOP >= 0.2 for l in ties)
             out[n] = (pick * HOP, cs[pick], cs.get(0, 0.0), far)
@@ -310,7 +323,7 @@ def check_files(files, proj_sr=None, folder=True, tol=0.05, max_lag=5.0, uses=No
         med = float(np.median(durs)) if durs else 0
         for f in ok:
             d = f["dur"] - med
-            if abs(d) > tol:
+            if abs(d) > tol and not f.get("empty"):          # an empty file is reported as empty, not as short
                 out.append(fnd("length", "medium", f["name"], f"is {abs(d):.2f} s {'longer' if d > 0 else 'shorter'} than the middle "
                                f"stem ({med:.2f} s): {f['dur']:.2f} s",
                                "stems of one song should all start at the same point and have the same length: export this one again "
@@ -342,6 +355,15 @@ def check_files(files, proj_sr=None, folder=True, tol=0.05, max_lag=5.0, uses=No
     # per file
     for f in ok:
         n = f["name"]
+        if f.get("nonfinite"):
+            at = f.get("nonfinite_at", 0.0)
+            out.append(fnd("non-finite", "high", n, f"has {plural(f['nonfinite'], 'invalid sample')} (NaN or infinite; the first at "
+                           f"{int(at // 60)}:{at % 60:04.1f}): players and encoders misbehave on them, and the numbers below treat them as zero",
+                           "export it again from the DAW (an effect in the chain probably produced them); nothing was changed",
+                           where=f"{int(at // 60)}:{at % 60:04.1f}"))
+        if f.get("channels", 0) > 5:
+            out.append(fnd("channels", "medium", n, f"has {f['channels']} channels; hypnomix's measuring tools read up to five",
+                           "export it as stereo or mono (or one file per channel); nothing was changed"))
         if f.get("empty"):
             out.append(fnd("silent", "medium", n, "has no audio in it (zero length)", "export it again; check the track and the range"))
             continue
@@ -432,7 +454,7 @@ def files_table(files):
             continue
         bits = f"{f['bits']}-bit" if isinstance(f.get("bits"), int) else (f["bits"] or "") if f.get("bits") else "compressed"
         notes = [k for k, v in (("silent", f.get("silent")), ("nearly silent", f.get("quiet")), ("fake stereo", f.get("fake_stereo")),
-                                ("clipped", f.get("clipped", 0) >= 5), ("lossy", f.get("lossy"))) if v]
+                                ("clipped", f.get("clipped", 0) >= 5), ("invalid samples", f.get("nonfinite")), ("lossy", f.get("lossy"))) if v]
         L.append(f"| {f['name']} | {f.get('ext', '').lstrip('.')} {bits} | {f['sr']} | {f['channels']} | {f['dur']:.2f} s | "
                  f"{f.get('peak_db', '-')} dBFS | {', '.join(notes)} |")
     return L
@@ -508,6 +530,27 @@ def analyse(source, recursive=False, tol=0.05, max_lag=5.0, progress=True):
     return files, findings, notes, kind
 
 
+def report_dir(custom, source):
+    """The folder this report goes into, never over an earlier one. With --out: that folder, but one that already holds a
+    preflight report ends the command (one sentence, exit code 2). Without: hypnomix-out/preflight/<name of the source>,
+    and the next free "<name> (2)", "(3)" ... when that one already holds a report, as the scan folders do."""
+    if custom:
+        od = Path(custom).expanduser()
+        if (od / "PREFLIGHT.md").exists():
+            print(f"{od} already holds a preflight report and nothing is overwritten: choose another folder with --out, "
+                  "or leave --out off to get a new numbered folder.", file=sys.stderr)
+            sys.exit(2)
+        return od
+    from hypnomix.core import paths
+    src = Path(source).expanduser()
+    base = paths.OUT / "preflight" / (src.name if src.is_dir() else src.stem)
+    cand, k = base, 1
+    while (cand / "PREFLIGHT.md").exists():
+        k += 1
+        cand = base.with_name(f"{base.name} ({k})")
+    return cand
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="hypnomix preflight", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("source", help="a folder of audio, or a .als / .rpp / .ardour project")
@@ -516,8 +559,11 @@ def main(argv=None):
     ap.add_argument("--max-lag", type=float, default=5.0, help="how far, in seconds, to look for a stem that starts early or late (5)")
     ap.add_argument("--plan", nargs="?", const=True, metavar="SCAN_DIR",
                     help="put every finding into a scan folder for the normal review (nothing is changed)")
-    ap.add_argument("--out", help="where PREFLIGHT.md goes (default hypnomix-out/preflight; with --plan, the scan folder)")
+    ap.add_argument("--out", help="where PREFLIGHT.md goes (default hypnomix-out/preflight/<source name>, a numbered folder when "
+                    "that holds a report already; an --out folder that holds one is refused; with --plan, the scan folder)")
     a = ap.parse_args(argv)
+    check_out(a.plan if isinstance(a.plan, str) else a.out)       # an unwritable folder ends here, not after the reading
+    od = None if a.plan else report_dir(a.out, a.source)          # so does a folder that already holds a report
     files, findings, notes, kind = analyse(a.source, a.recursive, a.length_tolerance, a.max_lag)
     text = report(a.source, files, findings, notes, kind)
     src = Path(a.source).expanduser()
@@ -525,7 +571,7 @@ def main(argv=None):
         from hypnomix.workflow import plan as P
         od = P.scan_dir(a.plan if isinstance(a.plan, str) else a.out, src, " preflight")
         od.mkdir(parents=True, exist_ok=True)
-        (od / "PREFLIGHT.md").write_text(text)
+        (od / "PREFLIGHT.md").write_text(text, encoding="utf-8")
         notes2 = notes + [f"preflight: {len(files)} file(s) read. Findings that `prep` can repair are planned as prep steps; "
                           "the others are things to do yourself. Full report: PREFLIGHT.md"]
         for f in findings:
@@ -533,10 +579,10 @@ def main(argv=None):
         P.write(od, "preflight", src, findings, notes2)
         print(text)
         return
-    od = out_at(a.out, "preflight")
-    (od / "PREFLIGHT.md").write_text(text)
+    od = out_at(str(od), "preflight")
+    (od / "PREFLIGHT.md").write_text(text, encoding="utf-8")
     (od / "preflight.json").write_text(json.dumps(dict(source=str(src), kind=kind, files=files, findings=findings, notes=notes),
-                                                 indent=1, default=str))
+                                                 indent=1, default=str), encoding="utf-8")
     print(text)
     print(f"report: {od / 'PREFLIGHT.md'}")
     if findings:

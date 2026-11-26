@@ -56,7 +56,7 @@ async function teachView() {
   if (T.view === 'glossary') return glossaryView(pick, lv);
   const all = tsteps(), i = Math.max(0, all.findIndex(s => s.id === T.at)), s = all[i];
   const nav = st.chapters.map((c, ci) => `<h4>${ci + 1} · ${esc(c.title)}</h4>` + c.steps.map(x =>
-    `<a data-tstep="${esc(x.id)}" class="${x.id === s.id ? 'on' : ''} ${st.done.includes(x.id) ? 'done' : ''}"><i>${st.done.includes(x.id) ? '✓' : '○'}</i>${esc(x.title)}</a>`).join('')).join('');
+    `<a href="#" data-tstep="${esc(x.id)}"${x.id === s.id ? ' aria-current="step"' : ''} class="${x.id === s.id ? 'on' : ''} ${st.done.includes(x.id) ? 'done' : ''}"><i aria-hidden="true">${st.done.includes(x.id) ? '✓' : '○'}</i>${st.done.includes(x.id) ? '<span class="sr">done: </span>' : ''}${esc(x.title)}</a>`).join('')).join('');
   const ai = st.mode === 'key' || st.mode === 'local';
   return `<div class="teach"><aside>${pick}${lv}
     <label class="note" style="display:flex;gap:6px;align-items:center;margin:6px 0"><input type="checkbox" id="tmode" ${st.teach ? 'checked' : ''}> Teacher mode: open on this tab, and the Assistant teaches this course</label>
@@ -105,7 +105,7 @@ function quizHTML(s) {
 
 function moreHTML(more) {
   const names = {}; (T.st.chapters || []).forEach(c => c.steps.forEach(s => { names[s.id] = s.title; }));
-  const links = more.map(m => m.startsWith('step:') ? `<a data-tjump="${esc(m.slice(5))}">${esc(names[m.slice(5)] || m.slice(5))}</a>`
+  const links = more.map(m => m.startsWith('step:') ? `<a href="#" data-tjump="${esc(m.slice(5))}">${esc(names[m.slice(5)] || m.slice(5))}</a>`
     : m.startsWith('hypnomix ') ? `<code>${esc(m)}</code>` : `<a data-wiki="${esc(m)}" href="#">${esc(m)}</a>`);
   return `<div class="more"><b>Read next:</b> ${links.join(' ')}</div>`;
 }
@@ -113,7 +113,7 @@ function moreHTML(more) {
 function glossaryView(pick, lv) {
   return `<div class="teach"><aside>${pick}${lv}<p class="note">Every word the lessons teach, with the lesson that explains it.</p></aside>
     <div class="lesson"><div class="no">Teacher</div><h1>Glossary</h1>
-    <input id="tgq" type="search" placeholder="Filter the words" value="${esc(T.glq)}" style="width:100%;max-width:420px">
+    <input id="tgq" type="search" aria-label="Filter the words" placeholder="Filter the words" value="${esc(T.glq)}" style="width:100%;max-width:420px">
     <div id="tgl" class="gl">${glossaryList()}</div></div></div>`;
 }
 
@@ -125,7 +125,7 @@ function glossaryList() {
   terms.forEach(g => {
     const l = (g.term.replace(/[^A-Za-z0-9]/g, '')[0] || '#').toUpperCase();
     if (l !== letter) { letter = l; h += `<h2>${esc(l)}</h2>`; }
-    g.entries.forEach(e => { h += `<p><b>${esc(g.term)}</b>: ${esc(e.meaning)} ${e.step ? `<a data-tjump="${esc(e.step)}">→ ${esc(e.title)}</a>` : ''}</p>`; });
+    g.entries.forEach(e => { h += `<p><b>${esc(g.term)}</b>: ${esc(e.meaning)} ${e.step ? `<a href="#" data-tjump="${esc(e.step)}">→ ${esc(e.title)}</a>` : ''}</p>`; });
   });
   return h;
 }
@@ -134,7 +134,7 @@ async function teachJump(id) {
   T.view = '';
   await teachLoad(T.daw);
   if (!tsteps().some(s => s.id === id)) { T.level = 'az'; await teachLoad(T.daw); }
-  T.at = id; T.pending = null; await teachMark('', true, id); render(); window.scrollTo(0, 0);
+  T.at = id; T.pending = null; await teachMark('', true, id); await render(); window.scrollTo(0, 0); teachFocus();
 }
 
 function teachPlay(b) {
@@ -174,7 +174,17 @@ function resultHTML(r) {
     ${r.done && T.daw !== 'ardour' ? '<p class="note">Changed your mind? Undo it in your DAW (Cmd+Z / Ctrl+Z).</p>' : ''}`;
 }
 
-function teachRedraw() { const y = window.scrollY; teachView().then(h => { if (S.view === 'teach') { $('#main').innerHTML = h; window.scrollTo(0, y); } }); }
+// The lesson is drawn again after most clicks: the control that had the keyboard gets it back (a pending "Do it" gets it when its button is new).
+function teachRedraw() {
+  const y = window.scrollY, m = $('#main'), fk = focusKey(m);
+  teachView().then(h => {
+    if (S.view !== 'teach') return;
+    m.innerHTML = h; window.scrollTo(0, y);
+    if (!restoreFocus(m, fk) && fk && T.pending) { const d = m.querySelector('[data-tdo]'); if (d) d.focus({preventScroll: true}); }
+  });
+}
+// After the person moves to another step the keyboard goes to its title, so the next Tab starts in the lesson and a screen reader says where it is.
+function teachFocus() { const h = document.querySelector('.lesson h1'); if (h) { h.tabIndex = -1; h.focus({preventScroll: true}); } }
 
 async function teachMark(id, done, at) { T.st = await post('/api/teach/mark', {daw: T.daw, step: id, done, at, level: T.level}); }
 
@@ -182,9 +192,10 @@ document.addEventListener('click', async e => {
   const b = e.target.closest('[data-tgloss],[data-tjump],[data-thear],[data-tquiz],[data-tlevel],[data-tdaw],[data-tstep],[data-tgo],[data-tnext],[data-task],[data-task-do],[data-tdo],[data-tcancel],[data-tstop],#tmode');
   if (!b || !b.closest('main')) return;
   const ds = b.dataset;
+  if (b.tagName === 'A') e.preventDefault();                 // these links are real links (the keyboard reaches them); they go nowhere by themselves
   try {
     if (ds.thear) return teachPlay(b);
-    if (ds.tgloss) { T.view = 'glossary'; T.gl = null; teachRedraw(); const r = await get('/api/teach/glossary?daw=' + encodeURIComponent(T.daw || '')); T.gl = r.terms; return teachRedraw(); }
+    if (ds.tgloss) { T.view = 'glossary'; T.gl = null; T.glq = ''; teachRedraw(); const r = await get('/api/teach/glossary?daw=' + encodeURIComponent(T.daw || '')); T.gl = r.terms; return teachRedraw(); }
     if (ds.tjump) return teachJump(ds.tjump);
     if (ds.tquiz) {
       const [sid, qi, oi] = ds.tquiz.split(':'), s = tsteps().find(x => x.id === sid);
@@ -196,10 +207,10 @@ document.addEventListener('click', async e => {
     if (ds.tdaw) { T.view = ''; T.daw = ds.tdaw; T.at = ''; T.pending = null; T.result = {}; await post('/api/setup/daw', {daw: ds.tdaw}); return teachRedraw(); }
     if (ds.tlevel) { T.view = ''; T.level = ds.tlevel; T.at = ''; T.pending = null; if (T.st && T.st.teach) await post('/api/setup/daw', {teach_level: ds.tlevel}); return teachRedraw(); }
     if (b.id === 'tmode') { await post('/api/setup/daw', {teach_level: b.checked ? T.level : ''}); return; }
-    if (ds.tstep) { T.at = ds.tstep; T.pending = null; await teachMark('', true, T.at); render(); window.scrollTo(0, 0); return; }
+    if (ds.tstep) { T.at = ds.tstep; T.pending = null; await teachMark('', true, T.at); await render(); window.scrollTo(0, 0); teachFocus(); return; }
     const all = tsteps(), i = all.findIndex(s => s.id === T.at);
-    if (ds.tgo) { T.at = all[Math.max(0, i - 1)].id; T.pending = null; await teachMark('', true, T.at); render(); window.scrollTo(0, 0); return; }
-    if (ds.tnext) { const nx = all[Math.min(all.length - 1, i + 1)].id; await teachMark(ds.tnext, true, nx); T.at = nx; T.pending = null; render(); window.scrollTo(0, 0); return; }
+    if (ds.tgo) { T.at = all[Math.max(0, i - 1)].id; T.pending = null; await teachMark('', true, T.at); await render(); window.scrollTo(0, 0); teachFocus(); return; }
+    if (ds.tnext) { const nx = all[Math.min(all.length - 1, i + 1)].id; await teachMark(ds.tnext, true, nx); T.at = nx; T.pending = null; await render(); window.scrollTo(0, 0); teachFocus(); return; }
     if (ds.task) {
       const s = all[i];
       if (typeof C !== 'undefined') C.draft = `I'm on the Teacher tab in ${T.st.daws[T.daw]}, at "${s.title}" (${s.chapter.title}). Explain this step to me simply, then tell me exactly what to click.`;

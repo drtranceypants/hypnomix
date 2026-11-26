@@ -519,7 +519,7 @@ def write_json(path, src, tempo, issues, notes, a):
     Path(path).write_text(json.dumps({"tool": "smooth", "set": str(src), "tempo": tempo,
                                       "findings": out, "notes": {k: (sorted(v) if isinstance(v, set) else v)
                                                                  for k, v in notes.items()}},
-                                     indent=1, default=str))
+                                     indent=1, default=str), encoding="utf-8")
 
 
 def main():

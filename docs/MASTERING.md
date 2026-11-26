@@ -169,7 +169,8 @@ quiet passages.
 **What.** Writes what the streaming encoders hand back, decoded to WAV so any player (and the review page) can play
 it: MP3 320, AAC 256, and "as Spotify plays it" (the AAC decode turned to -14 LUFS the way its default
 normalisation does: louder songs turned down, quieter songs up only as far as -1 dBTP allows). Same length and start
-as the original. Code can call `hypnomix.engineer.translate.codec_preview(path, outdir)`.
+as the original. Running `translate` again into the same folder never replaces an earlier run: the new files are
+numbered (`(translation 2).md`, `(phone 2).wav` ...). Code can call `hypnomix.engineer.translate.codec_preview(path, outdir)`.
 
 **When.** Before release, on the master. A master that is much louder than -14 LUFS shows here what loudness bought:
 the same level as everything else, with less punch.
@@ -266,6 +267,18 @@ multiband width → warmth → clipper (punch / loud) → limiter (codec-safe ce
 - The stages run offline on files. `hypnomix chain` (building the chain in Live from stock devices) does not build the
   new stages yet. To master by ear inside Live instead, HypnomixMain on Main builds an editable rack of Live's own
   devices, matches the Limiter to your loudness target and saves your chain as a template (docs/LIVE.md, section 5).
+- `hypnomix chain master --ardour` builds the classic chain in an open Hypnomix (Ardour) session over MCP: ACE
+  High/Low Pass Filter, ACE EQ, ACE Compressor, Hypnomix Utility (bass mono, width) and Hypnomix Limiter (true peak,
+  4x oversampled). There is no saturator in Hypnomix yet (the warmth stage is left out and listed), `--verify` is not
+  available there yet (it needs an export over MCP), and `chain strips --ardour` is not built. If a step fails part-way
+  the build is taken back out (what this run added is removed, yours are switched on again; yours are only bypassed with
+  `--existing bypass` once the whole chain is in) and the message says what was undone; a stage that could not be built
+  or set reads NOT BUILT / NOT SET in the table and the command exits with an error. The engine address must be on this
+  computer (no proxy, no redirect). It has been tried against a stand-in for the engine's MCP surface, not against the
+  running engine.
+- A -1 dBTP ceiling does not stay at -1 dBTP after AAC encoding, which adds peaks of its own (one loud pop master
+  measured -1.05 dBTP in the file and -0.44 dBTP after AAC 256 with afconvert; a -2 dBTP ceiling gave -1.6). Keep the
+  codec check (`translate --preview`) on.
 - The harshness measure is a measurement, not a judgement: a bright hi-hat pattern entering can count. Listen at the
   timestamps before approving `--harsh`.
 - Separation quality limits `rebalance`; the identity is exact only because the residual is kept.

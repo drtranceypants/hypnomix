@@ -2,6 +2,7 @@
 
 Run `hypnomix` for the command list, `hypnomix <command> -h` for each command's help.
 """
+import errno
 import importlib
 import os
 import sys
@@ -12,7 +13,7 @@ GROUPS = [
         ("balance", "hypnomix.engineer.balance", "stems folder → a first fader balance as proposals, with the measurement behind each move (faders only; --plan sends them to the review)"),
         ("master", "hypnomix.engineer.master", "stereo mix → release master at a loudness target (or a reference); options: tonal stabilizer, dynamic EQ, band width, limiter character, harshness, dither, amount"),
         ("rebalance", "hypnomix.engineer.rebalance", "turn vocals / drums / bass / other up or down in a finished stereo mix (separation + residual, true-peak safe)  [extra: ml, or --stems]"),
-        ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices, or the chain in REAPER with --reaper: no paid plug-ins"),
+        ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices, or in REAPER or Hypnomix (Ardour): no paid plug-ins"),
         ("devices", "hypnomix.engineer.devices", "check every Live device by what it does (compressors, gates, limiters, EQ low cut) and suggest settings (writes a new set)"),
         ("duck", "hypnomix.engineer.duck", "duck the vocal reverb and delay: tune the ducking you have, or add a sidechained Compressor fed by the vocals (writes a new set)"),
         ("sidechain", "hypnomix.engineer.sidechain", "sidechain compressors: measure the ducking (depth, recovery, timing) and suggest settings"),
@@ -67,6 +68,7 @@ GROUPS = [
         ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, probes, the A/B review panel, the Align panel"),
         ("preflight", "hypnomix.session.preflight", "sanity of the files before any work: mixed sample rates or bit depths, stems of different length, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel; report first"),
         ("project", "hypnomix.project.show", "look inside a REAPER, Ardour or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
+        ("als2ardour", "hypnomix.project.als2ardour", "import a Live set into a NEW Hypnomix / Ardour session folder: tracks, colours, clips as regions (gain, fades, envelopes), faders, sends, groups, tempo; audio copied in; devices listed, never guessed (the set is only read)"),
     ]),
     ("Session files (.als, Live closed or open)", [
         ("render", "hypnomix.session.render", "render tracks from a .als to stems without opening Live (clip gain, fades, warps)"),
@@ -113,10 +115,11 @@ GROUPS = [
         ("app", "hypnomix.app.server", "the first pass in a window: choose a song, hear each fix, approve, apply (this computer only)"),
         ("device", "hypnomix.app.device", "make the Max for Live device: review from inside Live, and jump Live to each finding"),
         ("aligndevice", "hypnomix.app.aligndevice", "make the Hypnomix Align device: align a vocal stack from inside Live"),
+        ("store", "hypnomix.store.cli", "the Hypnomix store: search, install, update and uninstall free and open-source plug-ins, synths, drum kits and sample packs"),
     ]),
     ("Setup", [
-        ("install", "hypnomix.install", "install the Live remote script, write Claude Code config"),
-        ("doctor", "hypnomix.install", "check Live, AbletonOSC, BlackHole, ffmpeg, plug-in parameter access"),
+        ("install", "hypnomix.install", "install the Live remote script into Live's User Library (--dry-run shows it first)"),
+        ("doctor", "hypnomix.install", "check ffmpeg and the Python packages (and, if you use Live: AbletonOSC, BlackHole, plug-in parameter access)"),
         ("plugins", "hypnomix.session.plugins", "list the plug-ins installed on this computer (VST3, Audio Units, CLAP, LV2), mark the free ones hypnomix knows, optionally load each safely; --save keeps the list in your preferences  [--check: extra plugins]"),
     ]),
 ]
@@ -133,14 +136,20 @@ def usage():
 
 
 def _utf8_output():
-    """On Windows a piped or redirected stdout is cp1252, which can't print ✓ ✗ → … (doctor, scan reports)."""
+    """A piped or redirected stdout is cp1252 on Windows (or ASCII under a bare "C" locale), which can't print ✓ ✗ → … − (doctor,
+    scan and every report): say UTF-8, and a character the reader still cannot show becomes "?" instead of a traceback."""
     for stream in (sys.stdout, sys.stderr):
+        if stream is None or not hasattr(stream, "reconfigure"):        # no console at all (pythonw), or not a text file
+            continue
         enc = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-        if enc != "utf8" and hasattr(stream, "reconfigure"):
+        if enc == "utf8" and getattr(stream, "errors", "") != "strict":
+            continue
+        for kw in (dict(encoding="utf-8", errors="replace"), dict(errors="replace")):
             try:
-                stream.reconfigure(encoding="utf-8", errors="replace")
-            except (ValueError, OSError):
-                pass
+                stream.reconfigure(**kw)
+                break
+            except (ValueError, OSError, TypeError):
+                continue
 
 
 def main(argv=None):
@@ -156,21 +165,46 @@ def main(argv=None):
         sys.exit(2)
 
 
+def _raised_in_gzip(e):
+    """True when the error came out of opening a gzip file (how the commands that read Live sets fail on a bad path)."""
+    tb = e.__traceback__
+    while tb is not None:
+        if os.path.basename(tb.tb_frame.f_code.co_filename) == "gzip.py":
+            return True
+        tb = tb.tb_next
+    return False
+
+
 def _audio_read_message(e):
     """The plain message for "this file cannot be read as audio", or None when `e` is something else (a real bug)."""
     name = type(e).__name__
-    if name == "AudioReadError":
+    if name in ("AudioReadError", "MissingToolError"):      # MissingToolError: a program such as Rubber Band is not installed, and how to get it
         return str(e)
+    if name == "ProjectReadError":              # a damaged or wrong .rpp / .ardour / .als: the file name, then why
+        return f"{e.name}: {e}"
     if name == "LibsndfileError" and str(e).startswith("Error opening "):   # a command that opens the file itself
         path, _, why = str(e)[len("Error opening "):].partition(": ")
         gone = "no such file" if not os.path.exists(path.strip("'\"")) else "not an audio file hypnomix can decode"
         return f"can't read {path} as audio: {gone}"
+    if name == "BadGzipFile":                   # a Live-set command was given a file that is not a gzipped Live set
+        return ("can't read that file as a Live set (.als): it is not a gzip file. This command reads Live sets only; "
+                "for a REAPER project or an Ardour session use `hypnomix scan` on it.")
+    if isinstance(e, (FileNotFoundError, IsADirectoryError)) and _raised_in_gzip(e):    # a Live-set command, a typo or a folder
+        fn = str(e.filename or "that path")
+        if isinstance(e, IsADirectoryError):
+            return f"{fn} is a folder, not a Live set (.als file); give the .als file itself."
+        return f"no such file: {fn}; check the name and the folder, then try again."
+    if isinstance(e, OSError) and (isinstance(e, PermissionError) or e.errno in (errno.ENOSPC, errno.EROFS, errno.EDQUOT)):
+        fn = str(e.filename) if e.filename else "that place"      # whatever a command writes late: one sentence, not a traceback
+        why = (e.strerror or "permission denied").lower()
+        if os.path.exists(fn) and not os.access(fn, os.R_OK):
+            return f"can't read '{fn}': {why}; check that the file is yours to open"
+        return f"can't write to '{fn}': {why}; choose another place with --out"
     return None
 
 
 def _main(argv=None):
-    if sys.platform == "win32":
-        _utf8_output()
+    _utf8_output()
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] in ("-h", "--help", "help"):
         print(usage()); return

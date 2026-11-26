@@ -137,14 +137,13 @@ def slot_kind(key12):
 def clip_onsets(ci, tempo):
     """Onsets (arrangement beats, strength, file seconds) heard from one clip."""
     y, sr, _ = sm.load_audio(ci["path"])
-    mono = y.mean(1)
     span_b = np.array([ci["start"], ci["end"]])
     s0, s1 = sm.file_seconds(ci, span_b, tempo)
     if ci["loop_on"] or s1 <= s0:
         # looping clips: map each repeat separately is not supported for fixes; analyse the first pass
         s1 = max(s1, s0 + 0.5)
-    a, b = max(0, int(s0 * sr) - int(0.05 * sr)), min(len(mono), int(s1 * sr) + int(0.05 * sr))
-    seg = mono[a:b]
+    a, b = max(0, int(s0 * sr) - int(0.05 * sr)), min(len(y), int(s1 * sr) + int(0.05 * sr))
+    seg = y[a:b].mean(1)            # the clip's own stretch of the file only (the mean of a row never depends on another row)
     if len(seg) < sr // 2:
         return []
     seg = librosa.resample(seg, orig_sr=sr, target_sr=SR_O) if sr != SR_O else seg
@@ -302,11 +301,16 @@ def judge(tracks, spb, notes, to_grid=False, melodic=(), bass=(), drums=()):
             tol = tol0 * (MELODIC_TOL if mel else LOW_TOL if low else 1.0)
             others = [o for o in group if o["track"] != h["track"]]
             drum_hits = [o for o in others if o["track"] in drums]
-            lock = h["track"] in bass and drum_hits and kind in ("downbeat", "beat") and not to_grid
+            on_beat = h["track"] in bass and drum_hits and kind in ("downbeat", "beat") and not to_grid
+            # a drum hit that is itself out of place (against its own player's feel) is not something to lock the bass to
+            steady = [o for o in drum_hits if abs(o["grid_err"] - feel[o["track"]][0]) <= tol0 * LOW_TOL]
+            lock = on_beat and steady
             sh = share
             if lock:                                   # the bass locks to the drums where both hit the beat
-                ref_err = float(np.median([o["grid_err"] for o in drum_hits]))
+                ref_err = float(np.median([o["grid_err"] for o in steady]))
                 ref, tol, sh = "drums", max(LOCK_MIN, LOCK_MULT * looseness), max(share, LOCK_SHARE)
+            elif on_beat:                              # the drums are the late part here: the bass is judged against the grid
+                ref_err, ref = feel[h["track"]][0], "grid"
             elif h["track"] in drums and not to_grid:  # the drums are the reference: never pulled toward the band
                 if len(drum_hits) >= 2:
                     ref_err, ref = float(np.median([o["grid_err"] for o in drum_hits])), "drums"
@@ -568,7 +572,7 @@ def write_json(path, src, tempo, tracks, issues, notes, a):
                                       "grid": notes.get("grid", []), "bass": notes.get("bass", []),
                                       "drums": notes.get("drums", []),
                                       "tracks": [t for t, _, _ in tracks], "melodic": sorted(getattr(a, "melodic", []) or []),
-                                      "findings": out}, indent=1))
+                                      "findings": out}, indent=1), encoding="utf-8")
 
 
 def unroll_for(root, src, approved, tempo, skipped):

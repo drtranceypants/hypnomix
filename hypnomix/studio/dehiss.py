@@ -12,7 +12,7 @@ Two stages, both gentle by default:
 
 Usage: hypnomix dehiss IN.wav [OUT.wav] [--reduce 12] [--gate 18] [--attack 20] [--release 150]
        [--profile NOISE.wav] [--report]
-OUT defaults to hypnomix-out/dehiss/<name> (dehiss).wav. Use --gate 0 on parts that must keep their room tone.
+OUT defaults to hypnomix-out/dehiss/<name> (dehiss).wav. Never overwrites: refuses if OUT is IN or exists. Use --gate 0 on parts that must keep their room tone.
 Digital silence (exact zeros, e.g. gaps between clips in a render) is ignored when learning the hiss.
 """
 import argparse, json
@@ -93,10 +93,20 @@ def main():
     ap.add_argument("--open", type=float, default=10, help="dB over hiss at which the gate opens")
     ap.add_argument("--profile"); ap.add_argument("--report", action="store_true")
     a = ap.parse_args()
-    x, sr = sf.read(a.inp, always_2d=True)
+    import sys
+    from pathlib import Path
+    from hypnomix.core import dsp, paths      # a broken, empty or 6-channel file ends in one sentence (exit 2), not a bad WAV
+    if a.out:
+        paths.check_out(a.out)
+    dest = Path(a.out) if a.out else paths.out("dehiss") / f"{Path(a.inp).stem} (dehiss).wav"
+    if dest.resolve() == Path(a.inp).resolve():       # decided before any work is done, like deess and breaths
+        sys.exit("dehiss: refusing to overwrite the input file")
+    if dest.exists():
+        sys.exit(f"dehiss: {dest} already exists - refusing to overwrite")
+    x, sr = dsp.load(a.inp)
     noise = None
     if a.profile:
-        p, _ = sf.read(a.profile, always_2d=True)
+        p, _ = dsp.load(a.profile)
         _, _, Zp = stft(p.mean(1), sr, nperseg=N_FFT, noverlap=N_FFT - HOP); noise = np.median(np.abs(Zp), axis=1)
     out = np.zeros_like(x); info = {}
     for c in range(x.shape[1]):
@@ -107,9 +117,6 @@ def main():
             y, h = gate(y, sr, a.gate, a.attack, a.release, a.open)
             info["hiss_db"] = None if h is None else round(float(h), 1)
         out[:, c] = y
-    from pathlib import Path
-    from hypnomix.core.paths import out as out_dir
-    dest = Path(a.out) if a.out else out_dir("dehiss") / f"{Path(a.inp).stem} (dehiss).wav"
     dest.parent.mkdir(parents=True, exist_ok=True)
     sf.write(str(dest), out.astype(np.float32), sr, subtype="FLOAT")
     print(dest)

@@ -58,7 +58,12 @@ OVERSIGHT_JS = r"""
 // through `api` (see ovBind): api.amount(id, v), api.decideLike(id, decision), api.batch(ids, decision, note),
 // api.note(id, text, at).
 function ovLikeIds(ov, dec, id) {
-  return (ov.like[id] || []).filter(x => !(dec[x] && dec[x].decision));
+  let ids = ov.like ? (ov.like[id] || []) : [];
+  if (!ov.like && ov.like_runs && ov.like_runs[id]) {      // the page stores ranges of ov.like_order, not every list
+    const r = ov.like_runs[id];
+    for (let i = 0; i + 1 < r.length; i += 2) for (let j = r[i]; j <= r[i + 1]; j++) ids.push(ov.like_order[j]);
+  }
+  return ids.filter(x => !(dec[x] && dec[x].decision));
 }
 function ovItemHTML(f, ctx) {
   const ov = ctx.ov, e = ov.extras[f.id] || {}, d = ctx.dec[f.id] || {}, esc = ctx.esc;
@@ -239,6 +244,8 @@ function itemHTML(f) {
     ${f.history ? `<p class="note">${esc(f.history)}</p>` : ''}${players}${note}${act}
     ${ovItemHTML(f, {ov: DATA.ov, dec, notes, esc})}</div>`;
 }
+const LAZY_ABOVE = 300;   // a long review builds its first cards only (a page of 2,000 findings is ~60,000 elements otherwise)
+let cap = 100;
 function render() {
   const actionable = DATA.findings.filter(f => f.applies !== 'info' && f.applies !== 'answer');
   const n = {approve:0, skip:0, change:0};
@@ -254,9 +261,13 @@ function render() {
   const B = DATA.ov.budget;
   const ask = B ? B.ask.map(id => byId[id]).filter(Boolean) : DATA.findings.filter(f => f.applies !== 'info');
   const info = B ? B.info.map(id => byId[id]).filter(Boolean) : DATA.findings.filter(f => f.applies === 'info');
-  document.getElementById('list').innerHTML = ask.map(itemHTML).join('');
-  document.getElementById('batch').innerHTML = ovBatchHTML({ov: DATA.ov, dec, notes, esc, findings: DATA.findings}, itemHTML);
-  document.getElementById('info').innerHTML = info.length ? '<h2 class="sub">Measurements (nothing to decide)</h2>' + info.map(itemHTML).join('') : '';
+  const nBatch = B ? B.batch.length : 0, big = ask.length + info.length + nBatch > LAZY_ABOVE;
+  const lim = big ? cap : Infinity, most = Math.max(ask.length, info.length, nBatch);
+  let built = 0;
+  document.getElementById('list').innerHTML = ask.slice(0, lim).map(itemHTML).join('') + (big && most > lim
+    ? `<p class="note">Showing the first ${lim} of each list (${ask.length} to decide, ${nBatch} low priority, ${info.length} measurements), so the page stays quick. <button id="showmore" type="button">Show 100 more</button> &quot;Approve all low&hellip;&quot; above still covers every finding.</p>` : '');
+  document.getElementById('batch').innerHTML = ovBatchHTML({ov: DATA.ov, dec, notes, esc, findings: DATA.findings}, f => ++built <= lim ? itemHTML(f) : '');
+  document.getElementById('info').innerHTML = info.length ? '<h2 class="sub">Measurements (nothing to decide)</h2>' + info.slice(0, lim).map(itemHTML).join('') : '';
   document.getElementById('apply').innerHTML = served
     ? 'Saved as you click. When you are done: <code>hypnomix fix "' + esc(DATA.dir) + '" --approved --out "&lt;Song&gt; (fixed)' + OUTEXT + '"</code>'
     : 'When you are done: Download decisions, then <code>hypnomix review "' + esc(DATA.dir) + '" --import ~/Downloads/decisions.json</code> and <code>hypnomix fix "' + esc(DATA.dir) + '" --approved --out "&lt;Song&gt; (fixed)' + OUTEXT + '"</code>';
@@ -267,6 +278,7 @@ const whoBox = document.getElementById('who');
 whoBox.value = who;
 whoBox.addEventListener('change', () => { who = whoBox.value.trim(); try { localStorage.setItem('hypnomix-reviewer', who); } catch (e) {} keepLocal(); });
 document.addEventListener('click', e => {
+  if (e.target.closest('#showmore')) { cap += 100; render(); return; }
   const b = e.target.closest('button[data-id]');
   if (b) { const note = document.querySelector(`input[data-note="${CSS.escape(b.dataset.id)}"]`); setDecision(b.dataset.id, b.dataset.d, note ? note.value : ''); }
 });
@@ -311,12 +323,14 @@ def load(sd):
     if data is None:
         raise FileNotFoundError(f"no findings.json in {sd}")
     dec = atomic.load_json(sd / "decisions.json", {})
-    ab = json.loads((sd / "ab" / "ab.json").read_text()) if (sd / "ab" / "ab.json").exists() else {}
+    ab = json.loads((sd / "ab" / "ab.json").read_text(encoding="utf-8")) if (sd / "ab" / "ab.json").exists() else {}
     return data, dec, ab
 
 
-def like_map(findings, role_of, band=0.5):
-    """{id: [ids of findings like it]} ignoring decisions (the page filters out the decided ones)."""
+def like_pairs(findings, role_of, band=0.5):
+    """{id: [ids of findings like it]} ignoring decisions, by the plain definition: oversight.like() asked of every
+    finding in turn. Every pair is looked at (squared work, and the answer is as big): it is the reference like_ranges() is
+    held to, and the way out for findings whose ids repeat or whose sizes are not numbers."""
     out, groups = {}, {}
     for f in findings:
         if f.get("applies") not in ("info", "answer"):
@@ -331,11 +345,116 @@ def like_map(findings, role_of, band=0.5):
     return out
 
 
-def oversight_payload(sd, findings=None, prefs=None):
+def like_ranges(findings, role_of, band=0.5):
+    """The like map as ranges, worked out without comparing every pair: ({id: [first, last, first, last, ...]}, order).
+    `order` lists the findings so that the ones that can be like each other sit side by side; the findings like `id` are
+    order[first..last] of each pair. The same findings oversight.like() names (decisions ignored), in time and size that
+    grow with their number, not its square: each finding is looked up with a bisect in the few sorted runs it can match
+    (same tool, kind and applies; protected and high-severity ones only for their own kind; for per-track tools the same
+    role or none; then the size window)."""
+    import math
+    from bisect import bisect_left, bisect_right
+    elig = [f for f in findings if f.get("applies") not in ("info", "answer")]
+    sizes = [O.size(f) for f in elig]
+    ids = [f.get("id") for f in elig]
+    if len(set(ids)) != len(ids) or any(s is not None and not math.isfinite(s) for s in sizes):
+        return like_runs(like_pairs(findings, role_of, band), findings, role_of)
+    groups = {}
+    for f, s in zip(elig, sizes):
+        groups.setdefault((f.get("tool"), f.get("kind"), f.get("applies")), []).append(
+            (f, s, (bool(f.get("protected")), f.get("severity") == "high", role_of.get(f.get("track")))))
+    order, runs = [], {}
+    for (tool, _kind, _applies), members in groups.items():
+        if len(members) < 2:
+            continue
+        members.sort(key=lambda m: (m[2][0], m[2][1], m[2][2] is not None, str(m[2][2]), m[1] is None, m[1] or 0.0))
+        base = len(order)
+        order += [m[0]["id"] for m in members]
+        subs, i = [], 0                                 # the runs of equal (protected, high, role): positions [a, b) and their sizes
+        while i < len(members):
+            j = i
+            while j < len(members) and members[j][2] == members[i][2]:
+                j += 1
+            subs.append((members[i][2], base + i, base + j, [m[1] for m in members[i:j] if m[1] is not None]))
+            i = j
+        per_track = tool in O.PER_TRACK
+        for n, (f, s0, (prot, high, _)) in enumerate(members):
+            me = base + n
+            r0 = role_of.get(f.get("track"))
+            found = []
+            for (p, h, rk), a, b, have in subs:
+                if (p and not prot) or (h and not high) or (per_track and r0 and rk not in (None, r0)):
+                    continue
+                if s0 is None:                          # no size: like the others that have none
+                    lo, hi = a + len(have), b
+                else:
+                    lo_s, hi_s = s0 * (1 - band), s0 * (1 + band)
+                    lo, hi = a + bisect_left(have, lo_s - 1e-9), a + bisect_right(have, hi_s + 1e-9)
+                if hi > lo:
+                    found.append((lo, hi))
+            out = []
+            for lo, hi in sorted(found):                # half-open [lo, hi); this finding itself taken out, neighbours joined
+                for x, y in (((lo, me), (me + 1, hi)) if lo <= me < hi else ((lo, hi),)):
+                    if y > x:
+                        if out and out[-1] == x:
+                            out[-1] = y
+                        else:
+                            out += [x, y]
+            if out:
+                runs[f["id"]] = [v - (k % 2) for k, v in enumerate(out)]     # ends are inclusive in the answer
+    return runs, order
+
+
+def like_map(findings, role_of, band=0.5):
+    """{id: [ids of findings like it]} ignoring decisions (the page filters out the decided ones), each list in the
+    findings' own order. The lists together grow with the square of the findings (4x the findings, 16x the ids): the app,
+    the saved page and REVIEW.md use like_ranges() and the counts from it."""
+    runs, order = like_ranges(findings, role_of, band)
+    at = {f.get("id"): n for n, f in enumerate(findings)}
+    return {fid: sorted((order[j] for k in range(0, len(r), 2) for j in range(r[k], r[k + 1] + 1)), key=at.__getitem__)
+            for fid, r in runs.items()}
+
+
+def like_counts(runs):
+    """{id: how many findings are like it} from like_ranges()."""
+    return {fid: sum(r[k + 1] - r[k] + 1 for k in range(0, len(r), 2)) for fid, r in runs.items()}
+
+
+def like_runs(like, findings, role_of):
+    """The like map written as ranges, for the saved page: ({id: [first, last, first, last, ...]}, order). `order` lists
+    the ids once, arranged so that findings that are like each other sit side by side (same tool, kind, role, flags,
+    then by size); every list is the ids order[first..last] of each pair. The same lists as like_map, but the page
+    grows with the number of findings, not with its square (2,000 alike clicks used to make a 46 MB page)."""
+    by_id = {f["id"]: f for f in findings}
+    used = set(like) | {x for m in like.values() for x in m}
+
+    def key(f):
+        s = O.size(f)
+        return (str(f.get("tool")), str(f.get("kind")), str(f.get("applies")), str(role_of.get(f.get("track")) or ""),
+                bool(f.get("protected")), f.get("severity") == "high", s is None, s or 0.0)
+    order = [f["id"] for f in sorted((by_id[i] for i in used if i in by_id), key=key)]
+    pos = {i: n for n, i in enumerate(order)}
+    runs = {}
+    for fid, members in like.items():
+        ps = sorted(pos[m] for m in members if m in pos)
+        r = []
+        for p in ps:
+            if r and p == r[-1] + 1:
+                r[-1] = p
+            else:
+                r += [p, p]
+        runs[fid] = r
+    return runs, order
+
+
+def oversight_payload(sd, findings=None, prefs=None, like="map"):
     """Everything the oversight pieces need, for the page and for the app:
 
       extras[id]   {confidence, confidence_from, usually, practice, why (teach on), scalable, scale_note, size}
-      like[id]     ids of the findings like this one (same tool/kind/role, size within +-50%); filter decided ones
+      like[id]     ids of the findings like this one (same tool/kind/role, size within +-50%); filter decided ones.
+                   `like=` says how: "map" (this, every list: it grows with the square of the findings), "runs"
+                   (like_runs[id] = [first, last, ...] ranges of like_order, as the saved page and the app read it)
+                   or "count" (like_n[id] = how many: what REVIEW.md prints)
       budget       None, or {max, ask: [ids], batch: [ids], info: [ids], suggestions: [{example, decision, ids, why}]}
       notes        review-notes.json ({id: [{by, at, text, bar|sec}]})
       teach        bool (prefs review.teach)
@@ -358,7 +477,12 @@ def oversight_payload(sd, findings=None, prefs=None):
     if mq:
         budget = dict(max=mq, ask=[f["id"] for f in ask], batch=[f["id"] for f in batch], info=[f["id"] for f in info],
                       suggestions=O.batch_suggestions(batch, prefs, role_of) if batch else [])
-    return dict(extras=extras, like=like_map(findings, role_of), budget=budget, notes=O.load_notes(sd), teach=teach,
+    if like == "map":
+        shown = dict(like=like_map(findings, role_of))
+    else:
+        runs, order = like_ranges(findings, role_of)
+        shown = dict(like_n=like_counts(runs)) if like == "count" else dict(like_runs=runs, like_order=order)
+    return dict(extras=extras, budget=budget, notes=O.load_notes(sd), teach=teach, **shown,
                 reviewer=str(P.get(prefs, "review.name") or ""),
                 fingerprints={f["id"]: O.fingerprint(f) for f in findings})
 
@@ -378,15 +502,16 @@ def build(sd):
     from hypnomix.workflow import prefs as P
     data, dec, ab = load(sd)
     notes = data.get("notes", [])
+    ov = oversight_payload(sd, data["findings"], like="runs")                  # ranges, not every list
     payload = dict(set=data.get("set", ""), dir=str(sd), findings=data["findings"], decisions=dec, ab=ab,
                    prefs=P.summary(P.load()), broken=[n for n in notes if "failed" in n or n.startswith("WARNING")],
-                   ov=oversight_payload(sd, data["findings"]), bulk=bulk_payload(data["findings"]))
+                   ov=ov, bulk=bulk_payload(data["findings"]))
     blob = json.dumps(payload, default=str).replace("</", "<\\/")
     title = html.escape(Path(data.get("set") or sd.name).stem)
     page = (PAGE.replace("__OVCSS__", OVERSIGHT_CSS).replace("__OVJS__", OVERSIGHT_JS)
             .replace("__TITLE__", title).replace("__DATA__", blob))
     out = sd / "REVIEW.html"
-    out.write_text(page)
+    out.write_text(page, encoding="utf-8")
     return out
 
 
@@ -402,6 +527,7 @@ def _amount(amount):
     return amount
 
 
+@O.decisions_locked
 def record(sd, fid, decision, note="", amount=None, by=None, via=None):
     data, dec, _ = load(sd)
     ids = {f["id"] for f in data["findings"]}
@@ -418,6 +544,7 @@ def record(sd, fid, decision, note="", amount=None, by=None, via=None):
     return e
 
 
+@O.decisions_locked
 def record_like(sd, fid, decision, amount=None, by=None, band=0.5):
     """The same decision for every undecided finding like fid (and fid itself if undecided). Returns the ids."""
     data, dec, _ = load(sd)
@@ -440,7 +567,7 @@ def record_like(sd, fid, decision, amount=None, by=None, band=0.5):
 
 
 def import_file(sd, path):
-    incoming = json.loads(Path(path).expanduser().read_text())
+    incoming = json.loads(Path(path).expanduser().read_text(encoding="utf-8", errors="replace"))
     notes_in = {}
     if isinstance(incoming, dict) and incoming.get("format") == "hypnomix-review":
         notes_in = incoming.get("notes") or {}
@@ -464,7 +591,7 @@ def import_file(sd, path):
                 cur.append(r)
                 k += 1
     if k:
-        (sd / O.NOTES_FILE).write_text(json.dumps(have, indent=1))
+        (sd / O.NOTES_FILE).write_text(json.dumps(have, indent=1), encoding="utf-8")
     print(f"imported {n} decision(s) into {sd / 'decisions.json'}" + (f" and {k} note(s)" if k else ""))
     for b in bad[:10]:
         print(f"  ignored: {b}")
@@ -520,7 +647,11 @@ def serve(sd, port):
             except Exception as e:
                 self.send(400, str(e).encode(), "text/plain")
 
-    srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    from hypnomix.core.serve import LocalServer
+    try:
+        srv = LocalServer(("127.0.0.1", port), H)
+    except OSError:
+        sys.exit(f"port {port} is in use: is another review page open? close it, or pick another with --port")
     print(f"review page: http://127.0.0.1:{port}/   (this computer only; Ctrl-C to stop)\n"
           f"decisions are saved to {sd / 'decisions.json'} as they are made")
     try:

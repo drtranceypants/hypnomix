@@ -581,7 +581,7 @@ class AppFlow(unittest.TestCase):
             self.assertEqual(opened[-1], ["/usr/bin/xdg-open", str(self.music)])        # the folder, never the file itself
             S.sys.platform, S.is_windows = "win32", lambda: True
             self.assertTrue(S.reveal(f)[0])
-            self.assertEqual(opened[-1], ["explorer", f"/select,{f}"])
+            self.assertEqual(opened[-1], f'explorer /select,"{f}"')          # the quotes go round the path alone, not the whole argument
             S.sys.platform, S.is_windows = "darwin", lambda: False
             self.assertTrue(S.reveal(f)[0])
             self.assertEqual(opened[-1][:2], ["open", "-R"])
@@ -948,14 +948,14 @@ history: logged as v1 (`hypnomix history "x"`)
         S = self.S
         hub, S.PROBE["hub"] = S.PROBE["hub"], None
         try:
-            code, r, _ = call(self.base, "/api/probe/stop", {})
+            code, r, _ = call(self.base, "/api/probe/stop", {}, S.TOKEN)         # the page's own call sends its token
         finally:
             S.PROBE["hub"] = hub
         self.assertEqual(code, 409)
         self.assertIn("not running", r["error"])
         S.PROBE["hub"] = type("Hub", (), {"capture": None})()
         try:
-            code, r, _ = call(self.base, "/api/probe/stop", {})
+            code, r, _ = call(self.base, "/api/probe/stop", {}, S.TOKEN)         # the page's own call sends its token
         finally:
             S.PROBE["hub"] = hub
         self.assertEqual(code, 409)
@@ -978,7 +978,7 @@ history: logged as v1 (`hypnomix history "x"`)
         os.environ.pop("HYPNOMIX_PORT", None)
         os.environ.update({k: v for k, v in env.items() if v is not None})
         try:
-            with mock.patch.object(self.S, "ThreadingHTTPServer", FakeServer), mock.patch.object(self.S, "start_probe_hub"), \
+            with mock.patch.object(self.S, "LocalServer", FakeServer), mock.patch.object(self.S, "start_probe_hub"), \
                     mock.patch.object(UP, "check_in_background"), mock.patch.object(DC, "start_in_background"), \
                     mock.patch.object(sys, "argv", ["hypnomix-app"] + argv), mock.patch("builtins.print"):
                 self.S.main()
@@ -1108,6 +1108,23 @@ history: logged as v1 (`hypnomix history "x"`)
         self.assertIn("CREATE_NEW_PROCESS_GROUP", src)
         self.assertIn("taskkill", inspect.getsource(self.S.kill_tree))
         self.assertIn("PYTHONPATH", inspect.getsource(self.S.cli_env))
+
+    def test_jobs_import_this_hypnomix(self):
+        # a job runs in work(): a relative PYTHONPATH (PYTHONPATH=. in a checkout) must not send it to another hypnomix
+        import hypnomix
+        root = str(Path(hypnomix.__file__).resolve().parents[1])
+        old = os.environ.get("PYTHONPATH")
+        try:
+            os.environ["PYTHONPATH"] = os.pathsep.join([".", "/some/where"])
+            parts = self.S.cli_env()["PYTHONPATH"].split(os.pathsep)
+        finally:
+            if old is None:
+                os.environ.pop("PYTHONPATH", None)
+            else:
+                os.environ["PYTHONPATH"] = old
+        self.assertEqual(parts[0], root)
+        self.assertIn(str(Path("/some/where").resolve()), parts)
+        self.assertTrue(all(os.path.isabs(x) for x in parts))
 
 
 class Device(unittest.TestCase):
@@ -1562,20 +1579,11 @@ class ReviewB(unittest.TestCase):
             self.assertNotIn("eval(", text)
         self.assertEqual(re.findall(r"<script(?![^>]*\ssrc=)[^>]*>", pages[0][2].decode()).__len__(), 1)       # one inline script, the nonce'd one
 
-    def test_every_script_still_parses_when_node_is_there(self):
-        import re
-        node = shutil.which("node")
-        if not node:
-            self.skipTest("node is not installed")
-        from hypnomix.app import ui
-        app = Path(ui.__file__).parent
-        files = {p.name: p for p in app.glob("*.js")}
-        self.assertIn("review.js", files)
-        inline = self.root / "inline.js"
-        inline.write_text(re.search(r"<script>(.*?)</script>", ui.PAGE, re.S).group(1).replace("__TOKEN__", "x"))
-        for name, path in list(files.items()) + [("the page's own script", inline)]:
-            r = subprocess.run([node, "--check", str(path)], capture_output=True, text=True)
-            self.assertEqual(r.returncode, 0, f"{name}: {r.stderr}")
+    def test_every_page_script_still_parses(self):
+        """Every script of the app's pages (hypnomix/app and hypnomix/app/daw/js, and the inline ones): node when it is
+        installed, else macOS's JavaScript engine; with neither, a visible skip that names what is missing."""
+        from tests import _jscheck
+        _jscheck.check(self)
 
     def test_the_page_is_a_list_with_headings_live_regions_and_a_message_region_instead_of_alerts(self):
         from hypnomix.app import ui

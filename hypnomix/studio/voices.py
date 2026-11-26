@@ -44,6 +44,8 @@ import numpy as np, soundfile as sf, librosa
 from pathlib import Path
 from scipy.ndimage import uniform_filter1d
 from hypnomix.core.paths import out_at
+from hypnomix.core import args as A
+from hypnomix.core import dsp                   # the checked loader (a broken file ends in one sentence)
 from hypnomix.core.gz import read_gz
 from concurrent.futures import ProcessPoolExecutor
 
@@ -53,7 +55,8 @@ FADE = 0.005
 
 def phrases_of(path, min_gap, min_len):
     """Phrases = stretches where the stem is within 40 dB of its own loud level; gaps >= min_gap split them."""
-    y, sr = sf.read(path, always_2d=True); m = y.mean(1)
+    from hypnomix.core import dsp
+    y, sr = dsp.load(path); m = y.mean(1)          # the checked loader: a broken file ends in one sentence
     hop = int(0.01 * sr)
     from scipy.ndimage import uniform_filter1d
     e = np.sqrt(uniform_filter1d(m ** 2, hop * 3, mode="nearest")[::hop])          # running mean: O(n)
@@ -98,7 +101,8 @@ def measure(path, win_s):
     """Per window: level as heard (K-weighted, over the sung part only) and median pitch, or NaN if not singing."""
     import warnings
     warnings.filterwarnings("ignore", category=RuntimeWarning)       # silent windows give empty slices: expected
-    y, sr = sf.read(path, always_2d=True); m = y.mean(1)
+    from hypnomix.core import dsp
+    y, sr = dsp.load(path); m = y.mean(1)
     from hypnomix.core import pitch
     pt, f0, _ = pitch.track(path, fmin=70, fmax=1000, sr=AN, hop=512)      # fast, cached, active parts only
     hop_s = 512 / AN
@@ -244,7 +248,7 @@ def __getattr__(name):                       # `voices.CACHE` / `voices.STYLE` s
 
 def _hx(*args):
     import subprocess, sys as _s
-    r = subprocess.run([_s.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True)
+    r = subprocess.run([_s.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
@@ -263,7 +267,7 @@ def song_spacing(set_path, win_s=2.0):
         code, out = _hx("name", set_path, "--out", nd)
         if not nj.exists():
             return dict(song=set_path.stem, skipped=f"naming failed: {out.strip()[-160:]}")
-    rows = json.loads(nj.read_text())["tracks"]
+    rows = json.loads(nj.read_text(encoding="utf-8", errors="replace"))["tracks"]
     voc = [r for r in rows if r.get("kind") == "Audio" and r.get("on", True) and float(r.get("confidence") or 0) >= 0.5
            and any(str(r.get("final") or r.get("label") or "").startswith(x) for x in VOCAL)]
     if len(voc) < 2:
@@ -366,7 +370,7 @@ def style_defaults():
     sp = style_path()
     if sp.exists():
         try:
-            return json.loads(sp.read_text())
+            return json.loads(sp.read_text(encoding="utf-8"))
         except Exception:
             return None
     return None
@@ -462,6 +466,7 @@ def write_volume(set_path, out_path, gains, win_s, tempo, ramp_s=0.25):
 
 
 def balance(a):
+    from hypnomix.core import dsp                # bound before the branches below import it again
     win_s = a.window or ((60.0 / a.bpm) * a.bar_beats if a.bpm else 2.0)
     with ProcessPoolExecutor(min(8, len(a.stems))) as ex:
         res = list(ex.map(measure, a.stems, [win_s] * len(a.stems)))
@@ -521,12 +526,12 @@ def balance(a):
         env = np.pad(env, (0, max(0, L - len(env))), constant_values=1.0)
         k = int(0.25 * sr)
         env = uniform_filter1d(env, max(1, k), mode="nearest")[:L]          # 250 ms ramps, O(n)
-        y, _ = sf.read(path, always_2d=True)
+        y, _ = dsp.load(path)
         sf.write(str(od / f"{n} (balanced).wav"), (y * env[:len(y), None]).astype(np.float32), sr, subtype="FLOAT")
     settings = dict(anchor=anchor, reduce=a.reduce, above_db=a.above_db, below_db=a.below_db, spread=a.spread,
                     max_cut=a.max_cut, tolerance=a.tolerance, lead=lead, lead_margin=a.lead_margin,
                     root_step=a.root_step, upper_step=a.upper_step, window_s=win_s)
-    json.dump(dict(settings=settings, summary=summary, windows=rows), open(str(od / "balance.json"), "w"), indent=1)
+    json.dump(dict(settings=settings, summary=summary, windows=rows), open(str(od / "balance.json"), "w", encoding="utf-8"), indent=1)
     fixed = sum(1 for r in rows if any(p["cut"] < -0.05 for p in r["parts"]))
     same = sum(1 for r in rows if r.get("harmonies_same_level"))
     if same:
@@ -539,7 +544,7 @@ def balance(a):
     print(f"spacing {'as heard (after each chain)' if a.set else 'as measured'}: before {fmt(b4)}; after {fmt(af)}"
           + (f" (targets: {a.root_step:g} / {a.upper_step if a.upper_step is not None else a.root_step:g})" if a.root_step else ""))
     settings["achieved"] = dict(before=b4, after=af)
-    json.dump(dict(settings=settings, summary=summary, windows=rows), open(str(od / "balance.json"), "w"), indent=1)
+    json.dump(dict(settings=settings, summary=summary, windows=rows), open(str(od / "balance.json"), "w", encoding="utf-8"), indent=1)
     if a.apply_set:
         import gzip, xml.etree.ElementTree as ET
         tempo = float(ET.fromstring(read_gz(a.set)).find(".//Tempo/Manual").get("Value"))
@@ -592,7 +597,7 @@ def main():
                     help="the gentle default: only tame overshadowing parts (anchor lowest, above, 0 dB step): a higher "
                          "part is turned down only where it is louder than the part below it by more than --tolerance, and only to that edge")
     ap.add_argument("--window", type=float, help="seconds per judged window (default: one bar with --bpm, else 2 s)")
-    ap.add_argument("--bpm", type=float); ap.add_argument("--bar-beats", type=int, default=4)
+    ap.add_argument("--bpm", type=A.number(20, 400)); ap.add_argument("--bar-beats", type=int, default=4)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--split", action="store_true", help="split into Voice 1..N by pitch instead (no level changes)")
     ap.add_argument("--min-gap", type=float, default=0.25); ap.add_argument("--min-len", type=float, default=0.2)
@@ -682,7 +687,7 @@ def main():
     voices = np.zeros((nv, L, 2), np.float32)
     for name, ph, _, _ in res:
         path = next(s for s in a.stems if os.path.basename(s)[:-4] == name)
-        y, _ = sf.read(path, always_2d=True)
+        y, _ = dsp.load(path)
         if y.shape[1] == 1: y = np.repeat(y, 2, 1)
         y = np.pad(y, ((0, L - len(y)), (0, 0)))
         mine = sorted([p for p in P if p["src"] == name], key=lambda p: p["start"])
@@ -706,12 +711,12 @@ def main():
     # exactness check: voices sum == stems sum
     tot = np.zeros((L, 2), np.float32)
     for s in a.stems:
-        y, _ = sf.read(s, always_2d=True); y = np.repeat(y, 2, 1) if y.shape[1] == 1 else y
+        y, _ = dsp.load(s); y = np.repeat(y, 2, 1) if y.shape[1] == 1 else y
         tot[:len(y)] += y
     err = np.abs(voices.sum(0) - tot).max()
     rep = [{"start": p["start"], "end": p["end"], "src": p["src"], "note": librosa.hz_to_note(p["hz"]),
             "voice": p["voice"] + 1, "sings_with": len(p["with"])} for p in P]
-    json.dump({"voices": nv, "phrases": rep, "max_sum_error": float(err)}, open(str(od / "voices.json"), "w"), indent=1)
+    json.dump({"voices": nv, "phrases": rep, "max_sum_error": float(err)}, open(str(od / "voices.json"), "w", encoding="utf-8"), indent=1)
     print(f"{len(P)} phrases -> {nv} voices; voices sum to the original within {20 * np.log10(err + 1e-12):.0f} dBFS")
     for v in range(nv):
         ps = [p for p in P if p["voice"] == v]

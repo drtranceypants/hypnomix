@@ -467,9 +467,9 @@ def main():
     if off_tempo:
         print(f"{len(off_tempo)} spare takes do not lock to {tempo:g} BPM (free-played, or another tempo) and were not "
               "searched: try `hypnomix loops FILE` on them")
-    (od / "VARIATIONS.md").write_text("\n".join(md) + "\n")
+    (od / "VARIATIONS.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     (od / "variations.json").write_text(json.dumps(dict(set=str(src), tempo=tempo, parts=[
-        {k: v for k, v in r.items()} for r in report], findings=out_json), indent=1, default=str))
+        {k: v for k, v in r.items()} for r in report], findings=out_json), indent=1, default=str), encoding="utf-8")
     print(f"\n{len(props)} proposals on {len({q['track'] for q in props})} parts → {od}")
     if not a.apply:
         if props:

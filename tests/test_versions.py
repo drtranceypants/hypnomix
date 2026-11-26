@@ -338,7 +338,9 @@ class CheckAndRefusals(unittest.TestCase):
         self.assertIn("at least two stems", text)
         code, text = run(["--stems", self.root / "missing", "--vocals", "x", "--check"])
         self.assertEqual(code, 1)
-        self.assertIn("not a folder", text)
+        self.assertIn("no such folder", text)                      # a path that is not there is not "not a folder of stems"
+        code, text = run(["--stems", self.dir / "Bass.wav", "--vocals", "x", "--check"])
+        self.assertIn("is a file, not a folder of stems", text)
 
     def test_bad_cut_and_bad_mix_stop_before_writing(self):
         code, text = run(["--stems", self.dir, "--vocals", "Lead*", "--cut", "0:06-0:20", "--out", self.root / "o"])

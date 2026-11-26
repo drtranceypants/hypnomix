@@ -35,6 +35,7 @@ from pathlib import Path
 import numpy as np
 
 from hypnomix.core import dsp
+from hypnomix.core import args as _cli_args
 from hypnomix.studio import alignopts as AO
 from hypnomix.core.paths import out as out_dir
 
@@ -599,7 +600,7 @@ def build_parser():
                     help="stack mode: a word further off the group than this (or the song's own looseness, if more) is fixed")
     ap.add_argument("--fix-strength", type=float, default=0.8, help="stack mode: how far those words move (0.8)")
     ap.add_argument("--grid", type=float, default=0.3, help="stack mode: share of the stack's lag to the 8th-note grid (needs --bpm)")
-    ap.add_argument("--bpm", type=float, help="stack mode: the song's tempo, for the grid pull")
+    ap.add_argument("--bpm", type=_cli_args.number(20, 400), help="stack mode: the song's tempo, for the grid pull (20 to 400)")
     ap.add_argument("--cap-ms", type=float, default=60.0, help="stack mode: never move anything more than this")
     ap.add_argument("--same-words", type=float, default=0.6,
                     help="stack mode: only nudge parts singing the same words at the same time (onset correlation "
@@ -827,7 +828,7 @@ def main():
     if a._protect:
         md += ["", "Protected (left exactly as sung): " + ", ".join(f"{x:.2f}-{y:.2f} s" for x, y in a._protect)]
     md += pitch_and_formant(a, od, outs)
-    (od / "VOCALIGN.md").write_text("\n".join(md) + "\n")
+    (od / "VOCALIGN.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n".join(md))
 
 

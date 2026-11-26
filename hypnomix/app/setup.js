@@ -22,51 +22,92 @@ const css = `
 #su .chk{display:flex;gap:8px;align-items:flex-start;margin:10px 0;font-size:.93rem}
 #su .msg{margin:10px 0;padding:9px 12px;border-radius:8px;font-size:.92rem}#su .msg.ok{background:rgba(47,111,79,.12);color:var(--ok)}#su .msg.bad{background:rgba(179,38,30,.1);color:var(--hi)}
 #su pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-all;font-size:.82rem;margin:6px 0}
-#su .nav{display:flex;justify-content:space-between;gap:10px;margin-top:20px;border-top:1px solid var(--line);padding-top:14px}
+#su .nav{display:flex;justify-content:space-between;gap:10px;margin-top:20px;border-top:1px solid var(--line);padding-top:14px;position:sticky;bottom:0;background:var(--card);padding-bottom:10px}
 #su .nav button,#su .act{border:0;border-radius:9px;padding:9px 16px;font:inherit;cursor:pointer}
 #su .primary{background:var(--accent);color:var(--accent-ink)}#su .ghost{background:transparent;color:var(--mute);border:1px solid var(--line)!important}
 #su .act{background:var(--ink);color:var(--card);margin-top:4px}#su .act:disabled,#su .primary:disabled{opacity:.45;cursor:default}
 #su a{color:var(--accent)}#su .small{font-size:.85rem;color:var(--mute)}`;
 const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
 
-let U = null, step = 0, mode = '', daw = '', teach = '', prov = 'gemini', loc = 'ollama', key = '', model = '', listen = true, msg = null, busy = false, liveLog = '', cliDone = null;
+let U = null, step = 0, edition = 'assistant', mode = '', daw = '', teach = '', prov = 'gemini', loc = 'ollama', key = '', model = '', listen = true, msg = null, busy = false, liveLog = '', cliDone = null;
 const DAWNAME = {live: 'Ableton Live', reaper: 'REAPER', ardour: 'Ardour'};
-const steps = () => ['Welcome', 'How you work', 'Your DAW', 'Connect', DAWNAME[daw] || 'Connect your DAW', 'Extras', 'Done'];
-const LAST = 6, EXTRAS = 5;
-let poll = null;
-const ext = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u.replace(/^https?:\/\//, ''))}</a>`;
+const steps = () => ['Welcome', 'Your download', 'How you work', 'Your DAW', 'Connect', DAWNAME[daw] || 'Connect your DAW', 'Extras', 'Done'];
+const LAST = 7, EXTRAS = 6;
+let poll = null, opener = null, inerted = [], lastStep = -1, tested = '';      // tested: the last connection test of this setup ('ok', 'bad', or '' when none was run)
+const ext =(u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u.replace(/^https?:\/\//, ''))}</a>`;
 const list = (xs, cls) => `<ul class="${cls}">${xs.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
 
 async function open(force) {
   try { U = await get('/api/setup/state'); } catch (e) { return; }
   if (U.done && !force) return;
-  mode = U.mode || ''; daw = U.daw || ''; teach = U.teach_level || ''; step = force && U.done ? 1 : 0; msg = null; liveLog = ''; cliDone = null;
+  edition = U.edition || (U.installed === 'full' ? 'full' : 'assistant'); mode = U.mode || ''; daw = U.daw || ''; teach = U.teach_level || ''; step = force && U.done ? 1 : 0; msg = null; liveLog = ''; cliDone = null;
   const sp = U.settings.provider, saved = (U.settings.providers.find(p => p.id === sp) || {}).key_hint;
   prov = U.providers[sp] && saved ? sp : 'gemini';     // the recommended free start, unless a key is already saved
   if (sp === 'ollama' || sp === 'custom') loc = sp === 'ollama' ? 'ollama' : 'lmstudio';
-  if (!document.getElementById('su')) { const d = document.createElement('div'); d.id = 'su'; document.body.appendChild(d); }
+  tested = '';
+  if (!document.getElementById('su')) {
+    opener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
+    const d = document.createElement('div'); d.id = 'su'; document.body.appendChild(d);
+    inerted = [...document.body.children].filter(x => x !== d && !['SCRIPT', 'STYLE'].includes(x.tagName) && !x.inert);
+    inerted.forEach(x => { x.inert = true; });          // the page behind the dialog takes no focus and no clicks while it is open
+    lastStep = -1;
+  }
   draw();
 }
-function close() { const d = document.getElementById('su'); if (d) d.remove(); clearTimeout(poll); poll = null; }
+function close() {
+  const d = document.getElementById('su'); if (d) d.remove(); clearTimeout(poll); poll = null;
+  inerted.forEach(x => { x.inert = false; }); inerted = [];
+  const back = opener && document.contains(opener) ? opener : document.getElementById('main'); opener = null;
+  if (back && back.focus) back.focus({preventScroll: true});
+}
+// Escape and "Skip setup" are the same thing: the setup is set aside for good, not just until the page is loaded again.
+async function finish(a) {
+  try { await post('/api/setup/finish', { done: true, edition, mode, daw, teach_level: teach }); } catch (_) {}
+  close();
+  if (typeof window.teachChanged === 'function') window.teachChanged();
+  if (a === 'finish' && typeof go === 'function') go(teach ? 'teach' : mode === 'key' || mode === 'local' ? 'chat' : 'home');
+}
 window.openSetup = () => open(true);
 
 function draw() {
   const d = document.getElementById('su'); if (!d) return;
-  const body = [welcome, choose, pickDaw, connect, dawStep, extras, done][step]();
-  const canNext = (step !== 1 || mode) && (step !== 2 || daw);
+  const body = [welcome, pickDownload, choose, pickDaw, connect, dawStep, extras, done][step]();
+  const canNext = (step !== 2 || mode) && (step !== 3 || daw);
+  const fk = typeof focusKey === 'function' ? focusKey(d) : null;
   d.innerHTML = `<div class="box" role="dialog" aria-modal="true" aria-label="hypnomix setup">
     <div class="steps">${steps().map((s, i) => `<span class="${i === step ? 'on' : ''}">${i + 1}. ${s}</span>`).join('')}</div>
     ${body}
     <div class="nav"><div>${step > 0 ? '<button class="ghost" data-su="back">Back</button>' : ''}
       <button class="ghost" data-su="skip">${step === LAST ? 'Close' : 'Skip setup'}</button></div>
       <div>${step < LAST ? `<button class="primary" data-su="next" ${canNext ? '' : 'disabled'}>${step === 0 ? 'Start' : 'Next'}</button>` : '<button class="primary" data-su="finish">Finish</button>'}</div></div></div>`;
+  // The keyboard stays in the dialog: on a new step it goes to the step's heading (a screen reader says where it is); within a step the control that had it gets it back.
+  const same = step === lastStep && fk && typeof restoreFocus === 'function' && restoreFocus(d, fk);
+  lastStep = step;
+  if (!same) { const h = d.querySelector('h2'); if (h) { h.tabIndex = -1; h.focus({preventScroll: true}); } }
+}
+// Tab goes round inside the dialog (a browser without `inert` would let it out behind the dialog).
+function trap(e) {
+  const box = document.querySelector('#su .box'); if (!box) return;
+  const f = [...box.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')].filter(x => x.offsetParent !== null);
+  if (!f.length) return;
+  const i = f.indexOf(document.activeElement);
+  if (!box.contains(document.activeElement)) { e.preventDefault(); f[0].focus(); }
+  else if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+  else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
 }
 
 function welcome() {
   return `<h2>Welcome to hypnomix</h2><p class="sub">Two minutes of setup. You can change any of it later with the <b>Setup</b> button.</p>
   <p>hypnomix finds the technical problems in a song (clicks, late hits, flat notes, hiss, clashing frequencies, loudness) and proposes a fix for each. You hear it, then approve or skip it. It never changes your original set.</p>
-  <p>First, how do you want to work: on your own in the app, or with an AI to explain things and do the clicking? Every way gives you the same tools.</p>
+  <p>${U.installed === 'full' ? 'This is the full <b>Hypnomix</b>, with its own DAW built in (the <b>DAW</b> tab); it also works with Live, REAPER and Ardour like the <b>Hypnomix Assistant</b>.' : 'First, which download you want: the <b>Hypnomix Assistant</b> you have now, for Live, REAPER and Ardour, or the full <b>Hypnomix</b> with its own DAW built in (coming soon).'} Then, how do you want to work: on your own in the app, or with an AI to explain things and do the clicking? Every way gives you the same tools.</p>
   <p>On the next steps you can turn on <b>teacher mode</b>: a guided tour of hypnomix in your DAW if you already engineer, or a 101 crash course from an empty song to a finished master if you're new to audio.</p>`;
+}
+
+function pickDownload() {
+  return `<h2>Which Hypnomix do you want?</h2><p class="sub">The download page will offer both once the full app is out. You can change this later with the <b>Setup</b> button.</p>
+  <div class="modes">${U.downloads.map(d => `<button class="mode ${edition === d.id ? 'sel' : ''}" data-edition="${d.id}">
+    <b>${esc(d.title)}</b><span class="tag">${esc(d.tag)}</span><p>${esc(d.what)}</p></button>`).join('')}</div>
+  ${U.installed === 'full' ? `<div class="msg ok">This app is the full Hypnomix: its DAW is the <b>DAW</b> tab, and File → New Session / Open Session work on it. Setup goes on with how you work and, if you also use Live, REAPER or Ardour, that DAW.</div>` : edition === 'full' ? `<div class="msg ok">Noted. The Hypnomix DAW isn't out yet, so setup carries on with the Assistant and the DAW you use now. When it is out it will be a separate download that replaces this app (Mac only at first), not something added from here; the app tells you when a new version is out.</div>` : ''}`;
 }
 
 function choose() {
@@ -98,7 +139,7 @@ function connect() {
     return `<h2>Use a model on this computer</h2><p class="sub">Free and private. Ollama is the simplest; LM Studio has a point-and-click model browser.</p>
     <div class="pills">${Object.entries(U.local).map(([k, v]) => `<button data-loc="${k}" class="${k === loc ? 'sel' : ''}">${esc(v.label)}</button>`).join('')}</div>
     <b>Set up ${esc(g.label)}</b> (${ext(g.url)})<ol>${g.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
-    <label class="f" for="su-model">Model name${loc === 'lmstudio' ? ' (as LM Studio shows it; empty = the loaded one)' : ''}</label>
+    <label class="f" for="su-model">Model name${loc === 'lmstudio' ? ' (as LM Studio shows it; empty = the first model it lists)' : ''}</label>
     <input type="text" id="su-model" value="${esc(model)}" spellcheck="false">
     <button class="act" data-su="test" ${busy ? 'disabled' : ''}>${busy ? 'Testing…' : 'Test the connection'}</button>${msgHtml()}
     <p class="small">Small models sometimes misread a report or call a command wrong; the Assistant still asks before anything changes a set.</p>`;
@@ -120,7 +161,7 @@ function connect() {
 }
 
 function pickDaw() {
-  return `<h2>Which DAW do you use?</h2><p class="sub">A DAW is the program you record and mix in. The Wiki and the lessons follow your choice; you can change it later.</p>
+  return `<h2>Which DAW do you use?</h2><p class="sub">A DAW is the program you record and mix in. The Wiki and the lessons follow your choice; you can change it later.${U.installed === 'full' ? ' The Hypnomix DAW is built into this app (the DAW tab); pick another one here only if you also use it, or "something else".' : edition === 'full' ? ' Until the Hypnomix DAW is out, pick the one you use now.' : ''}</p>
   <div class="modes">${U.daws.map(d => `<button class="mode ${daw === d.id ? 'sel' : ''}" data-daw="${d.id}"><b>${esc(d.title)}</b><p>${esc(d.note)}</p></button>`).join('')}</div>
   <h3 style="margin:20px 0 6px;font-size:1.05rem">Teacher mode</h3>
   <p class="small" style="margin:0 0 8px">A guided course in the <b>Teacher</b> tab, in ${esc(DAWNAME[daw] || 'your DAW')}. No AI needed${mode === 'key' || mode === 'local' ? '; the Assistant can explain any step in more detail' : ''}. ${daw === 'live' || daw === 'reaper' ? `hypnomix can do the hands-on steps in ${DAWNAME[daw]} for you, asking first each time.` : daw === 'ardour' ? 'For Ardour it shows you where to click (hypnomix can\'t drive Ardour yet).' : 'Courses exist for Live, REAPER and Ardour.'}</p>
@@ -166,6 +207,9 @@ function live() {
 function extras() {
   const X = U.extras, rows = X.extras.filter(e => !e.included), inc = X.extras.filter(e => e.included);
   return `<h2>Optional extras</h2><p class="sub">Each adds a few commands. Install any of them now or later (the Setup button brings you back here). They download from PyPI${X.bundled ? ` into <code>${esc(X.where)}</code>, outside the app, so updating the app keeps them` : ` into this Python (<code>${esc(X.where)}</code>)`}.</p>
+  ${U.installed === 'full' ? `<div class="cost" style="padding:10px 12px"><b>The Hypnomix DAW</b> <span class="small">· built into this app · GPL, based on Ardour</span>
+    <p style="margin:4px 0">Already here: the <b>DAW</b> tab. Nothing to install. Its engine is a separate program under the GNU General Public License (version 2 or later); hypnomix itself is MIT and holds none of its code. The licence text is in the app's <code>LICENSES</code> folder.</p></div>` : `<div class="cost" style="padding:10px 12px"><b>The Hypnomix DAW</b> <span class="small">· not available yet · GPL, based on Ardour</span>
+    <p style="margin:4px 0">A DAW of its own with the engineer and the Assistant built in: the full Hypnomix. It is not available yet and there is nothing to install here. When it is out it will be a separate download that replaces this app (Mac only at first), not an extra added from this list${edition === 'full' ? ' (you noted that you want it on the Your download step)' : ''}. Its engine is a separate program under the GNU General Public License (version 2 or later); hypnomix itself stays MIT. Your DAW keeps working with hypnomix as it does now.</p></div>`}
   ${rows.map(e => `<div class="cost" style="padding:10px 12px">
     <b>${esc(e.title)}</b> <span class="small">· ${esc(e.size)} · ${esc(e.license)}</span>
     <p style="margin:4px 0">${esc(e.what)}${e.commands.length ? ` <span class="small">Commands: ${e.commands.map(c => `<code>${esc(c)}</code>`).join(', ')}</span>` : ''}</p>
@@ -189,7 +233,11 @@ function done() {
   const m = U.modes.find(x => x.id === mode);
   const next = teach ? `Open the <b>Teacher</b> tab: ${teach === 'tour' ? `the tour starts with how hypnomix works and connecting it to ${esc(DAWNAME[daw] || 'your DAW')}` : teach === 'az' ? 'the course starts with what sound is' : `the first lesson is the words and the screen of ${esc(DAWNAME[daw] || 'your DAW')}`}. Go at your own pace; it remembers where you are.` : { app: 'Open the <b>Songs</b> tab and scan your first song.', key: 'Open the <b>Assistant</b> tab and say hello, or ask it to scan a song.',
     local: 'Open the <b>Assistant</b> tab and say hello, or ask it to scan a song.', desktop: 'Open your AI app in the AI agent folder and ask it to scan a song.' }[mode] || '';
-  return `<h2>You're set</h2><p class="sub">${m ? esc(m.title) : 'Setup'}${daw ? ' · ' + esc((U.daws.find(d => d.id === daw) || {}).title || '') : ''}${daw === 'live' && U.live.installed ? ' · Live connected' : ''}${teach === 'tour' ? ' · teacher mode: the tour' : teach === '101' ? ' · teacher mode: the 101 course' : teach === 'az' ? ' · teacher mode: the complete course' : ''}</p>
+  const ai = (mode === 'key' || mode === 'local') && tested !== 'ok';      // asked for an AI, and no test of it passed here: do not say it is set
+  const aiNote = !ai ? '' : tested === 'bad'
+    ? `<div class="msg bad">The AI is not connected yet: the last connection test did not pass. Open the <b>Assistant</b> tab to ${mode === 'key' ? 'add or fix the key' : 'check the connection'}. Everything else works without it.</div>`
+    : `<div class="msg">The AI connection was not tested in this setup. If you already added ${mode === 'key' ? 'a key' : 'a local model'}, it is still saved; to add or check ${mode === 'key' ? 'one' : 'it'}, open the <b>Assistant</b> tab. Everything else works without it.</div>`;      // an untested AI is not "not connected": an earlier session may have saved a working one
+  return `<h2>${ai ? 'Setup saved' : "You're set"}</h2>${aiNote}<p class="sub">${m ? esc(m.title) : 'Setup'}${U.installed === 'full' ? ' · the full Hypnomix, its DAW built in' : edition === 'full' ? ' · the Hypnomix DAW when it\'s out' : ''}${daw ? ' · ' + esc((U.daws.find(d => d.id === daw) || {}).title || '') : ''}${daw === 'live' && U.live.installed ? ' · Live connected' : ''}${teach === 'tour' ? ' · teacher mode: the tour' : teach === '101' ? ' · teacher mode: the 101 course' : teach === 'az' ? ' · teacher mode: the complete course' : ''}</p>
     <p>${next}</p><p class="small">Change any of this later: the <b>Setup</b> button at the top, or the Assistant tab's settings. The Wiki's "Choosing how to work with AI" compares the options in more detail.</p>`;
 }
 
@@ -207,34 +255,37 @@ async function test() {
   try {
     const r = await fetch('/api/setup/connect', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Hypnomix': TOKEN }, body: JSON.stringify(body) }).then(r => r.json());
     if (r.settings) U.settings = r.settings;
-    msg = r.ok ? { ok: true, html: `Connected. ${r.count} model${r.count === 1 ? '' : 's'} available${model ? `; the Assistant will use <code>${esc(model)}</code>` : ''}.` }
+    tested = r.ok ? 'ok' : 'bad';
+    if (r.ok && r.model) model = r.model;       // none typed: the server used the first one the model server lists
+    msg = r.ok ? { ok: true, html: `Connected. ${r.count} model${r.count === 1 ? '' : 's'} available${model ? `; the Assistant will use <code>${esc(model)}</code>${r.model ? ' (the first one listed: type another name above to change it)' : ''}` : ''}.` }
                : { ok: false, html: esc(r.error || 'It did not connect.') };
     if (r.ok) key = '';
-  } catch (e) { msg = { ok: false, html: esc(e.message) }; }
+  } catch (e) { tested = 'bad'; msg = { ok: false, html: esc(e.message) }; }
   busy = false; draw();
 }
 
 document.addEventListener('click', async e => {
   if (!document.getElementById('su')) { const b = e.target.closest('[data-setup]'); if (b) open(true); return; }
-  const t = e.target.closest('[data-su],[data-mode],[data-prov],[data-loc],[data-extra],[data-daw],[data-teach]'); if (!t || !t.closest('#su')) return;
+  const t = e.target.closest('[data-su],[data-edition],[data-mode],[data-prov],[data-loc],[data-extra],[data-daw],[data-teach]'); if (!t || !t.closest('#su')) return;
   keep();
+  if (t.dataset.edition) { edition = t.dataset.edition; post('/api/setup/daw', { edition }).catch(() => {}); return draw(); }
   if (t.dataset.teach !== undefined) { teach = t.dataset.teach; post('/api/setup/daw', { teach_level: teach }).catch(() => {}); return draw(); }
   if (t.dataset.daw) { daw = t.dataset.daw; if (daw === 'other') teach = ''; msg = null; post('/api/setup/daw', { daw, teach_level: teach }).catch(() => {}); return draw(); }
-  if (t.dataset.mode) { mode = t.dataset.mode; model = ''; msg = null; return draw(); }
-  if (t.dataset.prov) { prov = t.dataset.prov; model = ''; key = ''; msg = null; return draw(); }
+  if (t.dataset.mode) { mode = t.dataset.mode; model = ''; msg = null; tested = ''; return draw(); }
+  if (t.dataset.prov) { prov = t.dataset.prov; model = ''; key = ''; msg = null; tested = ''; return draw(); }
   if (t.dataset.extra) {
     msg = null;
     try { U.extras = await post('/api/setup/extra', { name: t.dataset.extra }); } catch (err) { msg = { ok: false, html: esc(err.message) }; }
     draw(); return refreshExtras();
   }
-  if (t.dataset.loc) { loc = t.dataset.loc; model = ''; msg = null; return draw(); }
+  if (t.dataset.loc) { loc = t.dataset.loc; model = ''; msg = null; tested = ''; return draw(); }
   const a = t.dataset.su;
   if (a === 'next') { step = Math.min(LAST, step + 1); msg = null; return draw(); }
   if (a === 'back') { step = Math.max(0, step - 1); msg = null; return draw(); }
   if (a === 'test') return test();
   if (a === 'cli') {
     busy = true; draw();
-    try { cliDone = await post('/api/setup/cli', {}); U.cli = cliDone; msg = null; } catch (err) { msg = { ok: false, html: esc(err.message) }; }
+    try { cliDone = await post('/api/setup/cli', {}); U.cli = cliDone; msg = cliDone.note ? { ok: false, html: esc(cliDone.note) } : null; } catch (err) { msg = { ok: false, html: esc(err.message) }; }
     busy = false; return draw();
   }
   if (a === 'reaper') {
@@ -247,13 +298,12 @@ document.addEventListener('click', async e => {
     try { const r = await post('/api/setup/live', {}); U.live = r.live; liveLog = r.log; msg = null; } catch (err) { msg = { ok: false, html: esc(err.message) }; }
     busy = false; return draw();
   }
-  if (a === 'skip' || a === 'finish') {
-    try { await post('/api/setup/finish', { done: true, mode, daw, teach_level: teach }); } catch (_) {}
-    close();
-    if (typeof window.teachChanged === 'function') window.teachChanged();
-    if (a === 'finish' && typeof go === 'function') go(teach ? 'teach' : mode === 'key' || mode === 'local' ? 'chat' : 'home');
-  }
+  if (a === 'skip' || a === 'finish') return finish(a);
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.getElementById('su')) close(); });
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('su')) return;
+  if (e.key === 'Escape') { e.preventDefault(); finish('skip'); }
+  else if (e.key === 'Tab') trap(e);
+});
 open(false);
 })();

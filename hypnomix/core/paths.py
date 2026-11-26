@@ -1,5 +1,6 @@
 """Where hypnomix writes things. Override with HYPNOMIX_OUT / HYPNOMIX_HOME."""
 import os
+import sys
 from pathlib import Path
 
 OUT = Path(os.environ.get("HYPNOMIX_OUT", "hypnomix-out")).expanduser()          # reports, captures (relative to cwd)
@@ -17,9 +18,41 @@ def out_at(custom, *parts):
     """--out if given (created), else hypnomix-out/<parts>."""
     if custom:
         p = Path(custom).expanduser()
-        p.mkdir(parents=True, exist_ok=True)
+        make_dir(p)
         return p
     return out(*parts)
+
+
+def _cannot_write(p, why):
+    print(f"can't write to '{p}': {why}; choose another place with --out", file=sys.stderr)
+    sys.exit(2)
+
+
+def check_out(custom):
+    """Before the slow part of a command: end with one plain sentence and exit code 2 (1 is a failed check in some
+    commands) when `--out` (a folder, or a file to be written) cannot be written, instead of a traceback after the
+    analysis has run. Creates nothing. No --out given: nothing to check (the default folder is made when needed)."""
+    if not custom:
+        return
+    p = Path(custom).expanduser()
+    q = p
+    while not q.exists() and q != q.parent:
+        q = q.parent
+    if q != p and not q.is_dir():
+        _cannot_write(p, "part of that path is a file, not a folder")
+    if not os.access(q, os.W_OK | (os.X_OK if q.is_dir() else 0)):
+        _cannot_write(p, "permission denied")
+
+
+def make_dir(p):
+    """Make the folder (and the ones above it). One it cannot make or write into ends the command with one plain
+    sentence and exit code 2, no traceback."""
+    p = Path(p)
+    check_out(p)
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        _cannot_write(p, (e.strerror or str(e)).lower())
 
 
 def _is_home_or_above(d):
@@ -55,7 +88,7 @@ def private_dir(d):
     return d
 
 
-def write_private(path, text, mode=0o600, encoding=None):
+def write_private(path, text, mode=0o600, encoding="utf-8"):
     """Write a small file of hypnomix's own (state, settings, helper scripts) readable by you alone (default 0600), in
     a folder made private by private_dir(). An existing file with a looser mode is tightened too."""
     p = Path(path).expanduser()

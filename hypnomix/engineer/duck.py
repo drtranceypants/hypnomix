@@ -16,6 +16,9 @@ Every item is an option, never applied unless approved; --apply writes a NEW set
 "Basic Peak Compressor" preset, so Live must be installed. The compressor is simulated (like `hypnomix
 sidechain`): check by ear.
 
+Without --renders, the vocals are rendered into a scratch folder (hypnomix-render-… under ~/.hypnomix/cache/tmp, announced
+when it is over about 1 GB) that is removed when the command ends, an error or Ctrl-C included.
+
 Usage:
   hypnomix duck SET.als [--names names.json] [--renders DIR] [--depth 3] [--json OUT.json]
   hypnomix duck SET.als --apply NEW.als --ids duck-1,duck-2
@@ -37,7 +40,7 @@ NEW = dict(kind="compressor", model=0, ratio=4.0, knee=6.0, attack=1.0, release=
 
 
 def hx(*args):
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
@@ -72,8 +75,15 @@ def vocal_source(root, vocals):
 
 def trigger_audio(set_path, root, vocals, renders, source_el):
     """The vocals as the sidechain hears them: each vocal render with its fader (and the group's), summed."""
-    from hypnomix.core import dsp
-    rd = Path(renders) if renders else Path(tempfile.mkdtemp())
+    if renders:
+        return _trigger_audio(set_path, root, vocals, Path(renders), source_el)
+    from hypnomix.core import tmp as TMP
+    # no renders given: they go in a folder that is removed when this ends (an error or Ctrl-C too)
+    with TMP.workdir("render", expect_bytes=TMP.render_bytes(root, len(vocals))) as rd:
+        return _trigger_audio(set_path, root, vocals, rd, source_el)
+
+
+def _trigger_audio(set_path, root, vocals, rd, source_el):
     need = [n for n in vocals if not (rd / f"{safe(n)}.wav").exists()]
     if need:
         hx("render", set_path, "--tracks", *need, "--out", rd)
@@ -120,8 +130,12 @@ def propose(set_path, names_json=None, renders=None, depth=3.0):
     set_path = Path(set_path)
     root = ET.fromstring(read_gz(set_path))
     if names_json is None:
-        nd = Path(tempfile.mkdtemp()); hx("name", set_path, "--out", nd); names_json = nd / "names.json"
-    rows = json.loads(Path(names_json).read_text())["tracks"]
+        from hypnomix.core import tmp as TMP
+        with TMP.workdir("work", big=False) as nd:           # names.json is read here and the folder removed
+            hx("name", set_path, "--out", nd)
+            rows = json.loads((nd / "names.json").read_text(encoding="utf-8", errors="replace"))["tracks"]
+    else:
+        rows = json.loads(Path(names_json).read_text(encoding="utf-8", errors="replace"))["tracks"]
     vocals = [r["old"] for r in rows if r.get("kind") == "Audio" and r.get("on", True)
               and float(r.get("confidence") or 0) >= 0.5 and VOCAL.match(str(r.get("final") or r.get("label") or ""))]
     lead = next((r["old"] for r in rows if str(r.get("final") or r.get("label") or "").startswith("Lead Vocal")), None)
@@ -264,7 +278,7 @@ def main():
     for f in fs:
         print(f"  {f['id']:<8} {f['track']:<30} {f['fix'].split('. An option')[0]}")
     if a.json:
-        Path(a.json).write_text(json.dumps({"tool": "duck", "set": str(src), "findings": fs}, indent=1, default=float))
+        Path(a.json).write_text(json.dumps({"tool": "duck", "set": str(src), "findings": fs}, indent=1, default=float), encoding="utf-8")
     if a.apply:
         if Path(a.apply).resolve() == src.resolve():
             sys.exit("refusing to overwrite the set; give a new file name")

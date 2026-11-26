@@ -25,7 +25,8 @@ EQ_BANDS = [(20, 40), (40, 60), (60, 100), (100, 160), (160, 250), (250, 400), (
 
 
 def avg_spectrum(path, n=8192):
-    y, sr = sf.read(str(path), always_2d=True)
+    from hypnomix.core import dsp
+    y, sr = dsp.load(path)                    # the checked loader: a broken file ends in one sentence
     mono = y.mean(axis=1)
     frames = np.lib.stride_tricks.sliding_window_view(mono, n)[::n] * np.hanning(n)
     spec = (np.abs(np.fft.rfft(frames, axis=1)) ** 2).mean(axis=0)
@@ -93,7 +94,7 @@ def main():
               f"{m_ref['ffmpeg']['true_peak_dbtp']} dBTP, LRA {m_ref['ffmpeg']['lra_lu']}, "
               f"side/mid {m_ref.get('stereo_side_to_mid_db')} dB."]
     text = "\n".join(lines) + "\n"
-    (out / f"{stem}.md").write_text(text)
+    (out / f"{stem}.md").write_text(text, encoding="utf-8")
     if not a.keep:
         matched.unlink()
     print(text)

@@ -24,34 +24,46 @@
                                                             the same decision for every undecided finding like
                                                             smooth-3 (same tool, kind and track role, size within
                                                             +-50%); lists the matches first
+  hypnomix fix SCAN_DIR --approved --out "Song (fixed).als" --dry-run
+                                                            print every file it would create and what it would
+                                                            apply, and write nothing (no set, log, history, decision)
   --as NAME                                                 who is deciding (default: prefs review.name)
 
 Before anything is written, fix prints every file it is about to create (the new set, the archive copy that
 tidy keeps, repaired audio, the log) and lists the clean-ups that are on by default: they are applied by
 --approved unless you skipped them, so skip them first or pass --no-defaults to opt out. At the end it prints
 "Not applied": every finding decided as "change" (with the note), every approved finding that has to be done by
-hand, and every approved finding that was no longer found, each with what to do next.
+hand, every approved finding that was no longer found, and every approved id that is not in this scan any more,
+each with what to do next. A vocal-level move is a "by hand" finding in a fresh scan: if you approve it, fix lists it
+under "approved, but by hand", writes nothing for it and exits 0 (to write the vocal-level fixes, run hypnomix vocallevel
+--apply). An approved finding that no step of fix can write (a kind of fix this version does not know, or a vocal-level
+move in a scan made by an older version) is listed under FAILED with what to do, and the run exits with 1.
 
 Amounts: tools with a strength control get it scaled (smooth: share of each jump eased and fade length; timing:
 strength of each nudge; duck: ducking depth; tune: correction strength); device, sidechain, clip-gain and edge
 fixes move each changed value that share of the way toward the proposed one (gains in dB). Kinds that can't be
 scaled (renames, track order, tidy, plans, borrowed loops, motion moves) say so and apply in full for any amount
-above 0; amount 0 applies nothing. Every apply run is logged for `hypnomix history` (versions, diff, undo).
+above 0; amount 0 applies nothing. Every run that wrote something is logged for `hypnomix history` (versions,
+diff, undo); a run that wrote nothing is not a version.
 
 Ardour: the approved region fades (with their curve), region gain, gain-envelope dips over spikes, and the eased
 level at a comp cut are written into ONE new .ardour snapshot, saved next to the original inside the same session
 folder (that is where Ardour keeps its own snapshots, and where it looks for the session's audio, so the new file
 finds the same recordings; nothing is copied or moved). The original is never touched; the new file is read back and
-checked, and what changed is listed. Track names and order, vocal stacks, timing, sidechain and tuning stay by hand.
+checked, and what changed is listed. Track names and order, vocal stacks, timing, sidechain and tuning stay by hand
+(harmony balance becomes balanced copies of the parts in SCAN_DIR/fixed/voices, not automation in the session).
 Written and re-read by hypnomix; NOT YET OPENED IN ARDOUR (see the Ardour wiki article for what to check there).
 
 What happens to each approved finding (see REVIEW.md for the ids):
   set     written into ONE new set next to the original, in this order: distortion parameter fixes,
           sidechain settings, clip fades / volume eases (smooth), warp-marker nudges (timing).
           The original set is never touched; temporary step files are removed at the end.
-  audio   a new audio file. tune: the vocal is rendered from the set (clip gain, fades, warps baked in) and
-          pitch-corrected into <project>/Samples/Tuned/ (never over an existing file). Folder scans: the
-          repaired copy goes to SCAN_DIR/fixed/. Source audio is never changed.
+  audio   a new audio file. tune: each take the comp clips play is pitch-corrected into <project>/Samples/Tuned/
+          (a REAPER project: <project>/Tuned/), with its notes, a picture and the chords it was checked against
+          beside it, never over an existing file. Folder scans: the repaired copy goes to SCAN_DIR/fixed/, and a
+          name that is taken gets a number ("Harmony (dehiss 2).wav"), never over an earlier copy. Source audio is
+          never changed. Harmony balance: balanced copies in SCAN_DIR/fixed/voices (in a Live set, volume
+          automation in the new set).
   manual  listed with what to do by hand.
   info    nothing to apply.
 
@@ -65,12 +77,14 @@ Safety checks made here, in code (they stop the run rather than guess):
   - after writing, the new set is checked again: the log says which approved problems are gone and which
     are still measured (--no-verify to skip)
   - any failed step makes the exit code 1 and is listed under FAILED; nothing is reported as done that wasn't
+  - timing is checked again by pairing each approved hit with the nearest one still measured on its track (a
+    nudge moves the hit, so its position is not the same any more)
 
 Close the set in Live first: Live would overwrite edits on its next save, and changes you have not saved
 in Live are not in the file this reads. Every run appends to SCAN_DIR/fix-log.md. Decisions, findings and the log are written whole or not at
 all; the version before is kept next to each as <name>.bak.
 """
-import argparse, json, re, shutil, subprocess, sys, time
+import argparse, contextlib, json, os, re, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 
 from hypnomix.core import atomic as AT
@@ -78,11 +92,14 @@ from hypnomix.workflow import oversight as O
 
 ORDER = ["distortion", "devices", "sidechain", "duck", "masking", "smooth", "edges", "cliplevel", "timing", "motion", "borrow", "colour", "tidy", "order"]   # track names come last, after all of these
 DECISIONS = ("approve", "skip", "change")
+# `fix` has no step that writes vocal-level moves (they are volume automation, made from renders of the vocal tracks)
+VOCALLEVEL_HINT = (' (or, to write every vocal-level fix at once, not only the approved ones, into a NEW set: '
+                   'hypnomix vocallevel "SET.als" --heard SOLO_EXPORTS_FOLDER --apply "NEW.als")')
 
 
 def hx(*args, timeout=7200):
     try:
-        r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True,
+        r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8", errors="replace",
                            timeout=timeout)
     except subprocess.TimeoutExpired:
         return 1, f"timed out after {timeout} s: hypnomix {' '.join(map(str, args[:2]))}"
@@ -107,6 +124,101 @@ def save_decisions(sd, dec):
     AT.write_json(Path(sd) / "decisions.json", dec)
 
 
+decisions_lock = AT.decisions_lock        # the one lock for decisions.json (core/atomic.py): the app and the review use it too
+
+
+def record(sd, changes, keep_existing=False):
+    """Merge `changes` ({id: entry}) into decisions.json. It is read again under the lock, so a decision another
+    process recorded a moment ago is kept (with keep_existing, an id that already has a decision is left alone).
+    Returns the decisions as saved."""
+    with decisions_lock(sd):
+        cur = load_decisions(sd)
+        for k, v in changes.items():
+            if not (keep_existing and k in cur):
+                cur[k] = v
+        if changes:
+            save_decisions(sd, cur)
+    return cur
+
+
+def no_step(f):
+    """One plain sentence for an approved finding that `fix` has no step for, ending in what to do next."""
+    tool, applies = f.get("tool") or "?", f.get("applies")
+    if tool == "vocallevel":
+        return ("fix does not write vocal-level moves: make the change yourself in your DAW" + VOCALLEVEL_HINT)
+    if not applies:
+        return "this finding does not say how it is applied (no 'applies'): make the change by hand, or re-scan"
+    return f"fix has no step for '{tool}' findings (applies: {applies}): make the change by hand, or re-scan"
+
+
+def last_line(text, limit=200):
+    """The last line of a command's output that says something (not a log pointer), cut to one plain sentence."""
+    for l in reversed([x.strip() for x in str(text or "").splitlines()]):
+        if l and not re.match(r"^(log|history):", l):
+            return short_line(l, limit)
+    return ""
+
+
+def short_line(line, limit=200):
+    """A line cut to `limit` characters without losing its end, where the reason usually is: a long path inside it
+    shrinks to its file name first, and only then is the middle replaced by '...'."""
+    if len(line) <= limit:
+        return line
+    line = re.sub(r"(['\"])((?:[A-Za-z]:)?[\\/][^'\"]*[\\/])([^'\"\\/]+)\1", r"\1\3\1", line)
+    line = re.sub(r"(?<![\w.])(?:[A-Za-z]:)?[\\/](?:[^\\/\s'\"]+[\\/])+([^\\/\s'\"]+)", r"\1", line)
+    if len(line) <= limit:
+        return line
+    keep = limit - 3
+    head = keep // 3
+    return line[:head] + "..." + line[len(line) - (keep - head):]
+
+
+def free_dest(folder, name):
+    """folder/name, or 'stem (clean 2).wav', 'stem (clean 3).wav' ...: the first name that does not exist yet."""
+    folder, name = Path(folder), Path(name)
+    cand, k = folder / name.name, 1
+    while cand.exists():
+        k += 1
+        stem = name.stem
+        stem = f"{stem[:-1]} {k})" if stem.endswith(")") else f"{stem} {k}"
+        cand = folder / f"{stem}{name.suffix}"
+    return cand
+
+
+def move_new(tmp, folder):
+    """Move everything a repair tool wrote into `tmp` to `folder`, never over a file that is already there (a taken
+    name gets a number). Returns the new paths."""
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    made = []
+    for p in sorted(Path(tmp).iterdir()):
+        dest = free_dest(folder, p.name)
+        shutil.move(str(p), str(dest))
+        made.append(dest)
+    return made
+
+
+def where_beats(where):
+    """'13.3.09' (bar.beat.fraction, as the timing check prints it) -> beats from the start, or None."""
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)$", str(where or ""))
+    return (int(m.group(1)) - 1) * 4 + (int(m.group(2)) - 1) + int(m.group(3)) / 100.0 if m else None
+
+
+def timing_still(items, left, tol=0.2):
+    """Which approved timing items are still measured after the fix. A nudge moves the hit, so its position text is
+    not the same any more: each approved item is paired with the nearest remaining issue on its track (within `tol`
+    beats), one to one. items: [(id, track, beat)]; left: [(track, beat)]. Returns the ids still measured."""
+    pairs = sorted((abs(b - lb), i, j) for i, (_, tr, b) in enumerate(items) for j, (lt, lb) in enumerate(left)
+                   if tr == lt and b is not None and lb is not None and abs(b - lb) <= tol)
+    used_i, used_j, still = set(), set(), []
+    for _, i, j in pairs:
+        if i in used_i or j in used_j:
+            continue
+        used_i.add(i)
+        used_j.add(j)
+        still.append(items[i][0])
+    return still
+
+
 def flat(values):
     """Repeated options, each maybe a comma list, as one list: ["a,b", "c"] -> ["a", "b", "c"]."""
     out = []
@@ -127,8 +239,10 @@ def live_running():
         return False
 
 
-def recheck(tool, als, sd, scan, timing_tracks, tag):
-    """Analyse `als` again with `tool` (read-only) and return its findings in the scan's shape, or None."""
+def recheck(tool, als, sd, scan, timing_tracks, tag, focus=None):
+    """Analyse `als` again with `tool` (read-only) and return its findings in the scan's shape, or None.
+    `focus`: the tracks the approved findings are on. `devices` then judges only those (its ids stay the whole set's), so
+    the checks before and after a fix cost the tracks that changed, not every track of the set."""
     j = sd / "raw" / f"recheck-{tool}-{tag}.json"
     j.parent.mkdir(parents=True, exist_ok=True)
     if j.exists():
@@ -139,7 +253,7 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
         for t in timing_tracks:
             args += ["--track", t]
         tj = sd / "raw" / "timing.json"
-        tjd_ = json.loads(tj.read_text()) if tj.exists() else {}
+        tjd_ = json.loads(tj.read_text(encoding="utf-8")) if tj.exists() else {}
         for t in tjd_.get("melodic", []):
             args += ["--melodic", t]
         for t in tjd_.get("bass", []):
@@ -150,6 +264,9 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
         args += ["--mix", scan["mix"]]
     if tool in ("order", "tidy", "edges", "cliplevel", "duck", "devices"):
         args += ["--names", sd / "raw" / "names" / "names.json"]
+    if tool == "devices" and focus and all(focus):
+        for t in sorted(set(focus)):
+            args += ["--focus", t]
     if tool == "motion":
         args += motion_args(sd, scan)
     if tool == "borrow":
@@ -159,7 +276,7 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
     hx(*args)
     if not j.exists():
         return None
-    rows = json.loads(j.read_text()).get("findings", [])
+    rows = json.loads(j.read_text(encoding="utf-8")).get("findings", [])
     if tool == "distortion":
         rows = [dict(id=(r.get("evidence") or {}).get("id"), tool="distortion", kind=r.get("kind"),
                      track=r.get("track"), where=r.get("where", ""), device=r.get("device", "")) for r in rows]
@@ -260,7 +377,7 @@ def take_scales(key_json, spans, out):
     ([(song_t0, song_t1, take_t0, take_t1)], from the comp clips that play the take) say which part of the take
     sounds where in the song, so each played part of the take gets the scale of the section it is heard in. Parts
     of the take no clip plays keep the map's overall key."""
-    d = json.loads(Path(key_json).read_text())
+    d = json.loads(Path(key_json).read_text(encoding="utf-8"))
     rows = []
     for s0, s1, r0, r1 in spans:
         if s1 <= s0 or r1 <= r0:
@@ -278,7 +395,7 @@ def take_scales(key_json, spans, out):
             merged[-1]["t1"] = max(merged[-1]["t1"], r["t1"])
         else:
             merged.append(r)
-    Path(out).write_text(json.dumps(dict(d, sections=merged), indent=1))
+    Path(out).write_text(json.dumps(dict(d, sections=merged), indent=1), encoding="utf-8")
     return merged
 
 
@@ -326,7 +443,7 @@ def describe_default(f, src):
     return f"{f.get('tool')} {kind}"
 
 
-def planned_files(chosen, sd, src, out, orig, reaper_):
+def planned_files(chosen, sd, src, out, orig, reaper_, verify=True):
     """Every file this run is about to create: [(path, what it is)]. Nothing is overwritten: all are new."""
     sd = Path(sd)
     rows = []
@@ -345,14 +462,21 @@ def planned_files(chosen, sd, src, out, orig, reaper_):
     if any(f.get("tool") == "voices" and not f.get("plan") for f in audio):
         rows.append((sd / "fixed" / "voices", "balanced copies of the vocal parts (a numbered folder if it exists)"))
     if any(f.get("run") for f in audio):
-        rows.append((sd / "fixed", "repaired copies of the recordings (the sources are never changed)"))
+        rows.append((sd / "fixed", "repaired copies of the recordings (the sources are never changed; a name that is "
+                                   "taken gets a number)"))
     if any(f.get("tool") == "tune" for f in audio) and src:
-        rows.append((Path(src).parent / "Samples" / "Tuned", "one new tuned file per take (never over an existing one)"))
-    if any(f.get("applies") in ("set", "audio") for f in chosen):
+        tdir = Path(src).parent / "Tuned" if reaper_ else Path(src).parent / "Samples" / "Tuned"
+        rows.append((tdir, "one new tuned file per take (never over an existing one), with its notes (.notes.txt), "
+                           "a picture (.png) and the chords it was checked against (.npz) beside it"))
+    suffix = Path(src).suffix.lower() if src else ""
+    set_tools = {f.get("tool") for f in chosen if f.get("applies") == "set"}
+    if suffix not in (".rpp", ".ardour") and (set_tools & (set(ORDER) - {"masking"})):   # a Live set: its steps measure it again
         rows.append((sd / "raw" / "recheck-*.json", "the measurements taken before and after, to check the result"))
+    if verify and suffix in (".rpp", ".ardour") and (set_tools & {"clips", "edges"}):
+        rows.append((sd / "raw" / "verify.json", "the clip checks, run again on the new project to check the result"))
     rows.append((sd / "fix-log.md", "this run's log (added to the end)"))
     rows.append((sd / "decisions.json", "the decisions (the version before is kept as decisions.json.bak)"))
-    if src and Path(src).suffix.lower() == ".als" and (out is not None or any(f.get("applies") == "set" for f in chosen)):
+    if suffix in (".als", ".rpp", ".ardour") and (out is not None or any(f.get("applies") == "set" for f in chosen)):
         rows.append((sd / "history", "copies of the set before and after this run (for `hypnomix history`, undo)"))
     seen, uniq = set(), []
     for pth, what in rows:
@@ -362,8 +486,9 @@ def planned_files(chosen, sd, src, out, orig, reaper_):
     return uniq
 
 
-def not_applied(sd, findings, dec, manual_items, skipped, zero, default_ids=()):
-    """The "Not applied" section: what fix did NOT do, and what the person should do next. Returns lines."""
+def not_applied(sd, findings, dec, manual_items, skipped, zero, default_ids=(), gone=()):
+    """The "Not applied" section: what fix did NOT do, and what the person should do next. Returns lines.
+    gone: ids recorded as approved that are not in this scan's findings (an older scan's decisions)."""
     q = f'"{sd}"'
     changed = [f for f in findings if decision_of(dec, f["id"]) == "change"]
     L = []
@@ -381,9 +506,10 @@ def not_applied(sd, findings, dec, manual_items, skipped, zero, default_ids=()):
         L += ["", f"  approved, but by hand ({len(hand)}): hypnomix cannot make these changes"]
         for f in hand:
             L.append(f"  - {f['id']} {f.get('track') or ''} {f.get('where', '')}: {str(f.get('fix'))[:300]}")
-            L.append("      next: make this change yourself in your DAW, then re-scan to check it is gone")
+            L.append("      next: make this change yourself in your DAW, then re-scan to check it is gone"
+                     + (VOCALLEVEL_HINT if f.get("tool") == "vocallevel" else ""))
     if info:
-        L += ["", f"  approved, but only a measurement ({len(info)}): nothing to apply"]
+        L += ["", f"  approved, but there is nothing to apply ({len(info)}): a measurement, or a question to answer"]
         for f in info:
             L.append(f"  - {f['id']} {f.get('track') or ''} {f.get('where', '')}: {str(f.get('fix'))[:300]}")
     if skipped:
@@ -399,7 +525,12 @@ def not_applied(sd, findings, dec, manual_items, skipped, zero, default_ids=()):
         for f in zero:
             L.append(f"  - {f['id']} {f.get('track') or ''} {f.get('where', '')}")
         L.append(f"      next: record an amount above 0 (hypnomix fix {q} --decide ID=approve@50), or skip it")
-    n = len(changed) + len(manual_items) + len(skipped) + len(zero)
+    if gone:
+        L += ["", f"  approved, but not in this scan any more ({len(gone)}): not applied"]
+        for g in gone:
+            L.append(f"  - {g}: its id is not in findings.json (decided on an older scan?)")
+        L.append(f"      next: re-scan, then decide again on what it finds now (hypnomix fix {q} --list --undecided)")
+    n = len(changed) + len(manual_items) + len(skipped) + len(zero) + len(gone)
     return ([f"Not applied ({n}):"] + L) if n else []
 
 
@@ -428,15 +559,17 @@ def main():
     ap.add_argument("--severity", choices=SEVERITIES, help="with --list: only this severity")
     ap.add_argument("--tool", help="with --list: only findings of this tool (smooth, timing, tune ...)")
     ap.add_argument("--undecided", action="store_true", help="with --list: only findings with no decision yet")
-    ap.add_argument("--top", type=int, metavar="N", help="with --list: show only N findings")
-    ap.add_argument("--offset", type=int, default=0, metavar="N", help="with --list: skip the first N (to page)")
+    from hypnomix.core import args as A
+    ap.add_argument("--top", type=A.whole(1), metavar="N", help="with --list: show only N findings")
+    ap.add_argument("--offset", type=A.whole(0), default=0, metavar="N", help="with --list: skip the first N (to page)")
     ap.add_argument("--show", metavar="ID", help="print one finding in full (id or item number) and exit")
     ap.add_argument("--no-defaults", action="store_true", help="with --approved: apply only what was approved by "
                     "name; leave out the clean-ups that are on by default (track order, switched-off tracks)")
     ap.add_argument("--decide-like", default="", metavar="ID=approve[@AMOUNT]",
                     help="the same decision for every undecided finding like ID (lists them first)")
     ap.add_argument("--band", type=float, default=50.0, help="with --decide-like: how close in size (percent, default 50)")
-    ap.add_argument("--dry-run", action="store_true", help="with --decide-like: list the matches, record nothing")
+    ap.add_argument("--dry-run", action="store_true", help="write nothing: with --decide-like list the matches, with "
+                    "--decide say what would be recorded, with --approve / --approved print what would be written")
     ap.add_argument("--as", dest="by", metavar="NAME", help="who is deciding (default: prefs review.name)")
     a = ap.parse_args()
     sd = Path(a.scan_dir)
@@ -474,8 +607,9 @@ def main():
         answers = scan.get("answers", []) + a.answer
         _, open_q = load_scales(key_json, answers)          # checks every answer against its question
         scan["answers"] = answers
-        AT.write_json(sd / "scan.json", scan)
-        print(f"answers saved: {', '.join(answers)}")
+        if not a.dry_run:
+            AT.write_json(sd / "scan.json", scan)
+        print(f"answers {'checked, not saved (dry run)' if a.dry_run else 'saved'}: {', '.join(answers)}")
         print("still open: " + "; ".join(open_q) if open_q else "every key question is answered: tune with --key sections")
         if not (a.approve or a.approved):
             return
@@ -505,14 +639,14 @@ def main():
             print("dry run: nothing recorded")
             return
         targets = ([ex] if not decision_of(dec, ex["id"]) else []) + matched
-        for f in targets:
-            dec[f["id"]] = O.entry(what, a.note, amt, by=a.by, via=None if f is ex else f"like:{ex['id']}")
-        save_decisions(sd, dec)
+        record(sd, {f["id"]: O.entry(what, a.note, amt, by=a.by, via=None if f is ex else f"like:{ex['id']}")
+                    for f in targets})
         print(f"recorded {what}" + (f"@{amt}" if amt is not None else "") + f" for {len(targets)} finding(s); "
               "a decision made on one of them later wins")
         return
 
     if a.decide:
+        changes = {}
         for item in flat(a.decide):
             if "=" not in item:
                 sys.exit(f"expected ID=decision, got {item!r}")
@@ -527,8 +661,11 @@ def main():
             if amt is not None and amt not in (0, 100) and what != "skip" and not O.scalable(f)[0]:
                 print(f"note: {f['id']} ({f['tool']} {f.get('kind')}) can't be scaled ({O.scalable(f)[1]}): "
                       "any amount above 0 applies it in full")
-            dec[f["id"]] = O.entry(what, a.note, amt, by=a.by)
-        save_decisions(sd, dec)
+            changes[f["id"]] = O.entry(what, a.note, amt, by=a.by)
+        if a.dry_run:
+            print("dry run: would record " + ", ".join(f"{k}={decision_of(changes, k)}" for k in changes) + "; nothing recorded")
+            return
+        dec = record(sd, changes)
         n = {d: sum(1 for k in dec if decision_of(dec, k) == d) for d in DECISIONS}
         left = sum(1 for f in findings if f.get("applies") not in ("info", "answer") and f["id"] not in dec)
         print(f"recorded. approve {n['approve']}, skip {n['skip']}, change {n['change']}; {left} still undecided")
@@ -539,9 +676,10 @@ def main():
     if unknown:
         sys.exit(f"unknown ids: {', '.join(unknown)}")
     want = {by_key[w]["id"] for w in want}
-    dflt = set()
+    dflt, gone = set(), []
     if a.approved:
         want |= {k for k in dec if decision_of(dec, k) == "approve" and k in by_key}
+        gone = sorted(k for k in dec if decision_of(dec, k) == "approve" and k not in by_key)   # an older scan's ids
         # on-by-default clean-up (track order, vocal stacks): included unless the person skipped it
         dflt = {f["id"] for f in findings if f.get("default") == "approve" and f["id"] not in dec}
         if a.no_defaults:
@@ -578,11 +716,20 @@ def main():
     name_items = [f for f in chosen if f.get("tool") == "name"]       # renamed last: every other step finds tracks by name
     set_items = [f for f in chosen if f.get("applies") == "set" and f.get("tool") != "name"]
     audio_items = [f for f in chosen if f.get("applies") == "audio"]
-    manual_items = [f for f in chosen if f.get("applies") in ("manual", "info")]
+    manual_items = [f for f in chosen if f.get("applies") in ("manual", "info", "answer")]   # nothing for fix to write
     folder_mode = scan.get("mode") in ("folder", "file")
     orig = Path(data["set"]) if data.get("set") and not folder_mode else None
+    if folder_mode and a.out:
+        print(f"note: --out is not used for a scan of a folder or a file: repaired copies go to {sd / 'fixed'}")
     src = Path(a.from_set).resolve() if a.from_set else orig
     out = None
+    # an approved finding no step of this command can write (a kind this version does not know, a hand-made entry
+    # with no 'applies'): never dropped quietly. It is reported as not done, and the run exits with 1.
+    known = {id(f) for f in name_items + set_items + audio_items + manual_items}
+    stuck = [(f, no_step(f)) for f in chosen if id(f) not in known]
+    if not (orig is not None and orig.suffix.lower() in (".rpp", ".ardour")):    # REAPER / Ardour: their writers say it themselves
+        stuck += [(f, no_step(f)) for f in set_items if f.get("tool") not in ORDER]
+        set_items = [f for f in set_items if f.get("tool") in ORDER]
 
     if orig and (set_items or audio_items or name_items):
         if not orig.exists():
@@ -597,7 +744,11 @@ def main():
     ardour_ = orig is not None and orig.suffix.lower() == ".ardour"
     if ardour_ and any(f.get("tool") == "tune" for f in audio_items):
         sys.exit("tuning is not written into an Ardour session yet: untick the tune items (the other fixes can go ahead)")
-    voices_in_set = bool(orig) and not reaper_ and any(f.get("tool") == "voices" for f in audio_items)
+    # harmony balance is written as volume automation into a LIVE set only; in a REAPER project or an Ardour session
+    # it is balanced copies of the parts (SCAN_DIR/fixed/voices) like in a folder of stems
+    voices_in_set = bool(orig) and not reaper_ and not ardour_ and any(f.get("tool") == "voices" for f in audio_items)
+    if folder_mode and any(f.get("run") for f in audio_items) and not Path(data.get("set") or "").exists():
+        sys.exit(f"the scanned folder is gone: {data.get('set')}. Move it back, or scan it again where it is now.")
     tune_rpp = reaper_ and any(f.get("tool") == "tune" for f in audio_items)
     # tuning in a Live set also writes a new set (the comp clips play the tuned takes), so it needs --out too
     tune_als = orig is not None and not reaper_ and any(f.get("tool") == "tune" for f in audio_items)
@@ -608,9 +759,11 @@ def main():
             sys.exit("approved set changes need --out NEW" + (".rpp" if reaper_ else ".ardour" if ardour_ else ".als"))
         out = Path(a.out)
         if not out.is_absolute():
-            out = src.parent / out
+            here = out.resolve()                  # a path from where you are that already points into the project's folder
+            out = here if here.parent == src.resolve().parent else src.parent / out    # else a name beside the project
+        out = Path(os.path.normpath(str(out)))    # "a/../b.als" is "b.als"
         if out.resolve().parent != src.resolve().parent:
-            sys.exit(f"--out must be in the same folder as the original ({src.parent})")
+            sys.exit(f"--out must be in the same folder as the original ({src.parent}); {a.out!r} points at {out.parent}")
         if out.resolve() in (src.resolve(), orig.resolve()):
             sys.exit("refusing to overwrite the original set")
         if out.exists():
@@ -618,6 +771,8 @@ def main():
     name_out = out
     if reaper_ and out is not None and out.suffix.lower() != ".rpp":
         sys.exit("a REAPER project is written as a new .rpp: give --out \"<Song> (fixed).rpp\"")
+    if out is not None and not reaper_ and not ardour_ and out.suffix.lower() != ".als":
+        sys.exit("a Live set is written as a new .als: give --out \"<Song> (fixed).als\"")
     if ardour_ and out is not None and out.suffix.lower() != ".ardour":
         sys.exit("an Ardour session is written as a new snapshot: give --out \"<Session> (fixed).ardour\" "
                  "(it is saved next to the original, inside the session folder)")
@@ -630,20 +785,27 @@ def main():
     if defaults_used:
         print("Also applied because they are on by default (skip them to opt out, or pass --no-defaults): "
               + ", ".join(f"{f['id']} ({describe_default(f, src)})" for f in defaults_used))
-    files = planned_files(chosen, sd, src, out, orig, reaper_)
+    doing = [f for f in chosen if id(f) not in {id(s) for s, _ in stuck}]
+    files = planned_files(doing, sd, src, out, orig, reaper_, verify=not a.no_verify)
     print("About to write (all new; nothing existing is overwritten):")
     for pth, what in files:
         print(f"  {pth}  <- {what}")
     print()
+    if a.dry_run:
+        print("Would try to apply: " + (", ".join(f["id"] for f in doing) or "nothing")
+              + " (a step can still refuse when it runs, for example a tune with no chord source)")
+        for f, why in stuck:
+            print(f"Would not apply {f['id']}: {why}")
+        print("dry run: nothing was written (no set, no log, no history, no decisions)")
+        return
 
-    for f in chosen:  # an explicit --approve is a decision too
-        if f["id"] not in dec:
-            dec[f["id"]] = O.entry("approve", "via --approve", by=a.by)
-    save_decisions(sd, dec)
+    new_dec = {f["id"]: O.entry("approve", "via --approve", by=a.by) for f in chosen if f["id"] not in dec}
+    dec.update(record(sd, new_dec, keep_existing=True))      # an explicit --approve is a decision too
     tag = lambda f: f["id"] + (f"@{amounts[f['id']]}" if amounts[f["id"]] != 100 else "")
     log = [f"\n## fix run {time.strftime('%Y-%m-%d %H:%M')}", "",
            "approved: " + ", ".join(tag(f) for f in chosen), ""]
-    failed, skipped_all = [], []
+    failed, skipped_all = [f"{f['id']}: {why}" for f, why in stuck], []
+    wrote_any = False            # set true by every step that really wrote something: only then is the run a version in history
 
     if reaper_ and (set_items or name_items or tune_rpp):   # REAPER: one pass into one new .rpp (fix_project.py)
         from hypnomix.workflow import fix_project as FP
@@ -657,6 +819,7 @@ def main():
         audio_items = [f for f in audio_items if f.get("tool") != "tune"]
         set_items = []
         out = wrote
+        wrote_any = wrote_any or bool(wrote)
     if ardour_ and (set_items or name_items):    # Ardour: one pass into one new .ardour (fix_ardour.py)
         from hypnomix.workflow import fix_ardour as FA
         wrote, l2, f2, s2 = FA.run(sd, scan, src, out, set_items + name_items, dec, verify=not a.no_verify)
@@ -666,9 +829,10 @@ def main():
         skipped_all += s2
         set_items = []
         out = wrote
+        wrote_any = wrote_any or bool(wrote)
     if set_items:
         tj = sd / "raw" / "timing.json"
-        tjd = json.loads(tj.read_text()) if tj.exists() else {}
+        tjd = json.loads(tj.read_text(encoding="utf-8")) if tj.exists() else {}
         timing_tracks, timing_melodic = tjd.get("tracks", []), tjd.get("melodic", [])
         timing_low = [("--bass", t) for t in tjd.get("bass", [])] + [("--drums", t) for t in tjd.get("drums", [])]
         cur, step, temps, applied_tools = src, 0, [], []
@@ -713,7 +877,8 @@ def main():
                         if tool == "masking":    # the finding IS the cut: the writer checks the track and an equal cut itself
                             ids, skipped = [f["id"] for f in gitems], []
                         else:
-                            now = recheck(tool, gcur, sd, scan, timing_tracks, f"pre{step}" + (f".{gi}" if gi else ""))
+                            now = recheck(tool, gcur, sd, scan, timing_tracks, f"pre{step}" + (f".{gi}" if gi else ""),
+                                          focus=[f.get("track") for f in gitems])
                             if now is None:
                                 failed += [f"{f['id']}: could not re-check the set with {tool}" for f in gitems]
                                 broke = True
@@ -818,12 +983,16 @@ def main():
                     log.append(line)
                     continue
                 items = [f for f in set_items if f["tool"] == tool]
-                now = recheck(tool, out, sd, scan, timing_tracks, "post")
+                now = recheck(tool, out, sd, scan, timing_tracks, "post", focus=[f.get("track") for f in items])
                 if now is None:
                     line = f"- {tool}: could not be re-checked"
                 else:
-                    left = {fingerprint(r) for r in now}
-                    still = [f["id"] for f in items if fingerprint(f) in left]
+                    if tool == "timing":      # a nudge moves the hit, so its position text changes: pair by nearest hit
+                        still = timing_still([(f["id"], f.get("track") or "", where_beats(f.get("where"))) for f in items],
+                                             [(r.get("track") or "", where_beats(r.get("where"))) for r in now])
+                    else:
+                        left = {fingerprint(r) for r in now}
+                        still = [f["id"] for f in items if fingerprint(f) in left]
                     line = (f"- {tool}: {len(items) - len(still)} of {len(items)} approved problems no longer measured"
                             + (f"; still measured: {', '.join(still)} (listen there: a gentle fix can leave a "
                                f"smaller version of the problem)" if still else ""))
@@ -832,7 +1001,7 @@ def main():
             log.append("")
 
     # ---- harmony balance from a set: written as track volume automation (after each chain), before the renames
-    voices_set = [f for f in audio_items if f.get("tool") == "voices" and orig is not None]
+    voices_set = [f for f in audio_items if f.get("tool") == "voices" and orig is not None and not reaper_ and not ardour_]
     if voices_set:
         if not a.out:
             failed += [f"{f['id']}: harmony balance into the set needs --out NEW.als" for f in voices_set]
@@ -932,12 +1101,12 @@ def main():
         elif tool == "automix":
             kf = sd / "raw" / "approved-automix.json"
             kf.parent.mkdir(parents=True, exist_ok=True)
-            kf.write_text(json.dumps(sorted(f["plan"]["key"] for f in items)))
+            kf.write_text(json.dumps(sorted(f["plan"]["key"] for f in items)), encoding="utf-8")
             code, txt = hx("automix", source, "--no-prep", "--no-master", "--only", kf, "--out", dest)
         elif tool == "balance":
             kf = sd / "raw" / "approved-balance.json"
             kf.parent.mkdir(parents=True, exist_ok=True)
-            kf.write_text(json.dumps({f["track"]: f["plan"]["gain_db"] for f in items}))
+            kf.write_text(json.dumps({f["track"]: f["plan"]["gain_db"] for f in items}), encoding="utf-8")
             code, txt = hx("balance", source, "--only", kf, "--out", dest)
         elif tool == "master":
             pl = items[0]["plan"]
@@ -956,7 +1125,9 @@ def main():
         print(f"{tool:<11} {'ok' if ok else 'FAILED'}  {Path(source).name}: {len(items)} approved move(s)"
               + (f"  → {dest}" if ok else ""))
         if not ok:
-            failed.append(f"{ids}: {tool} failed on {Path(source).name}")
+            failed.append(f"{ids}: {tool} failed on {Path(source).name}: {last_line(txt)}")
+        else:
+            wrote_any = True
 
     for f in audio_items:
         if f.get("tool") == "voices":  # harmony balance: only with the settings the person chose
@@ -990,20 +1161,43 @@ def main():
                     "```", txt.strip()[-1500:], "```", ""]
             print(f"voices     {'ok' if ok else 'FAILED'}  {note}" + (f"  → {dest}" if ok else ""))
             if ok:
+                wrote_any = True
                 print("           balanced copies of each part: put them on new tracks, mute the originals, A/B")
             else:
                 failed.append(f"{f['id']}: voices failed")
             continue
-        if f.get("run"):  # folder scan: a repaired copy into SCAN_DIR/fixed
+        if f.get("run"):  # folder scan: a repaired copy into SCAN_DIR/fixed, never over a file that is already there
             fixed = sd / "fixed"
             fixed.mkdir(exist_ok=True)
-            code, txt = hx(*[str(x).replace("{out}", str(fixed)) for x in f["run"]])
-            ok = code == 0
+            # album keeps a steps file in its output folder (a later move builds on the file the last one wrote) and
+            # numbers its own files; every other repair tool writes into a fresh folder, and names are chosen after
+            direct = f.get("tool") == "album"
+            before = {p.name for p in fixed.iterdir()}
+            work = fixed if direct else Path(tempfile.mkdtemp(prefix=".new-", dir=str(fixed)))
+            try:
+                code, txt = hx(*[str(x).replace("{out}", str(work)) for x in f["run"]])
+                if code != 0:
+                    made = []
+                elif direct:
+                    made = sorted(p for p in fixed.iterdir() if p.name not in before and not p.name.startswith("."))
+                else:
+                    made = move_new(work, fixed)
+            finally:
+                if not direct:
+                    shutil.rmtree(work, ignore_errors=True)
+            ok = code == 0 and (bool(made) or direct)         # album says "already applied" and writes nothing new
+            why = last_line(txt) if code != 0 else "the tool ran but wrote no file"
             log += [f"### {f['id']} {f.get('track')}: {'written to ' + str(fixed) if ok else 'FAILED'}", "", "```",
-                    txt.strip()[-1200:], "```", ""]
-            print(f"{f['tool']:<11} {'ok' if ok else 'FAILED'}  {f.get('track')}" + (f"  → {fixed}" if ok else ""))
+                    txt.replace(str(work), str(fixed)).strip()[-1200:], "```", ""]
+            if ok and made:
+                log.append("files: " + ", ".join(m.name for m in made))
+                log.append("")
+            print(f"{f['tool']:<11} {'ok' if ok else 'FAILED'}  {f.get('track')}"
+                  + (f"  → {', '.join(str(m) for m in made) if made else fixed}" if ok else f": {why}"))
             if not ok:
-                failed.append(f"{f['id']}: {f['tool']} failed")
+                failed.append(f"{f['id']}: {f['tool']} failed: {why}")
+            elif made:
+                wrote_any = True
             continue
         if not orig:
             failed.append(f"{f['id']}: no Live set in this scan")
@@ -1080,11 +1274,12 @@ def main():
             import soundfile as _sf
             spans = [sp for c_ in clips for sp in SRC.song_spans(c_, tempo)]
             take_ch = CHD.take_time(song_ch, spans, int(_sf.info(str(take)).duration / CHD.HOP_S) + 1)
-            chord_npz = tdir / f"{safe_name(take.stem)} (chords).npz"
+            sfx = "" if k == 1 else f" {k}"                  # the side files follow the tuned file's number: none is overwritten
+            chord_npz = tdir / f"{safe_name(take.stem)} (chords{sfx}).npz"
             CHD.save(chord_npz, take_ch)
             take_key = tune_key
             if by_section:
-                tk = tdir / f"{safe_name(take.stem)} (key map).json"
+                tk = tdir / f"{safe_name(take.stem)} (key map{sfx}).json"
                 secs_t = take_scales(key_json, spans, tk)
                 # only the answers that are about a section this take is heard in (tune refuses any other)
                 from hypnomix.studio.tune import _pc
@@ -1108,7 +1303,7 @@ def main():
                 done_files += 1
                 print(f"tune       ok  {f['track']}: take {take.name} → {dest.name} ({len(clips)} comp clip(s))")
             else:
-                failed.append(f"{f['id']}: tune failed on take {take.name}")
+                failed.append(f"{f['id']}: tune failed on take {take.name}: {last_line(txt)}")
         if done_files:
             from hypnomix.session import liveversion as LV
             try:
@@ -1132,7 +1327,7 @@ def main():
                       "the original take files are untouched (A/B against the original set)")
 
     na = not_applied(sd, findings, dec, manual_items, skipped_all, zero,
-                     default_ids={f["id"] for f in defaults_used})
+                     default_ids={f["id"] for f in defaults_used}, gone=gone)
     if na:
         print("\n" + "\n".join(na))
         log += ["### Not applied", "", "```"] + na + ["```", ""]
@@ -1142,27 +1337,36 @@ def main():
         for x in failed:
             print(f"- {x}")
     final = name_out if name_out and Path(name_out).exists() else None
-    try:  # every apply run is a version in the song's history (hypnomix history: list, diff, undo)
-        from hypnomix.workflow import history as H
-        v = H.log_run(sd, scan, src, final, [dict(id=f["id"], amount=amounts[f["id"]], tool=f.get("tool"),
-                                                   kind=f.get("kind"), track=f.get("track"), where=f.get("where", ""))
-                                              for f in chosen], kind="fix", failed=failed,
-                      extra=dict(allow_protected=bool(a.allow_protected), key=a.key, by=O.reviewer(a.by)))
-        log.append(f"history: logged as v{v} (`hypnomix history \"{sd}\"`)")
-        print(f"\nhistory: v{v} (hypnomix history \"{sd}\" lists every version; --undo N, --undo-item ID)")
+    if not (final or wrote_any):
+        log.append("history: nothing was written, so this run is not a version")
+        print("\nnothing was written: no new set and no repaired file.")
+    try:  # every run that wrote something is a version in the song's history (hypnomix history: list, diff, undo)
+        if final or wrote_any:
+            from hypnomix.workflow import history as H
+            v = H.log_run(sd, scan, src, final, [dict(id=f["id"], amount=amounts[f["id"]], tool=f.get("tool"),
+                                                       kind=f.get("kind"), track=f.get("track"), where=f.get("where", ""))
+                                                  for f in chosen], kind="fix", failed=failed,
+                          extra=dict(allow_protected=bool(a.allow_protected), key=a.key, by=O.reviewer(a.by)))
+            log.append(f"history: logged as v{v} (`hypnomix history \"{sd}\"`)")
+            if folder_mode:   # a folder of recordings has no set to compare or go back to: the repaired copies stay in fixed/
+                print(f"\nhistory: v{v} (hypnomix history \"{sd}\" lists every version)")
+            else:
+                print(f"\nhistory: v{v} (hypnomix history \"{sd}\" lists every version; --undo N, --undo-item ID)")
     except Exception as e:
         log.append(f"history: could not log this run ({e})")
         print(f"history: could not log this run ({e})")
     AT.append_text(sd / "fix-log.md", "\n".join(log) + "\n")
     print(f"\nlog: {sd / 'fix-log.md'}")
-    if out and str(out).lower().endswith(".rpp"):
+    if a.out and wrote_any and not final and not folder_mode:
+        print(f"note: no new project was written, so {Path(a.out).name} was not used: only the repaired copies above were written")
+    if final and str(out).lower().endswith(".rpp"):
         print("Open the new project in REAPER and A/B the changed spots against the original (tuned parts: switch "
               "takes on the items).")
-    elif out and str(out).lower().endswith(".ardour"):
+    elif final and str(out).lower().endswith(".ardour"):
         print("Written and re-read by hypnomix; not yet opened in Ardour. Open the new snapshot (Session > Open, or "
               "Session > Snapshot list) and check: it opens without a warning, the audio is found, fades and gain are "
               "as listed, the pan is the way round you expect, and the trim.")
-    elif out:
+    elif final:
         print("Close the original in Live, open the new set, and A/B the changed spots against the original.")
     if failed:
         sys.exit(1)

@@ -142,13 +142,16 @@ def main():
     ap.add_argument("--json", help="write findings + events to this file")
     a = ap.parse_args()
     inp = Path(a.inp)
-    y, sr = sf.read(str(inp), always_2d=True, dtype="float64")
+    from hypnomix.core import dsp, paths
+    if a.out and not a.report:
+        paths.check_out(a.out)
+    y, sr = dsp.load(inp)
     events = analyse(y, sr)
     print("\n".join(summary(events, a.reduce, inp.name)))
     if a.json:
         Path(a.json).parent.mkdir(parents=True, exist_ok=True)
         Path(a.json).write_text(json.dumps({"tool": "breaths", "file": str(inp),
-                                            "findings": finding(events, a.reduce, inp.name), "events": events}, indent=2))
+                                            "findings": finding(events, a.reduce, inp.name), "events": events}, indent=2), encoding="utf-8")
     if a.report:
         return
     from hypnomix.core.paths import out_at

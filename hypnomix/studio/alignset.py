@@ -147,6 +147,12 @@ def energy(names, files, outs, span):
 
 
 def main():
+    from hypnomix.core import tmp as TMP
+    with TMP.scope():                      # the renders it makes (hypnomix-alignset-…) are removed when it ends
+        return _main()
+
+
+def _main():
     if "--list-presets" in sys.argv:
         print("\n".join(AO.describe(k) for k in AO.PRESETS))
         return
@@ -200,7 +206,8 @@ def main():
     od = out_at(a.out, "alignset")
     warn = []
     files = {}
-    tmp = Path(tempfile.mkdtemp(prefix="hypnomix-alignset-"))
+    from hypnomix.core import tmp as TMP
+    tmp = TMP.scratch("alignset")
     for n in [guide] + parts:
         print(f"rendering {n} from the set …", file=sys.stderr)
         y = R.render_track(tracks[n], src, spb, N, SR, None, 0, warn)
@@ -319,10 +326,10 @@ def main():
     if warn:
         md += ["", "Warnings:", *[f"- {w}" for w in warn]]
     result["energy"] = energy([guide] + parts, files, outs, span or (0.0, N / SR))
-    (od / "ALIGNSET.md").write_text("\n".join(md) + "\n")
+    (od / "ALIGNSET.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     result["markdown"] = "\n".join(md)
     if a.json:
-        Path(a.json).write_text(json.dumps(result, indent=1, default=str))
+        Path(a.json).write_text(json.dumps(result, indent=1, default=str), encoding="utf-8")
     print("\n".join(md))
 
 

@@ -7,6 +7,29 @@ every change.
 **What comes next, in one sentence:** open everything the newest release added in real DAWs and on real songs,
 before building anything else on top of it.
 
+## New in 0.3.0
+
+The ten changes you will notice most, in plain words:
+
+1. **The Store (Mac only).** `store` finds and installs free plug-ins and sounds from their publishers' own pages, checks
+   each download against a fingerprint before it installs, and keeps a list so it can remove them again.
+2. **Live sets into Ardour, and mastering in Hypnomix.** `als2ardour` turns a Live set into a new session folder (the
+   set is only read); `chain master --ardour` builds the mastering chain in the open Hypnomix session.
+3. **One download today.** The Hypnomix Assistant is the only download. The full Hypnomix, with its own DAW, is built
+   but not out: the download page does not offer it, and nothing in the Assistant adds it.
+4. **Broken audio is refused in one sentence.** A file that is empty, has NaN in it, has more than five channels, or
+   cannot be written to the `--out` folder stops the run with exit code 2 and one line saying what to fix.
+5. **Earlier outputs are never replaced.** A second run makes a numbered new file ("(master 2)", "(2)") beside the first.
+6. **`fix` says plainly what it did not do.** What FAILED, what is by hand, "nothing was written", and `--dry-run` with
+   `--approve`; no phantom version in the history.
+7. **Vocal-level findings are by hand.** Approving one in the review writes nothing by itself: `vocallevel --apply`
+   writes the volume automation into a new set.
+8. **Disk care.** The app's own temporary folders clear themselves after a day, and a button clears old leftovers.
+9. **Rubber Band is checked.** `tune` stops with one line when it is missing, `doctor` lists it, and the Live rows are
+   optional when you have no Live.
+10. **Long scans come in pages.** `fix --list --undecided --top 15` and `fix --show ID`; in the app, a review of more than 150
+    cards builds them 100 at a time (the standalone review page does the same above 300 findings).
+
 ## Checked where
 
 - The Live devices and the Live fix paths were tested in Live 12.
@@ -17,6 +40,10 @@ before building anything else on top of it.
   everything matched what hypnomix wrote. The new Live sets (hand-off locators, the EQ Eight band, colour chains) have
   not been opened in Live, the Ardour snapshots have not been opened in Ardour, the new tools have not been run on
   real songs, and nothing new has been judged by ear.
+- DAW mode (the Hypnomix engine, the DAW view and the Assistant on it), the Store, `als2ardour` and `chain --ardour`
+  were checked by unit tests on synthetic data and stand-in servers, and DAW mode against the real engine on its silent
+  test backend only. No session written by `als2ardour` has been opened in a running Ardour, and nothing was tried
+  through a real sound card, in recording, or in the full app's disk image (the full app is not released).
 
 Items marked *(to verify)* below rest on research that has not been tested here yet.
 
@@ -36,10 +63,15 @@ One line per area. Each command's own help (`hypnomix <command> -h`) and its wik
   `takes`, `soundcheck`.
 - **Feel and variety:** `timing`, `tighten`, `tempomap`, `loops`, `breathe`, `variations`, `borrow`, `motion`, and
   `colour` (Live sets).
-- **Engineer and master:** `automix`, `balance`, `master`, `chain` (Live and REAPER), `rebalance`, `tonal`, `harsh`,
+- **Engineer and master:** `automix`, `balance`, `master`, `chain` (Live, REAPER, and with `--ardour` the Hypnomix session), `rebalance`, `tonal`, `harsh`,
   `masking` (an approved cut is written as an EQ Eight band in Live or a ReaEQ band in REAPER, in a new file),
   `match`, `reference`, and `--plan` for `prep`, `automix` and `master`.
 - **Release:** `translate`, `qc`, `release`, `versions`, `compare`, `album`.
+- **Free plug-ins and sounds (Mac only):** `store` (`search`, `info`, `install`, `uninstall`, `updates`, `check`).
+- **Live set into Ardour, and mastering there:** `als2ardour` (a new session folder and an import report) and
+  `chain master --ardour` (the chain built in the open Hypnomix session).
+- **DAW mode, built but not shipped:** `app --daw` runs the Hypnomix engine (a rebranded Ardour, a separate program) and
+  drives its open session from the DAW view and the Assistant. It comes only with the full download, which is not out.
 - **Previews:** `ab` builds before and after pairs for clips, tuning, timing nudges, masking cuts and changes to six
   of Live's stock devices (labelled as a model of the device); `abset` puts every fix next to yours inside Live (or in a new REAPER project);
   `plugrender` and `plugins` bring your own VST3 and Audio Unit plug-ins in.
@@ -82,8 +114,9 @@ decisions, the same "new files only". What hypnomix cannot change in a DAW becom
 4. **Space checks in `devices`:** delay times against the tempo, reverb low cuts.
 5. **A `comp` writer from ranked takes:** `takes` ranks them and lists the best take per section today; nothing
    writes the comp into a project yet.
-6. **Ardour, hands-on:** drive the open session through its Lua scripting and OSC, for `chain` with Ardour's own
-   plug-ins (EQ, compressor, expander, delay, reverb).
+6. **Ardour, hands-on:** DAW mode already drives the open Hypnomix session (regions, mixer, plug-ins, the review loop) and
+   `chain master --ardour` builds the mastering chain there; next is opening it on more real songs, and Ardour's own
+   plug-ins (EQ, compressor, expander, delay, reverb) in the chain beyond the test sessions.
 7. **Windows and Linux parity:** file pickers, and loopback capture without a macOS-only device for the loops that
    verify a chain.
 8. **Signed installers:** signed with a publisher key, with the app checking that signature before it updates.
@@ -91,16 +124,16 @@ decisions, the same "new files only". What hypnomix cannot change in a DAW becom
 
 ## (c) Later
 
-- **Pro Tools.** Read: the "session info as text" export (tracks, clips, markers), parsed into the project model: no
+- **A DAW with a session-info text export** (a widely used commercial one). Read: that export (tracks, clips, markers), parsed into the project model: no
   app control, works on every edition. An open-source reader for session files exists and can be an optional extra
   *(to verify: what it covers)*. Then drive: the official scripting SDK (a local service, in every edition since late
   2022 *(to verify)*): read the track list, add markers at each finding, import repaired audio as new tracks, bounce
   for a re-scan, and "save session as" before any write. Read-only by default; every write approved. It does not
   appear to control plug-ins or write automation *(to verify)*, so tone and dynamics moves stay as rendered audio or
   to-dos. The SDK's interface file has its own licence: the person downloads it rather than hypnomix shipping it.
-- **Logic Pro.** The project is an undocumented binary bundle. Reading track names, plug-in lists and tempo is
-  possible but fragile: read-only, fail-soft, and it needs upkeep with each Logic release. Writing it is not safe and
-  not planned. Logic has no scripting API for the mixer; the reliable route for live moves is to act as a control
+- **A DAW with an undocumented binary project bundle** (a commercial one for Mac). The project is a closed bundle. Reading track names, plug-in lists and tempo is
+  possible but fragile: read-only, fail-soft, and it needs upkeep with each release of that DAW. Writing it is not safe and
+  not planned. It has no scripting API for the mixer; the reliable route for live moves is to act as a control
   surface (faders, pans, mutes over a virtual MIDI port), with interface scripting only for bounce and export. Where
   its built-in assistants help, the review says "run this, bounce, and I'll measure the result".
 - **A local, open-weights listening model**, so notes by ear need no cloud model. Advice only, labelled as such,
@@ -112,9 +145,9 @@ decisions, the same "new files only". What hypnomix cannot change in a DAW becom
 |---|---|---|---|
 | Ableton Live | yes (`.als`) | yes: a new `.als` | yes (AbletonOSC, the Max for Live devices) |
 | REAPER | yes (`.rpp`) | yes: a new `.rpp` | yes: through the bridge |
-| Ardour | yes (`.ardour`, Ardour 3 to 9) | yes: a new `.ardour` snapshot (not yet opened in Ardour) | planned |
-| Pro Tools | audio folders only today | audio folders only today | later |
-| Logic Pro | audio folders only today (there is no Logic reader) | audio folders only today | later (a control surface) |
+| Ardour | yes (`.ardour`, Ardour 3 to 9) | yes: a new `.ardour` snapshot (not yet opened in Ardour) | yes, in DAW mode: the open Hypnomix session (built, not shipped; the full download is not out) |
+| A commercial DAW with a session-info text export | audio folders only today | audio folders only today | later |
+| A commercial DAW with a closed binary project | audio folders only today (there is no reader for it) | audio folders only today | later (a control surface) |
 
 For any DAW, `hypnomix scan FOLDER` on exported tracks works today: review, `fix` writes repaired copies, and
 `handoff` turns what must happen in the DAW into a checklist in that DAW's words (with markers: a MIDI file and a

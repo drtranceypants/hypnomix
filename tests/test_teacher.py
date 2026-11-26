@@ -1,5 +1,5 @@
 """Teacher mode (hypnomix/app/teacher.py): the two courses per DAW, the hands-on actions, and their routes."""
-import json, tempfile, threading, unittest
+import json, re, tempfile, threading, unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
@@ -279,7 +279,7 @@ class Routes(unittest.TestCase):
     def test_setup_saves_daw_and_level_and_progress(self):
         tok = self.S.TOKEN
         code, r = call(self.base, "/api/setup/daw", {"daw": "reaper", "teach_level": "tour"}, tok)
-        self.assertEqual((code, r), (200, {"daw": "reaper", "teach_level": "tour"}))
+        self.assertEqual((code, r), (200, {"daw": "reaper", "teach_level": "tour", "edition": SU.load().get("edition", "")}))
         code, st = call(self.base, "/api/teach/state")
         self.assertEqual((st["daw"], st["level"], st["teach"]), ("reaper", "tour", True))
         self.assertEqual([c["id"] for c in st["chapters"]], ["hypnomix"])
@@ -296,7 +296,7 @@ class Routes(unittest.TestCase):
     def test_setup_offers_the_complete_course(self):
         tok = self.S.TOKEN
         code, r = call(self.base, "/api/setup/daw", {"daw": "ardour", "teach_level": "az"}, tok)
-        self.assertEqual((code, r), (200, {"daw": "ardour", "teach_level": "az"}))
+        self.assertEqual((code, r), (200, {"daw": "ardour", "teach_level": "az", "edition": ""}))
         code, st = call(self.base, "/api/teach/state")
         self.assertEqual((st["level"], st["teach"], st["chapters"][0]["id"]), ("az", True, "sound"))
         self.assertEqual(list(st["levels"]), ["tour", "101", "az"])
@@ -324,6 +324,36 @@ class Routes(unittest.TestCase):
         for word in ("data-thear", "data-tquiz", "glossaryView", "Common mistakes"):
             self.assertIn(word, js)
 
+    def test_setup_in_the_full_app_says_it_is_the_full_one(self):
+        from hypnomix.app import daw as DW
+        with mock.patch.object(DW, "app_edition", lambda: "full"):
+            code, s = call(self.base, "/api/setup/state")
+        self.assertEqual(s["installed"], "full")
+        full = next(d for d in s["downloads"] if d["id"] == "full")
+        self.assertEqual((full["tag"], full["soon"]), ("what you have now", False))
+        self.assertIn("File → New Session", full["what"])
+        code, s = call(self.base, "/api/setup/state")
+        self.assertEqual(s["installed"], "")                        # a source checkout
+        js = __import__("urllib.request").request.urlopen(self.base + "/setup.js").read().decode()
+        self.assertIn("U.installed === 'full'", js)
+
+    def test_setup_saves_which_download(self):
+        """The download choice: the Assistant now, the full Hypnomix (its own DAW) coming soon; anything else is cleared."""
+        tok = self.S.TOKEN
+        code, s = call(self.base, "/api/setup/state")
+        self.assertEqual([d["id"] for d in s["downloads"]], ["assistant", "full"])
+        self.assertTrue(next(d for d in s["downloads"] if d["id"] == "full")["soon"])
+        what = next(d for d in s["downloads"] if d["id"] == "full")["what"]
+        self.assertIn("separate download that replaces this app", what)   # not a promise of a one-click add from Setup → Extras
+        self.assertNotIn("Extras", what)
+        code, r = call(self.base, "/api/setup/daw", {"edition": "full"}, tok)
+        self.assertEqual((code, r["edition"]), (200, "full"))
+        self.assertEqual(call(self.base, "/api/setup/state")[1]["edition"], "full")
+        call(self.base, "/api/setup/daw", {"edition": "nonsense"}, tok)
+        self.assertEqual(SU.load()["edition"], "")
+        call(self.base, "/api/setup/daw", {"edition": "assistant"}, tok)
+        self.assertEqual(SU.load()["edition"], "assistant")
+
     def test_actions_need_an_ok(self):
         code, r = call(self.base, "/api/teach/do", {"daw": "live", "step": "tempo", "kind": "tempo", "args": {"bpm": 90}}, self.S.TOKEN)
         self.assertEqual(code, 400)
@@ -337,6 +367,9 @@ class Routes(unittest.TestCase):
         import urllib.request
         page = urllib.request.urlopen(self.base + "/").read().decode()
         self.assertIn('data-view="teach"', page)
+        tabs = re.findall(r'<button class="tab" data-view="(\w+)"', page)
+        self.assertEqual(tabs.index("teach"), tabs.index("wiki") + 1)             # the owner asked for this: Teacher sits right after Wiki, not first
+        self.assertEqual(tabs[0], "home")                                            # Songs comes first
         self.assertIn("/teacher.js", page)
         js = urllib.request.urlopen(self.base + "/teacher.js").read().decode()
         self.assertIn("teachView", js)

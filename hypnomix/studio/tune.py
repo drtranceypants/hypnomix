@@ -24,13 +24,17 @@ notes that move are replaced (each +-20 ms, 10 ms crossfades): every other sampl
 Usage:
   hypnomix tune IN.wav OUT.wav --ref MIX.wav [--chords INSTRUMENTAL.wav] [--key "A minor"] [--amount 0.35] [--guide LEAD.wav]
   hypnomix tune IN.wav OUT.wav --ref MIX.wav --chords INSTRUMENTAL.wav --note-answer 0:15.32=C   (your call on an ASK)
-  hypnomix tune IN.wav --report-only --ref MIX.wav     (just measure; the report goes to ./reports/tune)
+  hypnomix tune IN.wav --report-only --ref MIX.wav     (just measure; the report goes to hypnomix-out/tune, numbered if one is there already)
   hypnomix tune IN.wav OUT.wav --ref MIX.wav --scales KEY.json [--answer F#] [--answer "17-24=both"]
            per-section scales from `hypnomix key --sections --json KEY.json` (songs that change key or borrow
            chords); --answer settles the sections the key map was unsure about (unanswered: notes on the disputed
            pitches are left exactly as sung; notes both scales share are tuned)
 Writes OUT.wav plus OUT.notes.txt (every note: time, sung, target, cents before/after) and OUT.png.
-Needs Rubber Band 3+ (`brew install rubberband`).
+The pitch track of a take (the slow part, minutes for a long take) is kept in <hypnomix home>/cache/pitch, named by the
+audio itself, so a changed take is always tracked again and the same take (the scan, the previews, the fix) only once.
+Disk care clears it; HYPNOMIX_NO_CACHE=1 tracks every time.
+Needs Rubber Band 3+ (`brew install rubberband` on a Mac; without it tune stops at once with one line that says how to get it
+on your system).
 """
 import argparse, math, subprocess, sys, tempfile
 from pathlib import Path
@@ -79,8 +83,64 @@ def active_regions(y, sr, floor_db=-50.0, pad=0.3):
     return merged
 
 
+PITCH_VERSION = 1          # raise it whenever the tracking below changes: older kept results are then ignored
+PITCH_KEEP = 300           # tracks kept (about 30 kB a minute of singing each); the least recently used go first
+PITCH_STATS = {"hits": 0, "misses": 0}
+
+
+def _pitch_file(y, sr):
+    """Where this audio's pitch track is kept: <hypnomix home>/cache/pitch/pyin-<hash>.npy (beside the other pitch cache,
+    so Disk care looks after it), the hash taken of the samples, the sample rate, the analysis settings and the versions
+    of librosa and numpy. The key is the audio itself, so a changed take can never return an old answer, and a copy of the
+    same audio hits too."""
+    import hashlib
+    from hypnomix.core.atomic import cache_root
+    a = np.ascontiguousarray(y)
+    h = hashlib.sha1(a)
+    h.update(f"|{a.dtype}|{a.shape}|{sr}|{SR_A}|{HOP}|{FRAME}|librosa {librosa.__version__}|numpy {np.__version__}"
+             f"|v{PITCH_VERSION}".encode())
+    k = h.hexdigest()
+    return cache_root() / "pitch" / f"pyin-{k}.npy"
+
+
 def track_pitch(y, sr):
-    """f0 in MIDI (float, NaN where unvoiced) on a 10 ms grid over the whole file."""
+    """f0 in MIDI (float, NaN where unvoiced) on a 10 ms grid over the whole file.
+
+    pYIN's Viterbi pass is the slow part of a vocal scan (about 80 s for five minutes of singing), and a scan, the
+    previews after it and the fix after those all ask for the same take. The answer is kept on disk (see _pitch_file),
+    written whole and renamed, at most PITCH_KEEP tracks; HYPNOMIX_NO_CACHE=1 measures every time."""
+    import os
+    f = None
+    if not os.environ.get("HYPNOMIX_NO_CACHE"):
+        try:
+            f = _pitch_file(y, sr)
+            if f.exists():
+                midi = np.load(f)
+                if midi.ndim == 1 and midi.dtype == np.float64:
+                    PITCH_STATS["hits"] += 1
+                    os.utime(f)                       # recently used: kept longest when the cache is trimmed
+                    return midi
+        except Exception:                             # unreadable (an old crash mid-write): measure again below
+            pass
+    midi = _track_pitch(y, sr)
+    if f is not None:
+        PITCH_STATS["misses"] += 1
+        try:
+            import threading
+            from hypnomix.core.atomic import replace as atomic_replace
+            f.parent.mkdir(parents=True, exist_ok=True)
+            tmp = f.with_name(f"{f.stem}.{os.getpid()}.{threading.get_ident()}.tmp.npy")
+            np.save(tmp, midi)
+            atomic_replace(tmp, f)
+            files = sorted((p for p in f.parent.glob("pyin-*.npy") if ".tmp." not in p.name), key=lambda p: p.stat().st_mtime)
+            for old in files[: max(0, len(files) - PITCH_KEEP)]:
+                old.unlink()
+        except Exception:
+            pass                                      # a cache that cannot be written is just a cache
+    return midi
+
+
+def _track_pitch(y, sr):
     ya = librosa.resample(y, orig_sr=sr, target_sr=SR_A) if sr != SR_A else y
     n_frames = 1 + len(ya) // HOP
     midi = np.full(n_frames, np.nan)
@@ -231,7 +291,7 @@ def load_scales(path, answers=()):
     `=both` (accept either note there). Unanswered unsure sections accept both notes and are listed as open.
     """
     import json
-    d = json.loads(Path(path).read_text())
+    d = json.loads(Path(path).read_text(encoding="utf-8"))
     secs = d.get("sections")
     if not secs or "t0" not in secs[0]:
         sys.exit(f"{path}: no section times; make it with `hypnomix key --set SET --audio MIX --sections --json`")
@@ -437,7 +497,10 @@ def render(in_path, out_path, curve, sr, n_samples, channels, keep=(), moved=Non
     crossfades); everything else, notes left alone included, stays the original audio bit for bit.
     `moved`: [(t0, t1)] of the moved notes (None: the whole phrase, the old behaviour)."""
     from concurrent.futures import ThreadPoolExecutor
-    src, _ = sf.read(str(in_path), dtype="float32", always_2d=True)
+    from hypnomix.core.tools import need_rubberband
+    need_rubberband("tune")
+    from hypnomix.core import dsp
+    src = dsp.load(in_path)[0].astype(np.float32)          # the checked loader: a broken file ends in one sentence
     mono = src.mean(1)
     peak = float(np.abs(src).max()) or 1.0
     scale = 0.9 / peak                      # Rubber Band writes fixed-point: keep float overs intact
@@ -455,16 +518,16 @@ def render(in_path, out_path, curve, sr, n_samples, channels, keep=(), moved=Non
 
     def one(job):
         i0, i1, k0, seg_curve = job
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
             seg_in, seg_out, pm = Path(td) / "in.wav", Path(td) / "out.wav", Path(td) / "pm.txt"
             sf.write(str(seg_in), src[i0:i1] * scale, sr, subtype="FLOAT")
             frames = ((k0 + np.arange(len(seg_curve))) * HOP / SR_A * sr).astype(int) - i0
-            with open(pm, "w") as f:
+            with open(pm, "w", encoding="utf-8") as f:
                 for fr, sh in zip(frames, seg_curve):
                     if fr >= 0:
                         f.write(f"{fr} {sh:.5f}\n")
             r = subprocess.run(["rubberband", "-3", "-F", "-q", "--pitchmap", str(pm), str(seg_in), str(seg_out)],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, encoding="utf-8", errors="replace")
             if r.returncode != 0:
                 raise RuntimeError(r.stderr[-300:])
             y, _ = sf.read(str(seg_out), dtype="float32", always_2d=True)
@@ -578,7 +641,7 @@ def write_report(path, notes, tuning_c, key, keysrc, a, lag=None):
                    f"{NOTE_NAMES[int(round(n['suggest'])) % 12]}"
         lines.append(f"{_mmss(n['t0']):>8}  {n['t1'] - n['t0']:5.2f}  {note_name(n['centre']):>5} -> "
                      f"{note_name(n['target']):<6} {n['cents']:+6.0f}  {aft}  {act}{why}")
-    Path(path).write_text("\n".join(lines) + "\n")
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
     return lines[:6]
 
 
@@ -610,7 +673,7 @@ def write_json(path, a, notes, tuning_c, key, keysrc):
                        nearest=note_name(n["target"]), chord=CH.name(n["chord"]),
                        suggest=NOTE_NAMES[int(round(n["suggest"])) % 12]) for n in asks],
         "chord_check": getattr(a, "_chord_src", "off"),
-    }, indent=1))
+    }, indent=1), encoding="utf-8")
 
 
 def _mmss(t):
@@ -690,8 +753,12 @@ def main():
         sys.exit("refusing to overwrite the input; give a new file name")
     if not 0 < a.amount <= 1:
         sys.exit("--amount must be between 0 and 1")
-
-    y2, sr = sf.read(a.input, dtype="float32", always_2d=True)
+    if not a.report_only:
+        from hypnomix.core.tools import need_rubberband
+        need_rubberband("tune")                 # before the slow part: one plain sentence, not a traceback
+    from hypnomix.core import dsp
+    y2, sr = dsp.load(a.input)
+    y2 = y2.astype("float32")
     y = y2.mean(1)
     print(f"{Path(a.input).name}: {len(y) / sr:.1f} s, tracking pitch…")
     midi = track_pitch(y, sr)
@@ -713,7 +780,7 @@ def main():
     if a.scales:
         a._scales, a._open = load_scales(a.scales, a.answer)
         import json as _j
-        kj = _j.loads(Path(a.scales).read_text())
+        kj = _j.loads(Path(a.scales).read_text(encoding="utf-8", errors="replace"))
     if a.key:
         key, keysrc = parse_key(a.key), "given"
     elif a.scales and kj.get("key"):
@@ -725,7 +792,8 @@ def main():
         key, keysrc = (r, m), f"estimated from the vocal, fit {conf:.2f}; confirm with --key"
     guide = None
     if a.guide:
-        g, gsr = sf.read(a.guide, dtype="float32", always_2d=True)
+        g, gsr = dsp.load(a.guide)
+        g = g.astype(np.float32)
         if gsr != sr:
             sys.exit("the guide must have the same sample rate as the input")
         print("tracking the guide…")
@@ -753,8 +821,12 @@ def main():
         out_path = Path(a.json).with_suffix("")
         report_path = Path(str(out_path) + ".notes.txt")
     else:  # report-only: never write next to the source take
-        Path("reports/tune").mkdir(parents=True, exist_ok=True)
-        out_path = Path("reports/tune") / Path(a.input).stem
+        from hypnomix.core.paths import out as out_dir          # hypnomix-out/tune, or where HYPNOMIX_OUT says
+        out_path = out_dir("tune") / Path(a.input).stem
+        k = 2                                                   # a second run never replaces the first one's report
+        while Path(str(out_path) + ".notes.txt").exists():
+            out_path = out_dir("tune") / f"{Path(a.input).stem} {k}"
+            k += 1
         report_path = Path(str(out_path) + ".notes.txt")
     if a.json:
         write_json(a.json, a, notes, tuning_c, key, keysrc)

@@ -23,8 +23,9 @@ def chroma(path):
     """12 x N chroma (CQT) of an audio file, mono, on the HOP_S grid; silent frames are all zero."""
     import librosa
     import soundfile as sf
-    y, sr = sf.read(str(path), dtype="float32", always_2d=True)
-    y = y.mean(1)
+    from hypnomix.core import dsp
+    y, sr = dsp.load(path)
+    y = y.mean(1).astype("float32")
     if sr != SR:
         y = librosa.resample(y, orig_sr=sr, target_sr=SR)
     ch = librosa.feature.chroma_cqt(y=y, sr=SR, hop_length=HOP)

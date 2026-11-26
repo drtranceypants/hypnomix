@@ -17,7 +17,13 @@ What it removes, and only that:
             has been idle 14 days: A/B clips and renders. Findings, decisions and reports stay, so the review
             still opens; "Make A/B clips" builds the clips again
   out       audio in hypnomix-out folders (the app's own and in watched folders), idle 14 days
+  temp      hypnomix's OWN temporary folders, named hypnomix-render-…, hypnomix-work-… (and tidy, alignset, ab), in
+            ~/.hypnomix/cache/tmp and in the system temp folder, idle 1 day. A command removes its own when it ends;
+            these are the ones a crash, a power cut or "kill -9" left behind
   bounces   the app's master bounces older than 30 days; the newest 5 always stay
+  store     the Store's leftovers in ~/.hypnomix/store: unfinished downloads (work, idle 2 days), installer packages it kept
+            for you to run (idle 30 days; "Show installer" says when one was cleared), and plug-ins it moved aside when
+            you confirmed a replace (trash, 60 days); all of these go sooner when the disk is nearly full
   wavs      only if you switch it on: WAV / AIFF files at the top of Desktop and Downloads, older than 30 days.
             They are moved to ~/.hypnomix/holding, not deleted, and deleted from there 14 days later
             ("Restore" puts the last batch back)
@@ -31,8 +37,16 @@ Never removed: an audio file any Live, REAPER or Ardour project on this computer
 Documents, Desktop and the watched folders are read for this), a file named "final" or "master", anything
 changed in the last hour, and anything while a job is running.
 
+Older versions of devices, duck, cliplevel and tidy left their renders in the system temp folder under random names
+(tmpwack_btj) that say nothing about who made them. Disk care NEVER removes those by itself: it counts the ones that
+look like them (a folder named tmp plus 8 letters or digits, a day old, holding only .wav files and at most a
+names.json, or only a small names.json) and offers them in its list ("Older versions left N folders ... Clear them"), with their size and a few
+file names, for the person to clear with one click (`clear_old`, which removes only folders it re-checks and offers).
+
   python -m hypnomix.app.diskcare            what it would remove now (changes nothing)
   python -m hypnomix.app.diskcare --run      clean now
+  python -m hypnomix.app.diskcare --clear-old   list the old unprefixed temp folders described above, ask, then remove them
+                                                (--yes answers for you when there is no terminal)
 """
 import json, os, re, shutil, subprocess, sys, threading, time
 from datetime import datetime
@@ -74,7 +88,7 @@ def holding():
 
 def load():
     try:
-        return json.loads(state_file().read_text())
+        return json.loads(state_file().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
@@ -275,7 +289,7 @@ def project_refs(blocked):
     Each project's list is cached by its size and time, so only changed projects are read again."""
     cf = hx_home() / "cache" / "diskcare-refs.json"
     try:
-        cache = json.loads(cf.read_text())
+        cache = json.loads(cf.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         cache = {}
     fresh, names = {}, set()
@@ -319,7 +333,7 @@ def project_refs(blocked):
                 names.update(refs)
     try:
         cf.parent.mkdir(parents=True, exist_ok=True)
-        cf.write_text(json.dumps(fresh))
+        cf.write_text(json.dumps(fresh), encoding="utf-8")
     except OSError:
         pass
     return names
@@ -349,6 +363,66 @@ def out_folders(blocked):
     return [d for d in found if d.is_dir()]
 
 
+# ---------------------------------------------------------------- hypnomix's own temporary folders
+def own_temp():
+    """hypnomix-render-… and the like (core/tmp.py) in ~/.hypnomix/cache/tmp and the system temp folder: only names made by
+    hypnomix, real folders, owned by you. Cleaned like a cache (see plan)."""
+    from hypnomix.core import tmp as TMP
+    try:
+        return TMP.own_folders()
+    except OSError:
+        return []
+
+
+def old_leftovers():
+    """[dict(path, bytes, wavs, idle_days, sample)]: folders in the system temp folder that LOOK like what older versions of
+    devices, duck, cliplevel and tidy left (a name like tmpwack_btj holding only .wav files, or only a small names.json), a day or more old. There is no
+    way to PROVE hypnomix made one, so these are only offered to the person (`view`), and removed only by `clear_old`
+    when they click. Biggest first."""
+    from hypnomix.core import tmp as TMP
+    out = []
+    for p in TMP.old_render_folders():
+        age = idle_days(p)
+        if age <= 1:
+            continue
+        try:
+            names = sorted(os.listdir(p))
+        except OSError:
+            continue
+        out.append(dict(path=str(p), bytes=size(p), wavs=sum(1 for n in names if n.lower().endswith(".wav")),
+                        idle_days=round(age, 1), sample=[n for n in names if n.lower().endswith(".wav")][:3]))
+    return sorted(out, key=lambda d: -d["bytes"])
+
+
+def clear_old(paths=None, job_running=lambda: False):
+    """The person's click on "Clear them": remove the folders in `paths` that old_leftovers() offers. `paths` must be the
+    list of folders the person was shown; anything else (None, a string, nothing) clears nothing. A path that is not in
+    the offer right now, or that no longer passes the check, is ignored: nothing else can be removed through this.
+    -> the view, plus cleared={count, bytes}."""
+    from hypnomix.core import tmp as TMP
+    if job_running():
+        return dict(view(), cleared=dict(count=0, bytes=0, busy=True))
+    offered = {d["path"]: d for d in old_leftovers()}
+    pick = [str(x) for x in paths if str(x) in offered] if isinstance(paths, (list, tuple)) else []
+    count = freed = 0
+    for x in pick:
+        p = Path(x)
+        if not TMP.looks_like_old_render(p):                     # checked again, just before
+            continue
+        try:
+            shutil.rmtree(p)
+        except OSError:
+            continue
+        if not p.exists():
+            count += 1
+            freed += offered[x]["bytes"]
+    if count:
+        s = load()
+        s["cleared_old"] = dict(when=time.time(), count=count, freed=freed)
+        save(s)
+    return dict(view(), cleared=dict(count=count, bytes=freed))
+
+
 # ---------------------------------------------------------------- the plan
 def plan(lvl=None):
     """What would go now: (rule, action, path, bytes) and the folders the OS wouldn't let us read."""
@@ -376,6 +450,12 @@ def plan(lvl=None):
             if idle_days(e) > age:
                 items.append(("cache", "delete", e, size(e)))
 
+    # hypnomix's own temporary folders (hypnomix-render-…): a command removes its own when it ends, so what is here was
+    # left by a crash or a kill. Only names made by core/tmp.py; the old unprefixed ones are offered, not cleaned (old_leftovers)
+    for e in own_temp():
+        if idle_days(e) > 1:
+            items.append(("temp", "delete", e, size(e)))
+
     # scans: audio only, whole scan idle
     sage = 7 if low else 14
     for sd in scan_folders(blocked):
@@ -402,6 +482,21 @@ def plan(lvl=None):
         for p in bs[5:]:
             if idle_days(p) > (14 if low else 30) and not used(p):
                 items.append(("bounces", "delete", p, p.stat().st_size))
+
+    # the Store's leftovers (quietly, like the caches): the age is the folder's own (when the item was put there), because
+    # a kept installer or a moved plug-in keeps its old file times
+    stdir = hx_home() / "store"
+    for name, age in (("work", 1 if low else 2), ("installers", 14 if low else 30), ("trash", 30 if low else 60)):
+        d = stdir / name
+        if not d.is_dir():
+            continue
+        for e in listdir(d, blocked):
+            try:
+                idle = (time.time() - e.stat().st_mtime) / DAY if name != "work" else idle_days(e)
+            except OSError:
+                continue
+            if idle > age:
+                items.append(("store", "delete", e, size(e)))
 
     # loose WAVs (switched on by the person)
     if s.get("wavs"):
@@ -466,7 +561,7 @@ def run(reason="by hand", job_running=lambda: False):
             except OSError:
                 pass
         if manifest:
-            (batch / "manifest.json").write_text(json.dumps(manifest, indent=1))
+            (batch / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
         free1, _ = space()
         s = load()
         s["last"] = dict(when=time.time(), reason=reason, level=lvl, freed=freed, held=sum(i[3] for i in items if i[1] == "hold"),
@@ -491,7 +586,7 @@ def restore():
     back = 0
     if bs:
         b = bs[-1]
-        for m in json.loads((b / "manifest.json").read_text()):
+        for m in json.loads((b / "manifest.json").read_text(encoding="utf-8")):
             src, dst = Path(m["to"]), Path(m["from"])
             if src.exists() and not dst.exists():
                 shutil.move(str(src), str(dst))
@@ -529,7 +624,22 @@ def view():
     held = [b for b in holding().iterdir() if b.is_dir()] if holding().is_dir() else []
     return dict(free=free, total=total, level=level(free, total), auto=s.get("auto", True), wavs=s.get("wavs", False),
                 watch=_saved(), refused=[dict(folder=f, why=w) for f, w in refused()], last=s.get("last"), busy=RUNNING["busy"],
-                holding=dict(batches=len(held), bytes=sum(size(b) for b in held)))
+                holding=dict(batches=len(held), bytes=sum(size(b) for b in held)), leftovers=leftovers_view())
+
+
+def tempfile_dir():
+    from hypnomix.core import tmp as TMP
+    return str(TMP.system_dir())
+
+
+def leftovers_view():
+    """What older versions left in the system temp folder, for the popup: count, bytes and the biggest few (never cleaned
+    by itself; the person clears them with one click)."""
+    try:
+        found = old_leftovers()
+    except OSError:
+        found = []
+    return dict(count=len(found), bytes=sum(d["bytes"] for d in found), items=found[:8], paths=[d["path"] for d in found])
 
 
 def preview():
@@ -583,6 +693,9 @@ def handle_post(path, body, job_running=lambda: False):
             return 400, {"error": str(e)}
     if path == "/api/diskcare/restore":
         return 200, restore()
+    if path == "/api/diskcare/clear-old":                       # the click on "Clear them": body {"paths": [the folders shown]}
+        paths = body.get("paths") if isinstance(body, dict) else None
+        return 200, clear_old(paths if isinstance(paths, list) else [], job_running)   # no list: nothing is cleared
     return None
 
 
@@ -591,13 +704,40 @@ def main():
     ap = argparse.ArgumentParser(prog="python -m hypnomix.app.diskcare", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", action="store_true", help="clean now (default: only show what would go)")
+    ap.add_argument("--clear-old", action="store_true",
+                    help="list the old unprefixed temp folders that look like hypnomix renders, then remove them after "
+                         "you answer y (never part of --run)")
+    ap.add_argument("--yes", action="store_true",
+                    help="with --clear-old: remove them without asking (needed when there is no terminal to ask on)")
     a = ap.parse_args()
+    if a.clear_old:
+        found = old_leftovers()
+        for d in found:
+            what = f"{d['wavs']} WAV files: {', '.join(d['sample'])}" if d["wavs"] else "only a names.json"
+            print(f"  {d['bytes'] / GB:6.2f} GB  {d['path']}  ({what})")
+        if not found:
+            print("no old temp folders to clear")
+            return
+        if not a.yes:
+            if not sys.stdin.isatty():
+                print("not cleared: nothing here to ask on; run it again with --yes to remove the folders listed above")
+                return
+            if input(f"remove these {len(found)} folder(s)? they cannot be restored [y/N] ").strip().lower() not in ("y", "yes"):
+                print("not cleared")
+                return
+        c = clear_old([d["path"] for d in found])["cleared"]
+        print(f"cleared {c['count']} old temp folder(s), {c['bytes'] / GB:.2f} GB")
+        return
     r = run() if a.run else preview()
     print(f"{r['free'] / GB:.0f} GB free ({r['level']})")
     for rule in (r["last"]["rules"] if a.run else r["plan"]):
         print(f"  {rule['rule']:8} {rule['bytes'] / GB:6.2f} GB  {rule['count']} items")
         for t in rule["top"][:3]:
             print(f"             {t['path']}")
+    lo = r.get("leftovers") or {}
+    if lo.get("count"):
+        print(f"older versions left {lo['count']} temp folder(s), {lo['bytes'] / GB:.2f} GB, in {tempfile_dir()} that look like "
+              "hypnomix renders; --clear-old lists and removes them (never done on its own)")
     if a.run:
         print(f"freed {r['last']['freed'] / GB:.2f} GB")
     elif r.get("blocked"):

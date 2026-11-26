@@ -31,6 +31,7 @@ from pathlib import Path
 import numpy as np
 
 from hypnomix.core import dsp
+from hypnomix.core import args as A
 from hypnomix.core.paths import out_at
 
 STEMS = ("vocals", "drums", "bass", "other")
@@ -130,7 +131,7 @@ def main(argv=None):
         ap.add_argument(f"--{k}", type=float, default=0.0, help=f"dB change for {k}")
     ap.add_argument("--stems", help="folder with Vocals/Drums/Bass/Other from this mix (skips separation)")
     ap.add_argument("--model", default="4stem", help="separation model when --stems is not given (see `separate`)")
-    ap.add_argument("--ceiling", type=float, default=-1.0, help="true-peak ceiling, dBTP")
+    ap.add_argument("--ceiling", type=A.number(-12, 0), default=-1.0, help="true-peak ceiling, dBTP (-12 to 0)")
     ap.add_argument("--safety", choices=["gain", "limit"], default="gain")
     ap.add_argument("--keep-loudness", action="store_true", help="match the mix's integrated loudness first")
     ap.add_argument("--dither", choices=["tpdf", "shaped", "off"], default="tpdf")
@@ -186,8 +187,8 @@ def main(argv=None):
         md += ["## Warnings", *[f"- {w}" for w in warn], ""]
     md += [f"File: `{dest}`", "", "Listen against the mix at matched loudness; `hypnomix ab` or any player."]
     text = "\n".join(md) + "\n"
-    (od / f"{dest.stem} notes.md").write_text(text)
-    (od / f"{dest.stem}.json").write_text(json.dumps(rep, indent=1, default=float))
+    (od / f"{dest.stem} notes.md").write_text(text, encoding="utf-8")
+    (od / f"{dest.stem}.json").write_text(json.dumps(rep, indent=1, default=float), encoding="utf-8")
     print(text)
 
 

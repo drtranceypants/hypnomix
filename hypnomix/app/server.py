@@ -9,41 +9,54 @@ What you can do in it:
                 the key; it runs every check, builds the before / after clips and shows the review
   review        the fixes you can hear first, each with one player and A / B buttons, and Approve / Skip / Change with the mouse or
                 the keyboard (j k a s c b space [ ] ?); decisions are saved as you act, a card at a time; the clips you played are
-                remembered; "Approve all low" and "the N like this" list what they would record before they record it
-  apply         says what it will do (including any on-by-default steps), writes only what you approved into ONE new
+                remembered; "Approve all low" and "the N like this" list what they would record before they record it.
+                A long review (over 150 cards) shows each group's full count and builds its cards a hundred at a time:
+                as you scroll to the end of an open group, with its "Show" button, or as the keys reach them
+  apply        says what it will do (including any on-by-default steps), writes only what you approved into ONE new
                 file next to the original (.als, .rpp or .ardour), then shows what was applied, what was not and why
   preferences   the questions asked once: targets, protected tracks, what is deliberate
   tools         run any hypnomix command with a form, and read its report
+  store         free and open-source plug-ins, synths, instruments, drum kits and sample packs: search, install,
+                update, uninstall (hypnomix/store/; nothing from a download is run, installer packages open for you)
   wiki          lessons, how-to guides, every command and the FAQ, offline and searchable: the same articles as the
                 website's /wiki/ (source: hypnomix/app/wiki/articles/; Edit and Publish in a git checkout)
   assistant     chat with an AI (your own key: Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, or a free model
                 in Ollama on this computer) that runs hypnomix for you; anything that writes a set waits for your
                 click. Included in the installers; from source, run
                 `uv pip install -e ".[assistant]"` in the hypnomix folder
+  DAW mode      `hypnomix app --daw`: the Hypnomix DAW's window (Arrangement, Session, Mixer, Review, the
+                Assistant) on the Hypnomix engine, which the app starts, watches and stops (hypnomix/app/daw.py);
+                the browser reaches the engine only through this server (POST /mcp)
   Live          with the Max for Live device (`hypnomix device`) loaded in your set, "Show in Live" jumps Live
                 to the finding: the track is selected, the playhead and the loop brace move to the spot, and
                 the clip opens. The device also steps through the open questions from inside Live.
 
 It is a small web server on this computer only (127.0.0.1). Nothing is sent anywhere. Songs you scan are kept
 in ~/Documents/Hypnomix (change with --home or HYPNOMIX_APP_HOME). Everything it does is a hypnomix command
-you could also type; the log shows each one.
+you could also type; the log shows each one (a long command's log keeps its newest 4,000 lines and says how many
+older ones it left out).
 """
-import argparse, json, os, re, secrets, shlex, shutil, signal, socket, subprocess, sys, threading, time
+import argparse, errno, json, os, re, secrets, shlex, shutil, signal, socket, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from hypnomix.core.serve import LocalServer
+
 TOKEN = secrets.token_urlsafe(18)
 LOCK = threading.Lock()
 JOB = {"id": 0, "status": "idle", "log": [], "title": "", "kind": "", "dir": "", "step": "", "stopped": False,
-       "files": [], "reason": "", "out": "", "t0": 0.0, "step_at": 0.0, "walls": {}, "expect": 0, "prior": {}}
+       "files": [], "reason": "", "out": "", "t0": 0.0, "step_at": 0.0, "walls": {}, "expect": 0, "prior": {},
+       "dropped": 0}                   # dropped: how many of the oldest lines were let go (the log keeps the newest LOG_KEEP)
+LOG_KEEP, LOG_CUT = 4000, 1000         # past LOG_KEEP lines the oldest LOG_CUT go
+LOG_LOCK = threading.Lock()            # the trim and a reader's slice of the log happen one at a time
 LIVE = {"seq": 0, "cmd": None, "seen": 0.0, "dir": "", "cursor": -1}
 PROBE = {"hub": None, "error": ""}    # the probe hub (UDP from HypnomixProbe devices in Live)
 AB = {"id": "", "state": "A", "since": 0.0, "last": 0.0, "match": True, "acc": {}, "skip": 0.6}
 MAX_BODY = 1_000_000                   # the largest request body taken (the biggest real one is a few kilobytes)
 IDLE_SECONDS = 60                      # a connection that sends nothing for this long is closed (nothing here streams)
 READ_SECONDS = 30                      # once a request starts, all of it (head and body) must arrive within this, however slowly it drips
-HIDDEN = {"app", "install"}            # not offered in the Tools tab (install asks questions; app is this)
+HIDDEN = {"app", "install", "store"}   # not offered in the Tools tab (install asks questions; app is this; store has its own tab)
 
 
 def work():
@@ -63,6 +76,14 @@ def need(body, *keys):
         if not isinstance(v, str) or not v.strip():
             raise ValueError(f"this request needs \"{k}\" (text), and it was missing or empty")
     return [body[k] for k in keys] if len(keys) > 1 else body[keys[0]]
+
+
+NAME_TOO_LONG = "a name in this request is longer than this computer's file system allows; nothing was changed"
+
+
+def name_too_long(e):
+    """Is this OSError a file or folder name that is too long (ENAMETOOLONG; Windows says 206 or 3 for a path past its limit)?"""
+    return getattr(e, "errno", None) == errno.ENAMETOOLONG or getattr(e, "winerror", None) == 206
 
 
 WRONG_KIND = "one of the fields in this request is the wrong kind (for example a list or a number where text belongs); nothing was changed"
@@ -87,19 +108,23 @@ def whole(v, what, lo=None, hi=None):
 
 # ---------------------------------------------------------------- jobs
 def cli_env():
-    """The environment for a command the app starts: it runs THIS copy of hypnomix (the app's own commands run from the
-    work folder, where a different installed copy could otherwise be found first)."""
+    """The environment for a command the app starts: it runs THIS copy of hypnomix. The app's own commands run from
+    the work folder, where a relative PYTHONPATH (`PYTHONPATH=.` in a checkout) would find another hypnomix, or
+    none: the folder this app's own hypnomix came from goes first, and every other entry is made absolute."""
     env = dict(os.environ)
-    root = Path(__file__).resolve().parents[2]
-    if (root / "hypnomix" / "cli.py").is_file():
-        env["PYTHONPATH"] = str(root) + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    root = str(Path(__file__).resolve().parents[2])
+    rest = [str(Path(x).resolve()) for x in env.get("PYTHONPATH", "").split(os.pathsep) if x]
+    env["PYTHONPATH"] = os.pathsep.join([root] + [x for x in rest if x != root])
+    env["PYTHONIOENCODING"] = "utf-8"            # a command's report is read back as UTF-8 (a pipe on Windows is cp1252 otherwise)
+    env["PYTHONUTF8"] = "1"
     return env
 
 
 def popen_job(argv):
     """A command of its own: in its own process group (POSIX session / Windows process group), so Stop can end
     the command and everything it started."""
-    kw = dict(cwd=str(work()), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=cli_env())
+    kw = dict(cwd=str(work()), text=True, encoding="utf-8", errors="replace", stdout=subprocess.PIPE,
+              stderr=subprocess.STDOUT, env=cli_env())
     if os.name == "nt":
         kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
@@ -141,7 +166,7 @@ def fix_leftovers(scan_d, started):
     """Remove the temporary "(fix step N)" sets a stopped fix left next to the original (only ones made by that run)."""
     removed = []
     try:
-        meta = json.loads((Path(scan_d) / "findings.json").read_text())
+        meta = json.loads((Path(scan_d) / "findings.json").read_text(encoding="utf-8"))
         src = Path(meta.get("set") or "")
         rx = re.compile(re.escape(src.stem) + r" \(fix step \d+(?:\.\d+)?\)(?: full)?\.als$")
         for f in (src.parent.iterdir() if src.name else []):
@@ -166,8 +191,30 @@ def listing(dirs):
     return out
 
 
+def app_words(text):
+    """A command's sentence in the page's words: `fix` tells a command line to pass --key, and the page has a box for it."""
+    t = str(text or "")
+    t = t.replace('confirm the key with the person, then pass --key "<key>" or --key sections after answering its questions',
+                  'type the song\'s key in the "Confirmed key" box on the review page (open the review again), then apply again')
+    t = t.replace('confirm the key with the person, then pass --key "<key>"', 'type the song\'s key in the "Confirmed key" box on the review page (open the review again), then apply again')
+    t = t.replace('re-scan or pass --key "<key>"', 're-scan, or type the key in the "Confirmed key" box on the review page')
+    t = t.replace('--key "<key>"', 'the key in the "Confirmed key" box on the review page')
+    return re.sub(r"\(the scan estimated (?:None|none|)\)", "(the scan found no estimate)", t)
+
+
+def ab_title(d):
+    """What the A/B build is called, in the words of the DAW the scan is of."""
+    try:
+        data = inspect_scan(d)["data"] or {}
+        kind = source_kind(data.get("set", ""), (read_scan_json(d) or {}).get("mode", ""))
+    except Exception:
+        kind = ""
+    return {"als": "A/B set for Live", "rpp": "A/B project for REAPER"}.get(kind, "A/B build")
+
+
 def job_reason(log):
-    """Why a job stopped, in the command's own words: the FAILED list `fix` prints, else the last lines it said."""
+    """Why a job stopped, in the command's own words: the FAILED list `fix` prints, else the lines a report marks with a
+    cross (`doctor`), else the last lines it said."""
     lines = [x for x in log if x.strip()]
     while lines and re.match(r"^\(.*: exit code \d+\)$", lines[-1].strip()):
         lines.pop()
@@ -180,6 +227,10 @@ def job_reason(log):
                 items.append(x[2:].strip())
             if items:
                 return "; ".join(items)[:600]
+    cmd = next((i for i in range(len(lines) - 1, -1, -1) if lines[i].startswith("$ hypnomix")), -1)
+    crossed = [re.sub(r"\s{2,}", ": ", x.strip()[1:].strip()) for x in lines[cmd + 1:] if x.strip().startswith("✗ ")]   # a report's own "this one failed" lines
+    if crossed:
+        return "; ".join(crossed)[:600]
     tail = []
     for x in reversed(lines):
         if x.startswith("$ hypnomix"):
@@ -190,6 +241,15 @@ def job_reason(log):
     return " ".join(reversed(tail))[:600]
 
 
+def log_since(since):
+    """(total, lines, skipped) for a page that has the first `since` lines of the job's output: `total` counts every line the
+    job has printed (also those let go), `lines` are the ones the page lacks, and `skipped` is how many of those were let go
+    before it asked (the page says so). Lines are only ever let go from the front, so the newest ones always arrive."""
+    with LOG_LOCK:
+        dropped, log = JOB.get("dropped", 0), JOB["log"]
+        return dropped + len(log), log[max(0, since - dropped):], max(0, dropped - since)
+
+
 def run_job(kind, title, steps, sdir="", watch=()):
     """steps: [(label, argv, must_succeed)]; argv may also be a function (called in the job; it may return more steps
     to run next). One job at a time. `watch`: folders whose new or changed files are listed when the job ends."""
@@ -197,7 +257,7 @@ def run_job(kind, title, steps, sdir="", watch=()):
         if JOB["status"] == "running":
             raise RuntimeError("something is already running: wait for it to finish")
         JOB.update(id=JOB["id"] + 1, status="running", log=[], title=title, kind=kind, dir=str(sdir), step="",
-                   stopped=False, files=[], reason="", out="", t0=time.time(), step_at=time.time(), walls={}, expect=0, prior={})
+                   stopped=False, files=[], reason="", out="", t0=time.time(), step_at=time.time(), walls={}, expect=0, prior={}, dropped=0)
         JOB.pop("proc", None)
     started = time.time()
     before = listing(watch)
@@ -223,15 +283,24 @@ def run_job(kind, title, steps, sdir="", watch=()):
                 JOB["walls"][label] = time.time() - JOB["step_at"]
                 continue
             JOB["log"].append(f"$ hypnomix {' '.join(shlex.quote(a) for a in act)}")
+            p = None
             try:
                 p = popen_job(act)
                 JOB["proc"] = p
                 for line in p.stdout:
                     JOB["log"].append(line.rstrip("\n"))
-                    if len(JOB["log"]) > 4000:
-                        del JOB["log"][:1000]
+                    if len(JOB["log"]) > LOG_KEEP:
+                        with LOG_LOCK:                  # the page counts lines from the first one ever printed: say how many have gone
+                            del JOB["log"][:LOG_CUT]
+                            JOB["dropped"] += LOG_CUT
                 code = p.wait()
-            except Exception as e:                      # the interpreter could not start the command
+            except Exception as e:                      # the interpreter could not start the command, or its output could not be read
+                if p is not None:                       # never leave the command running with nobody reading its output
+                    kill_tree(p)
+                    try:
+                        p.wait(timeout=5)
+                    except Exception:
+                        pass
                 JOB["log"].append(f"could not run: {e}")
                 code = 1
             JOB["walls"][label] = time.time() - JOB["step_at"]
@@ -249,7 +318,7 @@ def run_job(kind, title, steps, sdir="", watch=()):
         JOB.pop("proc", None)
         after = listing(watch)
         JOB["files"] = sorted(f for f, m in after.items() if before.get(f) != m)
-        JOB["reason"] = "" if ok else ("Stopped by you." if JOB["stopped"] else job_reason(JOB["log"]))
+        JOB["reason"] = "" if ok else ("Stopped by you." if JOB["stopped"] else (app_words if kind == "fix" else str)(job_reason(JOB["log"])))
         JOB["status"] = "done" if ok else "failed"
 
     threading.Thread(target=go, daemon=True).start()
@@ -264,7 +333,7 @@ NO_UNDO = {"rpp": "REAPER projects", "ardour": "Ardour sessions", "folder": "fol
 
 def read_json(path, default=None):
     try:
-        return json.loads(Path(path).read_text())
+        return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return default
 
@@ -296,7 +365,7 @@ def inspect_scan(d):
     d = Path(d)
     out = dict(data=None, dec={}, damage=None)
     try:
-        data = json.loads((d / "findings.json").read_text())
+        data = json.loads((d / "findings.json").read_text(encoding="utf-8"))
         if not isinstance(data, dict) or not isinstance(data.get("findings"), list):
             raise ValueError("not a list of findings")
         out["data"] = data
@@ -306,7 +375,7 @@ def inspect_scan(d):
     p = d / "decisions.json"
     if p.exists():
         try:
-            dec = json.loads(p.read_text())
+            dec = json.loads(p.read_text(encoding="utf-8"))
             if not isinstance(dec, dict):
                 raise ValueError("not a list of decisions")
             out["dec"] = norm_decisions(dec)
@@ -351,11 +420,29 @@ def stamp(*paths):
 _SCAN_CACHE = {}          # scan folder -> (stamp of its files, what was worked out from them)
 
 
+def wrote_files(d):
+    """The files the apply runs of a scan folder wrote, from its history: a run that wrote nothing (it stopped, or every item
+    was left alone) still appends to fix-log.md, so the log alone does not say that anything was applied."""
+    h = read_json(Path(d) / "history" / "history.json", {}) or {}
+    return [str(v["output"]) for v in (h.get("versions") or []) if isinstance(v, dict) and v.get("output")]
+
+
+def was_applied(d, wrote):
+    """True when an apply run of this scan made a file that is still there: the new project, or a repaired copy in its fixed folder."""
+    if any(Path(p).exists() for p in wrote):
+        return True
+    try:
+        return any(x.is_file() for x in (Path(d) / "fixed").rglob("*"))
+    except OSError:
+        return False
+
+
 def scan_summary(d):
     """What the Songs list needs from one scan folder, read again only when findings.json, decisions.json, scan.json or
     fix-log.md changed: the page asks every second, and each ask used to parse every scan's results."""
     d = Path(d)
-    key = stamp(d / "findings.json", d / "decisions.json", d / "decisions.json.bak", d / "scan.json", d / "fix-log.md")
+    key = stamp(d / "findings.json", d / "decisions.json", d / "decisions.json.bak", d / "scan.json", d / "fix-log.md",
+                d / "history" / "history.json")
     hit = _SCAN_CACHE.get(str(d))
     if hit and hit[0] == key:
         return hit[1]
@@ -373,7 +460,7 @@ def scan_summary(d):
                decided=sum(1 for x in act if x["id"] in dec),
                approved=sum(1 for x in act if dec.get(x["id"], {}).get("decision") == "approve"),
                on_default=len(default_on(act, dec)),
-               when=when_of(f if f.exists() else d), applied=(d / "fix-log.md").exists(),
+               when=when_of(f if f.exists() else d), wrote=wrote_files(d),
                damaged=(ins["damage"] or {}).get("file", ""), can_restore=bool((ins["damage"] or {}).get("backup")),
                incomplete=not f.exists(), meta=meta, data_set=data.get("set"))
     _SCAN_CACHE[str(d)] = (key, row)
@@ -397,7 +484,7 @@ def scans():
         st = stale_info({"set": c["data_set"]}, meta)       # the song itself is looked at every time: it may have been saved
         row = dict(dir=str(d), name=d.name, source=source, kind=c["kind"], findings=c["findings"], source_name=c["source_name"],
                    parent=c["parent"], decided=c["decided"], approved=c["approved"], on_default=c["on_default"], when=c["when"],
-                   applied=c["applied"], damaged=c["damaged"], can_restore=c["can_restore"], incomplete=c["incomplete"],
+                   applied=was_applied(d, c["wrote"]), damaged=c["damaged"], can_restore=c["can_restore"], incomplete=c["incomplete"],
                    running=JOB["status"] == "running" and JOB["dir"] == str(d),
                    stale=bool(st and st.get("newer")), source_missing=bool(st and st.get("missing")),
                    can_rescan=bool(source) and Path(source).exists())
@@ -418,7 +505,7 @@ _HELP = {}
 def command_help(cmd):
     """`hypnomix CMD -h`, run once per command for as long as the app runs (it starts a Python process: about a second)."""
     if cmd not in _HELP:
-        r = subprocess.run([sys.executable, "-m", "hypnomix.cli", cmd, "-h"], capture_output=True, text=True, env=cli_env())
+        r = subprocess.run([sys.executable, "-m", "hypnomix.cli", cmd, "-h"], capture_output=True, text=True, encoding="utf-8", errors="replace", env=cli_env())
         _HELP[cmd] = (r.stdout + r.stderr)[-12000:]
     return _HELP[cmd]
 
@@ -440,8 +527,9 @@ def commands_rev():
 
 
 def scan_dir(raw):
-    """Only folders inside the app's own scan folder are ever read or written."""
-    d = Path(raw).resolve()
+    """Only folders inside the app's own scan folder are ever read or written. The folder may be given with the home
+    folder as "~" (that is how the Assistant is shown it, so a login name never reaches a model)."""
+    d = Path(str(raw)).expanduser().resolve()
     root = (work() / "scan").resolve()
     if root not in d.parents or not (d / "findings.json").exists():
         raise ValueError("not one of this app's scans")
@@ -553,8 +641,12 @@ def apply_plan(findings, dec):
     return dict(auto=auto, defaults=defaults, manual=manual, zero=zero, blocked=blocked, defmanual=defmanual)
 
 
-def writes_set(f):
-    return f.get("applies") == "set" or (f.get("applies") == "audio" and f.get("tool") in ("tune", "voices"))
+def writes_set(f, kind="als"):
+    """Does applying this finding write a new set? Harmony balance is volume automation in a Live set, but balanced copies
+    of the parts (no project) in REAPER and Ardour."""
+    if f.get("applies") == "audio" and f.get("tool") == "voices":
+        return kind == "als"
+    return f.get("applies") == "set" or (f.get("applies") == "audio" and f.get("tool") == "tune")
 
 
 _SET_GRID = {}
@@ -675,11 +767,11 @@ def review_payload(d, light=False):
         _LIGHT[str(d)] = (fkey, source, stamp(source or "/nonexistent")[0], out)
         return out
     notes = data.get("notes", [])
-    full = (Path(d) / "fix-log.md").read_text() if (Path(d) / "fix-log.md").exists() else ""
+    full = (Path(d) / "fix-log.md").read_text(encoding="utf-8") if (Path(d) / "fix-log.md").exists() else ""
     st = stale_info(data, meta)
     needs_archive = kind == "als" and any(f.get("kind") == "retire-off" for f in data["findings"])
     return dict(dir=str(d), name=Path(d).name, source=source, is_set=is_set, kind=kind, suffix=SUFFIX[kind],
-                mode=meta.get("mode", "set" if is_set else "folder"),
+                mode=meta.get("mode", "set" if is_set else "folder"), scan_key=str(meta.get("key") or ""),
                 findings=data["findings"], decisions=dec, ab=ab, prefs=P.summary(P.load()), damaged=ins["damage"],
                 broken=[n for n in notes if "failed" in n or n.startswith("WARNING") or "did NOT run" in n],
                 fix_log=full[-6000:], last_run=parse_fix_log(full),
@@ -694,7 +786,7 @@ def review_payload(d, light=False):
 def ov_payload(d, findings):
     try:
         from hypnomix.workflow import review as R
-        return R.oversight_payload(d, findings)
+        return R.oversight_payload(d, findings, like="runs")        # "the N like this" as ranges: every list was 19 MB for 2,000 findings
     except Exception as e:                     # the review still works without the extras
         return {"error": str(e)}
 
@@ -716,7 +808,12 @@ def decisions_ok(d):
 
 def restore_decisions(d, fresh=False):
     """Put decisions.json.bak back (or start a new empty decisions file). The damaged file is kept next to it, never deleted."""
-    d = Path(d)
+    from hypnomix.core import atomic
+    with atomic.decisions_lock(d):                     # no decision is recorded in the middle of the copy
+        return _restore_decisions(Path(d), fresh)
+
+
+def _restore_decisions(d, fresh):
     cur, bak = d / "decisions.json", d / "decisions.json.bak"
     b = None if fresh else read_json(bak)
     if not fresh and not isinstance(b, dict):
@@ -730,7 +827,7 @@ def restore_decisions(d, fresh=False):
         shutil.copyfile(cur, kept_p)
         kept = kept_p.name
     if fresh:
-        cur.write_text("{}")
+        cur.write_text("{}", encoding="utf-8")
         return dict(restored=False, kept=kept)
     shutil.copyfile(bak, cur)
     return dict(restored=True, kept=kept, decisions=len(b))
@@ -774,7 +871,7 @@ def parse_fix_log(text):
         while s["lines"] and not s["lines"][0].strip():
             s["lines"].pop(0)
         s["group"] = log_group(s["title"])
-        s["lines"] = [dict(t=x, bad="FAILED" in x or s["group"] == "failed") for x in s["lines"]]
+        s["lines"] = [dict(t=app_words(x), bad="FAILED" in x or s["group"] == "failed") for x in s["lines"]]
     return dict(when=head.strip(), intro=[x for x in intro if x.strip()], sections=secs, history=hist, raw=rest)
 
 
@@ -804,7 +901,7 @@ def hist_entries(d, h, kind, source):
         rows.append(dict(n=v.get("n"), at=v.get("at", ""), kind=v.get("kind", ""),
                          output=Path(v["output"]).name if v.get("output") else "", input=Path(v["input"]).name if v.get("input") else "",
                          approved=[a.get("id") for a in v.get("approved", [])], changes=v.get("changes"),
-                         failed=v.get("failed") or [], can_undo=can, undo_name=name, why_not=why))
+                         failed=[app_words(x) for x in (v.get("failed") or [])], can_undo=can, undo_name=name, why_not=why))
     return rows
 
 
@@ -825,7 +922,7 @@ def fix_result(d):
     meta = read_scan_json(d) or {}
     source = data.get("set", "")
     kind = source_kind(source, meta.get("mode", ""))
-    text = (d / "fix-log.md").read_text() if (d / "fix-log.md").exists() else ""
+    text = (d / "fix-log.md").read_text(encoding="utf-8") if (d / "fix-log.md").exists() else ""
     run = parse_fix_log(text)
     h = read_json(d / "history" / "history.json", {"versions": []}) or {"versions": []}
     v = h["versions"][-1] if h.get("versions") else None
@@ -852,7 +949,10 @@ def fix_result(d):
     body = "\n".join(l["t"] for s in (run or {}).get("sections", []) if s["group"] in ("not_applied", "failed") for l in s["lines"])
     left = {i for i in by_id if re.search(r"(?m)^[-*] " + re.escape(i) + r"[\s:@]", body)}
     ids = [a["id"] for a in (v or {}).get("approved", [])] if v else []
-    applied = [by_id[i] for i in ids if i in by_id and i not in left and by_id[i].get("applies") not in ("manual", "info")]
+    # a folder scan keeps its repaired copies in fixed/, and an earlier run's copies are still there: when this app ran the last apply,
+    # only what that run wrote counts (its files, listed above); the old copies are the only evidence when there is no job (app restarted)
+    wrote = bool(files) or (kind == "folder" and not (mine and status in ("done", "failed")) and was_applied(d, []))          # something new exists: otherwise nothing was applied, whatever was approved
+    applied = [by_id[i] for i in ids if i in by_id and i not in left and by_id[i].get("applies") not in ("manual", "info")] if wrote else []
     listen = [dict(id=f["id"], track=f.get("track") or "", where=f.get("where") or "", tool=f.get("tool", ""),
                    what=str(f.get("fix") or "").split("\n")[0][:140]) for f in applied if has_position(f.get("where"))]   # a spot to listen at
     default_ids = []
@@ -860,10 +960,10 @@ def fix_result(d):
     if m:
         default_ids = [x.strip() for x in m[1].split(",") if x.strip() in by_id]
     last = hist_entries(d, h, kind, source)[0] if v else None
-    nothing = status == "done" and not files
+    nothing = status in ("done", "failed") and not wrote          # a run that stopped before it wrote anything wrote nothing too
     note = next((x.strip() for x in job_log.split("\n") if re.search(r"no set changes|nothing to apply|nothing approved", x, re.I)), "")
     return dict(wrote_nothing=nothing, note=note, dir=str(d), name=d.name, status=status, ok=status != "failed" and bool(run or v), stopped=bool(mine and JOB["stopped"]),
-                reason=JOB["reason"] if mine and status == "failed" else "", tail=JOB["log"][-12:] if mine and status == "failed" else [],
+                reason=app_words(JOB["reason"]) if mine and status == "failed" else "", tail=JOB["log"][-12:] if mine and status == "failed" else [],
                 kind=kind, run=run, files=files, listen=listen, default_ids=default_ids,
                 applied=[dict(id=f["id"], track=f.get("track") or "", where=f.get("where") or "") for f in applied],
                 undo=last, handoff=sorted(x.name for x in (d / "handoff").glob("*") if x.is_file()) if (d / "handoff").is_dir() else [])
@@ -879,8 +979,9 @@ TIDY_KINDS = ("track-order", "retire-off", "consolidate", "vocal-stack")
 def write_json_atomic(path, obj):
     path = Path(path)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(obj, indent=1))
-    os.replace(tmp, path)
+    tmp.write_text(json.dumps(obj, indent=1), encoding="utf-8")
+    from hypnomix.core.atomic import replace as atomic_replace
+    atomic_replace(tmp, path)
 
 
 def heard_of(d):
@@ -902,17 +1003,18 @@ def patch_heard(d, ids):
         return                                             # nothing was played in this scan: nothing to copy, and no file to read again
     cur = d / "decisions.json"
     from hypnomix.core import atomic
-    dec = atomic.load_json(cur, None, warn=False)
-    if not isinstance(dec, dict):
-        return
-    changed = False
-    for fid in ids:
-        e, h = dec.get(fid), heard.get(fid)
-        if isinstance(e, dict) and h and e.get("heard") != h:
-            e["heard"] = h
-            changed = True
-    if changed:
-        atomic.write_json(cur, dec)                    # whole or not at all, the last good one kept as decisions.json.bak
+    with atomic.decisions_lock(d):                     # the same lock `fix --decide` takes: a decision recorded elsewhere is not lost
+        dec = atomic.load_json(cur, None, warn=False)
+        if not isinstance(dec, dict):
+            return
+        changed = False
+        for fid in ids:
+            e, h = dec.get(fid), heard.get(fid)
+            if isinstance(e, dict) and h and e.get("heard") != h:
+                e["heard"] = h
+                changed = True
+        if changed:
+            atomic.write_json(cur, dec)                # whole or not at all, the last good one kept as decisions.json.bak
 
 
 def mark_heard(d, fid, which):
@@ -957,13 +1059,13 @@ def record_many(d, ids, decision, note="", amount=None, by=None, via=None):
         raise ValueError("ids must be a list of finding ids")
     if amount is not None:
         amount = whole(amount, "amount", 0, 100)
-    with DEC_LOCK:
+    from hypnomix.core import atomic
+    with DEC_LOCK, atomic.decisions_lock(d):          # this app's threads, and any other program writing the same file
         known = {f.get("id") for f in (inspect_scan(d)["data"] or {}).get("findings", [])}
         bad = [i for i in ids if i not in known]
         if bad:
             raise ValueError("unknown id: " + ", ".join(bad[:5]))
         cur = d / "decisions.json"
-        from hypnomix.core import atomic
         dec = atomic.load_json(cur, {}, warn=False)
         dec = dec if isinstance(dec, dict) else {}
         heard = heard_of(d)
@@ -1212,7 +1314,7 @@ def ab_spec(d, fid=None):
     f = Path(d) / "ab_live.json"
     if not f.exists():
         return None
-    spec = json.loads(f.read_text())
+    spec = json.loads(f.read_text(encoding="utf-8"))
     if fid is None:
         return spec
     it = spec.get("items", {}).get(fid)
@@ -1251,10 +1353,10 @@ def ab_gain():
 
 def blind_record(d, body):
     f = Path(d) / "blind.json"
-    rows = json.loads(f.read_text()) if f.exists() else []
+    rows = json.loads(f.read_text(encoding="utf-8")) if f.exists() else []
     rows.append(dict(id=body["id"], chose=body["chose"], x=body.get("x", ""), at=time.strftime("%Y-%m-%d %H:%M"),
                      listens=body.get("listens", 0)))
-    f.write_text(json.dumps(rows, indent=1))
+    f.write_text(json.dumps(rows, indent=1), encoding="utf-8")
     mine = [r for r in rows if r["id"] == body["id"]]
     return dict(n=len(mine), b=sum(1 for r in mine if r["chose"] == "B"))
 
@@ -1265,14 +1367,14 @@ def cards_file():
 
 def card_save(sig, chords=None, params=None):
     f = cards_file()
-    allc = json.loads(f.read_text()) if f.exists() else {}
+    allc = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
     c = allc.setdefault(sig, {})
     if chords is not None:
         c["chords"] = chords
     if params:
         c["params"] = params
     c["updated"] = time.strftime("%Y-%m-%d %H:%M")
-    f.write_text(json.dumps(allc, indent=1))
+    f.write_text(json.dumps(allc, indent=1), encoding="utf-8")
     return c
 
 
@@ -1407,6 +1509,18 @@ sys.stdout.write(p or "")
 """
 
 
+def chooser_available():
+    """Whether Choose… can open anything here: macOS has its own; elsewhere the chooser is the standard library's tkinter, which
+    an installed app may not carry. The page leaves the Choose buttons out when it is false (the Path box still works)."""
+    if sys.platform == "darwin":
+        return True
+    try:
+        import importlib.util
+        return importlib.util.find_spec("tkinter") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def pick(kind):
     """The path the person chose in the system's own chooser, or "" if they cancelled. Raises PickUnavailable (with
     the words to show) when there is no chooser to show: nothing fails silently."""
@@ -1418,7 +1532,7 @@ def pick(kind):
                   "audio": 'POSIX path of (choose file with prompt "Choose an audio file" of type {"wav","aif","aiff","flac","mp3","m4a"})',
                   "folder": 'POSIX path of (choose folder with prompt "Choose a folder of recordings or stems")'}[kind]
         try:
-            r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+            r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, encoding="utf-8", errors="replace")
         except OSError as e:
             raise PickUnavailable(f"the file chooser could not be opened ({e}): type or paste the path in the Path box instead")
         if r.returncode == 0:
@@ -1427,7 +1541,7 @@ def pick(kind):
             return ""
         raise PickUnavailable(f"macOS did not open its file chooser ({r.stderr.strip()[:160]}): type or paste the path in the Path box instead")
     try:                                             # Windows and Linux: the standard library's own chooser, in a process of its own
-        r = subprocess.run([sys.executable, "-c", _TK, kind], capture_output=True, text=True, timeout=900)
+        r = subprocess.run([sys.executable, "-c", _TK, kind], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=900)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise PickUnavailable(f"the file chooser could not be opened ({e}): type or paste the path in the Path box instead")
     if r.returncode != 0:
@@ -1440,6 +1554,12 @@ def is_windows():
     return os.name == "nt"
 
 
+def explorer_command(t):
+    """What starts Windows Explorer showing `t`: a folder is opened; for a file the quotes go around the path alone
+    (explorer /select,"C:\\My Songs\\a.wav"), which is the form Explorer's own documentation uses (not the whole argument in quotes)."""
+    return ["explorer", str(t)] if Path(t).is_dir() else f'explorer /select,"{t}"'
+
+
 def reveal(path):
     """Show a file or folder in the system's file manager. -> (shown, plain words)."""
     t = Path(str(path)).expanduser()
@@ -1449,7 +1569,7 @@ def reveal(path):
         if sys.platform == "darwin":
             ok = subprocess.run(["open", "-R", str(t)], capture_output=True).returncode == 0
         elif is_windows():
-            subprocess.Popen(["explorer", str(t)] if t.is_dir() else ["explorer", f"/select,{t}"])   # explorer's own exit code is not meaningful
+            subprocess.Popen(explorer_command(t))      # explorer's own exit code is not meaningful
             ok = True
         else:
             opener = shutil.which("xdg-open")
@@ -1473,11 +1593,13 @@ def set_aside_decisions(d):
     cur = d / "decisions.json"
     if not cur.exists():
         return []
-    n, dest = 1, d / "decisions before re-scan.json"
-    while dest.exists():
-        n += 1
-        dest = d / f"decisions before re-scan {n}.json"
-    cur.rename(dest)
+    from hypnomix.core import atomic
+    with atomic.decisions_lock(d):
+        n, dest = 1, d / "decisions before re-scan.json"
+        while dest.exists():
+            n += 1
+            dest = d / f"decisions before re-scan {n}.json"
+        cur.rename(dest)
     return [f"Your earlier decisions were kept as {dest.name}: this kind of project cannot carry them into a new scan, "
             "and the same id can mean a different finding now."]
 
@@ -1518,9 +1640,24 @@ def scan_steps(src, d, opts, reused):
     return steps
 
 
+def bare_path(raw):
+    """A path as people paste it: a file manager's "copy as path" wraps it in quotes, and a dragged file can arrive as file://."""
+    s = str(raw).strip()
+    pairs = {'"': '"', "'": "'", "\u201c": "\u201d", "\u2018": "\u2019"}
+    if len(s) >= 2 and pairs.get(s[0]) == s[-1]:
+        s = s[1:-1].strip()
+    if s.lower().startswith("file://"):
+        from urllib.parse import unquote
+        s = unquote(s[7:])
+        if re.match(r"^/[A-Za-z]:[\\/]", s):
+            s = s[1:]                                    # file:///C:/Music/Song.rpp
+    return s
+
+
 def start_scan(body, title="First pass", folder=None):
     """Scan a Live set, REAPER project, Ardour session or folder. The same path always goes back to its own scan folder
     (that is a re-scan); a different path never shares one, even with the same name."""
+    body = dict(body, **{k: bare_path(body[k]) for k in ("source", "mix", "ref", "like", "backing") if isinstance(body.get(k), str)})
     src = Path(need(body, "source")).expanduser()
     if not src.exists():
         raise ValueError(f"not found: {src}")
@@ -1574,18 +1711,27 @@ def start_fix(body):
     for k in ("key", "out"):
         if body.get(k) is not None and not isinstance(body[k], str):
             raise ValueError(f"{k} must be text")
+    answers = body.get("answers") or []
+    if not isinstance(answers, list) or not all(isinstance(x, str) and len(x) <= 300 for x in answers):
+        raise ValueError("answers must be a list of short text answers")
+    if any(f.get("tool") == "tune" for f in plan["auto"]) and not str(body.get("key") or "").strip() and not (read_scan_json(d) or {}).get("key"):
+        raise RuntimeError("Vocal tuning is approved, and it needs the song's key: type it in \"Confirmed key\" (for example F# major), "
+                           "or turn the tuning off, then apply.")
     kind, src = p["kind"], Path(p["source"])
     argv = ["fix", str(d), "--approved"]
     out = ""
     if kind != "folder":
         name = clean_out(body.get("out") or p["suggested_out"], kind, src)
         target = src.parent / name
-        if any(writes_set(f) for f in plan["auto"]) and (target.exists() or target == src):
+        if any(writes_set(f, kind) for f in plan["auto"]) and (target.exists() or target == src):
             raise RuntimeError(f"{name} already exists next to the original: choose a new name (nothing is ever overwritten)")
         out = str(target)
         argv += ["--out", out]
     if body.get("key"):
         argv += ["--key", body["key"]]
+    for x in answers:
+        if x.strip():
+            argv += ["--answer", x.strip()]                  # the person's answer to a key question: fix keeps it in the scan
     for flag in ("allow_protected", "stale_ok"):
         if body.get(flag):
             argv.append("--" + flag.replace("_", "-"))
@@ -1677,6 +1823,45 @@ def security_headers(nonce=None):
             "Cross-Origin-Resource-Policy": "same-origin", "Content-Security-Policy": csp}
 
 
+def state_reply(state, had=None):
+    """The state, with `rev` (a short digest of all of it) added. The page asks again every second or so and says which rev it
+    has (`?rev=`): when nothing changed the answer is `{"rev": ..., "same": true}`, a few bytes, not every song's row again."""
+    import hashlib
+    body = json.dumps(state, default=str)                   # (as the answer was always written: same keys, same order)
+    rev = hashlib.blake2b(body.encode("utf-8"), digest_size=8).hexdigest()
+    if had == rev:
+        return {"rev": rev, "same": True}
+    return (body[:-1] + f', "rev": "{rev}"' + "}").encode("utf-8")
+
+
+GZIP_MIN = 4096                                   # a smaller answer is not worth compressing
+GZIP_TYPES = ("application/json", "text/javascript", "text/css", "text/plain")
+
+
+def is_text_type(ctype):
+    return str(ctype or "").split(";")[0].strip().lower() in GZIP_TYPES
+
+
+def gzip_body(body, ctype, accept):
+    """The answer gzip-compressed (bytes) when it is a big text one (JSON, script) and the browser's Accept-Encoding takes
+    gzip; else None. The same bytes come out of a browser's inflate, so nothing the page reads changes. A review of a
+    big scan is megabytes of repeated words: about a tenth of that goes over the wire."""
+    if len(body) < GZIP_MIN or not is_text_type(ctype) or not accept:
+        return None
+    for part in str(accept).split(","):
+        name, _, params = part.strip().partition(";")
+        if name.strip().lower() in ("gzip", "x-gzip"):
+            q = re.search(r"q\s*=\s*([\d.]+)", params)
+            try:
+                if q and float(q.group(1)) <= 0:
+                    return None
+            except ValueError:
+                return None
+            import gzip
+            return gzip.compress(bytes(body), compresslevel=5, mtime=0)
+    return None
+
+
 def make_handler(port):
     from hypnomix.app.ui import PAGE
     origins = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
@@ -1727,8 +1912,16 @@ def make_handler(port):
         def send(self, code, body, ctype="application/json", extra=None, nonce=None, close=False):
             if not isinstance(body, (bytes, bytearray)):
                 body = json.dumps(body, default=str).encode()
+            packed = None
+            if code == 200 and not any(k.lower() in ("content-encoding", "content-range") for k in (extra or {})):
+                packed = gzip_body(body, ctype, self.headers.get("Accept-Encoding"))
             self.send_response(code)
             self.send_header("Content-Type", ctype)
+            if packed is not None:                      # a big text answer, to a browser that said it takes gzip
+                body = packed
+                self.send_header("Content-Encoding", "gzip")
+            if is_text_type(ctype):
+                self.send_header("Vary", "Accept-Encoding")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self._nonce = nonce
@@ -1760,17 +1953,30 @@ def make_handler(port):
                 return self.send(403, {"error": "this computer only"}, close=True)
             try:
                 if u.path == "/":
+                    from hypnomix.app import daw as DW, setup as SU
                     nonce = secrets.token_urlsafe(16)               # the page's one inline script carries this; nothing else may run
-                    html = PAGE.replace("__TOKEN__", TOKEN).replace("<script>", f'<script nonce="{nonce}">')
+                    # the DAW view comes first only once the guided setup is done: on a first launch it must not be skipped
+                    html = PAGE.replace("__TOKEN__", TOKEN).replace("__DAWMODE__", "true" if DW.STATE["daw"] and SU.is_done() else "false")
+                    html = html.replace("<script>", f'<script nonce="{nonce}">')
                     return self.send(200, html.encode(), "text/html; charset=utf-8", nonce=nonce)
+                if u.path == "/daw" or u.path.startswith("/daw/") or u.path == "/api/daw/state":   # DAW mode
+                    from hypnomix.app import daw as DW
+                    r = DW.handle_get(u.path, q, TOKEN)             # the DAW view's page comes with its own nonce
+                    if r:
+                        return self.send(*r)
+                if u.path.startswith("/api/dawreview/"):  # the DAW view's Review on the engine's session
+                    from hypnomix.app import dawreview as DRV
+                    r = DRV.handle_get(sys.modules[__name__], u.path, q)
+                    if r:
+                        return self.send(*r)
                 if u.path == "/api/state":
                     from hypnomix.workflow import prefs as P
                     pr = P.load()
-                    return self.send(200, dict(
-                        scans=scans(), prefs=P.summary(pr), unanswered=len(P.unanswered(pr)), home=str(work()),
+                    return self.send(200, state_reply(dict(
+                        scans=scans(), prefs=P.summary(pr), unanswered=len(P.unanswered(pr)), home=str(work()), daw=P.daw(pr),
                         job={k: JOB[k] for k in ("id", "status", "title", "kind", "dir", "step", "stopped")},
                         live=time.time() - LIVE["seen"] < 3.0, mac=sys.platform == "darwin", platform=sys.platform,
-                        demo=demo_available(), commands_rev=commands_rev()))
+                        demo=demo_available(), chooser=chooser_available(), commands_rev=commands_rev()), q.get("rev")))
                 if u.path == "/api/commands":            # sent once: /api/state says (commands_rev) when it changes
                     return self.send(200, dict(rev=commands_rev(), commands=command_list()))
                 if u.path == "/api/job":
@@ -1778,9 +1984,10 @@ def make_handler(port):
                     extra = {}
                     if JOB["kind"] == "handoff" and JOB["status"] == "done" and JOB["dir"]:
                         t = Path(JOB["dir"]) / "handoff" / "HANDOFF.md"
-                        extra["text"] = t.read_text(errors="replace")[:30000] if t.is_file() else ""
+                        extra["text"] = t.read_text(errors="replace", encoding="utf-8")[:30000] if t.is_file() else ""
+                    total, lines, skipped = log_since(since)
                     return self.send(200, dict(id=JOB["id"], status=JOB["status"], title=JOB["title"], kind=JOB["kind"],
-                                               dir=JOB["dir"], step=JOB["step"], total=len(JOB["log"]), log=JOB["log"][since:],
+                                               dir=JOB["dir"], step=JOB["step"], total=total, log=lines, skipped=skipped, keeps=LOG_KEEP,
                                                stopped=JOB["stopped"], files=[dict(name=Path(f).name, path=f, folder=str(Path(f).parent)) for f in JOB["files"]],
                                                reason=JOB["reason"], out=JOB["out"], progress=job_progress(), **extra))
                 if u.path == "/api/review":
@@ -1798,7 +2005,7 @@ def make_handler(port):
                     note = ""
                     try:
                         r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "history", str(d), "--json"], cwd=str(work()),
-                                           capture_output=True, text=True, timeout=60, env=cli_env())
+                                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, env=cli_env())
                         h = json.loads(r.stdout)
                     except (OSError, ValueError, subprocess.TimeoutExpired):
                         h = read_json(d / "history" / "history.json", {"versions": []}) or {"versions": []}
@@ -1807,7 +2014,10 @@ def make_handler(port):
                 if u.path == "/api/prefs":
                     from hypnomix.workflow import prefs as P
                     pr = P.load()
-                    return self.send(200, [dict(q_, value=P.get(pr, q_["key"])) for q_ in P.QUESTIONS])
+                    setup_daw = P.setup_daw()                               # an unanswered DAW question shows Setup's answer, not a fixed "live"
+                    return self.send(200, [dict(q_, value=P.get(pr, q_["key"]),
+                                                **({"default": setup_daw} if q_["key"] == "tools.daw" and setup_daw else {}))
+                                           for q_ in P.QUESTIONS])
                 if u.path == "/api/help":
                     from hypnomix import cli
                     if q.get("cmd") not in cli.COMMANDS or q["cmd"] in HIDDEN:
@@ -1826,6 +2036,11 @@ def make_handler(port):
                 if u.path in ("/wiki.js", "/api/wiki", "/api/wiki/article") or u.path.startswith("/wiki/assets/"):
                     from hypnomix.app import wiki as WK             # the Wiki tab: the site's articles, offline
                     r = WK.handle_get(u.path, q, self.headers)
+                    if r:
+                        return self.send(*r)
+                if u.path == "/store.js" or u.path.startswith("/api/store/"):   # the Store tab: free plug-ins and sounds
+                    from hypnomix.app import store as ST
+                    r = ST.handle_get(u.path, q)
                     if r:
                         return self.send(*r)
                 if u.path in ("/diskcare.js", "/api/diskcare/state"):   # disk care: old renders and caches cleared
@@ -1869,13 +2084,16 @@ def make_handler(port):
                     return self.send(200, dict(gain_db=round(g, 2), ab_diff=diff))
                 if u.path == "/api/probe/card":
                     f = cards_file()
-                    return self.send(200, (json.loads(f.read_text()) if f.exists() else {}).get(q.get("sig", ""), {}))
+                    return self.send(200, (json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}).get(q.get("sig", ""), {}))
                 if u.path == "/api/probe/song":            # what the devices say right now (song card + track roles)
                     return self.send(200, PROBE["hub"].song_card() if PROBE["hub"] else {})
                 if u.path == "/audio":
                     d = scan_dir(need(q, "dir"))
                     f = d / "ab" / Path(unquote(need(q, "f"))).name
                     if not (f.is_file() and f.suffix == ".wav"):
+                        return self.send(404, {"error": "no such clip"})
+                    f = f.resolve()                        # a link inside the scan folder must not lead out of it
+                    if d.resolve() not in f.parents:
                         return self.send(404, {"error": "no such clip"})
                     data = f.read_bytes()
                     rng = re.match(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
@@ -1894,11 +2112,21 @@ def make_handler(port):
                 self.send(400, {"error": str(e)})
             except (TypeError, AttributeError):           # a field of the wrong kind (a list where text belongs): a sentence, not a dropped connection
                 self.send(400, {"error": WRONG_KIND})
+            except OSError as e:                          # a name longer than the file system allows: a sentence, not a dropped connection
+                if not name_too_long(e):
+                    raise
+                self.send(400, {"error": NAME_TOO_LONG})
 
         def do_POST(self):
             u = urlparse(self.path)
             if not self.local():
                 return self.send(403, {"error": "this computer only"}, close=True)
+            if u.path in ("/mcp", "/api/daw/upload"):       # DAW mode: bodies of their own (JSON-RPC, a dropped audio file)
+                if self.headers.get("Transfer-Encoding"):
+                    return self.send(400, {"error": "bad request: send the body with a Content-Length (chunked bodies are not taken)"}, close=True)
+                if self.headers.get("X-Hypnomix") != TOKEN:  # checked before a byte of the body is read
+                    return self.send(403, {"error": "open the app's own page to do this"}, close=True)
+                return self.mcp_proxy() if u.path == "/mcp" else self.daw_upload(u)
             cl = self.headers.get("Content-Length")
             cl = "0" if cl is None else cl.strip()                 # no header: no body; a blank one is not a number
             if self.headers.get("Transfer-Encoding"):
@@ -1921,6 +2149,15 @@ def make_handler(port):
             except ValueError:
                 return self.send(400, {"error": "bad request"})
             try:
+                # THE ROUTES BELOW TAKE NO TOKEN, on purpose: their callers are not pages that were handed one. They are the
+                # Max for Live devices (device, align device, probe, HypnomixMain: hypnomix/app/device.py, aligndevice.py,
+                # probe.py, masterchain.py: JavaScript running inside Live) and the REAPER panels (hypnomix/reaper/review.py
+                # and align.py: scripts that call this app), and none of them can read the page's token. What protects them
+                # is local(): this computer's own Host, and no foreign Origin or cross-site request, so no web page can
+                # reach them. Any program on this computer can, and the app trusts every program on it (docs/APP.md says
+                # so). The two probe routes that the app's own page calls (/api/probe/start and /stop) DO need it.
+                if u.path in ("/api/probe/start", "/api/probe/stop") and self.headers.get("X-Hypnomix") != TOKEN:
+                    return self.send(403, {"error": "open the app's own page to do this"})
                 # the device (inside Live) may step through findings and record decisions; nothing is applied by these
                 if u.path == "/api/live/step":
                     live_step(whole(body.get("delta", 1), "delta", -1000, 1000), bool(body.get("undecided")))
@@ -1977,6 +2214,11 @@ def make_handler(port):
                     r = WK.handle_post(u.path, body)
                     if r:
                         return self.send(*r)
+                if u.path.startswith("/api/store/"):       # the Store tab: install / uninstall (one at a time, never runs a download)
+                    from hypnomix.app import store as ST
+                    r = ST.handle_post(u.path, body)
+                    if r:
+                        return self.send(*r)
                 if u.path.startswith("/api/diskcare/"):    # disk care: preview, clean now, settings, restore
                     from hypnomix.app import diskcare as DC
                     r = DC.handle_post(u.path, body, lambda: JOB["status"] == "running")
@@ -1995,6 +2237,16 @@ def make_handler(port):
                 if u.path.startswith("/api/setup/"):       # the guided setup: save a key and test it, Live, the command
                     from hypnomix.app import setup as SU
                     r = SU.handle_post(u.path, body)
+                    if r:
+                        return self.send(*r)
+                if u.path.startswith("/api/dawreview/"):   # the DAW view's Review: scan, decide, apply, A/B
+                    from hypnomix.app import dawreview as DRV
+                    r = DRV.handle_post(sys.modules[__name__], u.path, body)
+                    if r:
+                        return self.send(*r)
+                if u.path.startswith("/api/daw/"):         # DAW mode: start, stop, restart the engine, open / new session
+                    from hypnomix.app import daw as DW
+                    r = DW.handle_post(u.path, body)
                     if r:
                         return self.send(*r)
                 if u.path.startswith("/api/chat/"):        # the Assistant tab (needs the page's token, like the rest)
@@ -2046,7 +2298,7 @@ def make_handler(port):
                     fid, text = need(body, "id", "text")
                     decisions_ok(d)
                     O.add_note(d, fid, text, body.get("at") or None, body.get("by") or None)
-                    return self.send(200, {})
+                    return self.send(200, {"notes": O.load_notes(d).get(fid, [])})      # this finding's notes, so the page need not fetch the whole review again
                 if u.path == "/api/restore-decisions":      # a damaged decisions file: the backup back, or a new empty one (the damaged one is kept)
                     d = scan_dir(need(body, "dir"))
                     dmg = inspect_scan(d)["damage"]
@@ -2078,7 +2330,7 @@ def make_handler(port):
                 if u.path == "/api/ab/build":
                     d = scan_dir(need(body, "dir"))
                     argv = ["abset", str(d)] + (["--key", str(body["key"])] if body.get("key") else [])
-                    run_job("abset", f"A/B set for Live: {d.name}", [("Building every fix as a switch (changes nothing)", argv, True)], d)
+                    run_job("abset", f"{ab_title(d)}: {d.name}", [("Building every fix as a switch (changes nothing)", argv, True)], d)
                     return self.send(200, {"job": JOB["id"]})
                 if u.path == "/api/probe/report":
                     cap = Path(need(body, "capture"))
@@ -2117,9 +2369,73 @@ def make_handler(port):
                 self.send(400, {"error": f"this request is missing {e.args[0] if e.args else 'something it needs'}"})
             except ValueError as e:
                 self.send(400, {"error": str(e)})
-
             except (TypeError, AttributeError):
                 self.send(400, {"error": WRONG_KIND})
+            except OSError as e:
+                if not name_too_long(e):
+                    raise
+                self.send(400, {"error": NAME_TOO_LONG})
+
+        def content_length(self, limit):
+            """The request's Content-Length as a number within limit, or None once a refusal has been sent."""
+            cl = (self.headers.get("Content-Length") or "").strip()
+            if not (cl.isascii() and cl.isdigit()):
+                self.send(400, {"error": "bad request: Content-Length is missing or not a number"}, close=True)
+                return None
+            n = int(cl) if len(cl) < 19 else limit + 1
+            if n > limit:
+                self.send(413, {"error": f"that request is too large (the limit is {limit // 1_000_000} MB)"}, close=True)
+                return None
+            return n
+
+        def daw_upload(self, u):
+            """POST /api/daw/upload?name=F (the page's token checked by do_POST): the raw bytes of a file dropped on the
+            DAW view -> {path} in a temp folder, for the page's session_import_audio (the engine copies it into the
+            session). A large stem takes longer than READ_SECONDS to arrive, so the read clock stops here: only the
+            page itself (it holds the token) gets this far."""
+            from hypnomix.app import daw as DW
+            n = self.content_length(DW.UPLOAD_MAX)
+            if n is None:
+                return
+            self.close_connection = True                  # a refused upload is not read to the end
+            name = parse_qs(urlparse(self.path).query).get("name", [""])[0]
+            try:
+                DW.check_upload(name, n)                  # refused before a byte is read
+            except ValueError as e:
+                return self.send(400, {"error": str(e)})
+            self._disarm()
+            try:
+                return self.send(200, DW.save_upload(self.rfile, n, name))
+            except ValueError as e:
+                return self.send(400, {"error": str(e)})
+            except OSError as e:
+                return self.send(500, {"error": f"could not save the file: {e}"})
+
+        def mcp_proxy(self):
+            """POST /mcp (the page's token checked by do_POST): the engine's MCP surface, same origin (it sends no CORS
+            headers). The request must be one JSON-RPC message (or a batch of them) with a method name, and tools/call
+            must name a tool with an object of arguments; then it goes to the engine as it came and the reply comes back
+            as it went."""
+            n = self.content_length(8_000_000)
+            if n is None:
+                return
+            raw = self.rfile.read(n) if n else b""
+            self._disarm()
+            if len(raw) < n:
+                return self.send(400, {"error": "bad request: the body ended early"}, close=True)
+            if "json" not in (self.headers.get("Content-Type") or ""):
+                return self.send(415, {"error": "JSON-RPC only"})
+            from hypnomix.app import daw as DW
+            why = DW.check_rpc(raw)
+            if why:
+                return self.send(400, {"error": why})
+            code, data = DW.ENGINE.rpc(raw, DW.rpc_timeout(raw))
+            if not data:                                  # a notification: nothing to say back
+                self.send_response(202 if code == 200 else code)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            return self.send(code, data)
 
     return H
 
@@ -2129,6 +2445,9 @@ def main():
     ap.add_argument("--port", type=int, default=8791)
     ap.add_argument("--no-open", action="store_true", help="do not open the browser")
     ap.add_argument("--home", help="where scans are kept (default ~/Documents/Hypnomix)")
+    ap.add_argument("--daw", action="store_true", default=os.environ.get("HYPNOMIX_DAW") == "1",
+                    help="DAW mode: open the DAW view first and start the Hypnomix engine (or use a running Hypnomix window)")
+    ap.add_argument("--session", help="DAW mode: the session (.ardour, or its folder) to open in the engine")
     a = ap.parse_args()
     if a.home:
         os.environ["HYPNOMIX_APP_HOME"] = a.home
@@ -2137,7 +2456,7 @@ def main():
     else:                                          # treats a set port as "a test copy", so the real one leaves it unset)
         os.environ["HYPNOMIX_PORT"] = str(a.port)
     try:
-        srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(a.port))
+        srv = LocalServer(("127.0.0.1", a.port), make_handler(a.port))
     except OSError:
         sys.exit(f"port {a.port} is in use: is the hypnomix app already running? (http://127.0.0.1:{a.port})")
     start_probe_hub()
@@ -2145,7 +2464,15 @@ def main():
     UP.check_in_background()                  # at most once a day, and only if it's switched on
     from hypnomix.app import diskcare as DC
     DC.start_in_background(lambda: JOB["status"] == "running")   # hourly look; cleans weekly or when the disk is nearly full
-    url = f"http://127.0.0.1:{a.port}/"
+    import atexit, signal
+    from hypnomix.app import daw as DW
+    atexit.register(DW.ENGINE.shutdown)                          # quitting the app stops an engine it started (also one started later, from the DAW tab)
+    for sig in ("SIGTERM", "SIGHUP"):                            # (the Mac app quits its server with SIGTERM)
+        if hasattr(signal, sig):
+            signal.signal(getattr(signal, sig), lambda *_: sys.exit(0))
+    if a.daw or a.session:
+        DW.start_for_app(a.session)
+    url = f"http://127.0.0.1:{a.port}/" + ("daw/" if a.daw or a.session else "")
     print(f"hypnomix app: {url}   (this computer only; Ctrl-C to stop)\nsongs are kept in {work()}", flush=True)
     if not a.no_open:
         import webbrowser

@@ -47,7 +47,7 @@ DEFAULTS = {  # used when nothing was learned: gentle
     "riser": dict(bars=8, depth=0.4), "dip": dict(bars=8, depth=0.45), "drift": dict(bars=64, depth=0.3),
     "swell": dict(bars=4, dB=4.0), "throw": dict(bars=1, dB=10.0, every=8), "outro": dict(bars=16, dB=6.0),
 }
-REVERB_DEV = ("Reverb", "Hybrid", "Convolution", "Tail", "Aurora", "Valhalla")
+REVERB_DEV = ("Reverb", "Hybrid", "Convolution", "Tail", "Aurora")
 DELAY_DEV = ("Delay", "Echo", "FilterDelay", "PingPongDelay", "Cascadia")
 FILTER_MACRO = re.compile(r"filter|cutoff|hi ?pass|lo ?pass|low ?pass|high ?pass", re.I)
 REVERB_MACRO = re.compile(r"reverb amount|reverb$|verb|dry ?/ ?wet", re.I)   # only in racks named DJ
@@ -729,7 +729,7 @@ def main():
     if a.learn:
         st = learn(a.learn)
         Path(a.style).parent.mkdir(parents=True, exist_ok=True)
-        Path(a.style).write_text(json.dumps(st, indent=1))
+        Path(a.style).write_text(json.dumps(st, indent=1), encoding="utf-8")
         print(f"learned {len(st['examples'])} moves from {len(a.learn)} set(s) → {a.style}")
         for mv, m in st["moves"].items():
             print(f"  {WORDS.get(mv, mv):<20} {m['count']:2d}×, typically {m['bars']:g} bars, depth {m['depth']:.0%}"
@@ -739,11 +739,11 @@ def main():
     if not a.als:
         sys.exit("give a set (or --learn examples)")
     src = Path(a.als)
-    style = json.loads(Path(a.style).read_text()) if Path(a.style).exists() else None
+    style = json.loads(Path(a.style).read_text(encoding="utf-8", errors="replace")) if Path(a.style).exists() else None
     root = ET.fromstring(read_gz(src))
     labels = None
     if a.names and Path(a.names).exists():
-        labels = {r["old"]: (r.get("final") or r.get("label") or "") for r in json.loads(Path(a.names).read_text())["tracks"]
+        labels = {r["old"]: (r.get("final") or r.get("label") or "") for r in json.loads(Path(a.names).read_text(encoding="utf-8", errors="replace"))["tracks"]
                   if float(r.get("confidence") or 0) >= 0.5}
     moves, meta = propose(root, a.mix, style, labels)
     fs = findings(moves, meta)
@@ -756,21 +756,21 @@ def main():
         print("  no moves to offer (no filters, reverb or delay sends to move, or no repetitive sections)")
     if a.json:
         Path(a.json).write_text(json.dumps({"tool": "motion", "set": str(src), "findings": fs, "meta":
-                                            {k: meta[k] for k in ("tempo", "sections", "how", "learned")}}, indent=1, default=str))
+                                            {k: meta[k] for k in ("tempo", "sections", "how", "learned")}}, indent=1, default=str), encoding="utf-8")
     if a.plan:
         from hypnomix.workflow import plan as PL
         od = PL.scan_dir(a.plan if isinstance(a.plan, str) else None, src, " (motion)")
         if a.names and Path(a.names).exists():                    # fix re-checks with the same track roles
             (Path(od) / "raw" / "names").mkdir(parents=True, exist_ok=True)
-            (Path(od) / "raw" / "names" / "names.json").write_text(Path(a.names).read_text())
+            (Path(od) / "raw" / "names" / "names.json").write_text(Path(a.names).read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
         PL.write(od, "motion", src, fs, [f"motion: sections {meta['how']}"] +
                  ([] if meta["learned"] else ["motion: nothing learned yet (`hypnomix motion --learn SONG.als`)"]) +
                  ["motion: every move is an OPTION (none is applied by default); fine controls go in the decision note, "
                   "e.g. --decide motion-3=approve --note \"bars=6 depth=0.3\""])
         sj = Path(od) / "scan.json"
-        info = json.loads(sj.read_text()) if sj.exists() else {}
+        info = json.loads(sj.read_text(encoding="utf-8")) if sj.exists() else {}
         info.update(mode="set", mix=a.mix, motion_style=a.style)
-        sj.write_text(json.dumps(info, indent=1))
+        sj.write_text(json.dumps(info, indent=1), encoding="utf-8")
     if a.apply:
         if Path(a.apply).resolve() == src.resolve():
             sys.exit("refusing to overwrite the set; give a new file name")

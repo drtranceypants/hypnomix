@@ -15,6 +15,7 @@ All takes must start at the same point (export them from the same bar). --start-
 at which the files start, so the grid lines up. Use --no-pitch for drums, strummed chords and pads.
 """
 from hypnomix.core.paths import out_at
+from hypnomix.core import args as A
 import argparse, sys
 from pathlib import Path
 
@@ -93,7 +94,7 @@ def section_scores(m, t0, t1, sr):
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix takes", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("takes", nargs="+")
-    ap.add_argument("--bpm", type=float); ap.add_argument("--start-beat", type=float, default=0)
+    ap.add_argument("--bpm", type=A.number(20, 400)); ap.add_argument("--start-beat", type=float, default=0)
     ap.add_argument("--section-bars", type=int, default=4); ap.add_argument("--beats-per-bar", type=int, default=4)
     ap.add_argument("--no-pitch", action="store_true"); ap.add_argument("--out")
     a = ap.parse_args()
@@ -144,7 +145,7 @@ def main():
            "The numbers find problems; your ears pick the performance. A slightly pitchy take with feeling often wins."]
     text = "\n".join(md) + "\n"
     od = out_at(a.out, "takes")
-    (od / "TAKES.md").write_text(text)
+    (od / "TAKES.md").write_text(text, encoding="utf-8")
     print(text)
 
 

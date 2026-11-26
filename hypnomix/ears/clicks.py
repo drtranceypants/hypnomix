@@ -31,7 +31,8 @@ def main():
     ap.add_argument("--to", type=float)
     a = ap.parse_args()
     for f in a.files:
-        y, sr = sf.read(f, always_2d=True)
+        from hypnomix.core import dsp
+        y, sr = dsp.load(f)
         y = y.mean(1)[int(a.fr * sr): int(a.to * sr) if a.to else None]
         ev = find_clicks(y, sr)
         print(f"{f.split('/')[-1]}: {len(ev)} clicks; worst at", [f"{a.fr + e[0] / sr:.2f}s" for e in ev[:8]])

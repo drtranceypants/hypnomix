@@ -49,8 +49,45 @@ class AudioReadError(Exception):
 
 
 # ---------------------------------------------------------------- I/O
+MAX_CHANNELS = 5                       # the loudness meter (ITU-R BS.1770 weights) reads mono up to five channels
+
+
+def broken_samples(y):
+    """(how many samples are NaN or infinite, the frame of the first one or None). Cheap when there are none."""
+    if np.isfinite(y).all():
+        return 0, None
+    bad = ~np.isfinite(y)
+    return int(bad.sum()), int(np.flatnonzero(bad.any(axis=1) if bad.ndim > 1 else bad)[0])
+
+
 def load(path, sr=None):
-    """Read audio as float64 (n, ch). Resamples to `sr` if given. Falls back to ffmpeg for mp3/m4a."""
+    """Read audio as float64 (n, ch). Resamples to `sr` if given. Falls back to ffmpeg for mp3/m4a.
+
+    A file hypnomix cannot measure ends in an AudioReadError with one plain sentence (the commands print it, exit 2):
+    no audio in it, more than five channels, or NaN / infinite samples (a plug-in that blew up while exporting).
+    A tool that must REPORT such a file instead of refusing it (scan, preflight) reads it with read() and looks itself."""
+    y, file_sr = read(path)
+    path = Path(path)
+    if not len(y):
+        raise AudioReadError(f"can't read '{path}' as audio: it has no audio in it (zero length); export it again")
+    if y.shape[1] > MAX_CHANNELS:
+        raise AudioReadError(f"can't read '{path}' as audio: it has {y.shape[1]} channels and hypnomix reads up to "
+                             f"{MAX_CHANNELS}; export it as stereo or mono")
+    n, first = broken_samples(y)
+    if n:
+        t = first / file_sr
+        raise AudioReadError(f"can't read '{path}' as audio: it contains {n} broken sample{'s' if n != 1 else ''} "
+                             f"(NaN or infinite, the first at {int(t // 60)}:{t % 60:05.2f}); export it again "
+                             "from your DAW")
+    if sr and sr != file_sr:
+        g = math.gcd(int(sr), int(file_sr))
+        y = _sig().resample_poly(y, sr // g, file_sr // g, axis=0)
+        file_sr = sr
+    return y, int(file_sr)
+
+
+def read(path):
+    """The file as it is, float64 (n, ch) and its sample rate, with no checks on what is inside (see load)."""
     path = Path(path)
     if not path.exists():
         raise AudioReadError(f"can't read '{path}' as audio: no such file")
@@ -63,7 +100,7 @@ def load(path, sr=None):
         if shutil.which("ffmpeg") is None:
             raise AudioReadError(f"can't read '{path}' as audio: not a format the built-in reader opens, "
                                  f"and ffmpeg (needed for the rest, such as mp3 and m4a) is not installed") from first
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
             tmp = Path(td) / "x.wav"
             try:
                 subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-c:a", "pcm_f32le", str(tmp)],
@@ -71,10 +108,6 @@ def load(path, sr=None):
                 y, file_sr = sf.read(str(tmp), always_2d=True, dtype="float64")
             except Exception as e:
                 raise AudioReadError(f"can't read '{path}' as audio: not an audio file hypnomix can decode") from e
-    if sr and sr != file_sr:
-        g = math.gcd(int(sr), int(file_sr))
-        y = _sig().resample_poly(y, sr // g, file_sr // g, axis=0)
-        file_sr = sr
     return y, int(file_sr)
 
 
@@ -151,10 +184,21 @@ def lufs(y, sr):
     return float(v) if np.isfinite(v) else -70.0
 
 
-def true_peak(y, sr):
-    """dBTP via 4x oversampling (ITU-R BS.1770 style)."""
-    up = _sig().resample_poly(y, 4, 1, axis=0) if sr < 176400 else y
-    return float(db(np.max(np.abs(up))))
+def true_peak(y, sr, chunk_s=20.0, pad=2048):
+    """dBTP via 4x oversampling (ITU-R BS.1770 style), one stretch of `chunk_s` seconds at a time, so a long song does
+    not need a copy of itself four times over in memory (3.3 GB for one master before). Each stretch is read with `pad`
+    samples of extra either side and only its own part counts, so the filter's edges never make a peak: the answer is
+    the whole-file one (the 4x filter reaches ten samples)."""
+    if sr >= 176400 or len(y) <= int(chunk_s * sr) + 2 * pad:
+        up = _sig().resample_poly(y, 4, 1, axis=0) if sr < 176400 else y
+        return float(db(np.max(np.abs(up))))
+    n, c = len(y), int(chunk_s * sr)
+    best = 0.0
+    for a in range(0, n, c):
+        lo, hi = max(0, a - pad), min(n, a + c + pad)
+        up = _sig().resample_poly(y[lo:hi], 4, 1, axis=0)
+        best = max(best, float(np.max(np.abs(up[(a - lo) * 4:(min(n, a + c) - lo) * 4]))))
+    return float(db(best))
 
 
 def sample_peak(y):
@@ -299,9 +343,21 @@ def _smooth_db(target_db, sr, attack_ms, release_ms, block):
     a_rel = math.exp(-1 / max(1e-6, release_ms / 1000 * fs_b))
     g = np.empty_like(t)
     s = 0.0
-    for i, x in enumerate(t):                       # block-rate loop: ~1k iterations per second of audio
-        s = a_att * s + (1 - a_att) * x if x < s else a_rel * s + (1 - a_rel) * x
-        g[i] = s
+    if t.dtype == np.float64:
+        # the same arithmetic on plain Python floats (IEEE doubles, the same operations in the same order, so the
+        # same bits), without numpy's per-element cost: several times faster. Other dtypes keep the loop below
+        # (numpy scalars of a narrower type round at every step, so they must not be widened).
+        out = []
+        add = out.append
+        pa, pr = ((1 - a_att) * t).tolist(), ((1 - a_rel) * t).tolist()        # the products that do not depend on s
+        for x, ya, yr in zip(t.tolist(), pa, pr):
+            s = a_att * s + ya if x < s else a_rel * s + yr
+            add(s)
+        g[:] = out
+    else:
+        for i, x in enumerate(t):                   # block-rate loop: ~1k iterations per second of audio
+            s = a_att * s + (1 - a_att) * x if x < s else a_rel * s + (1 - a_rel) * x
+            g[i] = s
     xs = (np.arange(len(g)) + 0.5) * block
     return np.interp(np.arange(n), xs, g)
 

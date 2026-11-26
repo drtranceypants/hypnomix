@@ -146,13 +146,19 @@ def classify_all(stems, sr):
     """{name: (role, how)} for a set of stems. Only one stem can be the lead vocal by guesswork: if a stem
     is *named* as the lead, stems guessed as voices by sound become backing vocals; if several are guessed,
     the one whose vowels move most (it sings the words) is the lead and the rest are backing vocals."""
-    out = {n: classify(n, y, sr) for n, y in stems}
+    lazy = hasattr(stems, "only")                 # a masking.StemSet (kept on disk): read only the stems the name leaves open
+    if lazy:
+        out = {n: (by_name(n), "name") for n in stems.names if by_name(n)}
+        out.update({n: classify(n, y, sr) for n, y in stems.only([n for n in stems.names if n not in out])})
+        out = {n: out[n] for n in stems.names}    # in the stems' own order, like the list version
+    else:
+        out = {n: classify(n, y, sr) for n, y in stems}
     named = any(r == "lead_vocal" and h == "name" for r, h in out.values())
     guessed = [n for n, (r, h) in out.items() if r == "lead_vocal" and h == "sound"]
     if named:
         keep = None
     elif len(guessed) > 1:
-        keep = pick_lead([(n, y) for n, y in stems if n in guessed], sr)
+        keep = pick_lead(list(stems.only(guessed)) if lazy else [(n, y) for n, y in stems if n in guessed], sr)
     else:
         keep = guessed[0] if guessed else None
     for n in guessed:

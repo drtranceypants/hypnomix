@@ -101,7 +101,7 @@ def audio_features(y, sr=44100, cache=True):
     f = _features_file(y, sr) if cache else None
     if f is not None and f.exists():
         try:
-            F = json.loads(f.read_text())["features"]
+            F = json.loads(f.read_text(encoding="utf-8"))["features"]
             FEATURES_STATS["hits"] += 1
             return F
         except Exception:                               # cut off by an old crash: measure again below
@@ -385,7 +385,7 @@ def main():
     out = str(out_at(a.out, "names", Path(a.set).stem) / "names.json")
     if a.undo:
         from hypnomix.live.osc import Live
-        rep = json.load(open(out)); l = Live(); cur = dict((n, t) for t, n in l.tracks())
+        rep = json.load(open(out, encoding="utf-8")); l = Live(); cur = dict((n, t) for t, n in l.tracks())
         for r in rep["tracks"]:
             if r.get("applied") and r["new"] in cur: l.send("/live/track/set/name", cur[r["new"]], r["old"])
         print("restored", sum(1 for r in rep["tracks"] if r.get("applied"))); return
@@ -437,7 +437,7 @@ def main():
             if rec["new"] != rec["old"] and len(byname.get(rec["old"], [])) == 1:
                 l.send("/live/track/set/name", byname[rec["old"]][0], rec["new"]); rec["applied"] = True
         print("renamed", sum(1 for r in rows.values() if r.get("applied")), "tracks in Live (undo: --undo)")
-    json.dump({"set": a.set, "tracks": list(rows.values())}, open(out, "w"), indent=1, default=float)
+    json.dump({"set": a.set, "tracks": list(rows.values())}, open(out, "w", encoding="utf-8"), indent=1, default=float)
     print("report:", out)
 
 

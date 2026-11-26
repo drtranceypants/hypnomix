@@ -46,6 +46,7 @@ import numpy as np
 import soundfile as sf
 
 from hypnomix.core import dsp, paths
+from hypnomix.core import args as A
 from hypnomix.engineer import qc
 
 FORMATS = ("wav24", "wav16", "mp3", "aac", "flac")
@@ -153,7 +154,7 @@ def probe_image(path):
     try:
         r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
                             "stream=codec_name,width,height", "-of", "json", "-i", str(path)],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         s = json.loads(r.stdout or "{}").get("streams") or []
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
@@ -187,7 +188,7 @@ def decode_to_float(path, td):
     """Decode any audio file (mp3, m4a, flac, wav) to a float WAV in `td` and load it: what a player plays."""
     dec = Path(td) / "decoded.wav"
     r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-vn", "-c:a", "pcm_f32le", str(dec)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode or not dec.exists():
         raise ReleaseError(f"could not decode {Path(path).name} again: {r.stderr.strip()[-200:]}")
     return dsp.load(dec)
@@ -196,7 +197,7 @@ def decode_to_float(path, td):
 def measure(path, decoded=False):
     """{lufs, true_peak} of the file as written. decoded=True decodes it through ffmpeg first (lossy files)."""
     if decoded:
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
             y, sr = decode_to_float(path, td)
     else:
         y, sr = dsp.load(path)
@@ -344,7 +345,7 @@ def encode(master, dest, fmt, meta, sr):
     if fmt in ("mp3", "aac") and sr > 48000:
         cmd += ["-ar", "44100"]
     cmd += tag_args(meta, fmt) + [str(dest)]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode or not Path(dest).exists():
         raise ReleaseError(f"ffmpeg could not write {Path(dest).name}: {r.stderr.strip()[-300:]}")
 
@@ -398,16 +399,16 @@ def write_package(master, meta, formats, out_parent=None, dither="tpdf", target=
     final = folder_for(meta, out_parent)
     if final.exists():
         raise ReleaseError(f"{final} already exists. Nothing was written: pick another --out, or move that folder away.")
-    final.parent.mkdir(parents=True, exist_ok=True)
     master = Path(master)
+    ymaster, srm = dsp.load(master)           # a broken, empty or 6-channel master ends here, before anything is created
+    master_tp, master_lufs = round(dsp.true_peak(ymaster, srm), 2), round(dsp.lufs(ymaster, srm), 2)
+    del ymaster
+    paths.make_dir(final.parent)
     before = sha256(master)
     partial = final.with_name(final.name + f".partial-{datetime.datetime.now():%H%M%S%f}")
     partial.mkdir()
     try:
-        files, master_tp, master_lufs = [], None, None
-        ymaster, srm = dsp.load(master)
-        master_tp, master_lufs = round(dsp.true_peak(ymaster, srm), 2), round(dsp.lufs(ymaster, srm), 2)
-        del ymaster
+        files = []
         plan = plan_files(info, meta, formats, final)
         qc_master = None
         for fmt, name, how in plan:
@@ -537,10 +538,11 @@ def main():
     ap.add_argument("--meta", help="a release.json with the same details")
     ap.add_argument("--formats", default=",".join(DEFAULT_FORMATS), help="wav24,wav16,mp3,aac,flac (default %(default)s)")
     ap.add_argument("--dither", choices=["tpdf", "shaped", "off"], default="tpdf", help="for the 16-bit file (default tpdf, as master)")
-    ap.add_argument("--target", type=float, default=-14.0, help="loudness the release checks compare with")
+    ap.add_argument("--target", type=A.number(-70, 0), default=-14.0, help="loudness the release checks compare with, LUFS (-70 to 0)")
     ap.add_argument("--out", help="folder to create the release folder in (default hypnomix-out/release)")
     ap.add_argument("--check", action="store_true", help="read-only: run the checks and print what would be written")
     a = ap.parse_args()
+    paths.check_out(a.out)                    # an unwritable --out ends here, not after the encoding
     for tool in ("ffmpeg", "ffprobe"):
         if shutil.which(tool) is None:
             sys.exit(f"hypnomix release: {tool} is not installed, and the MP3 and AAC files and the cover check need it "

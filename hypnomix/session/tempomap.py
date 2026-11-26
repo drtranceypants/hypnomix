@@ -31,6 +31,7 @@ inside the take is bridged at the last tempo: check those spots. --follow change
 whole set: warped clips on other tracks will follow it, unwarped ones will not.
 """
 import argparse, json, math, sys
+from hypnomix.core import args as A
 from pathlib import Path
 
 import numpy as np
@@ -80,7 +81,7 @@ def main():
     ap.add_argument("source", help="an audio file, or a Live set (.als) with --track")
     ap.add_argument("--track"); ap.add_argument("--clip", type=int)
     ap.add_argument("--bpb", type=int, default=4, help="beats per bar (default 4)")
-    ap.add_argument("--bpm", type=float, help="a hint for the tempo")
+    ap.add_argument("--bpm", type=A.number(20, 400), help="a hint for the tempo")
     ap.add_argument("--downbeat", type=float, metavar="SECONDS", help="where a bar line is, in seconds into the file")
     ap.add_argument("--double", action="store_true", help="the beat is twice as fast as found")
     ap.add_argument("--half", action="store_true", help="the beat is half as fast as found")
@@ -128,7 +129,7 @@ def main():
         Path(a.json).write_text(json.dumps(dict(file=str(audio), bpm=round(m["bpm"], 2), bpb=bpb,
             beats=[round(float(x), 4) for x in beats], bars=[round(float(x), 4) for x in m["bars"]],
             bar_bpm=[round(float(x), 2) for x in m["bar_bpm"]], wander_pct=round(m["wander_pct"], 2),
-            downbeat_sure=round(m["downbeat_sure"], 2)), indent=1))
+            downbeat_sure=round(m["downbeat_sure"], 2)), indent=1), encoding="utf-8")
     if not is_set:
         if a.conform or a.follow or a.apply:
             sys.exit("--conform / --follow need a Live set with the take on a track")

@@ -803,6 +803,14 @@ def effects_findings(root, track_info, pts, names, include_off):
 
 
 # ---------------------------------------------------------------- recordings in a set
+def block_peaks(y, sr, nblk):
+    """The largest absolute sample in each of `nblk` blocks of BLK seconds (block i starts at i * sr * BLK samples; at
+    22,050 Hz a block is 220.5 samples, so the starts are not whole numbers and a fixed block length would run out)."""
+    m = np.abs(y).max(axis=1)
+    starts = np.floor(np.arange(nblk) * (sr * BLK) + 1e-6).astype(int)
+    return np.maximum.reduceat(m, np.minimum(starts, len(m) - 1))
+
+
 def file_blocks(ci, tempo, nblk):
     """Arrangement beat for each 10 ms block of the clip's file that is heard (first play), as a dict."""
     dur = (ci["end"] - ci["start"]) * 60 / tempo
@@ -876,9 +884,7 @@ def recording_findings(root, als_dir, tempo, names, include_off, harmonics=True,
             heard = ~np.isnan(beat_of)
             if not heard.any():
                 continue
-            k = int(sr * BLK)
-            pad = np.zeros((nblk * k - len(y), y.shape[1]))
-            pk = np.abs(np.vstack([y, pad])).max(axis=1).reshape(nblk, k).max(axis=1) * gain_of
+            pk = block_peaks(y, sr, nblk) * gain_of
             i = int(np.argmax(np.where(heard, pk, 0)))
             if pk[i] > 0 and dbv(pk[i]) > best[0]:
                 best = (dbv(pk[i]), float(beat_of[i]))
@@ -1221,7 +1227,7 @@ def main():
         f.evidence = dict(f.evidence or {}, id=f"distortion-{n}")
     print_report(rep)
     if a.json:
-        Path(a.json).write_text(json.dumps(rep.to_dict(), indent=2, default=float))
+        Path(a.json).write_text(json.dumps(rep.to_dict(), indent=2, default=float), encoding="utf-8")
         print(f"→ {a.json}")
     if a.apply:
         if a.ids:

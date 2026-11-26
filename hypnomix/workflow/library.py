@@ -129,7 +129,7 @@ def find_sets(dirs=None, spotlight=True):
             found.update(str(Path(dp, f).resolve()) for f in fn if f.endswith(".als") and not f.startswith("._"))
     if spotlight and not dirs:
         try:
-            out = subprocess.run(["mdfind", "kMDItemFSName == '*.als'"], capture_output=True, text=True, timeout=60).stdout
+            out = subprocess.run(["mdfind", "kMDItemFSName == '*.als'"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60).stdout
             found.update(str(Path(x).resolve()) for x in out.splitlines() if x.endswith(".als") and Path(x).exists())
         except (OSError, subprocess.SubprocessError):
             pass
@@ -207,7 +207,7 @@ def names_index():
     idx = collections.defaultdict(dict)
     for f in (T.CACHE / "names").glob("*/names.json"):
         try:
-            j = json.loads(f.read_text())
+            j = json.loads(f.read_text(encoding="utf-8"))
             k = song_key(j["set"])
         except (ValueError, KeyError, OSError, TypeError):
             continue
@@ -565,12 +565,12 @@ def cached(kind, path, fn, *args, refresh=False, extra=""):
     f = CACHE / kind / f"{k}.json"
     if f.exists() and not refresh:
         try:
-            return json.loads(f.read_text()), True
+            return json.loads(f.read_text(encoding="utf-8")), True
         except ValueError:
             pass
     res = fn(path, *args)
     f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(json.dumps(res, default=str))
+    f.write_text(json.dumps(res, default=str), encoding="utf-8")
     return res, False
 
 
@@ -1064,10 +1064,10 @@ def main(argv=None):
     lib = run(a.dirs or None, bounces=not a.no_bounces, jobs=a.jobs, refresh=a.refresh, spotlight=not a.no_spotlight,
               max_bounce_s=a.max_bounce_seconds)
     LIBRARY.parent.mkdir(parents=True, exist_ok=True)
-    LIBRARY.write_text(json.dumps(lib, indent=1, default=str))
+    LIBRARY.write_text(json.dumps(lib, indent=1, default=str), encoding="utf-8")
     od = out_at(a.out, "library")
     md = report(lib)
-    (od / "LIBRARY.md").write_text(md)
+    (od / "LIBRARY.md").write_text(md, encoding="utf-8")
     print(md)
     print(f"→ {od / 'LIBRARY.md'} and {LIBRARY}  ({lib['scan']['seconds']:g} s)")
 

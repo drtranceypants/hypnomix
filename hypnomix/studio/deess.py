@@ -182,14 +182,17 @@ def main():
     a = ap.parse_args()
     amount = float(np.clip(a.amount, 0, 1))
     inp = Path(a.inp)
-    y, sr = sf.read(str(inp), always_2d=True, dtype="float64")
+    from hypnomix.core import dsp, paths
+    if a.out and not a.report:
+        paths.check_out(a.out)
+    y, sr = dsp.load(inp)
     events = analyse(y, sr)
     lines, red = summary(events, amount, a.max_db, inp.name)
     print("\n".join(lines))
     if a.json:
         Path(a.json).parent.mkdir(parents=True, exist_ok=True)
         Path(a.json).write_text(json.dumps({"tool": "deess", "file": str(inp), "findings": finding(events, red, inp.name),
-                                            "events": events}, indent=2))
+                                            "events": events}, indent=2), encoding="utf-8")
     if a.report:
         return
     from hypnomix.core.paths import out_at

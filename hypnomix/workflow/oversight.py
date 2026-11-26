@@ -18,7 +18,7 @@ decisions.json, one entry per finding id (every field but `decision` is optional
 review-notes.json: {id: [{"by", "at", "text", "bar" | "sec"}]}: timestamped notes from reviewers, kept apart from
 the decisions so a note never counts as a decision.
 """
-import gzip, json, math, re, time
+import functools, gzip, json, math, re, time
 from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -294,7 +294,7 @@ def roles(sd):
     if not nj.exists():
         return {}
     try:
-        rows = json.loads(nj.read_text()).get("tracks", [])
+        rows = json.loads(nj.read_text(encoding="utf-8")).get("tracks", [])
     except Exception:
         return {}
     return {r.get("old"): str(r.get("final") or r.get("label") or "").split(" ")[0] for r in rows}
@@ -370,7 +370,7 @@ def confidence(f):
 
 def _load_json(p):
     try:
-        return json.loads(Path(p).read_text())
+        return json.loads(Path(p).read_text(encoding="utf-8"))
     except Exception:
         return None
 
@@ -473,7 +473,8 @@ def budget(findings, max_questions):
     if not mq or mq <= 0:
         return acts, [], info
     must = [f for f in acts if f.get("severity") == "high" or f.get("protected") or f.get("applies") == "answer"]
-    rest = [f for f in acts if f not in must]
+    must_ids = {id(f) for f in must}                              # (`f not in must` compared whole findings with every must one: squared)
+    rest = [f for f in acts if id(f) not in must_ids]
     room = max(0, mq - len(must))
     ask_ids = {f["id"] for f in must} | {f["id"] for f in rest[:room]}
     return [f for f in acts if f["id"] in ask_ids], [f for f in acts if f["id"] not in ask_ids], info
@@ -508,7 +509,7 @@ def batch_suggestions(batch, prefs=None, role_of=None):
 # ---------------------------------------------------------------- notes and collaborators
 def load_notes(sd):
     p = Path(sd) / NOTES_FILE
-    return json.loads(p.read_text()) if p.exists() else {}
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 
 def parse_stamp(s):
@@ -536,7 +537,7 @@ def add_note(sd, fid, text, at=None, by=None):
     row = {"by": reviewer(by), "at": now(), "text": str(text)[:1000]}
     row.update(parse_stamp(at))
     notes.setdefault(fid, []).append(row)
-    (Path(sd) / NOTES_FILE).write_text(json.dumps(notes, indent=1))
+    (Path(sd) / NOTES_FILE).write_text(json.dumps(notes, indent=1), encoding="utf-8")
     return row
 
 
@@ -553,10 +554,22 @@ def export(sd, path, by=None):
                decisions={k: dict(v, by=v.get("by") or by) if isinstance(v, dict) else {"decision": v, "by": by}
                           for k, v in dec.items()},
                notes=load_notes(sd), findings={f["id"]: fingerprint(f) for f in data["findings"]})
-    Path(path).expanduser().write_text(json.dumps(doc, indent=1))
+    Path(path).expanduser().write_text(json.dumps(doc, indent=1), encoding="utf-8")
     return doc
 
 
+def decisions_locked(fn):
+    """A function that reads decisions.json and writes it back (first argument: the scan folder) runs inside the one lock
+    for that file (core/atomic.py decisions_lock): another program's decision, recorded a moment ago, is not lost."""
+    @functools.wraps(fn)
+    def wrapper(sd, *a, **k):
+        from hypnomix.core import atomic
+        with atomic.decisions_lock(sd):
+            return fn(sd, *a, **k)
+    return wrapper
+
+
+@decisions_locked
 def merge(sd, path):
     """Merge a collaborator's exported review. Returns dict(adopted, same, conflicts, notes, unknown).
     Where the owner already decided differently, the owner's decision stays and the collaborator's is kept under
@@ -565,7 +578,7 @@ def merge(sd, path):
     data = load_findings_doc(sd)
     by_fp = {tuple(fingerprint(f)): f["id"] for f in data["findings"]}
     ids = {f["id"] for f in data["findings"]}
-    doc = json.loads(Path(path).expanduser().read_text())
+    doc = json.loads(Path(path).expanduser().read_text(encoding="utf-8", errors="replace"))
     if doc.get("format") != "hypnomix-review":
         raise ValueError("not a hypnomix review export (review DIR --export FILE makes one)")
     their_fp = {k: tuple(v) for k, v in (doc.get("findings") or {}).items()}
@@ -613,10 +626,11 @@ def merge(sd, path):
             if r not in have:
                 have.append(r)
                 res["notes"] += 1
-    (sd / NOTES_FILE).write_text(json.dumps(notes, indent=1))
+    (sd / NOTES_FILE).write_text(json.dumps(notes, indent=1), encoding="utf-8")
     return res
 
 
+@decisions_locked
 def settle(sd, fid, which, by=None):
     """The owner settles a conflict: 'mine' keeps their decision, 'theirs' takes the (last) collaborator's."""
     dec = load_decisions(sd)

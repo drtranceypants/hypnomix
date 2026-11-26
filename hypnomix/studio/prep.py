@@ -369,7 +369,7 @@ def prep(folder, outdir=None, **opts):
         path = dsp.save(od / f"{i:02d} {clean}.wav", z, sr, 24)
         out.append(path)
         report += [f"## {path.name}  ({role.replace('_', ' ')}, by {how})", *([f"- {x}" for x in log] or ["- nothing to fix"]), ""]
-    (od / "PREP REPORT.md").write_text("\n".join(report) + "\n")
+    (od / "PREP REPORT.md").write_text("\n".join(report) + "\n", encoding="utf-8")
     return od, out, "\n".join(report)
 
 

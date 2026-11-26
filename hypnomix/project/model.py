@@ -376,7 +376,7 @@ def _fader_table():
     global _FADER
     if _FADER is None:
         import json
-        d = json.loads((Path(__file__).parent / "reaper_fader.json").read_text())
+        d = json.loads((Path(__file__).parent / "reaper_fader.json").read_text(encoding="utf-8"))
         _FADER = (np.array(d["db"]), np.array(d["fader"]))
     return _FADER
 

@@ -33,7 +33,8 @@ Options:
   --part NAME        only these parts (repeatable; start of the track name)
   --family F         only these families
   --max N            how many proposals in all (default 3)       --per-part N   at most this many per part (default 1)
-  --amount 0-1       how strong (default 0.5; per proposal later with --tweak colour-2:amount=0.3)
+  --amount 0-1       how strong (default 0.5; per proposal later with --tweak colour-2:amount=0.3;
+                      a tweak for a proposal that does not exist, or an amount outside 0-1, is refused)
   --static DB        how close counts as "the same" (default 2.0 dB; larger = more places qualify)
   --block N          sections of N bars instead of the song's own sections
   --mix MIX.wav      measure the mix from this file instead of summing the tracks
@@ -594,6 +595,30 @@ def apply_to_set(root, src, props, fs, ids, tempo, lib, tweaks=None):
     return added, notes
 
 
+def parse_tweaks(items, ids):
+    """--tweak "colour-2:amount=0.3" -> {"colour-2": {"amount": 0.3}}. A tweak that names no proposal of this run, or
+    gives an amount that is not a number from 0 to 1, ends the run with one sentence (it used to be ignored, or clamped,
+    while the run said it had written the set). Other words after the colon are the person's own note and are left alone."""
+    out = {}
+    for it in items or []:
+        fid, _, kv = it.partition(":")
+        fid = fid.strip()
+        if fid not in ids:
+            sys.exit(f"--tweak {it!r}: no proposal called {fid!r} in this run (write it like colour-2:amount=0.3; "
+                     f"this run's are {', '.join(ids) or 'none'})")
+        for pair in kv.replace(" ", ",").split(","):
+            k, _, x = pair.partition("=")
+            if k.strip() == "amount":
+                try:
+                    v = float(x)
+                except ValueError:
+                    v = float("nan")
+                if not 0 <= v <= 1:
+                    sys.exit(f"--tweak {it!r}: the amount must be a number from 0 to 1")
+                out[fid] = {"amount": v}
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix colour", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("als")
@@ -645,16 +670,7 @@ def main():
     props, secs, rows, same, mixrow, how = propose(parts, mix, spb, N, a)
     prefs = PF.load(a.prefs_file)
     lib = find_library(a.library)
-    tw = {}
-    for it in a.tweak:
-        fid, _, kv = it.partition(":")
-        for pair in kv.replace(" ", ",").split(","):
-            k, _, x = pair.partition("=")
-            if k.strip() == "amount":
-                try:
-                    tw[fid.strip()] = {"amount": float(np.clip(float(x), 0, 1))}
-                except ValueError:
-                    pass
+    tw = parse_tweaks(a.tweak, [p["id"] for p in props])
     for p in props:
         p["amount"] = tw.get(p["id"], {}).get("amount", p["amount"])
     fs = [finding(p, prefs, lib is not None) for p in props]
@@ -680,13 +696,13 @@ def main():
     if not a.no_clips and fs:
         write_pairs(od / "clips", props, fs, parts, spb, a, manifest)
         print(f"\nbefore / after clips: {od / 'clips'}")
-    (od / "COLOUR.md").write_text(md_report(src, how, secs, rows, same, props, fs, a, [f"Not heard: {len(warn)} problem(s) rendering the tracks" if warn else ""]))
+    (od / "COLOUR.md").write_text(md_report(src, how, secs, rows, same, props, fs, a, [f"Not heard: {len(warn)} problem(s) rendering the tracks" if warn else ""]), encoding="utf-8")
     doc = dict(tool="colour", set=str(src), tempo=tempo, sections=[dict(bars=[x + 1, y], label=lab) for x, y, lab in secs],
                parts={n: dict(mean_change=i["mean_change"], static=i["static"], plays=i["plays"]) for n, i in same.items()},
                findings=fs, ab=manifest)
-    (od / "colour.json").write_text(json.dumps(doc, indent=1, default=str))
+    (od / "colour.json").write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     if a.json:
-        Path(a.json).write_text(json.dumps(doc, indent=1, default=str))
+        Path(a.json).write_text(json.dumps(doc, indent=1, default=str), encoding="utf-8")
     print(f"\n{len(fs)} proposal(s) → {od}")
 
     if a.plan:
@@ -695,15 +711,15 @@ def main():
         PL.write(sd, "colour", src, fs, ["colour: every proposal is an OPTION on a new switched-off track",
                                          f"colour: sections from {how}"])
         sj = Path(sd) / "scan.json"
-        info = json.loads(sj.read_text()) if sj.exists() else {}
+        info = json.loads(sj.read_text(encoding="utf-8")) if sj.exists() else {}
         info.update(mode="set", mix=a.mix, colour_args=colour_args(a))
-        sj.write_text(json.dumps(info, indent=1))
+        sj.write_text(json.dumps(info, indent=1), encoding="utf-8")
         if manifest:
             (Path(sd) / "ab").mkdir(exist_ok=True)
             import shutil
             for f in (od / "clips").glob("*.wav"):
                 shutil.copyfile(f, Path(sd) / "ab" / f.name)
-            (Path(sd) / "ab" / "ab.json").write_text(json.dumps(manifest, indent=1))
+            (Path(sd) / "ab" / "ab.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
 
     if a.apply:
         out = Path(a.apply)

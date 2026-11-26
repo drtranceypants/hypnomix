@@ -20,7 +20,8 @@ def render(path, outdir):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    data, sr = sf.read(str(path), always_2d=True)
+    from hypnomix.core import dsp
+    data, sr = dsp.load(path)                 # the checked loader: a broken file ends in one sentence
     mono = data.mean(axis=1).astype(np.float32)
     y = librosa.resample(mono, orig_sr=sr, target_sr=22050); sr2 = 22050
 

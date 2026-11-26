@@ -13,10 +13,13 @@ PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow", "balance", "colo
 
 
 def scan_dir(custom, source, suffix=""):
-    """--plan with a folder name uses it; bare --plan uses hypnomix-out/scan/<source name>."""
+    """--plan with a folder name uses it; bare --plan uses hypnomix-out/scan/<source name>. A folder that already holds the
+    scan of a DIFFERENT source is never mixed with it (its decisions and fix log would be inherited by the wrong song): the
+    next free "<name> (2)" is used instead and the person is told, as `scan` does."""
+    from hypnomix.workflow import scan as SC
     src = Path(source)
     name = (src.name if src.is_dir() else src.stem) + suffix
-    return out_at(custom if isinstance(custom, str) and custom else None, "scan", name)
+    return SC.scan_folder(custom if isinstance(custom, str) and custom else None, src.resolve(), name)
 
 
 def write(od, group, source, findings, notes, seconds=0.0):

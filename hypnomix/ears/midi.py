@@ -12,6 +12,7 @@ Usage:
 Writes <out>/<name>.mid and prints note count, range and key.
 """
 from hypnomix.core.paths import out_at
+from hypnomix.core import args as A
 import argparse, sys, warnings
 from pathlib import Path
 
@@ -62,7 +63,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("audio")
     ap.add_argument("--out", default=None)
-    ap.add_argument("--bpm", type=float, help="tempo written into the .mid and used for Live (default: Live's tempo, else 120)")
+    ap.add_argument("--bpm", type=A.number(20, 400), help="tempo (20 to 400) written into the .mid and used for Live (default: Live's tempo, else 120)")
     ap.add_argument("--onset", type=float, default=0.5, help="higher = fewer notes start")
     ap.add_argument("--frame", type=float, default=0.3, help="higher = notes end sooner")
     ap.add_argument("--min-ms", type=float, default=80)

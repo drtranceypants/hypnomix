@@ -523,7 +523,7 @@ class Live:
 
 
 def _cli(argv):
-    if not argv:
+    if not argv or argv[0] == "help" or any(x in ("-h", "--help") for x in argv):   # asking for help ("live -h", "live status -h") does nothing else: it does not even ask Live to answer
         print(__doc__); return
     live, cmd, a = Live(), argv[0], argv[1:]
     if not live.ping():
@@ -576,10 +576,10 @@ def _cli(argv):
     elif cmd == "snapshot":
         out = Path(a[0]) if a else __import__("hypnomix.core.paths", fromlist=["out"]).out("snapshots") / f"mix-{time.strftime('%Y%m%d-%H%M%S')}.json"
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(live.snapshot(), indent=1))
+        out.write_text(json.dumps(live.snapshot(), indent=1), encoding="utf-8")
         print(f"saved {out}")
     elif cmd == "restore":
-        print(f"restored ({live.restore(json.loads(Path(a[0]).read_text()))} controls changed)")
+        print(f"restored ({live.restore(json.loads(Path(a[0]).read_text(encoding='utf-8')))} controls changed)")
     elif cmd == "arm":
         if len(a) != 2 or a[1] not in ("0", "1"):
             sys.exit(f"usage: arm TRACK 0|1   (got {a!r})")

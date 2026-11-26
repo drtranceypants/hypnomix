@@ -16,8 +16,9 @@ one file feeds the app and the website:
 
 Edit a file (or press Edit in the app's Wiki tab), then Publish (or commit and push). A job on the website's
 computer builds the site's /wiki/ page from the pushed files (`python -m hypnomix.app.wiki_build`) and deploys
-it; every copy of the app then shows the newer articles from the site (it asks the site at most every
-10 minutes while the Wiki is open, and keeps the last copy for when it is offline). Turn that off in the tab.
+it; every copy of the app then shows the newer articles from the site (it asks the site at most once an hour while
+the Wiki is in use, with the ETag of the copy it has, so an unchanged list costs a few hundred bytes; it keeps the last
+copy for when it is offline). Turn that off in the tab.
 """
 import hashlib
 import html as _html
@@ -37,7 +38,8 @@ from hypnomix.core.paths import HOME
 HERE = Path(__file__).with_name("wiki")
 SITE = "https://hypnomix.bradfieldenterprises.org"
 LIVE_URL = SITE + "/wiki/articles.json"
-CHECK_EVERY = 600
+CHECK_EVERY = 3600                     # the website is asked at most this often, while the Wiki is in use (a failed ask is repeated after RETRY_AFTER)
+RETRY_AFTER = 600
 LIVE_MAX = 20 * 1024 * 1024            # the site's article list is read up to this size
 ASSET_MAX = 50 * 1024 * 1024           # and one picture or video fetched from the site up to this
 _CACHE, _LIVE = {}, {"checked": 0, "busy": False, "error": None}
@@ -52,7 +54,7 @@ def _home():
 def settings():
     f = _home() / "wiki.json"
     try:
-        return {"live": True, **json.loads(f.read_text())}
+        return {"live": True, **json.loads(f.read_text(encoding="utf-8"))}
     except (OSError, ValueError):
         return {"live": True}
 
@@ -65,7 +67,8 @@ def write_private(path, data):
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data if isinstance(data, bytes) else data.encode("utf-8"))
-        os.replace(tmp, path)
+        from hypnomix.core.atomic import replace as atomic_replace
+        atomic_replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
@@ -108,7 +111,7 @@ HEAD = re.compile(r"\A\s*<!--(.*?)-->\s*", re.S)
 
 def parse(path):
     """One article file -> dict (id, group, title, sub, no, html, text, file)."""
-    raw = Path(path).read_text()
+    raw = Path(path).read_text(encoding="utf-8")
     meta, body = {}, raw
     m = HEAD.match(raw)
     if m:
@@ -239,7 +242,7 @@ def local(root=None):
 
 def git(*args, cwd=None):
     try:
-        r = subprocess.run(["git", *args], cwd=cwd or HERE, capture_output=True, text=True, timeout=20)
+        r = subprocess.run(["git", *args], cwd=cwd or HERE, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
         return r.returncode, (r.stdout + r.stderr).rstrip()
     except (OSError, subprocess.TimeoutExpired) as e:
         return 1, str(e)
@@ -263,9 +266,30 @@ def sources(top):
     return out
 
 
+_GIT = {}                                   # what git said: {"top": (HERE, code, root), "hit": (stamp of the wiki's files, when, answer)}
+GIT_FOR = 60                                # seconds an answer about the commit time and unpublished files is kept
+
+
 def checkout():
-    """-> (repo root, commit time of the wiki, unpublished changes) when running from a git checkout."""
-    code, top = git("rev-parse", "--show-toplevel")
+    """-> (repo root, commit time of the wiki, unpublished changes) when running from a git checkout.
+    Three git programs are started to work it out, so the answer is kept for a minute, and dropped at once when one of the
+    wiki's files changes (the stamp `local()` took of them) or after a Publish: an edit still shows up straight away."""
+    key = _CACHE.get("key")
+    hit = _GIT.get("hit")
+    if hit and hit[0] == key and time.time() - hit[1] < GIT_FOR:
+        return hit[2]
+    val = _checkout()
+    _GIT["hit"] = (key, time.time(), val)
+    return val
+
+
+def _checkout():
+    mine = _GIT.get("top")                  # where the repository is cannot change while this program runs
+    if mine and mine[0] == str(HERE):
+        code, top = mine[1], mine[2]
+    else:
+        code, top = git("rev-parse", "--show-toplevel")
+        _GIT["top"] = (str(HERE), code, top)
     top = top.strip()
     if code:
         return None, 0, []
@@ -494,42 +518,125 @@ def _live_file():
     return _home() / "wiki-live" / "articles.json"
 
 
+_PARSED = {}                               # the one parsed copy: {"hit": ((path, inode, mtime, size), value)}
+
+
 def live():
-    """The copy of the website's wiki kept on this computer, or None. Whatever is in the file is checked on the way in."""
+    """The copy of the website's wiki kept on this computer, or None. Whatever is in the file is checked on the way in.
+    The file is a few megabytes: it is read and checked once, and again only when the file itself changes (its path,
+    inode, size and modification time are the key; a file written in the last two seconds is never trusted to the key
+    alone), not on every request. The answer is shared: nothing may change it."""
     try:
-        data = json.loads(_live_file().read_text())
-        if not isinstance(data, dict) or not isinstance(data.get("articles"), list):
-            return None
-        arts = [t for t in (tidy(a) for a in data["articles"][:2000]) if t]
-        assets = [n for n in data["assets"] if isinstance(n, str)] if isinstance(data.get("assets"), list) else []
-        return {"commit_time": _int(data.get("commit_time"), top=MAX_TIME), "articles": arts, "assets": assets}
-    except Exception:                      # a damaged or odd file is no copy at all: the bundled articles show
+        f = _live_file()
+        st = f.stat()
+    except Exception:                      # no copy (or anything odd about where it is): the bundled articles show
         return None
+    key = (str(f), st.st_ino, st.st_mtime_ns, st.st_size)
+    hit = _PARSED.get("hit")               # one read: another request thread may clear it at any moment
+    if hit and hit[0] == key:
+        return hit[1]
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not isinstance(data.get("articles"), list):
+            val = None
+        else:
+            arts = [t for t in (tidy(a) for a in data["articles"][:2000]) if t]
+            assets = [n for n in data["assets"] if isinstance(n, str)] if isinstance(data.get("assets"), list) else []
+            val = {"commit_time": _int(data.get("commit_time"), top=MAX_TIME), "articles": arts, "assets": assets}
+    except Exception:                      # a damaged or odd file is no copy at all: the bundled articles show
+        val = None
+    _PARSED.clear()
+    if time.time() - st.st_mtime > 2:      # a file still being changed (same size, same clock tick) is read again next time
+        _PARSED["hit"] = (key, val)
+    return val
+
+
+def _live_meta_file():
+    return _home() / "wiki-live" / "articles.meta.json"
+
+
+_HEADER_OK = re.compile(r"[\x20-\x7e]{1,300}\Z")
+
+
+def _live_validators():
+    """(ETag, Last-Modified) the website gave with the copy on this computer: used only while that file is still exactly
+    the one they were given for (its inode, size and modification time are recorded with them). Anything else (the file gone,
+    replaced or edited, the note damaged or deleted) gives nothing, and the next check downloads the whole list again."""
+    try:
+        m = json.loads(_live_meta_file().read_text(encoding="utf-8"))
+        st = _live_file().stat()
+        if (m.get("ino"), m.get("size"), m.get("mtime_ns")) != (st.st_ino, st.st_size, st.st_mtime_ns):
+            return "", ""
+        return tuple(v if isinstance(v, str) and _HEADER_OK.match(v) else "" for v in (m.get("etag"), m.get("last_modified")))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return "", ""
+
+
+def _remember_validators(etag, last_modified):
+    """Record what the website said about the copy just written (a small private file beside it)."""
+    meta = _live_meta_file()
+    try:
+        if not (etag or last_modified):
+            meta.unlink(missing_ok=True)
+            return
+        st = _live_file().stat()
+        write_private(meta, json.dumps({"etag": etag, "last_modified": last_modified, "ino": st.st_ino, "size": st.st_size,
+                                        "mtime_ns": st.st_mtime_ns}))
+    except OSError:
+        pass                                    # the note is only a shortcut: without it the next check downloads in full
 
 
 def refresh_live(force=False):
-    """Ask the website for its articles in the background (at most every CHECK_EVERY seconds)."""
+    """Ask the website for its articles in the background (at most every CHECK_EVERY seconds, and only while the Wiki is
+    in use). The question is conditional: with the ETag / Last-Modified the website gave for the copy on this computer, an
+    unchanged list is answered with a few hundred bytes (304) instead of the whole 5 MB, and a changed one comes gzipped."""
     with _LOCK:
         if _LIVE["busy"] or (not force and time.time() - _LIVE["checked"] < CHECK_EVERY) or not settings()["live"]:
             return
         _LIVE["busy"] = True
 
     def go():
+        ok = False
         try:
-            req = urllib.request.Request(LIVE_URL, headers={"User-Agent": "hypnomix-app"})
-            with urllib.request.urlopen(req, timeout=8) as r:
-                raw = r.read(LIVE_MAX + 1)
+            etag, since = _live_validators()
+            head = {"User-Agent": "hypnomix-app", "Accept-Encoding": "gzip"}
+            if etag:
+                head["If-None-Match"] = etag
+            if since:
+                head["If-Modified-Since"] = since
+            req = urllib.request.Request(LIVE_URL, headers=head)
+            try:
+                with urllib.request.urlopen(req, timeout=8) as r:
+                    raw = r.read(LIVE_MAX + 1)
+                    enc = str(r.headers.get("Content-Encoding") or "").lower()
+                    new_etag, new_since = (str(r.headers.get(h) or "") for h in ("ETag", "Last-Modified"))
+            except urllib.error.HTTPError as e:
+                if e.code != 304 or not (etag or since):
+                    raise
+                _LIVE["error"] = None                 # not changed: the copy on this computer is the website's
+                ok = True
+                return
             if len(raw) > LIVE_MAX:
                 raise ValueError("the site's wiki is larger than expected")
+            if enc == "gzip":                           # read at most LIVE_MAX of it unpacked: a small download cannot unpack to a flood
+                import gzip
+                import io
+                with gzip.GzipFile(fileobj=io.BytesIO(raw)) as g:
+                    raw = g.read(LIVE_MAX + 1)
+                if len(raw) > LIVE_MAX:
+                    raise ValueError("the site's wiki is larger than expected")
             data = json.loads(raw.decode("utf-8"))
             if not isinstance(data, dict) or not isinstance(data.get("articles"), list):
                 raise ValueError("no articles in the site's wiki")
-            write_private(_live_file(), json.dumps(data))
+            write_private(_live_file(), raw)
+            _remember_validators(*(v if _HEADER_OK.match(v) else "" for v in (new_etag, new_since)))
             _LIVE["error"] = None
+            ok = True
         except Exception as e:             # offline, or the site is down: keep what we have
             _LIVE["error"] = f"{type(e).__name__}: {e}"[:200]
         finally:
-            _LIVE.update(checked=time.time(), busy=False)
+            # a check that failed is tried again in ten minutes, not after a whole CHECK_EVERY
+            _LIVE.update(checked=time.time() - (0 if ok else CHECK_EVERY - RETRY_AFTER), busy=False)
 
     threading.Thread(target=go, daemon=True).start()
 
@@ -660,6 +767,7 @@ def edit(aid):
 
 def publish(message=""):
     """Commit the wiki's changed files (nothing else) and push them. The website rebuilds from the push."""
+    _GIT.pop("hit", None)                                  # what git says about the files now, not a minute ago
     top, _, dirty = checkout()
     if top is None:
         return 400, {"error": "this copy of hypnomix is not a git checkout: edit the wiki in your hypnomix folder"}
@@ -670,6 +778,7 @@ def publish(message=""):
                  ("commit", "-q", "-m", "wiki: " + (message.strip() or "update articles"), "--", *paths),
                  ("pull", "-q", "--rebase", "--autostash"), ("push", "-q")):
         code, out = git(*args, cwd=top)
+        _GIT.pop("hit", None)                              # the commit changed what git says about these files
         if code:
             return 500, {"error": f"git {args[0]} failed: {out[-400:]}"}
     _, sha = git("rev-parse", "--short", "HEAD", cwd=top)

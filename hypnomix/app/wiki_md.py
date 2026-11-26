@@ -161,7 +161,7 @@ def src_of(path):
 
 def doc_article(path, taken=()):
     """A document in docs/ (ALIGN.md, LIVE.md, REAPER.md...) -> an article. Its title is its first heading."""
-    meta, text = front(Path(path).read_text())
+    meta, text = front(Path(path).read_text(encoding="utf-8"))
     m = re.search(r"^# (.+)$", text, re.M)
     title = meta.get("title") or (m.group(1).strip() if m else Path(path).stem.title())
     if Path(path).name == "README.md" and "readme" not in title.lower():
@@ -182,7 +182,7 @@ SKILLS_GROUP = "AI: Claude Code skills and subagent"
 
 def skill_article(path, taken=()):
     """A Claude Code skill (skills/<name>/SKILL.md) -> an article: when to use it, then what it does."""
-    meta, _ = front(Path(path).read_text())
+    meta, _ = front(Path(path).read_text(encoding="utf-8"))
     a = doc_article(path, taken)
     name = meta.get("name") or Path(path).parent.name
     aid = f"skill-{name}"
@@ -193,7 +193,7 @@ def skill_article(path, taken=()):
 
 def agent_article(path, taken=()):
     """A Claude Code subagent (agents/<name>.md) -> an article: what it is for, which tools it may use, its brief."""
-    meta, text = front(Path(path).read_text())
+    meta, text = front(Path(path).read_text(encoding="utf-8"))
     name = meta.get("name") or Path(path).stem
     aid = f"agent-{name}"
     tools = meta.get("tools", "")
@@ -234,7 +234,7 @@ def guide_id(path, meta):
 
 def article(path):
     """One guide file -> an article dict (the same keys as wiki.parse)."""
-    meta, text = front(Path(path).read_text())
+    meta, text = front(Path(path).read_text(encoding="utf-8"))
     body = to_html(text)
     num = re.match(r"^(\d+)-", Path(path).name)
     plain = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", body))).strip()

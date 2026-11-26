@@ -221,7 +221,7 @@ def main():
         md = [f"# Clip match ({len(rows)} clips, reference: {rows[ref]['label']})", "", *table(rows), "",
               f"Matched copies in `{od}`."]
     text = "\n".join(md) + "\n"
-    (od / "CLIPMATCH.md").write_text(text)
+    (od / "CLIPMATCH.md").write_text(text, encoding="utf-8")
     print(text)
 
 

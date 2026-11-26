@@ -34,7 +34,7 @@ leaves your time for playing, dialling in sounds and listening.
 | Tuning a vocal note by note | Measures the song's real tuning and key (section by section), then moves only each note's centre. Vibrato, scoops and slides stay as sung. It checks the chord under every note, and asks when the target clashes with it or the key is unsure; those notes stay as sung until you answer. | `tune`, `key` |
 | Lining up doubles and harmonies | Works word by word: only the words clearly out of time with the other parts move, the rest stay bit-exact. Optional pitch matching (a harmony keeps its interval, the chord is checked) and formant for width. In Live it writes warp markers on your own clips; in REAPER, stretch markers or new takes on your own items; always into a new set or project. The same from inside Live (the Hypnomix Align device) or from the Hypnomix Align panel in REAPER. | `vocalign`, `alignset`, `aligndevice`, `reaper align` |
 | Balancing a harmony stack | Lists each part with its note and level, asks which one leads, and turns down only the parts that overshadow it, by the amount you pick or the spacing you use in your own finished songs. It is judged as heard, after each track's effects, and written as volume automation. | `voices`, `cliplevel` |
-| Keeping the vocal level even, line to line | Measures the vocal as heard, one lyric line at a time: a line that drops away or jumps out, and an upper harmony louder than the melody. Run it in the first pass and again before every final export, because edits since then can change it. Fixes are written as volume automation into a new set, only if you ask. | `vocallevel` |
+| Keeping the vocal level even, line to line | Measures the vocal as heard, one lyric line at a time: a line that drops away or jumps out, and an upper harmony louder than the melody. Run it in the first pass and again before every final export, because edits since then can change it. Fixes are written as volume automation into a new set, only if you ask: approving one in the review writes nothing by itself, `vocallevel --apply` does. | `vocallevel` |
 | Chasing hiss, hum, breaths and "s" sounds | Spectral de-hiss, hum and rumble removal, breaths turned down (not off), a split-band de-esser that lists every "s" it touched, clipped peaks rebuilt. `cleanup` rescues a rough demo with the same gentle hand. | `prep`, `dehiss`, `deess`, `breaths`, `cleanup` |
 | Evening out clips recorded on different days | Matches the loudness and tone of clips recorded at different preamp gain or mic distance, so a part sounds like one performance. On files, or on a track in your Live set, where it can set each clip's Clip Gain. | `clipmatch` |
 | Setting your level, picking the take | Listens to your interface input and says how to set the preamp before you record, with a live meter. Afterwards it ranks takes by clipping, noise, hum, pitch and timing and writes a comp list: the best take for each section. The numbers find problems; you pick the performance. | `soundcheck`, `takes` |
@@ -58,7 +58,7 @@ leaves your time for playing, dialling in sounds and listening.
 | Checking the files before you start | Mixed sample rates or bit depths and which file is the odd one out, stems of different length or that start apart, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel. Report first; `prep` repairs what it can. | `preflight` |
 | A second opinion by ear | A cloud AI model listens to a bounce and writes notes with timestamps, checked against hypnomix's own measurements. It needs your own key, sends a reduced mono copy, and only when you say so: in a terminal `critique` prints the length, model and estimated cost and asks y/N, anywhere else it refuses unless `--yes`, and `--estimate` only prints. Its notes are an opinion; the numbers stay measurements. | `critique` |
 | Splitting a song, or turning audio into notes | Splits a finished song into stems, or turns audio into MIDI (and into a Live clip). Both are optional extras and run on your computer. | `separate`, `midi` |
-| Learning the loop on nothing of your own | A 40-second synthetic song with six labelled problems (a click, a level jump, hiss, clipped peaks, a drifting harmony, late hits), as stems or a REAPER project: scan it, hear each fix, apply two. | `demo` |
+| Learning the loop on nothing of your own | A 40-second synthetic song with six labelled problems (a click, a level jump, hiss, clipped peaks, a drifting harmony, late hits), as stems or a REAPER project. The REAPER project (`demo --kind reaper`) is the one that gives the full loop: scan it, hear each fix, apply two. The folder of stems has fewer fixes you can apply. | `demo` |
 | Finding every problem in a song at once | Runs every check on a Live set, a REAPER project, an Ardour session or a folder of recordings, changes nothing, and writes one review list, most severe first. What looks deliberate (your automation, a long reverb tail) is listed as a question, never fixed on its own. | `scan` |
 | Hearing a fix before you say yes | A before and after clip for every fix it can preview, level-matched, so the louder one does not win. In Live, every fix as a switched-off B next to your own device (A / B / Blind), or offline through your own VST3 and AU plug-ins. | `ab`, `abset`, `plugrender` |
 | Deciding 100+ findings | Amounts per fix, the same decision for the ones like this, a question budget, why each technique, notes and a collaborator's review merged. `fix` writes only what you approved into one new set, and every version is kept and can be undone. | `review`, `fix`, `history` |
@@ -71,8 +71,10 @@ leaves your time for playing, dialling in sounds and listening.
 | Looking inside a project, checking what was written | Tracks, folders, items, takes, plug-ins and automation of a REAPER, Ardour or Live project without opening the DAW, and every track rendered to a full-length file. Tempo, key, routing and plug-in chains of a set; stacked limiters and bypassed devices; missing files; automation envelopes. Every set hypnomix writes gets a structure check and a plain list of what changed. `reaper` talks to the REAPER that is open. | `project`, `render`, `reaper`, `mine`, `audit`, `refs`, `automation`, `check`, `diff` |
 | Hands on the open Live set | Faders in exact dB, any device or plug-in parameter, transport, snapshots, arming and punch recording. Play bars, record, measure and compare for one-change A/Bs. Solo every group in the loudest section to see who owns the sub, the bass and the vocal band. | `live`, `loop`, `diagnose` |
 | Working with no terminal | The whole first pass in a window on your own computer: choose a song, hear each fix, approve, apply. A Max for Live device steps through the findings inside Live and jumps Live to each one. | `app`, `device` |
+| Getting free plug-ins and sounds | Free and open-source plug-ins, synths, instruments, drum kits and sample packs, installed from their publishers' own downloads, each with its licence and source. Mac only for now; nothing downloaded is run, and a download that cannot be checked against a SHA-256 is refused unless you confirm it. | `store` |
+| Moving a Live song into Ardour | Brings a Live set across as a NEW Hypnomix / Ardour session: tracks, clips, fades, gain, automation, tempo, with the audio copied, and a report of everything that was not carried. The Live project is only read. | `als2ardour` |
 | Learning audio production as you go | The app's Teacher tab is a free course in your own DAW (Live, REAPER or Ardour): the complete course from what sound is to releasing a song (13 chapters, 138 to 146 lessons depending on your DAW, with audio examples, exercises, quizzes and a glossary), a 101 crash course, or a tour of hypnomix for engineers. In Live and REAPER a step can do the hands-on part for you, after saying what it will change. | `app` |
-| Setting up, and checking your setup | Copies the AbletonOSC remote script into Live's User Library and walks you through the rest, then checks Live, AbletonOSC, BlackHole, ffmpeg and plug-in parameter access, saying what to fix. | `install`, `doctor` |
+| Setting up, and checking your setup | Copies the AbletonOSC remote script into Live's User Library and walks you through the rest, then checks ffmpeg and Rubber Band, and (if you use Live) Live, AbletonOSC, BlackHole and plug-in parameter access, saying what to fix. | `install`, `doctor` |
 
 What stays yours: the playing, the sounds, the effects, the arrangement and every taste call. It learns your
 habits from your own finished songs (`taste`, `voices --learn`, `motion --learn`, `profile`) and from what you
@@ -83,6 +85,7 @@ approve and skip (`prefs`), so proposals start from your standards.
 - The Live devices and the Live fix paths were tested in Live 12.
 - REAPER support was tested in REAPER 7.86.
 - Everything newest passes unit tests and hypnomix's own structure checks on synthetic data. That is the new commands (`balance`, `handoff`, `plugins`, `colour`, `release`, `compare`, `versions`, `album`, `preflight`, `demo`), masking cuts written as an EQ band, `ab` previews of timing nudges and device changes, and `fix` on an Ardour scan. The REAPER files the newest code writes (the demo project, a project written by `fix` with an item fade and a volume-envelope dip, masking cuts as ReaEQ bands, the hand-off marker and the A/B project) were opened in REAPER 7.86 on 2026-11-26 and read back through its API: no offline media, and everything matched what hypnomix wrote. Still unchecked: the new Live sets (hand-off locators, the EQ Eight band, colour chains) have not been opened in Live, the Ardour snapshots have not been opened in Ardour, the new tools have not been run on real songs, and nothing new has been judged by ear. Where a page says "new", read it that way: keep your original and listen.
+- DAW mode (the Hypnomix engine, the DAW view and the Assistant on it) was tested against stand-in engines in the unit tests and against the real engine on its silent test backend only. Not tried: sound through a real sound card, recording, the native File menu of the full app, the full app's `.dmg` from a download, signing and notarisation, and Intel Macs. The Store, `als2ardour` and `chain --ardour` are checked by unit tests on synthetic data and stand-in servers only: no session written by `als2ardour` has been opened in Ardour.
 
 ## No terminal, no AI: the app and the Live device
 
@@ -96,6 +99,7 @@ hypnomix abset DIR    # optional: every fix as a switch in Live: A / B / Blind o
 hypnomix aligndevice  # optional: Hypnomix Align, a Max for Live device to align a vocal stack (docs/ALIGN.md)
 hypnomix reaper align # optional: the same in REAPER, as the Hypnomix Align panel (a new .rpp; yours untouched)
 macapp/build.sh     # optional: build your own Hypnomix.app (a Dock icon around the same web app)
+hypnomix app --daw  # only with the Hypnomix engine (not released yet): the Hypnomix DAW's window on it (docs/APP.md)
 ```
 
 The app runs the scan, builds the before / after clips, shows the review with play buttons, and writes only
@@ -178,7 +182,7 @@ changed since the scan, never overwrites a file, and won't touch tracks you mark
 again. Every set it writes gets a structure check (`hypnomix check`) and a plain list of what changed
 (`hypnomix diff`). `prep`, `automix` and `master` take `--plan`: instead of doing everything at once, each move
 becomes a finding you approve or skip. `prefs` remembers what you usually approve and skip, so each review starts closer to how you work.
-See [docs/WORKFLOW.md](docs/WORKFLOW.md). What comes next is opening everything the newest release added in real DAWs and on real songs; after that, colour for REAPER and Ardour and previews (`ab`) for REAPER projects, then Pro Tools and Logic Pro: [docs/ROADMAP.md](docs/ROADMAP.md).
+See [docs/WORKFLOW.md](docs/WORKFLOW.md). What comes next is opening everything the newest release added in real DAWs and on real songs; after that, colour for REAPER and Ardour and previews (`ab`) for REAPER projects, then readers for more DAWs: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## What's in the box
 
@@ -221,8 +225,10 @@ See [docs/WORKFLOW.md](docs/WORKFLOW.md). What comes next is opening everything 
 |---|---|
 | `scan` | Runs every check on a Live set, a REAPER project, an Ardour session or a folder of recordings. Changes nothing; writes `REVIEW.md`. |
 | `preflight` | Sanity of the files before any work: mixed sample rates or bit depths, stems of different length, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel. Report first; `prep` repairs what it can. |
-| `demo` | A 40-second synthetic song with six labelled problems, as a folder of stems or a REAPER project, to try the whole loop on nothing of your own. |
+| `demo` | A 40-second synthetic song with six labelled problems, as a folder of stems or a REAPER project (`--kind reaper`, the one with the full scan, hear, apply loop), to try it on nothing of your own. |
 | `handoff` | Turns the by-hand list into your DAW's own words: `HANDOFF.md`, a checklist in song order, plus markers (a new Live set with locators, a new REAPER project with markers, or a MIDI marker file and CSV for any DAW). |
+| `als2ardour` | Brings a Live set across as a NEW Hypnomix / Ardour session folder (tracks, clips, fades, gain, automation, tempo; the audio is copied): `als2ardour SET.als OUTDIR`. The Live project is only read, and `IMPORT-REPORT.md` lists everything that was not carried (devices, plug-ins, warp maps, Session clips). Written and re-read by hypnomix; not yet opened in Ardour. |
+| `store` | Free and open-source plug-ins, synths, instruments, drum kits and sample packs, installed from their publishers' own downloads (`store search reverb`, `info`, `install`, `uninstall`, `updates`). **Mac only for now**: on another system it says so and does nothing. Nothing downloaded is run; a download that cannot be checked against a published SHA-256 is refused unless you pass `--unverified`. The app's Store tab does the same. |
 
 **Live: hands on the set** (through a patched [AbletonOSC](https://github.com/ideoforms/AbletonOSC), bundled)
 
@@ -269,7 +275,15 @@ See [docs/WORKFLOW.md](docs/WORKFLOW.md). What comes next is opening everything 
 
 ## Install
 
-**The easy way: download the installer.** It carries its own Python and ffmpeg, so there is nothing else to set up.
+**One download today.** The **Hypnomix Assistant** (below) is the app for people who keep their own DAW: Live, REAPER or
+Ardour. The full **Hypnomix**, a DAW of its own (based on Ardour) with the engineer and the Assistant built in, is
+coming soon: it builds as a local Mac app (`packaging/mac/build_dmg.sh --daw KIT`, see packaging/README.md) but is not
+released yet, and the download page will offer it when it is. There is no way to add it to the Assistant; Setup → Extras says what it is and
+that it is not available. Its engine is a separate program under the GNU General Public License (version 2 or later), a
+rebranded fork of Ardour; hypnomix itself stays MIT and contains none of the engine's code (see [THIRD_PARTY.md](THIRD_PARTY.md)).
+The source will be published with the first release that includes the engine.
+
+**The easy way: download the Hypnomix Assistant installer.** It carries its own Python and ffmpeg, so there is nothing else to set up.
 
 | | download |
 |---|---|
@@ -284,12 +298,13 @@ command line and Claude Code, install from source as below. The app's guided set
 with AI (just the app, an AI key, a local model, a desktop AI app), with costs: [Setting up, and choosing an AI](docs/guides/09-setup-and-ai.md).
 Building the installers yourself: [packaging/README.md](packaging/README.md).
 
-**From source** (the command line, Claude Code, and every extra). Needs macOS or Windows 10/11 (Windows is newer and less tested), Python 3.9+, ffmpeg, and Ableton Live 11 or 12 for the Live features (a set saved by a newer major version of Live is read with one warning, and the tools that write a new set refuse it unless forced). The file tools work without Live; REAPER and Ardour projects are read directly.
+**From source** (the command line, Claude Code, and every extra). Needs macOS or Windows 10/11 (Windows is newer and less tested), Python 3.9+, ffmpeg, Rubber Band 3+ (for `tune`, and for `vocalign`'s formant and transpose options; on a Mac `brew install ffmpeg rubberband`), and Ableton Live 11 or 12 for the Live features (a set saved by a newer major version of Live is read with one warning, and the tools that write a new set refuse it unless forced). The file tools work without Live; REAPER and Ardour projects are read directly.
 
 ```bash
 git clone https://github.com/drtranceypants/hypnomix && cd hypnomix
 uv venv && uv pip install -e .
-hypnomix install
+source .venv/bin/activate        # puts `hypnomix` on your path; do it in each new terminal (Windows: .venv\Scripts\activate)
+hypnomix install                 # only if you use Ableton Live
 hypnomix doctor
 ```
 
@@ -358,7 +373,6 @@ hypnomix controls a plug-in through the parameters Live exposes for it (`hypnomi
 | [Airwindows Consolidated](https://www.airwindows.com/consolidated/) | open source (MIT) | hundreds of small processors: saturation, console emulation, dithering |
 | [CHOWTapeModel](https://chowdsp.com/products.html#tape) | open source | tape saturation and warmth |
 | [Dragonfly Reverb](https://michaelwillis.github.io/dragonfly-reverb/) (Hall, Room, Plate, Early Reflections) | open source (GPL-3) | natural reverbs; the Plate matches automix's send |
-| [Valhalla Supermassive](https://valhalladsp.com/shop/reverb/valhalla-supermassive/), Space Modulator, Freq Echo | free | big ambient reverbs and delays, modulation |
 | [Surge XT](https://surge-synthesizer.github.io/) (Effects) | open source (GPL-3) | multi-effects, plus a full synth |
 | [SPAN](https://www.voxengo.com/product/span/) | free | spectrum analyser for checking hypnomix's EQ moves by eye |
 | [Youlean Loudness Meter 2](https://youlean.co/youlean-loudness-meter/) | free version | LUFS and true-peak metering in Live |
@@ -378,4 +392,4 @@ Bug reports, ideas and pull requests are welcome, and so is building with your o
 
 ## Licence
 
-MIT. Bundles AbletonOSC (MIT, © Daniel John Jones and contributors) with small patches marked `hypnomix patch`; see [THIRD_PARTY.md](THIRD_PARTY.md). Not affiliated with Ableton.
+MIT. Bundles AbletonOSC (MIT, © its contributors) with small patches marked `hypnomix patch`; see [THIRD_PARTY.md](THIRD_PARTY.md). Not affiliated with Ableton. The Hypnomix engine that DAW mode runs (in the full download, which is not released yet) is a separate program, a rebranded fork of Ardour, under the GNU General Public License (version 2 or later): hypnomix contains none of its code and starts it as its own process. Its source will be published with the first release that includes the engine.

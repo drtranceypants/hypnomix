@@ -19,7 +19,11 @@ async function chatPoll(full) {
   const r = await get('/api/chat/state?since=' + (full ? 0 : C.total));
   const changed = full || r.items.length || r.busy !== C.busy || JSON.stringify(r.pending) !== JSON.stringify(C.pending) || !C.settings;
   if (full || r.total < C.total) C.items = [];
+  if (!r.busy) C.stopping = false;
   C.items.push(...r.items); C.total = r.total; C.busy = r.busy; C.pending = r.pending; C.settings = r.settings; C.usage = r.usage;
+  // a card drawn earlier keeps its place: how it ended (approved and done, failed, cancelled, expired) comes from the server
+  if (r.asks) C.items.forEach(x => { const a = x.id && r.asks[x.id]; if (a) Object.assign(x, a); });
+  const sig = JSON.stringify(r.asks || {}); if (sig !== C.asksSig) { C.asksSig = sig; if (!full && S.view === 'chat') chatDraw(); }
   if (S.view === 'chat' && changed) chatDraw();    // only when something changed: typing is never interrupted
 }
 
@@ -27,9 +31,19 @@ function chatItem(it) {
   if (it.kind === 'user') return `<div class="msg me">${esc(it.text)}</div>`;
   if (it.kind === 'assistant') return `<div class="msg ai">${chatMd(it.text)}</div>`;
   if (it.kind === 'tool') return `<div class="act">↳ ${esc(it.text)}</div>`;
+  if (it.kind === 'ask' && (it.what === 'daw' || it.what === 'scan')) {   // DAW mode: a change to the open session, through the engine
+    const live = C.pending && C.pending.id === it.id, daw = it.what === 'daw';
+    const rows = (it.rows || []).length ? `<table class="rows">${it.rows.map(r => `<tr><td>${esc(r.what)}</td><td>${esc(r.before)}</td><td>→</td><td><b>${esc(r.after)}</b></td></tr>`).join('')}</table>` : '';
+    const call = daw ? `<details><summary>The exact call to the engine</summary><pre>${esc(it.tool || '')} ${esc(JSON.stringify(it.arguments || {}, null, 1))}</pre></details>` : `<pre>${esc(it.text || '')}</pre>`;
+    return `<div class="card ask"><b>${esc(it.title || (daw ? it.tool : 'Save the session and scan it') || '')}</b>
+      ${it.summary ? `<p class="note">${esc(it.summary)}</p>` : ''}${rows}${call}
+      ${live ? `<button class="primary" data-chatok="${esc(it.id)}" data-digest="${esc(it.digest || '')}">Approve</button> <button data-chatno="${esc(it.id)}">Cancel</button>
+        <span class="note">Nothing changes until you approve. ${esc(it.undo_text || (daw ? '' : 'Saving writes the session file; the scan itself changes nothing.'))}</span>`
+        : `<span class="note">${esc(chatOutcome(it))}</span>`}</div>`;
+  }
   if (it.kind === 'ask') {
     const live = C.pending && C.pending.id === it.id, hear = it.what === 'listen', budget = it.what === 'budget',
-      opts = it.options || [], sent = it.answer && it.answer !== 'declined';
+      opts = it.options || [], sent = it.answer && it.answer !== 'declined' && it.answer !== 'expired';
     const title = budget ? 'The assistant has used a lot on this message:' : hear ? 'The assistant wants to listen to your song:'
       : 'The assistant wants to run this command:';
     const yes = opts.length ? opts.map(o => `<button class="primary" data-chatchoice="${esc(it.id)}" data-value="${esc(o.value)}">${esc(o.label)}</button>`).join(' ')
@@ -37,7 +51,8 @@ function chatItem(it) {
     const help = budget ? 'Each message has a token allowance (in the settings above). Keep going gives it another one.'
       : hear ? 'Only this song leaves the computer, as a reduced mono copy, and only to the listening service you chose. The cost is an estimate.'
       : 'If it writes a set, it is a new one next to the original. Save and close the set in Live first.';
-    const done = budget ? (sent ? 'You said keep going.' : 'Stopped.') : sent ? (hear ? 'You sent it.' : 'You ran it.') : (hear ? 'Not sent.' : 'Not run.');
+    const done = it.answer === 'expired' ? 'Expired unanswered: nothing was ' + (hear ? 'sent.' : budget ? 'continued.' : 'run.')
+      : budget ? (sent ? 'You said keep going.' : 'Stopped.') : sent ? (hear ? 'You sent it.' : 'You ran it.') : (hear ? 'Not sent.' : 'Not run.');
     return `<div class="card ask"><b>${title}</b><pre>${esc(it.text)}</pre>
       ${live ? `${yes} <button data-chatno="${esc(it.id)}">${budget ? 'Stop here' : "Don't"}</button> <span class="note">${help}</span>`
         : `<span class="note">${done}</span>`}</div>`;
@@ -45,6 +60,17 @@ function chatItem(it) {
   if (it.again) return `<div class="act">${esc(it.text)} <button data-cagain="${esc(it.again)}" ${C.busy ? 'disabled' : ''}>Listen again</button></div>`;
   if (it.kind === 'error') return `<div class="msg err">${esc(it.text)}</div>`;
   return `<div class="act">${esc(it.text)}</div>`;
+}
+
+// how a card ended, in words: the real outcome, not only "approved" or "cancelled"
+function chatOutcome(it) {
+  const a = it.answer;
+  if (a === 'sending') return 'Approved · sending it to the engine…';
+  if (a === 'ran') return it.what === 'daw' ? 'Approved · applied in the engine' + (it.now ? ' · reads back: ' + it.now : '') : 'Approved · done';
+  if (a === 'failed') return 'Approved, but the engine said: ' + (it.error || 'it failed') + (/may or may not/.test(it.error || '') ? '' : ' · nothing changed');
+  if (a === 'declined') return 'Cancelled · nothing changed';
+  if (a === 'expired') return 'Expired unanswered · nothing changed';
+  return 'Not waiting any more';
 }
 
 // a small, safe subset of markdown: code, bold, line breaks, bullet lines
@@ -108,10 +134,7 @@ function chatCost() {
   const u = C.usage; if (!u || !u.calls) return '';
   const k = n => n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
   const read = u.input + u.cache_write + u.cache_read;
-  const prov = C.settings && C.settings.provider;
-  const cost = prov === 'ollama' ? 'free (on this computer)' : u.priced
-    ? 'about $' + (u.cost < 0.1 ? u.cost.toFixed(3) : u.cost.toFixed(2)) + (u.estimated ? ' (an estimate at Gemini\'s paid-tier prices; the free tier costs nothing)' : '')
-    : 'cost: see your provider\'s price list for these tokens';
+  const cost = u.cost_text || '';    // worded by the server (chat.py cost_text): by the provider this conversation is with, listening apart
   return `<p class="note" id="ccost">This conversation: ${u.calls} call${u.calls === 1 ? '' : 's'} · ${k(read)} tokens read`
     + (u.cache_read ? ` (${k(u.cache_read)} from cache, cheaper)` : '') + ` · ${k(u.output)} written · ${cost}</p>`;
 }
@@ -130,8 +153,8 @@ function chatView() {
     ${C.busy && !C.pending ? '<div class="act"><span class="spin"></span>working…</div>' : ''}</div>
   <div class="card"><textarea id="ctext" rows="3" placeholder="${ready ? 'Ask, or tell it what to do…' : 'Add a key and a model above first'}">${esc(C.draft)}</textarea>
     <div class="row"><button class="primary" id="csend" ${ready && !C.busy ? '' : 'disabled'}>Send</button>
-      <button data-cpick="set">Attach a set…</button><button data-cpick="folder">Attach a folder…</button><button data-cpick="audio">Attach audio…</button>
-      ${C.busy ? '<button id="cstop">Stop</button>' : ''}</div></div>`;
+      ${S.state && S.state.chooser === false ? '' : '<button data-cpick="set">Attach a set…</button><button data-cpick="folder">Attach a folder…</button><button data-cpick="audio">Attach audio…</button>'}
+      ${C.busy ? `<button id="cstop" ${C.stopping ? 'disabled' : ''}>${C.stopping ? 'Stopping…' : 'Stop'}</button>` : ''}</div></div>`;
 }
 
 function chatDraw() {
@@ -177,8 +200,9 @@ document.addEventListener('click', async e => {
     else if (b.id === 'creset') { await post('/api/chat/reset', {}); C.draft = ''; await chatPoll(true); }
     else if (b.id === 'csend') { const t = $('#ctext').value.trim(); if (!t) return; C.draft = ''; $('#ctext').value = '';
       await post('/api/chat/send', {text: t}); await chatPoll(); }
-    else if (b.id === 'cstop') { await post('/api/chat/stop', {}); }
-    else if (b.dataset.chatok) { await post('/api/chat/answer', {id: b.dataset.chatok, ok: true}); await chatPoll(); }
+    else if (b.id === 'cstop') { C.stopping = true; chatDraw(); await post('/api/chat/stop', {}); }
+    else if (b.dataset.chatok) { b.disabled = true;     // one click, one answer; the card's digest says which call this approves
+      await post('/api/chat/answer', {id: b.dataset.chatok, ok: true, digest: b.dataset.digest || (C.pending && C.pending.id === b.dataset.chatok ? C.pending.digest : undefined) || undefined}); await chatPoll(); }
     else if (b.dataset.chatchoice) { await post('/api/chat/answer', {id: b.dataset.chatchoice, ok: true, choice: b.dataset.value}); await chatPoll(); }
     else if (b.dataset.cagain) { if (!C.busy) { await post('/api/chat/send', {text: b.dataset.cagain}); await chatPoll(); } }
     else if (b.dataset.chatno) { await post('/api/chat/answer', {id: b.dataset.chatno, ok: false}); await chatPoll(); }
@@ -192,5 +216,5 @@ document.addEventListener('change', e => { if (S.view === 'chat' && e.target.id 
   post('/api/chat/settings', {provider: e.target.value}).then(s => { C.settings = s; C.models = []; C.open = true; chatDraw(); }); } });
 document.addEventListener('keydown', e => { if (S.view === 'chat' && e.target.id === 'ctext' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
   e.preventDefault(); const s = $('#csend'); if (s && !s.disabled) s.click(); } });
-setInterval(() => { if (S.view === 'chat' || C.busy) chatPoll().catch(() => {}); }, 1000);
+setInterval(() => { if (!document.hidden && (S.view === 'chat' || C.busy)) chatPoll().catch(() => {}); }, 1000);   // a hidden tab asks nothing (the page's own poll does the same)
 chatPoll(true).catch(() => {});

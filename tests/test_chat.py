@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest import mock
 
 from hypnomix.app import chat as CH
+from tests import _isolate
 
 
 def wait_idle(timeout=10):
@@ -31,9 +32,10 @@ class Chat(unittest.TestCase):
                   mock.patch.dict(os.environ, {"HYPNOMIX_APP_HOME": self.d.name})]
         for p in self.p:
             p.start()
-        CH.CHAT.update(items=[], history=[], provider=None, busy=False, pending=None, stop=False)
+        _isolate.fresh_chat()                      # not the previous test's (or module's) conversation
 
     def tearDown(self):
+        _isolate.fresh_chat()                      # and none left for the next one
         for p in self.p:
             p.stop()
         self.d.cleanup()
@@ -276,6 +278,205 @@ class Chat(unittest.TestCase):
         self.assertNotIn("custom", keys())
 
 
+def gemini_error(cls, status, message, delay=None):
+    """An API error as Gemini's OpenAI-compatible address sends it: the body is a LIST, so the SDK's own message is
+    only "Error code: N"."""
+    err = {"code": status, "message": message, "status": "UNAVAILABLE" if status == 503 else "INVALID_ARGUMENT"}
+    if delay:
+        err["details"] = [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": delay}]
+    if "per day" in message:                         # Gemini names the quota that ran out
+        err["details"].insert(0, {"@type": "type.googleapis.com/google.rpc.QuotaFailure", "violations": [{
+            "description": "Generate content requests per day limit exceeded on Free Tier. See https://aistudio.google.com/docs/rate-limits.",
+            "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier", "quotaValue": "20"}]})
+    e = type(cls, (Exception,), {})(f"Error code: {status}")       # named and shaped like the SDK's error classes
+    e.message, e.status_code, e.body = f"Error code: {status}", status, [{"error": err}]
+    e.response = types.SimpleNamespace(headers={})
+    return e
+
+
+@unittest.skipUnless(HAVE_SDKS, "needs the openai library (the 'assistant' extra: uv pip install -e \".[assistant]\")")
+class GeminiQuirks(unittest.TestCase):
+    """What a real Gemini 3 model did through the OpenAI-compatible path (tried on the engine session, 2026-11-26),
+    each with a stand-in that behaves the same way."""
+
+    def setUp(self):
+        self.d = tempfile.TemporaryDirectory()
+        self.p = [mock.patch.object(CH, "CONF", Path(self.d.name) / "ai.json"),
+                  mock.patch.dict(os.environ, {"HYPNOMIX_APP_HOME": self.d.name}),
+                  mock.patch.object(CH, "BUSY_WAITS", (0, 0, 0))]
+        for p in self.p:
+            p.start()
+        CH.CHAT.update(items=[], history=[], provider=None, busy=False, pending=None, stop=False, usage=CH.new_usage(),
+                       msg={}, elided_at=0)
+        CH.update_settings({"provider": "gemini", "model": "gemini-3-flash-preview", "key": "AIza-test-00000000"})
+        self.threads0 = set(threading.enumerate())
+
+    def tearDown(self):
+        CH.stop()
+        wait_idle(5)
+        # busy goes down while the worker thread is still finishing; let it end before its folder goes (an unfinished
+        # save made tearDown fail with "Directory not empty", and with no isolation could write into the real folder)
+        deadline = time.time() + 5
+        for t in threading.enumerate():
+            if t not in self.threads0 and t is not threading.current_thread():
+                t.join(max(0.0, deadline - time.time()))
+        self.d.cleanup()                      # before the patches stop, so a late write still lands in this folder
+        for p in self.p:
+            p.stop()
+
+    def _strict(self, steps, raises=()):
+        """A Gemini-like client: each tool call carries extra_content.google.thought_signature (only the first of
+        parallel calls, as Gemini does), the message may carry its own, and a request whose current turn has a tool
+        call without its signature is refused with Gemini's 400 (whose body is a list). raises: errors to raise
+        first, one per call."""
+        seen, raises = [], list(raises)
+        sig = lambda i: {"google": {"thought_signature": f"SIG-{i}=="}}
+
+        class Fake:
+            def __init__(self, **k):
+                self.chat = types.SimpleNamespace(completions=self)
+
+            def create(self, model, tools, messages):
+                if raises:
+                    raise raises.pop(0)
+                seen.append(copy.deepcopy(messages))
+                last_user = max(i for i, m in enumerate(messages) if m["role"] == "user")
+                for m in messages[last_user:]:
+                    for k, tc in enumerate(m.get("tool_calls") or []):
+                        if k == 0 and not (tc.get("extra_content") or {}).get("google", {}).get("thought_signature"):
+                            raise gemini_error("BadRequestError", 400, "Function call is missing a thought_signature "
+                                               "in functionCall parts.")
+                i = len(seen)
+                step = steps[i - 1] if i <= len(steps) else "done."
+                if isinstance(step, str):
+                    m = types.SimpleNamespace(content=step, tool_calls=None, model_extra={})
+                    return types.SimpleNamespace(choices=[types.SimpleNamespace(message=m, finish_reason="stop")])
+                calls = [types.SimpleNamespace(id=f"c{i}-{k}", model_extra={"extra_content": sig(f"{i}-{k}")} if k == 0 else {},
+                                               function=types.SimpleNamespace(name=n, arguments=json.dumps(a)))
+                         for k, (n, a) in enumerate(step)]
+                m = types.SimpleNamespace(content="", tool_calls=calls, model_extra={"extra_content": sig(f"m{i}")})
+                return types.SimpleNamespace(choices=[types.SimpleNamespace(message=m, finish_reason="tool_calls")])
+        return Fake, seen
+
+    def test_thought_signatures_go_back_on_every_step(self):
+        Fake, seen = self._strict([[("list_songs", {}), ("list_songs", {"x": 1})], [("list_songs", {"y": 2})],
+                                   "There are no songs yet."])
+        with mock.patch("openai.OpenAI", Fake), mock.patch.object(CH, "tool", lambda n, i: CH.data("[]")):
+            CH.send("what songs are there?")
+            wait_idle()
+        self.assertEqual(len(seen), 3)
+        self.assertEqual([i["kind"] for i in CH.state()["items"] if i["kind"] in ("error", "note")], [])
+        self.assertEqual(CH.state()["items"][-1]["text"], "There are no songs yet.")
+        sent = [m for m in seen[-1] if m["role"] == "assistant"]
+        self.assertEqual(sent[0]["tool_calls"][0]["extra_content"], {"google": {"thought_signature": "SIG-1-0=="}})
+        self.assertNotIn("extra_content", sent[0]["tool_calls"][1])        # only the first of parallel calls has one
+        self.assertEqual(sent[0]["extra_content"], {"google": {"thought_signature": "SIG-m1=="}})   # the message's own
+        self.assertEqual(sent[1]["tool_calls"][0]["extra_content"], {"google": {"thought_signature": "SIG-2-0=="}})
+        # saved and loaded again (the app restarted), the signatures are still there, byte for byte
+        CH._save()
+        hist = copy.deepcopy(CH.CHAT["history"])
+        CH.CHAT["history"] = []
+        CH._load()
+        self.assertEqual(CH.CHAT["history"], hist)
+
+    def test_a_lost_signature_is_said_in_geminis_words(self):
+        Fake, seen = self._strict(["unused"], raises=[gemini_error(
+            "BadRequestError", 400, "Function call is missing a thought_signature in functionCall parts.")])
+        with mock.patch("openai.OpenAI", Fake):
+            CH.send("hi")
+            wait_idle()
+        err = [i["text"] for i in CH.state()["items"] if i["kind"] == "error"]
+        self.assertEqual(err, ["Google Gemini: Function call is missing a thought_signature in functionCall parts."])
+
+    def test_provider_error_reads_a_list_body(self):
+        e = gemini_error("BadRequestError", 400, "API key not valid. Please pass a valid API key.")
+        self.assertEqual(str(e.message), "Error code: 400")                           # what the SDK gives on its own
+        self.assertEqual(CH.provider_error(e), "API key not valid. Please pass a valid API key.")
+        self.assertEqual(CH.retry_after(gemini_error("RateLimitError", 429, "quota", delay="31s")), 31.0)
+        self.assertIsNone(CH.retry_after(e))
+
+    def test_a_busy_free_tier_is_tried_again_and_the_wait_is_shown(self):
+        busy = lambda: gemini_error("InternalServerError", 503, "This model is currently experiencing high demand.")
+        Fake, seen = self._strict(["Here it is."], raises=[busy(), busy()])
+        with mock.patch("openai.OpenAI", Fake):
+            CH.send("hi")
+            wait_idle()
+        texts = [(i["kind"], i["text"]) for i in CH.state()["items"]]
+        notes = [t for k, t in texts if k == "note"]
+        self.assertEqual(len(notes), 2)
+        self.assertIn("busy (This model is currently experiencing high demand.)", notes[0])
+        self.assertEqual(texts[-1], ("assistant", "Here it is."))
+
+    def test_a_daily_quota_is_not_waited_for(self):
+        Fake, seen = self._strict(["unused"], raises=[gemini_error("RateLimitError", 429, "Quota exceeded for "
+                                                                   "generate_content_free_tier_requests per day.",
+                                                                   delay="40000s")])
+        with mock.patch("openai.OpenAI", Fake):
+            t = time.time()
+            CH.send("hi")
+            wait_idle()
+        self.assertLess(time.time() - t, 5)
+        err = [i["text"] for i in CH.state()["items"] if i["kind"] in ("error", "note")]
+        self.assertEqual(err, ["Google Gemini: Generate content requests per day limit exceeded on Free Tier. It resets "
+                               "in about 11 hours: pick another model in the settings (each model has its own quota), "
+                               "or try again then."])
+
+    def test_a_slow_final_save_is_finished_before_the_folder_goes(self):
+        """The worker's last save used to run after busy went down: a test (or a caller) that waited for idle and then
+        removed the folder met a half-made one. Busy down now means the conversation is on disk, and tearDown joins the
+        worker either way."""
+        real = CH._save
+
+        def slow():
+            time.sleep(0.3)
+            real()
+        Fake, seen = self._strict(["done."])
+        with mock.patch("openai.OpenAI", Fake), mock.patch.object(CH, "_save", slow):
+            CH.send("hi")
+            wait_idle()
+            f = Path(self.d.name) / "assistant" / "conversation.json"
+            self.assertTrue(f.is_file(), "idle must mean the conversation is saved")
+            self.assertIn("done.", f.read_text())
+
+    def test_still_busy_after_the_retries_says_so(self):
+        busy = lambda: gemini_error("InternalServerError", 503, "high demand")
+        Fake, seen = self._strict(["unused"], raises=[busy() for _ in range(4)])
+        with mock.patch("openai.OpenAI", Fake):
+            CH.send("hi")
+            wait_idle()
+        err = [i["text"] for i in CH.state()["items"] if i["kind"] == "error"]
+        self.assertEqual(err, ["Google Gemini is busy right now (high demand). Try again in a minute, or pick another "
+                               "model in the settings."])
+
+    def test_the_command_repeated_as_its_first_argument_is_dropped(self):
+        ran = []
+        with mock.patch.object(CH, "run_cli", lambda c, a: ran.append((c, a)) or "[done]"), \
+                mock.patch.object(CH, "ask_ok", lambda *a, **k: True):
+            for inp in ({"command": "scan", "args": ["scan", "/s/Song.als"]},          # what Gemini sent
+                        {"command": "scan", "args": ["hypnomix", "scan", "/s/Song.als"]},
+                        {"command": "hypnomix scan", "args": ["/s/Song.als"]},
+                        {"command": "scan", "args": ["/s/Song.als"]}):
+                CH._tool("run_hypnomix", inp)
+        self.assertEqual(ran, [("scan", ["/s/Song.als"])] * 4)
+
+    def test_a_cut_off_or_empty_reply_is_said(self):
+        for why, content, want in (("length", "Half a sent", "cut off"), ("content_filter", None, "safety filter"),
+                                   ("stop", None, "empty reply")):
+            CH.CHAT.update(items=[], history=[])
+
+            class Fake:
+                def __init__(self, **k):
+                    self.chat = types.SimpleNamespace(completions=self)
+
+                def create(self, model, tools, messages):
+                    m = types.SimpleNamespace(content=content, tool_calls=None)
+                    return types.SimpleNamespace(choices=[types.SimpleNamespace(message=m, finish_reason=why)])
+            with mock.patch("openai.OpenAI", Fake):
+                CH.send("hi")
+                wait_idle()
+            self.assertIn(want, CH.state()["items"][-1]["text"], why)
+
+
 class Gate(unittest.TestCase):
     """F2/F3: only a short list of read-only commands, with only their known options, runs without a click."""
 
@@ -446,7 +647,7 @@ class Prices(unittest.TestCase):
         from hypnomix.app import setup as SU
         for m in ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"):               # and so does Setup
             self.assertEqual((SU.PRICES[m]["inp"], SU.PRICES[m]["out"], SU.PRICES[m]["cached"]), P.CLAUDE[m])
-        self.assertEqual((SU.PRICES["gemini-flash"]["inp"], SU.PRICES["gemini-flash"]["out"]), (P.GEMINI["inp"], P.GEMINI["out"]))
+        self.assertEqual((SU.PRICES["gemini-flash"]["inp"], SU.PRICES["gemini-flash"]["out"]), P.gemini_price())
 
     def test_the_cost_counter_knows_haikus_higher_tier(self):
         CH.count("claude-haiku-5-5", "anthropic", 50_000, 1_000)                   # a 50k prompt: the ordinary price
@@ -459,7 +660,8 @@ class Prices(unittest.TestCase):
         self.assertAlmostEqual(CH.CHAT["usage"]["cost"], (10_000 * 2 + 200_000 * 0.10 + 1_000 * 10) / 1e6)
 
     def test_gemini_shows_an_estimate_and_others_still_only_tokens(self):
-        CH.count("gemini-flash-latest", "gemini", 100_000, 2_000)
+        with mock.patch("hypnomix.core.prices.today", lambda: __import__("datetime").date(2026, 12, 1)):     # a day with a known price
+            CH.count("gemini-flash-latest", "gemini", 100_000, 2_000)
         u = CH.CHAT["usage"]
         self.assertTrue(u["priced"] and u["estimated"])
         self.assertAlmostEqual(u["cost"], (100_000 * 0.75 + 2_000 * 3.75) / 1e6)
@@ -483,7 +685,7 @@ class Prices(unittest.TestCase):
             self.assertIsNotNone(row, name)
             self.assertEqual(row.groups(), (P.money(i), P.money(o), P.money(SU.song_cost(m)).replace("about ", "")), name)
         g = re.search(r"\| Google Gemini Flash, paid tier \| (\$[\d.]+) / (\$[\d.]+) ", guide)
-        self.assertEqual(g.groups(), (P.money(P.GEMINI["inp"]), P.money(P.GEMINI["out"])))
+        self.assertEqual(g.groups(), tuple(P.money(x) for x in P.gemini_price(P.CHECKED)))     # the price on the day the guide was checked
         # Haiku's higher tier, in one sentence, with the figure for a long song
         hi = P.TIERS["claude-haiku-5-5"]
         self.assertIn(f"{P.money(hi[1][0])} / {P.money(hi[1][1])}", guide)
@@ -924,6 +1126,62 @@ class StopFromChat(unittest.TestCase):
         self.assertEqual(calls, [1])                       # once, however long the job takes to go
         proc.terminate.assert_not_called()
         self.assertTrue(out.startswith("[stopped]"))
+
+
+class StrictApproval(unittest.TestCase):
+    """The click on a card: only a real yes approves (the DAW cards go through the same answer)."""
+
+    def setUp(self):
+        self.saved = {k: CH.CHAT[k] for k in ("items", "pending", "stop")}
+        CH.CHAT.update(items=[], pending=None, stop=False)
+
+    def tearDown(self):
+        CH.CHAT.update(self.saved)
+
+    def ask(self, **extra):
+        out = []
+        th = threading.Thread(target=lambda: out.append(CH.ask_ok("fix", ["DIR"], **extra)), daemon=True)
+        th.start()
+        t = time.time()
+        while not CH.CHAT["pending"] and time.time() - t < 5:
+            time.sleep(0.01)
+        return th, out, CH.CHAT["pending"]["id"]
+
+    def test_the_string_false_and_other_odd_answers_approve_nothing(self):
+        th, out, pid = self.ask()
+        for bad in ("false", "true", 1, 0, None, "no", []):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                CH.answer(pid, bad)
+            with self.assertRaises(ValueError, msg=repr(bad)):                      # and the route says so, it does not guess
+                CH.handle_post("/api/chat/answer", {"id": pid, "ok": bad})
+        self.assertTrue(th.is_alive())                                              # still waiting for a real answer
+        CH.handle_post("/api/chat/answer", {"id": pid, "ok": False})
+        th.join(5)
+        self.assertEqual(out, [False])
+
+    def test_a_card_with_a_digest_is_approved_only_with_it(self):
+        th, out, pid = self.ask(digest="d1d1")
+        with self.assertRaises(ValueError):
+            CH.answer(pid, True)
+        with self.assertRaises(ValueError):
+            CH.answer(pid, True, digest="other")
+        self.assertEqual(CH.state()["pending"]["digest"], "d1d1")
+        CH.answer(pid, True, digest="d1d1")
+        th.join(5)
+        self.assertEqual(out, [True])
+
+    def test_a_cancel_needs_no_digest(self):
+        th, out, pid = self.ask(digest="d1d1")
+        CH.answer(pid, False)
+        th.join(5)
+        self.assertEqual(out, [False])
+
+    def test_the_state_tells_a_page_how_every_card_ended(self):
+        th, out, pid = self.ask()
+        self.assertEqual(CH.state()["asks"][pid], {})                               # still open: no outcome yet
+        CH.answer(pid, True)
+        th.join(5)
+        self.assertEqual(CH.state(since=CH.state()["total"])["asks"][pid]["answer"], "ran")
 
 
 if __name__ == "__main__":

@@ -22,6 +22,13 @@ What the check protects against, and what it does not
   app, which only shows the bundle is whole and unmodified since it was signed (ad hoc or not): it does not show who
   made it. If that matters to you, download from the website and check the release's published fingerprints yourself.
 
+Which Hypnomix is installed (edition()): the Mac app carries the engine program in Contents/Resources/engine/bin when it
+is the full Hypnomix, and daw.app_edition() is the one place that looks. The full app only ever takes the full
+download (Hypnomix-full-mac-<arch>.dmg); on a release that has none, view() says no_full_download and nothing is offered
+or installed: the Assistant app is never put over the full one. Install and restart is refused (HTTP 409) while the
+DAW session has unsaved changes (daw.dirty()), and the Mac helper waits for the app, the server and the engine to be
+gone, well past the engine's own stop time, before it swaps the app.
+
 Only the installed app (the Mac .dmg or the Windows setup) updates itself. A source checkout is told about the new
 version and how to update (git pull). Nothing is downloaded or installed without a click; the daily check can be
 switched off.
@@ -40,7 +47,8 @@ API = os.environ.get("HYPNOMIX_UPDATE_URL") or f"https://api.github.com/repos/{R
 STATE = paths.HOME / "update.json"       # the same home as the rest of hypnomix: HYPNOMIX_HOME moves these (default ~/.hypnomix)
 DIR = paths.HOME / "updates"
 TAG = re.compile(r"v?[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}", re.ASCII)  # a release name must be a plain version: ASCII digits and dots only
-ASSETS = {"Hypnomix-windows-setup.exe", "Hypnomix-mac-arm64.dmg", "Hypnomix-mac-intel.dmg", "SHA256SUMS.txt"}
+ASSETS = {"Hypnomix-windows-setup.exe", "Hypnomix-mac-arm64.dmg", "Hypnomix-mac-intel.dmg", "SHA256SUMS.txt",
+          "Hypnomix-full-mac-arm64.dmg", "Hypnomix-full-mac-intel.dmg"}   # the full download (its own DAW): not released yet
 RELEASES = f"/{REPO}/releases/"
 DAY = 24 * 3600
 LOCK = threading.Lock()
@@ -53,8 +61,8 @@ def current():
     # the version it was installed at, and goes stale after every `git pull`. An installed app has no pyproject there.
     try:
         f = Path(__file__).resolve().parents[2] / "pyproject.toml"
-        m = re.search(r'^version = "([^"]+)"', f.read_text(), re.M) if f.exists() else None
-        if m and re.search(r'^name = "hypnomix"', f.read_text(), re.M):
+        m = re.search(r'^version = "([^"]+)"', f.read_text(encoding="utf-8"), re.M) if f.exists() else None
+        if m and re.search(r'^name = "hypnomix"', f.read_text(encoding="utf-8"), re.M):
             return m.group(1)
     except OSError:
         pass
@@ -84,8 +92,20 @@ def asset_name():
     if k == "windows":
         return "Hypnomix-windows-setup.exe"
     if k == "mac":
-        return "Hypnomix-mac-arm64.dmg" if platform.machine() in ("arm64", "aarch64") else "Hypnomix-mac-intel.dmg"
+        # the full Hypnomix (the engine inside the app) only ever updates from the full download, so an update never
+        # swaps it for the Assistant-only app; until a release carries that file, it is told there is nothing to install
+        full = "full-" if edition() == "full" else ""
+        return f"Hypnomix-{full}mac-arm64.dmg" if platform.machine() in ("arm64", "aarch64") else f"Hypnomix-{full}mac-intel.dmg"
     return ""
+
+
+def edition():
+    """Which Hypnomix this app is: 'full' (the engine program is inside the app), 'assistant' (the installed app
+    without it) or '' (a source checkout, or Windows). The ONE definition of it is daw.app_edition(): Setup's "Your
+    download" step, the DAW tab and this updater all ask it. Nothing else decides: no Info.plist key and no setting a
+    person can edit."""
+    from hypnomix.app import daw
+    return daw.app_edition()
 
 
 def app_root():
@@ -98,7 +118,7 @@ def app_root():
 # ---------------------------------------------------------------- the check
 def load():
     try:
-        d = json.loads(STATE.read_text())
+        d = json.loads(STATE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     return d if isinstance(d, dict) else {}
@@ -256,8 +276,12 @@ def view():
     except (RuntimeError, ValueError, TypeError, KeyError):
         page = ""
     size = a.get("size", 0) if a else 0
+    ed = edition() if name else ""
+    # the full app on a release that carries no full download: say so plainly; the Assistant app is never offered for it
+    no_full = bool(newer and ed == "full" and not a)
     return dict(current=cur, latest=latest, newer=newer, skipped=s.get("skip") == latest, auto=bool(s.get("auto", True)),
-                kind=kind(), one_click=bool(newer and a), size=size if isinstance(size, int) else 0, page=page,
+                kind=kind(), edition=ed, no_full_download=no_full,
+                one_click=bool(newer and a), size=size if isinstance(size, int) else 0, page=page,
                 notes=str(s.get("notes", "")), published=str(s.get("published", "")), checked=s.get("checked", 0),
                 error=str(s.get("error", "")), job=dict(JOB))
 
@@ -361,20 +385,28 @@ def download():
 # ---------------------------------------------------------------- install
 MAC_HELPER = r'''#!/bin/bash
 # hypnomix update helper: quit the app, put the new Hypnomix.app in place of the old one, open it again.
-APP="$1"; DMG="$2"; APP_PID="$3"; SERVER_PID="$4"; LOG="$5"; SHA="$6"; VER="$7"
+APP="$1"; DMG="$2"; APP_PID="$3"; SERVER_PID="$4"; ENGINE_PID="$5"; LOG="$6"; SHA="$7"; VER="$8"
 exec >>"$LOG" 2>&1
 echo "== $(date) update $APP from $DMG"
 case "$APP" in */Hypnomix.app) ;; *) echo "not an app path: $APP"; exit 1 ;; esac
 [ -d "$APP" ] && [ -f "$DMG" ] || { echo "missing app or dmg"; exit 1; }
 GOT=$(/usr/bin/shasum -a 256 "$DMG" | cut -d' ' -f1)
 [ -n "$SHA" ] && [ "$GOT" = "$SHA" ] || { echo "the image is not the file that was checked; nothing was installed"; exit 1; }
-MNT=$(mktemp -d /tmp/hypnomix-update.XXXXXX)
-hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG" || exit 1
-[ -d "$MNT/Hypnomix.app" ] || { echo "no Hypnomix.app in the image"; hdiutil detach -quiet "$MNT"; exit 1; }
+# The disk image is opened in a folder of its own (in $TMPDIR, as everything else of this app is). Whatever way the helper
+# ends (a failed check, a failed copy, a kill), that folder is let go: the image is detached and the folder removed.
+MNT=$(mktemp -d "${TMPDIR:-/tmp}/hypnomix-update.XXXXXX") || { echo "could not make a temporary folder"; exit 1; }
+MOUNTED=0
+unmount() {
+  if [ "$MOUNTED" = 1 ]; then hdiutil detach -quiet "$MNT" 2>/dev/null || hdiutil detach -force -quiet "$MNT" 2>/dev/null; MOUNTED=0; fi
+  rmdir "$MNT" 2>/dev/null
+}
+trap unmount EXIT
+hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG" && MOUNTED=1 || exit 1
+[ -d "$MNT/Hypnomix.app" ] || { echo "no Hypnomix.app in the image"; exit 1; }
 NEW="$APP.updating"
 /bin/rm -rf "$NEW"
-ditto "$MNT/Hypnomix.app" "$NEW" || { hdiutil detach -quiet "$MNT"; exit 1; }
-hdiutil detach -quiet "$MNT"; rmdir "$MNT" 2>/dev/null
+ditto "$MNT/Hypnomix.app" "$NEW" || exit 1
+unmount
 # Integrity check only, NOT publisher verification: this shows the copied bundle is whole and unchanged since it was
 # signed (ad hoc or with a certificate). It does not show who signed it. If it fails, the old app stays untouched.
 /usr/bin/codesign --verify --deep --strict "$NEW" || { echo "the new app failed the signature integrity check; the old app was left in place"; /bin/rm -rf "$NEW"; exit 1; }
@@ -384,9 +416,19 @@ hdiutil detach -quiet "$MNT"; rmdir "$MNT" 2>/dev/null
 norm() { echo "$1" | /usr/bin/sed -E 's/^v//; s/(\.0+)+$//'; }
 GOTVER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$NEW/Contents/Info.plist" 2>/dev/null)
 [ "$VER" = "-" ] || { [ -n "$VER" ] && [ -n "$GOTVER" ] && [ "$(norm "$GOTVER")" = "$(norm "$VER")" ]; } || { echo "the new app says it is version '$GOTVER', not '$VER'; the old app was left in place"; /bin/rm -rf "$NEW"; exit 1; }
+# stop-begin
+# The app stops its audio engine itself when it quits (up to about 15 s: 8 s for it to end, then 5 s after a kill), so
+# the helper waits for the app, the server AND the engine to be gone before it touches the bundle, and for much longer
+# than that. Only after the wait does it kill what is left, the engine's whole process group included, so no engine
+# is left running from a bundle that is about to be moved or holding the sound card.
+GRACE="${HYPNOMIX_UPDATE_GRACE:-45}"
 for p in "$APP_PID" "$SERVER_PID"; do [ -n "$p" ] && kill "$p" 2>/dev/null; done
-for i in $(seq 1 40); do kill -0 "$APP_PID" 2>/dev/null || kill -0 "$SERVER_PID" 2>/dev/null || break; sleep 0.25; done
+alive() { for p in "$APP_PID" "$SERVER_PID" "$ENGINE_PID"; do [ -n "$p" ] && kill -0 "$p" 2>/dev/null && return 0; done; return 1; }
+n=0; while alive && [ "$n" -lt $((GRACE * 4)) ]; do sleep 0.25; n=$((n + 1)); done
+alive && echo "still running after ${GRACE}s: stopping it now"
 for p in "$APP_PID" "$SERVER_PID"; do [ -n "$p" ] && kill -9 "$p" 2>/dev/null; done
+if [ -n "$ENGINE_PID" ] && kill -0 "$ENGINE_PID" 2>/dev/null; then kill -9 -- "-$ENGINE_PID" 2>/dev/null; kill -9 "$ENGINE_PID" 2>/dev/null; fi
+# stop-end
 OLD="$APP.old"
 /bin/rm -rf "$OLD"
 mv "$APP" "$OLD" && mv "$NEW" "$APP" || { echo "swap failed"; [ -d "$OLD" ] && [ ! -d "$APP" ] && mv "$OLD" "$APP"; exit 1; }
@@ -415,6 +457,35 @@ Stop-Transcript | Out-Null
 '''
 
 
+class Unsaved(Exception):
+    """The DAW session has changes that were not saved: the install is refused (HTTP 409), nothing is closed."""
+
+
+def unsaved():
+    """True while the open DAW session has unsaved changes. The server keeps that flag (daw.dirty(): any changing engine
+    call since the last save, from the page or the Assistant). An app that has no such function, or no session, or no
+    engine, has nothing to lose; a function that fails is read as 'nothing to lose' too, so a fault in the optional DAW
+    side can never stop an update for good (the person can still quit the app and download the new one)."""
+    try:
+        from hypnomix.app import daw
+        f = getattr(daw, "dirty", None)
+        return bool(f()) if callable(f) else False
+    except Exception:
+        return False
+
+
+def engine_pid():
+    """The process id of the engine this server started (its own process group), as text, or '' when there is none
+    (not DAW mode, a window it only attached to). The Mac helper waits for it to be gone before it swaps the app."""
+    try:
+        from hypnomix.app import daw
+        e = getattr(daw, "ENGINE", None)
+        p = getattr(e, "proc", None) if e is not None and getattr(e, "mode", None) == "engine" else None
+        return str(int(p.pid)) if p is not None and p.poll() is None else ""
+    except Exception:
+        return ""
+
+
 def install(path=None):
     """Start the helper and return; the helper stops this server, so the page waits for the new version.
     The staged file is hashed again here against the SHA-256 the download was checked with, and the helper checks it
@@ -423,6 +494,9 @@ def install(path=None):
     k = kind()
     if not k:
         raise ValueError("only the installed app updates itself; in a source checkout run: git pull && uv pip install -e .")
+    if unsaved():
+        raise Unsaved("Your DAW session has changes that are not saved, and installing the update closes it. Save it first "
+                      "(Save in the DAW tab, or ⌘S there), then install the update.")
     f = Path(path or JOB.get("file") or "")
     if not f.is_file():
         raise ValueError("download the update first")
@@ -448,9 +522,9 @@ def install(path=None):
         app = app_root()
         if not os.access(app.parent, os.W_OK):
             raise ValueError(f"can't write to {app.parent}: download the new version from the website instead")
-        parent = subprocess.run(["ps", "-p", str(os.getppid()), "-o", "comm="], capture_output=True, text=True).stdout.strip()
+        parent = subprocess.run(["ps", "-p", str(os.getppid()), "-o", "comm="], capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
         app_pid = str(os.getppid()) if parent.endswith("/Hypnomix") or parent == "Hypnomix" else ""   # only the app's window
-        subprocess.Popen(["/bin/bash", str(helper), str(app), str(f), app_pid, str(os.getpid()), str(log), want, ver],
+        subprocess.Popen(["/bin/bash", str(helper), str(app), str(f), app_pid, str(os.getpid()), engine_pid(), str(log), want, ver],
                          start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     else:
         helper = DIR / "update-helper.ps1"
@@ -460,7 +534,7 @@ def install(path=None):
         # started through WMI so it isn't a child of this server: the setup stops the server's whole process tree
         ps = ("$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=" +
               "'" + cmd.replace("'", "''") + "'}; exit $r.ReturnValue")
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True, encoding="utf-8", errors="replace",
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if r.returncode:
             raise RuntimeError(f"couldn't start the updater ({r.returncode}): {r.stderr.strip()[:300]}")
@@ -487,6 +561,8 @@ def handle_post(path, body):
             return 200, download()
         if path == "/api/update/install":
             return 200, install()
+    except Unsaved as e:
+        return 409, {"error": str(e), "dirty": True}
     except ValueError as e:
         return 400, {"error": str(e)}
     except RuntimeError as e:

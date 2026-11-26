@@ -42,7 +42,7 @@ from pathlib import Path
 
 import numpy as np
 
-from hypnomix.core import dsp, paths
+from hypnomix.core import args as A, dsp, paths
 from hypnomix.engineer import qc
 
 
@@ -69,8 +69,10 @@ def mmss(sec):
 # ---------------------------------------------------------------- the stems
 def list_stems(folder, exclude=()):
     d = Path(folder).expanduser()
+    if not d.exists():
+        raise VersionsError(f"{d}: no such folder (looked in {Path.cwd()}); check the spelling of --stems")
     if not d.is_dir():
-        raise VersionsError(f"{d} is not a folder of stems")
+        raise VersionsError(f"{d} is a file, not a folder of stems")
     skip = {Path(x).resolve() for x in exclude if x}
     files = sorted(p for p in d.iterdir() if p.is_file() and p.suffix.lower() in dsp.AUDIO_EXT and not p.name.startswith(".")
                    and p.resolve() not in skip)
@@ -304,6 +306,8 @@ def plan_cuts(cuts, dur, bpm=None, bars=None, fade_s=0.03, refine=None):
         keeps.append(r["start"] - pos)
         pos = r["end"]
     keeps.append(dur - pos)
+    if not any(ln > 1e-9 for ln in keeps):
+        raise VersionsError("the cuts remove the whole song: leave some of it in, or give a shorter range")
     for k, ln in enumerate(keeps):
         if ln <= 1e-9:
             continue
@@ -566,12 +570,12 @@ def main():
     ap.add_argument("--stems", required=True, help="folder of exported stems")
     ap.add_argument("--vocals", required=True, help='which stems are vocals, like "Lead*,Harm*"')
     ap.add_argument("--mix", help="the finished mix: runs the null test and matches each version to its loudness")
-    ap.add_argument("--tv", type=float, metavar="DB", help="also write a TV mix: the instrumental plus the vocals at this many dB (0 = full song)")
+    ap.add_argument("--tv", type=A.number(-80, 24), metavar="DB", help="also write a TV mix: the instrumental plus the vocals at this many dB (0 = full song)")
     ap.add_argument("--cut", action="append", nargs="+", metavar="RANGE", help="a range to remove for the radio edit, like 1:12-1:40")
-    ap.add_argument("--bpm", type=float, help="snap the cut edges to the nearest bar line at this tempo")
-    ap.add_argument("--fade", type=float, default=30.0, metavar="MS", help="crossfade length in ms (default 30)")
+    ap.add_argument("--bpm", type=A.number(20, 400), help="snap the cut edges to the nearest bar line at this tempo (20 to 400)")
+    ap.add_argument("--fade", type=A.number(0, 1000), default=30.0, metavar="MS", help="crossfade length in ms (default 30, at most 1000)")
     ap.add_argument("--name", help="the song's name for the file names (default: the mix's, or the stems folder's)")
-    ap.add_argument("--target", type=float, help="loudness the release checks compare with (default: the mix's, or -14)")
+    ap.add_argument("--target", type=A.number(-70, 0), help="loudness the release checks compare with (default: the mix's, or -14)")
     ap.add_argument("--out", help="folder to create the versions folder in (default hypnomix-out/versions)")
     ap.add_argument("--check", action="store_true", help="read-only: run the null test and print the plan")
     a = ap.parse_args()

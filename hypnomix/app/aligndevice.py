@@ -292,8 +292,9 @@ def build(out, tpl=None):
     head, patch = D.read_amxd(tpl)
     out = Path(out).expanduser()
     out.mkdir(parents=True, exist_ok=True)
+    js = JS.replace("__PORT__", str(PORT)).replace("__W__", str(W)).replace("__H__", str(H))
+    (out / "hypnomix_align.js").write_text(js, encoding="utf-8")           # UTF-8: Max reads the script as UTF-8
     D.write_amxd(out / "Hypnomix Align.amxd", head, build_patch(patch))
-    (out / "hypnomix_align.js").write_text(JS.replace("__PORT__", str(PORT)).replace("__W__", str(W)).replace("__H__", str(H)))
     return out
 
 
@@ -302,10 +303,11 @@ def main():
     ap.add_argument("--out", help="folder to write into (default: your Live User Library)")
     ap.add_argument("--template", help="a blank 'Max Audio Effect.amxd' (default: the one inside your Live)")
     a = ap.parse_args()
-    lib = Path("~/Music/Ableton/User Library").expanduser()
+    from hypnomix.install import user_library, user_library_words
+    lib = user_library()
     out = a.out or (lib / "Presets" / "Audio Effects" / "Max Audio Effect" / "Hypnomix Align")
     if not a.out and not lib.is_dir():
-        sys.exit("no Live User Library at ~/Music/Ableton/User Library: say where to write with --out FOLDER")
+        sys.exit(f"no Live User Library at {user_library_words()}: say where to write with --out FOLDER")
     try:
         od = build(out, a.template)
     except FileNotFoundError as e:

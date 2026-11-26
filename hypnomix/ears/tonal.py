@@ -142,20 +142,20 @@ def _safe(name):
 
 def save_target(t):
     p = tonal_dir() / f"{_safe(t['name'])}.json"
-    p.write_text(json.dumps(t, indent=1))
+    p.write_text(json.dumps(t, indent=1), encoding="utf-8")
     return p
 
 
 def load_target(name_or_path):
     p = Path(str(name_or_path)).expanduser()
     if p.suffix == ".json" and p.exists():
-        return json.loads(p.read_text())
+        return json.loads(p.read_text(encoding="utf-8"))
     q = tonal_dir() / f"{_safe(str(name_or_path))}.json"
     if not q.exists():
         have = ", ".join(sorted(x.stem for x in tonal_dir().glob("*.json"))) or "none yet"
         raise FileNotFoundError(f"no tonal target {name_or_path!r} (have: {have}); build one with "
                                 "`hypnomix tonal build SONG.wav ... --name NAME`")
-    return json.loads(q.read_text())
+    return json.loads(q.read_text(encoding="utf-8"))
 
 
 def target_bands(name_or_path, kind="eight"):
@@ -300,7 +300,7 @@ def main(argv=None):
 
     if a.cmd == "list":
         for p in sorted(tonal_dir().glob("*.json")):
-            t = json.loads(p.read_text())
+            t = json.loads(p.read_text(encoding="utf-8"))
             print(f"{t['name']}: {len(t['sources'])} song(s), {t['spread']}, built {t.get('built', '?')}")
         return
     if a.cmd == "show":
@@ -334,9 +334,9 @@ def main(argv=None):
     text = (f"# Tonal check: {Path(a.mix).name} vs {t['name']}\n\nLoudest ~45 s, lined up on 250 Hz-4 kHz. Target from "
             f"{len(t['sources'])} song(s).\n\n{_table(res)}\n\n## Proposals (nothing was changed)\n\n" + "\n".join(lines)
             + f"\n\nPlot: `{png.name}`\n")
-    (od / "TONAL.md").write_text(text)
+    (od / "TONAL.md").write_text(text, encoding="utf-8")
     if a.json:
-        Path(a.json).write_text(json.dumps(dict(mix=str(a.mix), target=t["name"], bands=res, findings=findings), indent=1))
+        Path(a.json).write_text(json.dumps(dict(mix=str(a.mix), target=t["name"], bands=res, findings=findings), indent=1), encoding="utf-8")
     print(text)
     print(f"report: {od / 'TONAL.md'}", file=sys.stderr)
 

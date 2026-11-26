@@ -8,18 +8,25 @@
                                                again with that id left out, into a NEW set
   hypnomix history SONG_OR_DIR --json          the log as JSON
 
-Each `fix` run that applies something is logged in SCAN_DIR/history/history.json: the scan folder, the set it
-started from and the new set it wrote, the approved ids with their amounts, the plain-words list of changes
-(`hypnomix diff`), and the time. A copy of both sets is kept next to the log (history/vN-input.als,
-history/vN-output.als), so `--diff` and `--undo` still work after the files were saved again in Live.
+Each `fix` run that wrote something is logged in SCAN_DIR/history/history.json (a run that wrote nothing is not a
+version): the scan folder, the set it started from and the new set it wrote, the approved ids with their amounts,
+the plain-words list of changes (`hypnomix diff`, Live sets), and the time. A copy of both sets is kept next to
+the log (history/vN-input.als, history/vN-output.als; .rpp for a REAPER project, .ardour for an Ardour session), so
+`--diff` and `--undo` still work after the files were saved again in the DAW. For a REAPER or Ardour version
+`--diff` shows the changed lines of the project file. A folder of recordings has no set to go back to: `fix` wrote
+repaired copies into SCAN_DIR/fixed (a taken name gets a number), so there `--undo` and `--undo-item` say so.
 Undo and undo-item are logged as versions too. New sets go next to the original set (its samples are found
-from there), with a new name; nothing is ever written over.
+from there), with a new name and the original's file type; nothing is ever written over.
 """
-import argparse, json, shutil, subprocess, sys, time
+import argparse, difflib, json, shutil, subprocess, sys, time
 from pathlib import Path
 
 from hypnomix.core import atomic
 from hypnomix.core.paths import OUT
+
+SET_SUFFIXES = (".als", ".rpp", ".ardour")      # Live set, REAPER project, Ardour session snapshot
+NO_SET = ("this scan was of a folder of recordings: `fix` wrote repaired copies into {sd}/fixed and changed no set, so "
+          "there is no set to compare or go back to. Delete the repaired copy you do not want; the originals were never touched")
 
 
 def hist_dir(sd):
@@ -57,15 +64,15 @@ def log_run(sd, scan, src, out, approved, kind="fix", failed=(), extra=None):
     row = dict(n=n, kind=kind, at=time.strftime("%Y-%m-%d %H:%M:%S"), scan_dir=str(sd.resolve()),
                input=str(src) if src else None, output=str(out) if out else None,
                approved=list(approved), failed=list(failed), changes=None, diff="")
-    if src and Path(src).exists() and str(src).endswith(".als"):
-        snap = hd / f"v{n}-input.als"
+    if src and Path(src).is_file() and Path(src).suffix.lower() in SET_SUFFIXES:
+        snap = hd / f"v{n}-input{Path(src).suffix.lower()}"
         shutil.copyfile(src, snap)
         row["input_snapshot"] = snap.name
-    if out and Path(out).exists() and str(out).endswith(".als"):
-        snap = hd / f"v{n}-output.als"
+    if out and Path(out).is_file() and Path(out).suffix.lower() in SET_SUFFIXES:
+        snap = hd / f"v{n}-output{Path(out).suffix.lower()}"
         shutil.copyfile(out, snap)
         row["output_snapshot"] = snap.name
-        if src and Path(src).exists():
+        if src and Path(src).exists() and str(out).lower().endswith(".als") and str(src).lower().endswith(".als"):
             try:
                 from hypnomix.session import diff as D
                 rows = D.diff(src, out)
@@ -117,7 +124,7 @@ def version_set(sd, h, n):
 def listing(sd, h):
     L = [f"history of {sd}", ""]
     if not h["versions"]:
-        return "\n".join(L + ["no versions yet: `hypnomix fix DIR --approved --out NEW.als` logs each run here"])
+        return "\n".join(L + ["no versions yet: `hypnomix fix DIR --approved --out NEW` (a new set, project or session) logs each run that wrote something here"])
     for v in h["versions"]:
         items = ", ".join(f"{a['id']}" + (f"@{a['amount']}" if a.get("amount", 100) != 100 else "")
                           for a in v.get("approved", []))
@@ -132,6 +139,42 @@ def listing(sd, h):
     return "\n".join(L)
 
 
+def xml_lines(path):
+    """An XML project (Ardour) as one line per element, attributes sorted and indentation, quotes and the XML declaration
+    left out, so that writing the file out again is not a change. None if it does not parse."""
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.parse(str(path)).getroot()
+    except Exception:
+        return None
+    rows = []
+
+    def walk(el, depth):
+        attrs = " ".join(f'{k}="{v}"' for k, v in sorted(el.attrib.items()))
+        text = (el.text or "").strip()
+        rows.append("  " * depth + el.tag + (" " + attrs if attrs else "") + (" | " + text if text else ""))
+        for c in el:
+            walk(c, depth + 1)
+    walk(root, 0)
+    return rows
+
+
+def text_diff(x, y, limit=200):
+    """The changed lines between two project files (REAPER .rpp, Ardour .ardour), as plain text. An Ardour session is
+    compared element by element, so only real edits show."""
+    a = b = None
+    if str(x).lower().endswith(".ardour") and str(y).lower().endswith(".ardour"):
+        a, b = xml_lines(x), xml_lines(y)
+    if a is None or b is None:
+        a = Path(x).read_text(encoding="utf-8", errors="replace").splitlines()
+        b = Path(y).read_text(encoding="utf-8", errors="replace").splitlines()
+    rows = [l for l in difflib.unified_diff(a, b, "before", "after", lineterm="", n=0)
+            if l[:1] in "+-" and not l.startswith(("+++", "---"))]
+    shown = rows[:limit]
+    return (f"{len(rows)} changed line(s) in the project file" + (f" (first {limit} shown)" if len(rows) > limit else "")
+            + ("\n\n" + "\n".join(shown) if shown else ""))
+
+
 def undo(sd, h, n):
     """A new set equal to version n's input, next to the original set."""
     vs = h["versions"]
@@ -140,10 +183,12 @@ def undo(sd, h, n):
     v = vs[n - 1]
     snap = snapshot(sd, v, "input")
     if snap is None:
+        if not v.get("input"):                      # a folder of recordings: there never was a set
+            sys.exit(NO_SET.format(sd=sd))
         sys.exit(f"version {n} kept no copy of its input set; nothing to go back to")
     scan = atomic.load_json(Path(sd) / "scan.json", {}) or {}
     orig = Path(scan.get("set") or v["input"])
-    dest = free_name(orig.with_name(f"{orig.stem} (back to v{n} input).als"))
+    dest = free_name(orig.with_name(f"{orig.stem} (back to v{n} input){snap.suffix}"))
     shutil.copyfile(snap, dest)
     m = log_run(sd, scan, Path(v["input"]) if Path(v["input"]).exists() else snap, dest, [], kind="undo",
                 extra={"undo_of": n})
@@ -156,15 +201,17 @@ def undo_item(sd, h, fid, extra_args=()):
     if not vs:
         sys.exit("no fix run with approved items in this history")
     v = vs[-1]
+    scan = atomic.load_json(Path(sd) / "scan.json", {}) or {}
+    if not v.get("input") or Path(scan.get("set") or v["input"]).suffix.lower() not in SET_SUFFIXES:
+        sys.exit(NO_SET.format(sd=sd))              # a folder of recordings: repaired copies, no set to rebuild
     ids = [a["id"] for a in v["approved"]]
     if fid not in ids:
         sys.exit(f"{fid} was not approved in v{v['n']} (approved: {', '.join(ids)})")
     keep = [i for i in ids if i != fid]
     if not keep:
         sys.exit(f"v{v['n']} has only {fid}: to go back to before it, use --undo {v['n']}")
-    scan = atomic.load_json(Path(sd) / "scan.json", {}) or {}
     orig = Path(scan.get("set") or v["input"])
-    dest = free_name(orig.with_name(f"{orig.stem} (v{v['n']} without {fid}).als"))
+    dest = free_name(orig.with_name(f"{orig.stem} (v{v['n']} without {fid}){orig.suffix.lower()}"))
     args = [sys.executable, "-m", "hypnomix.workflow.fix", str(sd), "--approve", ",".join(keep), "--out", str(dest)]
     inp = Path(v["input"]) if v.get("input") else None
     if inp and inp.resolve() != orig.resolve():
@@ -176,7 +223,7 @@ def undo_item(sd, h, fid, extra_args=()):
     if v.get("key"):
         args += ["--key", v["key"]]
     args += list(extra_args)
-    r = subprocess.run(args, text=True, capture_output=True)
+    r = subprocess.run(args, text=True, encoding="utf-8", errors="replace", capture_output=True)
     sys.stdout.write(r.stdout)
     sys.stderr.write(r.stderr)
     h2 = load(sd)
@@ -206,15 +253,21 @@ def main():
         from hypnomix.session import diff as D
         x, y = (version_set(sd, h, n) for n in a.diff)
         if x is None or y is None:
+            if not h["versions"][0].get("input"):
+                sys.exit(NO_SET.format(sd=sd))
             sys.exit("one of those versions kept no copy of its set")
+        if x.suffix.lower() != ".als" or y.suffix.lower() != ".als":      # REAPER, Ardour: the project files' own lines
+            print(f"v{a.diff[0]} → v{a.diff[1]}: " + text_diff(x, y))
+            return
         rows = D.diff(x, y)
         print(f"v{a.diff[0]} → v{a.diff[1]}: {len(rows)} change(s)\n")
         print(D.text(rows))
         return
     if a.undo is not None:
         dest, m = undo(sd, h, a.undo)
+        daw = {".als": "Live", ".rpp": "REAPER", ".ardour": "Ardour"}.get(dest.suffix.lower(), "your DAW")
         print(f"wrote {dest}\n  equal to what v{a.undo} started from; logged as v{m}. Nothing was deleted or "
-              "overwritten. Close the other set in Live before opening this one.")
+              f"overwritten. Close the other one in {daw} before opening this one.")
         return
     if a.undo_item:
         code, dest = undo_item(sd, h, a.undo_item, ["--stale-ok"] if a.stale_ok else [])

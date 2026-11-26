@@ -184,7 +184,7 @@ def main():
             m = mine(Path(f))
         except Exception as e:
             print(f"FAIL {f}: {e}", file=sys.stderr); continue
-        (outdir / (Path(f).stem + ".json")).write_text(json.dumps(m, indent=2))
+        (outdir / (Path(f).stem + ".json")).write_text(json.dumps(m, indent=2), encoding="utf-8")
         print(f"{m['name']}: {m['tempo']} BPM {m['time_signature']}, key~{m['midi_key_est']}, "
               f"{len(m['tracks'])} tracks {m['track_type_counts']}, {m['length_bars']} bars, master={m['master_chain']}")
 

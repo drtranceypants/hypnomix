@@ -1,11 +1,22 @@
 <!--
 title: Choose your setup
-sub: your DAW × how you connect an AI (or don't) · where to read next
+sub: which download · your DAW × how you connect an AI (or don't) · where to read next
 group: Start here
-teaser: Pick your DAW and how you want to work: clicking in the app, chatting with your own API key, an agent app like Claude Code or Codex, or a free model on your own computer. Each combination points to the pages you need.
+teaser: Pick a download (the Hypnomix Assistant now; the full Hypnomix with its own DAW is not out yet and will be a separate Mac download), then your DAW and how you want to work: clicking in the app, chatting with your own API key, an agent app like Claude Code or Codex, or a free model on your own computer. Each combination points to the pages you need.
 -->
 <div class="prose paper">
       <p>hypnomix works the same way everywhere: it scans, you approve, it writes only what you approved into a <b>new</b> project or new files. What changes is <b>which DAW</b> you use and <b>how you drive it</b>. Pick one of each.</p>
+    </div>
+
+    <h3 class="sub-h">Which download</h3>
+    <div class="prose paper">
+      <p>The <a target="_blank" rel="noopener" href="https://hypnomix.bradfieldenterprises.org/download/">download page</a> offers the Assistant only today. The app's guided setup describes both, so you can note that you want the full one for when it is out:</p>
+      <table>
+        <tr><th>download</th><th>for</th><th>what's in it</th><th>when</th></tr>
+        <tr><td><b>Hypnomix Assistant</b></td><td>people who keep their own DAW: Live, REAPER, Ardour, or any DAW from exported tracks</td><td>the app and every hypnomix tool (the installers for Mac and Windows)</td><td>now</td></tr>
+        <tr><td><b>Hypnomix</b></td><td>people who want one program: a DAW with the engineer and the Assistant built in</td><td>a DAW of its own (based on Ardour) in the same app: it opens on the <b>DAW</b> tab, with <b>File → New Session</b> and <b>Open Session</b>, plus everything the Assistant has</td><td><b>not available yet</b>, and Mac only at first. It will be a <b>separate download that replaces the Assistant app</b> (the same <code>Hypnomix.app</code>), not something the Assistant adds to itself: nothing in <b>Setup → Extras</b> installs it, that step only explains what it is. The engine inside it is a separate program under the GNU General Public License (version 2 or later), a rebranded fork of Ardour; hypnomix itself stays MIT and contains none of its code. The source will be published with the first release that includes the engine. Not yet checked: playing through a real sound card (only the silent test backend has been run), recording, the app's native <b>File</b> menu, the full app's disk image, signing and notarising it, and Intel Macs.</td></tr>
+      </table>
+      <p>Everything below is about the Assistant, which works with the DAW you have.</p>
     </div>
 
     <h3 class="sub-h">1 · Your DAW</h3>
@@ -15,7 +26,7 @@ teaser: Pick your DAW and how you want to work: clicking in the app, chatting wi
         <tr><td><b>Ableton Live</b> 11 or 12</td><td>yes (<code>.als</code>)</td><td>yes: a new set next to yours</td><td>yes: Max for Live devices, Live's own mastering chain, A/B inside Live</td><td><a data-wiki="inside-live" href="#">Inside Live</a> · <a data-wiki="loop" href="#">the lessons</a></td></tr>
         <tr><td><b>REAPER</b></td><td>yes (<code>.rpp</code>)</td><td>yes: a new project; tuned vocals as new takes</td><td>yes: a bridge for the mastering chain with REAPER's stock plug-ins</td><td><a data-wiki="reaper" href="#">hypnomix in REAPER</a></td></tr>
         <tr><td><b>Ardour</b> 3 to 9</td><td>yes (session folder or <code>.ardour</code>)</td><td>yes: fades, gain, dips and fader, pan and mute moves into a new <code>.ardour</code> snapshot (written and re-read by hypnomix; not yet opened in Ardour). The rest is listed for you to do by hand</td><td>planned</td><td><a data-wiki="ardour" href="#">hypnomix with Ardour</a></td></tr>
-        <tr><td><b>Any other DAW</b> (Logic Pro, Pro Tools, Studio One…)</td><td>from exported tracks (no Logic or Pro Tools reader yet)</td><td>repaired audio as new files; DAW moves as a to-do list in your DAW's words, with markers (<code>handoff</code>)</td><td>no</td><td><a data-wiki="other-daws" href="#">Any other DAW</a></td></tr>
+        <tr><td><b>Any other DAW</b></td><td>from exported tracks (no reader for other DAWs yet)</td><td>repaired audio as new files; DAW moves as a to-do list in your DAW's words, with markers (<code>handoff</code>)</td><td>no</td><td><a data-wiki="other-daws" href="#">Any other DAW</a></td></tr>
       </table>
     </div>
 

@@ -4,7 +4,8 @@ each soloed). Prints the median pitch difference (cents, frame-aligned) and the 
 Usage: hypnomix pitchcheck A.wav B.wav   (run after any re-render: expect ~0 cents, ~0 LU)"""
 import sys, soundfile as sf, numpy as np, librosa, pyloudnorm as pl
 def f0(p):
-    y, sr = sf.read(p, always_2d=True); m = y.mean(1)
+    from hypnomix.core import dsp
+    y, sr = dsp.load(p); m = y.mean(1)      # the checked loader: a broken file ends in one sentence
     z = librosa.resample(m, orig_sr=sr, target_sr=22050)
     f, _, _ = librosa.pyin(z, fmin=70, fmax=800, sr=22050, hop_length=256)
     return f, pl.Meter(sr).integrated_loudness(y)

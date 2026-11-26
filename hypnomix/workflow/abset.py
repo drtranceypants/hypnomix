@@ -264,22 +264,74 @@ def candidates(findings, ids=None):
     return out
 
 
-def fixed_copy(sd, fid, orig, extra=()):
-    """Build this one fix into a temporary set next to the original, from a throwaway copy of the scan."""
-    tmp = Path(tempfile.mkdtemp(prefix="hm-ab-"))
-    for p in Path(sd).iterdir():
-        if p.is_file():
-            shutil.copy2(p, tmp / p.name)
-        else:
-            os.symlink(p.resolve(), tmp / p.name)
-    (tmp / "decisions.json").write_text("{}")
-    out = orig.with_name(f".{orig.stem} (ab-{fid}-{int(time.time() * 1000) % 10 ** 8}).als")
-    cmd = [sys.executable, "-m", "hypnomix.cli", "fix", str(tmp), "--approve", fid, "--out", out.name,
-           "--stale-ok", "--no-verify", "--allow-protected"] + list(extra)
-    r = subprocess.run(cmd, capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]))
-    shutil.rmtree(tmp, ignore_errors=True)
+NOT_COPIED = {"history", "ab"}      # `fix` never reads these; and a throwaway run must never write into the real history
+
+
+def link_or_copy(src, dst, **_):
+    """A file as a hard link (no extra disk, no copy of a renders folder that can be gigabytes), or a plain copy where
+    the system cannot link it (another drive)."""
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
+    return dst
+
+
+def scratch_scan(sd):
+    """A throwaway copy of the scan folder for one inner `fix` run: files are copied, folders are linked (where the
+    system does not allow links to folders, e.g. Windows without Developer Mode, the folder is rebuilt from hard links to its
+    files, and only a file that cannot be linked is copied). The history folder is left out, so
+    the inner run cannot log a version in the person's real history. The caller removes the folder."""
+    tmp = Path(tempfile.mkdtemp(prefix="hypnomix-ab-"))        # the name Disk care knows (core/tmp.py); the caller removes it
+    try:
+        for p in Path(sd).iterdir():
+            if p.name in NOT_COPIED:
+                continue
+            if p.is_file():
+                shutil.copy2(p, tmp / p.name)
+                continue
+            try:
+                os.symlink(p.resolve(), tmp / p.name)
+            except OSError:
+                shutil.copytree(p, tmp / p.name, copy_function=link_or_copy)
+        (tmp / "decisions.json").write_text("{}", encoding="utf-8")
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    return tmp
+
+
+def fail_reason(stdout, stderr):
+    """Why an inner `fix` run did nothing, in its own words: the FAILED list, else what it did not apply, else the
+    last thing it said (read before the temporary folder is removed, so the reason is never a path to a deleted log)."""
+    from hypnomix.workflow.fix import last_line
+    lines = [l.strip() for l in (stdout or "").splitlines()]
+    for marker, how_many in (("FAILED (not done):", 3), ("Not applied (", 2)):
+        at = next((i for i, l in enumerate(lines) if l.startswith(marker)), None)
+        if at is None:
+            continue
+        items = [l[2:] for l in lines[at + 1:] if l.startswith("- ")]
+        if items:
+            return "; ".join(items[:how_many])[:300]
+    return last_line(stderr) or last_line(stdout) or "fix failed"
+
+
+def fixed_copy(sd, fid, orig, extra=(), suffix=".als"):
+    """Build this one fix into a temporary set next to the original, from a throwaway copy of the scan.
+    Returns (path, []) or (None, [why])."""
+    try:
+        tmp = scratch_scan(sd)
+    except OSError as e:
+        return None, [f"the scan folder could not be copied to build this fix ({e.strerror or e})"]
+    out = orig.with_name(f".{orig.stem} (ab-{fid}-{int(time.time() * 1000) % 10 ** 8}){suffix}")
+    try:
+        cmd = [sys.executable, "-m", "hypnomix.cli", "fix", str(tmp), "--approve", fid, "--out", out.name,
+               "--stale-ok", "--no-verify", "--allow-protected"] + list(extra)
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(Path(__file__).resolve().parents[2]))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     if r.returncode != 0 or not out.exists():
-        return None, (r.stderr or r.stdout).strip().splitlines()[-1:] or ["fix failed"]
+        return None, [fail_reason(r.stdout, r.stderr)]
     return out, []
 
 
@@ -291,6 +343,8 @@ def build(sd, ids=None, out=None, extra=()):
     if orig.suffix.lower() == ".rpp":            # a REAPER project: workflow/abset_project.py
         from hypnomix.workflow import abset_project as AP
         return AP.build(sd, ids, out, extra)
+    if orig.suffix.lower() == ".ardour" or (orig.is_dir() and any(orig.glob("*.ardour"))):
+        raise RuntimeError("Ardour has no A/B build yet: use `hypnomix ab` for a before / after clip of each fix it can model")
     if not str(orig).endswith(".als") or not orig.exists():
         raise RuntimeError("this scan has no Live set to build an A/B set from (folder scans: use `hypnomix ab`)")
     cands = candidates(data["findings"], ids)
@@ -320,7 +374,7 @@ def build(sd, ids=None, out=None, extra=()):
     finalize(ab_tree.getroot(), items)
     save(ab_tree, out)
     spec = dict(set=str(out), original=str(orig), built=time.strftime("%Y-%m-%d %H:%M"), items=items)
-    (sd / "ab_live.json").write_text(json.dumps(spec, indent=1))
+    (sd / "ab_live.json").write_text(json.dumps(spec, indent=1), encoding="utf-8")
     return out, spec
 
 
