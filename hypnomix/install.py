@@ -147,7 +147,7 @@ def doctor(argv):
     from hypnomix.core.paths import PROFILE
     rows.append(("✓" if PROFILE.exists() else "·", "Your profile", str(PROFILE) if PROFILE.exists() else
                  "none yet (optional): hypnomix profile build song1.wav song2.wav …"))
-    for mod, extra in (("matchering", "reference"), ("audio_separator", "ml"), ("basic_pitch", "ml"), ("google.genai", "critique")):
+    for mod, extra in (("matchering", "reference"), ("audio_separator", "ml"), ("basic_pitch", "ml"), ("openai", "critique")):
         try:
             __import__(mod); have = True
         except Exception:

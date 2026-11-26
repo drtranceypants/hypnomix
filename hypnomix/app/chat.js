@@ -26,11 +26,12 @@ function chatItem(it) {
   if (it.kind === 'assistant') return `<div class="msg ai">${chatMd(it.text)}</div>`;
   if (it.kind === 'tool') return `<div class="act">↳ ${esc(it.text)}</div>`;
   if (it.kind === 'ask') {
-    const live = C.pending && C.pending.id === it.id;
-    return `<div class="card ask"><b>The assistant wants to change your project:</b><pre>${esc(it.text)}</pre>
-      ${live ? `<button class="primary" data-chatok="${esc(it.id)}">Run it</button> <button data-chatno="${esc(it.id)}">Don't</button>
-        <span class="note">It writes a new set next to the original. Save and close the set in Live first.</span>`
-        : `<span class="note">${it.answer === 'ran' ? 'You ran it.' : 'Not run.'}</span>`}</div>`;
+    const live = C.pending && C.pending.id === it.id, hear = it.what === 'listen';
+    return `<div class="card ask"><b>${hear ? 'The assistant wants to listen to your song:' : 'The assistant wants to change your project:'}</b><pre>${esc(it.text)}</pre>
+      ${live ? `<button class="primary" data-chatok="${esc(it.id)}">${hear ? 'Send it' : 'Run it'}</button> <button data-chatno="${esc(it.id)}">Don't</button>
+        <span class="note">${hear ? 'Only this song leaves the computer, as a reduced mono copy, and only to the listening service you chose.'
+          : 'It writes a new set next to the original. Save and close the set in Live first.'}</span>`
+        : `<span class="note">${it.answer === 'ran' ? (hear ? 'You sent it.' : 'You ran it.') : (hear ? 'Not sent.' : 'Not run.')}</span>`}</div>`;
   }
   if (it.kind === 'error') return `<div class="msg err">${esc(it.text)}</div>`;
   return `<div class="act">${esc(it.text)}</div>`;
@@ -54,11 +55,26 @@ function chatSettings() {
     ${p.no_key ? '<div class="row note">No key needed: Ollama runs models on this computer (ollama.com).</div>' :
       `<div class="row"><label for="ckey">API key</label><input type="password" id="ckey" placeholder="${p.key_hint ? 'saved (' + esc(p.key_hint) + '): paste to replace' : 'paste your key'}" autocomplete="off">
       ${p.key_hint ? '<button id="cforget">Forget key</button>' : ''}</div>
-      <div class="row note">${p.keys_at ? 'Get a key at ' + esc(p.keys_at) + '. ' : ''}Kept on this computer only, and sent only to ${esc(p.label)}. Your audio never leaves this computer.</div>`}
+      <div class="row note">${p.keys_at ? 'Get a key at ' + esc(p.keys_at) + '. ' : ''}Kept on this computer only, and sent only to ${esc(p.label)}.${st.listen && st.listen.provider ? '' : ' Your audio never leaves this computer.'}</div>`}
     ${needsBase ? `<div class="row"><label for="cbase">Address</label><input type="text" id="cbase" value="${esc(p.base_url)}" placeholder="https://…/v1"></div>` : ''}
     <div class="row"><label for="cmodel">Model</label><input type="text" id="cmodel" list="cmodels" value="${esc(p.model)}" placeholder="choose with List models">
       <datalist id="cmodels">${C.models.map(m => `<option value="${esc(m)}">`).join('')}</datalist><button id="clist">List models</button></div>
+    ${chatListen()}
     <div class="row"><button class="primary" id="csave">Save</button> <span class="note" id="csaved"></span></div></div>`;
+}
+
+// Listening: a cloud model hears a bounce for notes by ear. Off until chosen; each listen still asks first.
+function chatListen() {
+  const L = C.settings && C.settings.listen; if (!L) return '';
+  const cur = L.options.find(o => o.id === L.provider);
+  const opts = [`<option value="" ${cur ? '' : 'selected'}>Off (audio stays on this computer)</option>`]
+    .concat(L.options.map(o => `<option value="${o.id}" ${cur && cur.id === o.id ? 'selected' : ''}>${esc(o.label)}</option>`)).join('');
+  return `<div class="row"><label for="clisten">Listening</label><select id="clisten">${opts}</select>
+    ${cur ? `<input type="text" id="clmodel" value="${esc(cur.model)}" aria-label="Listening model">` : ''}</div>
+    <div class="row note">${cur ? (cur.has_key
+      ? `The assistant can ask to send one song, as a reduced mono copy, to ${esc(cur.label)} for notes by ear. Each listen waits for your click and shows the rough cost (about 25 tokens a second: a 4-minute song is around a cent).`
+      : `No ${esc(cur.label)} key yet: choose ${esc(cur.label)} as the AI provider above, paste its key and Save, then switch back.`)
+      : 'Switch on to let a cloud model (Gemini) hear your bounces: the assistant\'s chat model can stay whatever you chose above.'}</div>`;
 }
 
 function chatCost() {
@@ -77,7 +93,7 @@ function chatView() {
   const ready = p && (p.no_key || p.key_hint) && p.model;
   return `<h1>Assistant</h1>
   <p class="sub">Talk about your song and let an AI run hypnomix for you. Bring a key from the AI service you like.
-  It reads hypnomix's reports, never your audio, and anything that changes a set waits for your click.</p>
+  It reads hypnomix's reports${st && st.listen && st.listen.provider ? ', listens to a song only when you click Send it,' : ', never your audio,'} and anything that changes a set waits for your click.</p>
   ${!ready || C.open ? chatSettings() : `<p class="note">${esc(p.label)} · ${esc(p.model)} <button id="copen">Settings</button> <button id="creset">New conversation</button></p>`}
   ${chatCost()}
   <div id="chatlog" aria-live="polite">${C.items.map(chatItem).join('') ||
@@ -103,6 +119,7 @@ async function chatSaveSettings() {
   if ($('#cmodel')) body.model = $('#cmodel').value;
   if ($('#cbase')) body.base_url = $('#cbase').value;
   if ($('#ckey') && $('#ckey').value) body.key = $('#ckey').value;
+  if ($('#clisten')) { body.listen_provider = $('#clisten').value; if ($('#clmodel')) body.listen_model = $('#clmodel').value; }
   C.settings = await post('/api/chat/settings', body);
 }
 
@@ -125,6 +142,8 @@ document.addEventListener('click', async e => {
       const t = $('#ctext'); t.value = (t.value + ' "' + r.path + '"').trim(); C.draft = t.value; t.focus(); } }
   } catch (err) { alert(err.message); }
 });
+document.addEventListener('change', e => { if (S.view === 'chat' && e.target.id === 'clisten') {
+  post('/api/chat/settings', {listen_provider: e.target.value}).then(s => { C.settings = s; C.open = true; chatDraw(); }); } });
 document.addEventListener('change', e => { if (S.view === 'chat' && e.target.id === 'cprov') {
   post('/api/chat/settings', {provider: e.target.value}).then(s => { C.settings = s; C.models = []; C.open = true; chatDraw(); }); } });
 document.addEventListener('keydown', e => { if (S.view === 'chat' && e.target.id === 'ctext' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {

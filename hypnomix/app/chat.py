@@ -6,7 +6,9 @@ Bring your own key from any provider:
   Groq, Mistral, Ollama on this computer (free, no key), or any other service that speaks it
 
 The key is kept on this computer only (~/.hypnomix/ai.json, readable by you alone) and goes only to the provider
-you chose. Your audio never leaves the computer: the assistant sees hypnomix's text reports, not the songs.
+you chose. Your audio stays on the computer: the assistant sees hypnomix's text reports, not the songs. The one
+exception is Listening (off until you choose Google Gemini or OpenRouter for it): then the assistant may ask to
+send a reduced mono copy of one song to that service for notes by ear, and each listen waits for your click.
 
 What the assistant can do: list your songs, read a review, run any hypnomix command (a scan, a measurement, a
 check, a render), point Live at a finding (with the Max for Live device loaded), and read the reports. Anything
@@ -102,7 +104,13 @@ def settings_view():
                         model=(c.get("models") or {}).get(k) or d["model"],
                         base_url=(c.get("base_urls") or {}).get(k) or d["base_url"],
                         key_hint=("…" + key[-4:]) if len(key) >= 8 else ("saved" if key else "")))
-    return dict(provider=p, providers=out)
+    from hypnomix.ears import critique as L
+    ls = c.get("listen") or {}
+    lp = ls.get("provider") if ls.get("provider") in L.LISTENERS else ""
+    listen = dict(provider=lp, options=[dict(id=k, label=d["label"], model=(ls.get("models") or {}).get(k) or d["model"],
+                                             has_key=bool(L.listener(k)[3]))
+                                        for k, d in L.LISTENERS.items()])
+    return dict(provider=p, providers=out, listen=listen)
 
 
 def update_settings(body):
@@ -118,6 +126,14 @@ def update_settings(body):
         c.setdefault("keys", {})[p] = str(body["key"]).strip()
     if body.get("forget"):
         c.setdefault("keys", {}).pop(p, None)
+    if "listen_provider" in body:                   # '' switches Listening off
+        from hypnomix.ears import critique as L
+        lp = str(body["listen_provider"] or "")
+        if lp and lp not in L.LISTENERS:
+            raise ValueError("listening works with Google Gemini or OpenRouter")
+        c.setdefault("listen", {})["provider"] = lp
+        if lp and body.get("listen_model") is not None:
+            c["listen"].setdefault("models", {})[lp] = str(body["listen_model"]).strip()
     save_conf(c)
     return settings_view()
 
@@ -164,6 +180,16 @@ TOOLS = [
     dict(name="read_file",
          description="Read a text report the tools wrote (REVIEW.md, fix-log.md, a .json or .txt in the songs folder).",
          params={"path": ("string", "full path of the file")}),
+    dict(name="listen",
+         description=("Have a cloud listening model (Gemini) hear one bounced song and give a producer's notes by ear, "
+                      "with timestamps: arrangement, energy, balance, clarity, low-end feel, performance. It hears a "
+                      "reduced MONO copy, so it can't judge stereo width, air above 8 kHz or exact loudness: those come "
+                      "from hypnomix's own measurements. The person must click to send the audio (it shows the length "
+                      "and rough cost); only works when Listening is switched on in the settings. Pass the song's scan "
+                      "folder so the review goes along as text and the listener can confirm or question it."),
+         params={"audio": ("string", "full path of the bounced song (.wav, .mp3, .aif, .flac)"),
+                 "question": ("string", "what to listen for, in the person's words, or '' for a full pass"),
+                 "dir": ("string", "the song's scan folder from list_songs, or ''")}),
     dict(name="show_in_live",
          description="Make Live jump to a finding (select the track, move the playhead and loop there). Needs the "
                      "hypnomix Max for Live device loaded in the set.",
@@ -198,13 +224,14 @@ def needs_ok(command, args):
     return command in ("rename", "device", "aligndevice") and "-h" not in a
 
 
-def ask_ok(command, args):
-    """Show the command in the chat and wait for the person's click."""
+def ask_ok(command, args, text=None, what="write"):
+    """Show the command (or, for a listen, what will be sent) in the chat and wait for the person's click."""
     pid = uuid.uuid4().hex[:8]
     ev = threading.Event()
     with LOCK:
-        CHAT["pending"] = dict(id=pid, command=command, args=[str(x) for x in args], event=ev, ok=None)
-        CHAT["items"].append(dict(kind="ask", id=pid, text="hypnomix " + " ".join(shlex.quote(str(x)) for x in [command, *args])))
+        CHAT["pending"] = dict(id=pid, command=command, args=[str(x) for x in args], event=ev, ok=None, what=what)
+        CHAT["items"].append(dict(kind="ask", id=pid, what=what,
+                                  text=text or "hypnomix " + " ".join(shlex.quote(str(x)) for x in [command, *args])))
     while not ev.wait(0.5):
         if CHAT["stop"]:
             break
@@ -279,6 +306,8 @@ def tool(name, inp):
             if not any(f.is_relative_to(h) for h in homes) or f.suffix.lower() not in (".md", ".txt", ".json", ".csv"):
                 return "only text reports in the songs folder can be read"
             return f.read_text(errors="replace")[:30000]
+        if name == "listen":
+            return listen_tool(inp)
         if name == "show_in_live":
             d = S.scan_dir(inp["dir"])
             f = next((x for x in S.review_payload(d)["findings"] if x["id"] == inp["id"]), None)
@@ -290,6 +319,56 @@ def tool(name, inp):
         return f"unknown tool {name}"
     except (KeyError, ValueError, OSError) as e:
         return f"error: {e}"
+
+
+def listen_tool(inp):
+    """One listen: switched on, a real song, the person's click, then the notes (also saved next to the scan)."""
+    from hypnomix.ears import critique as L
+    from hypnomix.app import server as S
+    c = load_conf()
+    lp = (c.get("listen") or {}).get("provider") or ""
+    if lp not in L.LISTENERS:
+        return ("Listening is off. Tell the person they can switch it on in the Assistant settings (Listening: Google "
+                "Gemini or OpenRouter, with that service's key); until then, work from hypnomix's measurements.")
+    f = Path(str(inp.get("audio") or "")).expanduser()
+    if not f.is_file() or f.suffix.lower() not in (".wav", ".mp3", ".aif", ".aiff", ".flac", ".m4a", ".ogg"):
+        return "that is not an audio file on this computer: ask the person to attach the bounce (Attach audio…)"
+    provider, _, model, key = L.listener(lp)
+    if not key:
+        return f"Listening is set to {L.LISTENERS[provider]['label']} but no key is saved for it: ask the person to add one."
+    est = L.estimate(f, provider, model)
+    cost = f", about ${est['cost']:.3f}" if est["cost"] is not None else ""
+    q = str(inp.get("question") or "").strip()
+    text = (f"Send {f.name} ({est['seconds'] / 60:.1f} min, reduced mono copy) to {L.LISTENERS[provider]['label']} "
+            f"({model}) to listen{': ' + q if q else ''}. About {est['tokens']:,} tokens{cost}.")
+    if not ask_ok("listen", [str(f)], text=text, what="listen"):
+        return "The person chose not to send the audio. Carry on from hypnomix's measurements, or ask what they'd like."
+    scan = None
+    if inp.get("dir"):
+        try:
+            scan = S.scan_dir(inp["dir"])
+        except (KeyError, ValueError, OSError):
+            scan = None
+    say("tool", f"listening to {f.name}…")
+    try:
+        notes, usage = L.listen(f, q, L.context(scan=scan), provider, model)
+    except ValueError as e:
+        return f"error: {e}"
+    except Exception as e:
+        return "error: " + _friendly(e, L.LISTENERS[provider]["label"])
+    u = CHAT["usage"]
+    if usage.get("cost"):
+        u["cost"] += float(usage["cost"])
+    else:
+        u["priced"] = False
+    if scan:
+        try:
+            (Path(scan) / f"listen - {f.stem}.md").write_text(
+                f"# Notes by ear: {f.name}\n\n{L.LISTENERS[provider]['label']} · {model}"
+                f"{' · question: ' + q if q else ''}\n\n{notes}\n")
+        except OSError:
+            pass
+    return (f"[{L.LISTENERS[provider]['label']} {model} listened to {f.name}; it heard mono, reduced audio]\n\n" + notes)[:20000]
 
 
 def system_prompt():
@@ -312,7 +391,10 @@ def system_prompt():
             "to click Run it: say what the command will do before you run it. Report what changed and what to A/B. "
             "Paths: they can attach a set or folder with the buttons under the chat box, which pastes its path. "
             "Each step you take costs the person money on their AI plan: read the review a page at a time, group "
-            "similar findings when you explain them, and record decisions in batches.\n\n"
+            "similar findings when you explain them, and record decisions in batches. "
+            "listen lets a cloud model hear a bounce for notes by ear (when the person switched Listening on): use it "
+            "when they ask how the song sounds or feels, or to check a finding by ear; weigh its notes against "
+            "hypnomix's measurements, which win on numbers, and never turn its notes into fixes they didn't approve.\n\n"
             "Reference (written for terminal agents; here, use the tools instead of a shell):\n\n" + guide)
 
 
@@ -380,10 +462,19 @@ def _openai_turn(model, key, base):
         m = r.choices[0].message
         calls = m.tool_calls or []
         msg = {"role": "assistant", "content": m.content or ""}
+        # what a provider adds beyond the standard fields goes back as it came: Gemini refuses the next call without
+        # each tool call's thought signature (extra_content), OpenRouter wants its reasoning_details back
+        extra = getattr(m, "model_extra", None) or {}
+        if extra.get("reasoning_details"):
+            msg["reasoning_details"] = extra["reasoning_details"]
         if calls:
-            msg["tool_calls"] = [{"id": c.id, "type": "function",
-                                  "function": {"name": c.function.name, "arguments": c.function.arguments or "{}"}}
-                                 for c in calls]
+            msg["tool_calls"] = []
+            for c in calls:
+                tc = {"id": c.id, "type": "function",
+                      "function": {"name": c.function.name, "arguments": c.function.arguments or "{}"}}
+                if (getattr(c, "model_extra", None) or {}).get("extra_content"):
+                    tc["extra_content"] = c.model_extra["extra_content"]
+                msg["tool_calls"].append(tc)
         CHAT["history"].append(msg)
         if (m.content or "").strip():
             say("assistant", m.content)
@@ -511,7 +602,7 @@ def state(since=0):
     with LOCK:
         pend = CHAT["pending"]
         return dict(id=CHAT["id"], busy=CHAT["busy"], items=CHAT["items"][since:], total=len(CHAT["items"]),
-                    pending=pend and {k: pend[k] for k in ("id", "command", "args")}, settings=settings_view(),
+                    pending=pend and {k: pend.get(k) for k in ("id", "command", "args", "what")}, settings=settings_view(),
                     usage=dict(CHAT["usage"]))
 
 

@@ -48,7 +48,7 @@ GROUPS = [
         ("sections", "hypnomix.ears.sections", "find the song's sections; loudness and vocal balance per section (give --bpm)"),
         ("separate", "hypnomix.ears.separate", "split a mixed song into stems  [extra: ml]"),
         ("midi", "hypnomix.ears.midi", "audio → MIDI (+ into a Live clip)  [extra: ml]"),
-        ("critique", "hypnomix.ears.critique", "second opinion from Gemini on a mix  [extra: critique, needs GEMINI_API_KEY]"),
+        ("critique", "hypnomix.ears.critique", "a cloud model (Gemini) listens to a mix: notes by ear  [extra: critique, Gemini or OpenRouter key]"),
     ]),
     ("Live: hands on the set (AbletonOSC)", [
         ("live", "hypnomix.live.osc", "mixer, devices, VST parameters, transport, snapshots, arm/record"),

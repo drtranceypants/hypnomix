@@ -82,7 +82,13 @@ The assistant runs hypnomix for you and explains each finding.
   Mistral, any other service with an OpenAI-compatible address, or a free model running on your own computer
   in Ollama (no key at all). **List models** shows what your key can use.
 - **Your key and your audio stay with you:** the key is kept in `~/.hypnomix/ai.json` (readable by you only) and
-  sent only to the provider you chose. The assistant reads hypnomix's text reports, never the audio.
+  sent only to the provider you chose. The assistant reads hypnomix's text reports, not the audio.
+- **Listening (optional, off by default):** switch it on and a cloud model can *hear* a bounce and give notes by
+  ear with timestamps (arrangement, energy, balance, vocal clarity, low-end feel), checked against hypnomix's own
+  measurements. Use a Google Gemini key (free tier at aistudio.google.com) or an OpenRouter key; your chat model
+  can stay whatever you like. Each listen shows the song, its length and rough cost, and waits for **Send it**.
+  Only a reduced mono copy goes out (Gemini hears 16 kHz mono anyway), at about 25 tokens a second: a 4-minute
+  song is around a cent. It can't judge stereo width, air or exact loudness by ear; those stay hypnomix's numbers.
 - **Nothing changes without your click:** reading, scanning and measuring run straight away. Anything that
   writes a set (an `--apply`, `fix --approved`, an `.als` output) shows the exact command with **Run it /
   Don't**. Every write is still a new set next to the original.
@@ -230,7 +236,7 @@ Optional features:
 |---|---|---|
 | `reference` | `hypnomix reference` (Matchering; GPL-3.0, kept separate so hypnomix stays MIT) | `uv pip install -e ".[reference]"` |
 | `ml` | `hypnomix separate` (split a finished song into stems) and `hypnomix midi` (audio → MIDI) | `uv pip install -e ".[ml]"` |
-| `critique` | `hypnomix critique` (a written second opinion from Gemini; needs `GEMINI_API_KEY`) | `uv pip install -e ".[critique]"` |
+| `critique` | `hypnomix critique` (a cloud model listens and writes notes by ear; Gemini or OpenRouter key, from the app's settings or `GEMINI_API_KEY` / `OPENROUTER_API_KEY`) | `uv pip install -e ".[critique]"` |
 
 ## With Claude Code
 
