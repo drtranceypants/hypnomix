@@ -607,7 +607,7 @@ def _more_html(items, daw):
 
 def _step_html(s, daw, name):
     """One lesson step as lean HTML for the wiki."""
-    parts = [f'<h3 id="{_esc(s["id"])}">{_esc(s["title"])}</h3>' + "".join(f"<p>{_md_text(x)}</p>" for x in s.get("say", []))]
+    parts = [f'<h3 id="s-{_esc(s["id"])}">{_esc(s["title"])}</h3>' + "".join(f"<p>{_md_text(x)}</p>" for x in s.get("say", []))]
     if s.get("terms"):
         parts.append("<dl>" + "".join(f"<dt>{_esc(w)}</dt><dd>{_esc(m)}</dd>" for w, m in s["terms"]) + "</dl>")
     if s.get("settings"):
