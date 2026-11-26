@@ -142,8 +142,11 @@ Live's own Export makes the final file: no device can start an export in Live.
 ## Limits (to verify on your machine)
 
 - Tested in Live 12 Suite on a real set (2026-11-25): the probe and HypnomixMain measuring playback, the menus and song card reaching the app and `scan`, A / B / Blind and loudness matching on an A/B set, and Record and review before export. Not yet tested: the track-copy switch for clip fixes by ear, and other Live versions.
-- The mastering chain's parameter names follow Live 12; any it cannot find are named in the device after
-  Build, so you can set them by hand.
+- The mastering chain was tested in Live 12.4 (2026-11-25): Build, the song card's ceiling and character, Match
+  target (it settled at -9.9 LUFS for a -10 target), Save, and building again from the saved template. Live loads
+  your own default presets when hypnomix adds a device or a rack: Build empties the rack first, and sets the values
+  listed above on top of your default device presets (anything it does not list keeps your preset's value). Any
+  control it cannot find is named in the device after Build, so you can set it by hand.
 - The probe's loudness is measured on 100 ms blocks with the BS.1770 gate; short sections read slightly
   differently from a full-file meter. Peaks are sample peaks: use `measure` on a bounce for true peak.
 - Record and review writes a 32-bit float WAV with Max's `sfrecord~` into `~/Documents/Hypnomix/bounces/`.

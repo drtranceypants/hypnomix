@@ -31,18 +31,19 @@ var MAKE = {
       P_(i + " Frequency A", 0, 1, 0.5, hz), P_(i + " Gain A", -15, 15, 0, lin("dB")), P_(i + " Resonance A", 0.1, 18, 0.71, lin(""))); return dev("EQ Eight", "Eq8", p); },
   "Glue Compressor": function () { return dev("Glue Compressor", "GlueCompressor", [P_("Threshold", -40, 0, 0, lin("dB")), P_("Ratio", 0, 2, 0, null, ["2", "4", "10"]),
       P_("Attack", 0, 6, 0, null, ["0.01 ms", "0.1 ms", "0.3 ms", "1 ms", "3 ms", "10 ms", "30 ms"]),
-      P_("Release", 0, 6, 0, null, ["0.1 s", "0.2 s", "0.4 s", "0.6 s", "0.8 s", "1.2 s", "Auto"]), P_("Makeup", 0, 20, 0, lin("dB")),
+      P_("Release", 0, 6, 0, null, ["0.1", "0.2", "0.4", "0.6", "0.8", "1.2", "A"]), P_("Output", 0, 20, 0, lin("dB")),
       P_("Range", 0, 70, 70, lin("dB")), P_("Dry/Wet", 0, 1, 1, function (x) { return (x * 100).toFixed(0) + " %"; }), sw("Peak Clip In", 0)]); },
   "Multiband Dynamics": function () { return dev("Multiband Dynamics", "MultibandDynamics", [P_("Amount", 0, 1, 1, function (x) { return (x * 100).toFixed(0) + " %"; })]); },
   "Saturator": function () { return dev("Saturator", "Saturator", [P_("Drive", -36, 36, 0, lin("dB")), P_("Type", 0, 6, 0, null, ["Analog Clip", "Soft Sine", "Medium Curve", "Hard Curve", "Sinoid Fold", "Digital Clip", "Waveshaper"]),
       P_("Output", -36, 0, 0, lin("dB")), P_("Dry/Wet", 0, 1, 1, function (x) { return (x * 100).toFixed(0) + " %"; })]); },
   "Utility": function () { return dev("Utility", "StereoGain", [P_("Stereo Width", 0, 4, 1, function (x) { return (x * 100).toFixed(1) + " %"; }), sw("Bass Mono", 0),
       P_("Bass Freq", 0, 1, 0.3, function (x) { return (50 + 450 * x).toFixed(0) + " Hz"; }), sw("DC Filter", 0), P_("Gain", -35, 35, 0, lin("dB"))]); },
-  "Limiter": function () { return dev("Limiter", "Limiter", [P_("Gain", -24, 24, 0, lin("dB")), P_("Ceiling", -24, 0, 0, lin("dB")), sw("True Peak", 0),
-      sw("Auto Release", 0), P_("Lookahead", 0, 2, 1, null, ["1.5 ms", "3 ms", "6 ms"])]); },
+  "Limiter": function () { return dev("Limiter", "Limiter", [P_("Input Gain", -24, 24, 0, lin("dB")), P_("Ceiling", -24, 0, -2.5, lin("dB")),
+      sw("Auto", 0), P_("Lookahead", 0, 2, 1, null, ["1.5 ms", "3 ms", "6 ms"]), P_("Mode", 0, 2, 0, null, ["Standard", "Soft Clip", "True Peak"])]); },
   "Audio Effect Rack": function () { var d = dev("Audio Effect Rack", "AudioEffectGroupDevice", [P_("Macro 1", 0, 127, 0, lin(""))]); d.chains = []; return d; }
 };
 var ME = {name: "HypnomixMain", class_name: "MxDeviceAudioEffect", params: [], id: NEXT++, chains: null};
+var NO_DELETE_CHAIN = false;
 var MAIN = {name: "Main", devices: [ME], id: NEXT++, vol: P_("Volume", 0, 1, 0.85, function () { return "0.0 dB"; })};
 var SONG = {is_playing: 0, id: NEXT++};
 function resolve(path) {
@@ -79,6 +80,7 @@ function LiveAPI(path) {
     if (f == "str_for_value") return o.disp(a);
     if (f == "insert_device") { if (!MAKE[a]) throw "no device " + a; var d = MAKE[a](); o.devices.splice(b, 0, d); return ["id", d.id]; }
     if (f == "delete_device") { o.devices.splice(a, 1); return; }
+    if (f == "delete_chain") { if (NO_DELETE_CHAIN) throw "no delete_chain"; o.chains.splice(a, 1); return; }
     if (f == "insert_chain") { o.chains.splice(a === undefined ? o.chains.length : a, 0, {name: "Chain", devices: [], id: NEXT++}); return; }
     if (f == "start_playing") { SONG.is_playing = 1; return; }
   };
@@ -128,11 +130,11 @@ print_(MAIN.devices.map(flat)); print_(said());
         self.assertIn(eq["1 Frequency A"], ("25.0 Hz", "24.9 Hz", "25.1 Hz"))
         self.assertEqual(eq["4 Frequency A"][:4], "3.00")
         self.assertEqual(eq["6 Filter On A"], "off")
-        self.assertEqual((glue["Ratio"], glue["Attack"], glue["Release"], glue["Range"]), ("2", "30 ms", "Auto", "3.00 dB"))
+        self.assertEqual((glue["Ratio"], glue["Attack"], glue["Release"], glue["Range"]), ("2", "30 ms", "A", "3.00 dB"))
         self.assertEqual(tame["Device On"], "off")
         self.assertEqual((warm["Device On"], warm["Type"]), ("off", "Soft Sine"))
         self.assertEqual((util["Bass Mono"], util["Bass Freq"], util["DC Filter"]), ("on", "120 Hz", "on"))
-        self.assertEqual((lim["Ceiling"], lim["True Peak"], lim["Lookahead"]), ("-1.00 dB", "on", "3 ms"))   # punch
+        self.assertEqual((lim["Ceiling"], lim["Mode"], lim["Lookahead"]), ("-1.00 dB", "True Peak", "3 ms"))   # punch
         self.assertIn("6 devices", msg)
 
     def test_build_again_asks_then_replaces(self):
@@ -152,7 +154,7 @@ tplname("my", "master"); HTTP.reply = '{"name": "my master", "devices": 6, "skip
 var sent = JSON.parse(HTTP.posted.body); print_(sent.name); print_(sent.chain.devices.length);
 HTTP.reply = JSON.stringify(sent.chain); st.list = ["hypnomix stock", "my master"]; pick(1);
 st.confirmAt = new Date().getTime(); build();
-print_(MAIN.devices.map(flat)[0].chains[0].devices.map(function (d) { return [d.name, d.p["Device On"], d.p["Gain"] || ""]; }));
+print_(MAIN.devices.map(flat)[0].chains[0].devices.map(function (d) { return [d.name, d.p["Device On"], d.p["Input Gain"] || ""]; }));
 """)
         self.assertEqual(out[0], "my master")
         self.assertEqual(out[1], 6)                       # what is inside our rack, not the rack itself
@@ -175,7 +177,7 @@ var sent = JSON.parse(HTTP.posted.body).chain; print_(sent.devices[0].chains[0].
         out = run(self.js, """
 bang(); build(); st.readyAt = 0;
 param("hm_ceiling", -2.0); param("hm_mode", 2);
-var lim = MAIN.devices[0].chains[0].devices[5]; print_([itemDisp(lim.params[2]), itemDisp(lim.params[5]), itemDisp(lim.params[4])]);
+var lim = MAIN.devices[0].chains[0].devices[5]; print_([itemDisp(lim.params[2]), itemDisp(lim.params[4]), itemDisp(lim.params[3])]);
 MAIN.devices[0].name = "Somebody's rack"; param("hm_ceiling", -0.5); print_(itemDisp(lim.params[2]));
 """)
         self.assertEqual(out[0], ["-2.00 dB", "1.5 ms", "off"])       # loud: short lookahead, manual release
@@ -248,6 +250,27 @@ class Patch(unittest.TestCase):
                                            "lines": []}}, "track")["patcher"]
         self.assertFalse(any(b["box"].get("text") == "js hypnomix_master.js" for b in track["boxes"]))
 
+
+
+class DefaultRackPreset(unittest.TestCase):
+    """Live loads the user's default rack preset into a new rack: Build must start from an empty rack."""
+    def test_preset_chains_are_removed_or_emptied(self):
+        js = MC.script()
+        for no_delete in ("false", "true"):
+            out = run(js, """
+NO_DELETE_CHAIN = %s;
+var make = MAKE["Audio Effect Rack"];
+MAKE["Audio Effect Rack"] = function () { var d = make(); d.chains.push({name: "My preset", devices: [MAKE["Limiter"](), MAKE["Utility"]()], id: NEXT++});
+    d.chains.push({name: "Other", devices: [MAKE["Utility"]()], id: NEXT++}); return d; };
+bang(); build();
+var rack = MAIN.devices[0];
+print_(rack.chains.map(function (c) { return c.devices.length; }));
+""" % no_delete)
+            counts = out[0]
+            self.assertEqual(sum(1 for n in counts if n == 6), 1, counts)       # one chain holds the six stages
+            self.assertTrue(all(n in (0, 6) for n in counts), counts)           # nothing from the preset is left
+            if no_delete == "false":
+                self.assertEqual(counts, [6])
 
 if __name__ == "__main__":
     unittest.main()

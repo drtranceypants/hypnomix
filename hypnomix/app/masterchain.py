@@ -69,7 +69,7 @@ STOCK = {
          "why": "low cut 25 Hz; shelves and bells at 0 dB, ready to move"},
         {"device": "Glue Compressor", "name": "Glue", "on": 1,
          "set": [[["Ratio"], 2, "item"], [["Attack"], 30, "item"], [["Release"], "Auto", "item"],
-                 [["Threshold"], -12, "disp"], [["Range"], 3, "disp"], [["Makeup"], 0, "disp"],
+                 [["Threshold"], -12, "disp"], [["Range"], 3, "disp"], [["Output", "Makeup"], 0, "disp"],
                  [["Dry/Wet"], 100, "disp"], [["Peak Clip In", "Soft Clip", "Clip"], 0, "raw"]],
          "why": "2:1, slow attack, auto release, never more than 3 dB"},
         {"device": "Multiband Dynamics", "name": "Tame", "on": 0,
@@ -84,7 +84,7 @@ STOCK = {
                  [["Stereo Width", "Width"], 100, "disp"], [["DC Filter"], 1, "raw"]],
          "why": "bass mono below 120 Hz, DC filter"},
         {"device": "Limiter", "name": "Limiter", "on": 1,
-         "set": [[["Gain", "Input Gain"], 0, "disp"], [["True Peak"], 1, "raw"], [["Mode"], "True Peak", "item"],
+         "set": [[["Input Gain", "Gain"], 0, "disp"], [["Mode"], "True Peak", "item"],
                  [["Auto Release", "Auto"], 1, "raw"]],
          "why": "ceiling from the song card; gain set by Match target"},
     ],
@@ -219,6 +219,7 @@ var RACK = __RACK__;
 var STOCK = __STOCK__;
 var CHARACTER = __CHARACTER__;
 var INSERT_NAMES = __INSERT__;
+var LABELS = __LABELS__;                  // the label Live shows for each song-card control -> its hm_ name
 var st = {ready: false, readyAt: 0, list: [STOCK.name], pick: 0, name: "", card: {}, confirmAt: 0, v0: 0, v1: 0,
           match: null, song: null};
 
@@ -229,6 +230,7 @@ function say(t) { outlet(0, "set", t); }
 function bang() {
     if (st.ready) return;
     st.ready = true; st.readyAt = now();
+    try { readCard(); } catch (e) { }
     fillMenu([STOCK.name]);
     refreshList();
 }
@@ -342,6 +344,7 @@ function setItem(p, target) {              // a menu: the item with that text, o
         var s = String(items[i]);
         if (typeof target == "string") {
             if (s.toLowerCase() == target.toLowerCase()) { best = i; break; }
+            if (best < 0 && s.length == 1 && s.toLowerCase() == target.charAt(0).toLowerCase()) best = i;   // "A" = Auto
             if (best < 0 && s.toLowerCase().indexOf(target.toLowerCase()) >= 0) best = i;
         } else {
             var x = num(s), d = (x > 0 && target > 0) ? Math.abs(Math.log(x / target)) : Math.abs(x - target);
@@ -368,6 +371,16 @@ function insert(parent, devName, idx) {    // a stock device into a track or cha
     return new LiveAPI(parent.unquotedpath + " devices " + idx);
 }
 function rename(d, nm) { try { d.set("name", nm); } catch (e) { } }
+function clearRack(rack, miss) {           // remove what a default rack preset brought: chains, or at least their devices
+    var n = rack.getcount("chains"), i;
+    for (i = n - 1; i >= 0; i--) { try { rack.call("delete_chain", i); } catch (e) { } }
+    n = rack.getcount("chains");
+    for (i = 0; i < n; i++) {
+        var ch = new LiveAPI(rack.unquotedpath + " chains " + i);
+        for (var k = ch.getcount("devices") - 1; k >= 0; k--) { try { ch.call("delete_device", k); } catch (e) { } }
+    }
+    if (n > 1) miss.push(RACK + " kept " + (n - 1) + " empty chain(s) from your default rack preset");
+}
 
 // ---------------------------------------------------------------- Build chain
 function build() {
@@ -393,7 +406,11 @@ function buildWith(tpl) {
     var rack = insert(t, "Audio Effect Rack", idx), chain;
     if (rack) {
         rename(rack, RACK);
-        try { rack.call("insert_chain", 0); } catch (e) { try { rack.call("insert_chain"); } catch (e2) { } }
+        clearRack(rack, miss);                    // Live loads the user's default rack preset: start empty
+        if (!rack.getcount("chains")) {
+            try { rack.call("insert_chain", 0); } catch (e) { }
+            if (!rack.getcount("chains")) { try { rack.call("insert_chain"); } catch (e2) { } }
+        }
         chain = rack.getcount("chains") ? new LiveAPI(rack.unquotedpath + " chains 0") : null;
         if (chain) rename(chain, tpl.name || "chain");
     }
@@ -409,11 +426,12 @@ function buildWith(tpl) {
             var on = find(d, ["Device On"]);
             if (on) on.set("value", s.on ? 1 : 0);
         }
+        try { readCard(); } catch (e) { }          // the card as it is in Live right now
         followCard(true);
     } else {
         n = restore(chain, tpl.devices || [], miss);
     }
-    say("Built " + (tpl.name || "the chain") + ": " + n + " devices in " + RACK + "." +
+    say("Built " + (tpl.name || "the chain") + ": " + n + " devices in " + RACK + ", ceiling " + st.card.ceiling + " dB." +
         (miss.length ? " Not set: " + miss.slice(0, 4).join("; ") + (miss.length > 4 ? " …" : "") : " Open the rack to edit it."));
 }
 function restore(parent, devs, miss) {     // a saved template: devices with every value, racks with their chains
@@ -424,11 +442,18 @@ function restore(parent, devs, miss) {     // a saved template: devices with eve
         n++;
         if (s.name) rename(d, s.name);
         if (s.chains && parseInt(d.get("can_have_chains"))) {
+            clearRack(d, miss);                            // a default rack preset may have filled it
+            var reuse = d.getcount("chains") == 1 &&       // one empty chain left: use it first
+                new LiveAPI(d.unquotedpath + " chains 0").getcount("devices") == 0;
             for (var c = 0; c < s.chains.length; c++) {
-                var before = d.getcount("chains");
-                try { d.call("insert_chain", before); } catch (e) { try { d.call("insert_chain"); } catch (e2) { } }
-                if (d.getcount("chains") <= before) { miss.push((s.name || s.cls) + " chain " + (c + 1)); continue; }
-                var ch = new LiveAPI(d.unquotedpath + " chains " + before);
+                var before = d.getcount("chains"), at = before;
+                if (c == 0 && reuse) at = 0;
+                else {
+                    try { d.call("insert_chain", before); } catch (e) { }
+                    if (d.getcount("chains") <= before) { try { d.call("insert_chain"); } catch (e2) { } }
+                    if (d.getcount("chains") <= before) { miss.push((s.name || s.cls) + " chain " + (c + 1)); continue; }
+                }
+                var ch = new LiveAPI(d.unquotedpath + " chains " + at);
                 if (s.chains[c].name) rename(ch, s.chains[c].name);
                 restore(ch, s.chains[c].devices || [], miss);
             }
@@ -482,6 +507,18 @@ function save() {
 }
 
 // ---------------------------------------------------------------- the song card
+// Live reports HypnomixMain's controls by their labels ("Ceiling dBTP"), and their first values can arrive
+// before this script is ready: read them from Live once it is
+function readCard() {
+    var me = new LiveAPI("this_device"), n = me.getcount("parameters");
+    for (var i = 0; i < n; i++) {
+        var p = new LiveAPI("this_device parameters " + i), on = str(p.get("original_name")), sh = str(p.get("name"));
+        var nm = LABELS[on] || LABELS[sh] || on;
+        if (nm.indexOf("hm_") == 0) st.card[nm.replace(/^hm_/, "")] = parseFloat(p.get("value"));
+    }
+    var mi = st.card.mode;
+    if (typeof mi == "number" && !isNaN(mi)) st.card.mode = MODES[Math.round(mi)] || "clean";
+}
 function param(nm, v) {
     nm = String(nm).replace(/^hm_/, "");
     st.card[nm] = v;
@@ -544,6 +581,7 @@ function match() {
     if (!lim) { say("No Limiter before HypnomixMain: build the chain, or add a Limiter to yours."); return; }
     var g = find(lim, ["Gain", "Input Gain"]);
     if (!g) { say("This Limiter has no Gain control hypnomix knows."); return; }
+    try { readCard(); } catch (e) { }
     var target = parseFloat(st.card.target);
     if (isNaN(target)) target = -14;
     st.match = {lim: lim, gain: g, target: target, blocks: [], round: 0, wait: 10};
@@ -588,10 +626,15 @@ function blk() {
 """
 
 
+def _labels():
+    from hypnomix.app.probe import CONTROLS
+    return {lab: n for m in CONTROLS.values() for n, lab, _, _, _, _ in m}
+
+
 def script(app_port=8791):
     return (JS.replace("__APP__", str(app_port)).replace("__RACK__", json.dumps(RACK))
             .replace("__STOCK__", json.dumps(STOCK)).replace("__CHARACTER__", json.dumps(CHARACTER))
-            .replace("__INSERT__", json.dumps(INSERT_NAMES)))
+            .replace("__INSERT__", json.dumps(INSERT_NAMES)).replace("__LABELS__", json.dumps(_labels())))
 
 
 # ---------------------------------------------------------------- the patch: a column on HypnomixMain
