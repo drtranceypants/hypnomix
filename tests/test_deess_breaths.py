@@ -111,5 +111,26 @@ class BreathsTest(unittest.TestCase):
             self.assertTrue(np.array_equal(self.y[a:b], self.x[a:b]))
 
 
+
+class TestCoreDeess(unittest.TestCase):
+    """dsp.deess (used by automix): the S band must go DOWN. With a causal split it came out louder."""
+    def test_s_band_is_reduced_not_boosted(self):
+        from hypnomix.core import dsp
+        rng = np.random.default_rng(3)
+        t = np.arange(SR * 3) / SR
+        voice = 0.3 * np.sin(2 * np.pi * 220 * t) + 0.1 * np.sin(2 * np.pi * 2500 * t)
+        ess = np.zeros_like(t)
+        for k in range(3):
+            a, n = int((0.5 + k) * SR), int(0.12 * SR)
+            ess[a:a + n] += rng.standard_normal(n) * np.hanning(n) * 0.5
+        from scipy.signal import butter, sosfiltfilt
+        ess = sosfiltfilt(butter(4, [5000, 10000], "bandpass", fs=SR, output="sos"), ess)
+        y = np.stack([voice + ess] * 2, axis=1)
+        out, g = dsp.deess(y, SR, 6500, -34, 6, 10)
+        self.assertLess(float(g.min()), -3)                                        # it did work on the S's
+        self.assertLess(band_db(out[:, 0], 5200, 9500), band_db(y[:, 0], 5200, 9500) - 4)   # S band clearly down
+        self.assertAlmostEqual(band_db(out[:, 0], 150, 600), band_db(y[:, 0], 150, 600), delta=0.3)   # voice untouched
+        self.assertLessEqual(float(np.abs(out).max()), float(np.abs(y).max()) + 1e-6)          # never louder
+
 if __name__ == "__main__":
     unittest.main()

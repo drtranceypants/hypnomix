@@ -326,8 +326,13 @@ def limit(y, sr, ceiling_dbtp=-1.0, lookahead_ms=5.0, release_ms=80.0):
 
 
 def deess(y, sr, freq=6500, threshold_db=-30, ratio=4, max_gr_db=8):
-    """Split-band de-esser: compresses only the band above `freq`, triggered by 5–10 kHz energy."""
-    hp = filt(y, highpass(freq * 0.75, sr, 4))
+    """Split-band de-esser: compresses only the band above `freq`, triggered by 5–10 kHz energy.
+
+    The high band is split off with a zero-phase filter, so `y - hp` really is the rest of the sound and turning
+    `hp` down can only turn the S band down. (With an ordinary filter the two halves are out of phase around the
+    crossover and the "de-essed" band came out up to 3-4 dB LOUDER.)"""
+    from scipy.signal import sosfiltfilt
+    hp = sosfiltfilt(highpass(freq * 0.75, sr, 4), y, axis=0)
     sc = filt(y, butter(4, [freq * 0.8, min(freq * 1.6, sr * 0.45)], "bandpass", fs=sr, output="sos"))
     _, g = compress(hp, sr, threshold_db, ratio, 1, 60, 4, sidechain=sc, block=16)
     g = np.maximum(g, -max_gr_db)
