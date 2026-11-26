@@ -16,6 +16,11 @@ What it removes, and only that:
             They are moved to ~/.hypnomix/holding, not deleted, and deleted from there 14 days later
             ("Restore" puts the last batch back)
 
+A folder in "watch" must exist inside your home folder, and not be the home folder itself, the top of the disk,
+Library, or all of Music, Desktop or Documents (a folder inside those is fine): the settings refuse it and say why.
+A folder saved earlier that no longer qualifies (a project folder on an external drive, say) is not cleaned any more,
+but it is still READ, so the audio its projects use stays protected. The settings list it as "not cleaned" and why.
+
 Never removed: an audio file any Live, REAPER or Ardour project on this computer uses (projects under Music,
 Documents, Desktop and the watched folders are read for this), a file named "final" or "master", anything
 changed in the last hour, and anything while a job is running.
@@ -26,6 +31,8 @@ changed in the last hour, and anything while a job is running.
 import gzip, json, os, re, shutil, subprocess, sys, threading, time
 from datetime import datetime
 from pathlib import Path
+
+from hypnomix.core.paths import write_private
 
 DAY = 86400
 GB = 1e9
@@ -67,26 +74,113 @@ def load():
 
 
 def save(s):
-    state_file().parent.mkdir(parents=True, exist_ok=True)
-    state_file().write_text(json.dumps(s, indent=1))
+    write_private(state_file(), json.dumps(s, indent=1))         # mode 0600, in the 0700 hypnomix folder
+
+
+def _same(a, b):
+    try:
+        return os.path.samefile(a, b)                            # by identity, so case and symlinks can't dodge it
+    except OSError:
+        return False
+
+
+def check_watch(x):
+    """A folder the person asks Disk care to look in. It deletes old audio by rule inside these, so it must be an
+    existing folder inside your home folder, and not one that holds everything. Returns the real path; raises
+    ValueError saying why not, and what to do instead."""
+    x = str(x).strip()
+    p = Path(x).expanduser()
+    if not p.is_absolute():
+        raise ValueError(f"'{x}' isn't a full folder path. Give the whole path, like ~/Music/Projects.")
+    if not p.is_dir():
+        raise ValueError(f"'{x}' isn't a folder that exists. Check the spelling, or leave it out.")
+    p, home = p.resolve(), user_home().resolve()
+    if p.parent == p:
+        raise ValueError("The top of the disk can't be watched: Disk care deletes old audio inside watched folders. "
+                         "Pick the folder your projects are in, for example a folder inside Music.")
+    if _same(p, home):
+        raise ValueError("Your whole home folder can't be watched: Disk care deletes old audio inside watched folders. "
+                         "Pick the folder your projects are in, for example a folder inside Music.")
+    if not any(_same(a, home) for a in p.parents):
+        raise ValueError(f"'{x}' is outside your home folder. Disk care only watches folders inside it; "
+                         "for projects elsewhere, run the cleanup from that folder yourself.")
+    lib = home / "Library"
+    if any(_same(a, lib) for a in (p, *p.parents)):
+        raise ValueError("The Library folder holds other apps' files and can't be watched. "
+                         "Pick the folder your projects are in, for example a folder inside Music.")
+    for name in ("Music", "Desktop", "Documents"):
+        if _same(p, home / name):
+            raise ValueError(f"All of {name} can't be watched, because Disk care deletes old audio inside watched folders. "
+                             f"Pick the folder your projects are in: a folder inside {name} is fine.")
+    return p
 
 
 def settings(body):
     s = load()
+    watch = None
+    if "watch" in body:                                          # checked first: a refused folder changes nothing
+        w = body["watch"]
+        if not isinstance(w, (str, list, tuple)):
+            raise ValueError("The watched folders must be a list of folders, one per line.")
+        w = w.splitlines() if isinstance(w, str) else list(w)
+        watch = [str(check_watch(x)) for x in w if str(x).strip()]
     if "auto" in body:
         s["auto"] = bool(body["auto"])
     if "wavs" in body:
         s["wavs"] = bool(body["wavs"])
-    if "watch" in body:
-        w = body["watch"]
-        w = w.splitlines() if isinstance(w, str) else list(w)
-        s["watch"] = [x.strip() for x in w if x.strip()]
+    if watch is not None:
+        s["watch"] = watch
     save(s)
     return view()
 
 
+def _saved():
+    w = load().get("watch", [])
+    return [x for x in w if isinstance(x, str) and x.strip()] if isinstance(w, list) else []
+
+
 def watched():
-    return [Path(x).expanduser() for x in load().get("watch", []) if Path(x).expanduser().is_dir()]
+    """The watched folders that may be CLEANED: those that still pass check_watch. An old or hand-edited list can't
+    widen what is deleted."""
+    out = []
+    for x in _saved():
+        try:
+            out.append(check_watch(x))
+        except (ValueError, TypeError, OSError):
+            pass
+    return out
+
+
+def refused():
+    """Saved watch entries that no longer pass check_watch (saved by an older version, or edited by hand): [(folder,
+    why)]. They are not cleaned, but see read_only()."""
+    out = []
+    for x in _saved():
+        try:
+            check_watch(x)
+        except (ValueError, TypeError, OSError) as e:
+            out.append((x, str(e)))
+    return out
+
+
+def read_only():
+    """Folders only READ, never cleaned, for the 'used by a project' guard: every saved entry that is an existing
+    folder, whether or not it may be cleaned (a project on an external drive still protects the audio it uses).
+    Never the top of the disk, the home folder or Library: reading those whole would be slow and isn't what anyone
+    saved a project folder for."""
+    home, out = user_home().resolve(), []
+    for x in _saved():
+        try:
+            p = Path(x).expanduser()
+            if not p.is_absolute() or not p.is_dir():
+                continue
+            r = p.resolve()
+            if r.parent == r or _same(r, home) or any(_same(a, home / "Library") for a in (r, *r.parents)):
+                continue
+            out.append(p)
+        except (OSError, ValueError, RuntimeError):
+            pass
+    return out
 
 
 # ---------------------------------------------------------------- disk space
@@ -179,7 +273,7 @@ def project_refs(blocked):
     except (OSError, ValueError):
         cache = {}
     fresh, names = {}, set()
-    roots = [user_home() / n for n in ("Music", "Documents", "Desktop")] + watched()
+    roots = [user_home() / n for n in ("Music", "Documents", "Desktop")] + read_only()
     for root in roots:
         if not root.is_dir():
             continue
@@ -201,7 +295,8 @@ def project_refs(blocked):
                     refs = hit[1]
                 else:
                     try:
-                        data = gzip.open(p).read() if ext == ".als" else open(p, "rb").read()
+                        with (gzip.open(p) if ext == ".als" else open(p, "rb")) as fh:
+                            data = fh.read()
                     except Exception:
                         continue
                     refs = sorted({os.path.basename(m.group(1).decode("utf-8", "replace").replace("\\", "/")).lower()
@@ -399,7 +494,7 @@ def view():
     free, total = space()
     held = [b for b in holding().iterdir() if b.is_dir()] if holding().is_dir() else []
     return dict(free=free, total=total, level=level(free, total), auto=s.get("auto", True), wavs=s.get("wavs", False),
-                watch=s.get("watch", []), last=s.get("last"), busy=RUNNING["busy"],
+                watch=_saved(), refused=[dict(folder=f, why=w) for f, w in refused()], last=s.get("last"), busy=RUNNING["busy"],
                 holding=dict(batches=len(held), bytes=sum(size(b) for b in held)))
 
 
@@ -446,7 +541,10 @@ def handle_post(path, body, job_running=lambda: False):
     if path == "/api/diskcare/run":
         return 200, run("by hand", job_running)
     if path == "/api/diskcare/settings":
-        return 200, settings(body)
+        try:
+            return 200, settings(body)
+        except ValueError as e:                                  # a folder that can't be watched: say why
+            return 400, {"error": str(e)}
     if path == "/api/diskcare/restore":
         return 200, restore()
     return None

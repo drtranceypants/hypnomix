@@ -124,8 +124,8 @@ def load():
 
 
 def save(d):
-    STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps(d, indent=1))
+    from hypnomix.core.paths import write_private       # setup.json: mode 0600, in a 0700 folder
+    write_private(STATE, json.dumps(d, indent=1))
 
 
 def bundled():

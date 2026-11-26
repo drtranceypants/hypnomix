@@ -87,6 +87,134 @@ class DiskCare(unittest.TestCase):
         self.assertFalse((self.r / ".hypnomix/cache/render/abc").exists())
         self.assertFalse(self.DC.due())
 
+    # ---- which folders may be watched (the cleaner deletes old audio by rule inside them)
+    def refused(self, folder, *words):
+        before = self.DC.load()
+        with self.assertRaises(ValueError) as c:
+            self.DC.settings({"watch": [str(folder)], "wavs": True})
+        for w in words:
+            self.assertIn(w, str(c.exception))
+        self.assertEqual(self.DC.load(), before)                    # nothing was saved, not even the other settings
+
+    def test_watch_refuses_the_home_folder(self):
+        self.refused(self.r, "home folder")
+        self.refused("~", "home folder")
+
+    def test_watch_refuses_the_top_of_the_disk(self):
+        self.refused("/", "top of the disk")
+
+    def test_watch_refuses_library(self):
+        (self.r / "Library/Audio").mkdir(parents=True)
+        self.refused(self.r / "Library", "Library")
+        self.refused(self.r / "Library/Audio", "Library")
+
+    def test_watch_refuses_all_of_music_desktop_documents(self):
+        for n in ("Music", "Desktop", "Documents"):
+            (self.r / n / "Projects").mkdir(parents=True)
+            self.refused(self.r / n, f"All of {n}")
+            self.refused(str(self.r / n) + "/", f"All of {n}")
+            self.refused(self.r / n / "Projects" / "..", f"All of {n}")       # a dot-dot way round
+
+    def test_watch_refuses_a_folder_outside_home_and_missing_and_relative(self):
+        with tempfile.TemporaryDirectory() as other:
+            self.refused(other, "outside your home folder")
+        self.refused(self.r / "Music/nope", "isn't a folder that exists")
+        (self.r / "Music/a.wav").parent.mkdir(parents=True)
+        (self.r / "Music/a.wav").write_bytes(b"x")
+        self.refused(self.r / "Music/a.wav", "isn't a folder that exists")
+        self.refused("Music/Projects", "full folder path")
+
+    def test_watch_refuses_a_link_that_leaves_home(self):
+        with tempfile.TemporaryDirectory() as other:
+            (self.r / "Music").mkdir()
+            (self.r / "Music/link").symlink_to(other)
+            self.refused(self.r / "Music/link", "outside your home folder")
+
+    def test_watch_allows_subfolders_and_saves_the_real_path(self):
+        d = self.r / "Music/Projects"
+        d.mkdir(parents=True)
+        v = self.DC.settings({"watch": f"{d}\n\n"})
+        self.assertEqual(v["watch"], [str(d.resolve())])
+        self.assertEqual(self.DC.watched(), [d.resolve()])
+        (self.r / "Desktop/Takes").mkdir(parents=True)
+        self.DC.settings({"watch": [str(d), str(self.r / "Desktop/Takes")]})
+        self.assertEqual(len(self.DC.watched()), 2)
+
+    def test_a_hand_edited_watch_list_cannot_widen_the_clean(self):
+        self.DC.save({"watch": [str(self.r), "/", str(self.r / "Music")]})
+        (self.r / "Music").mkdir()
+        self.assertEqual(self.DC.watched(), [])
+        via_http = self.DC.handle_post("/api/diskcare/settings", {"watch": [str(self.r)]})
+        self.assertEqual(via_http[0], 400)
+        self.assertIn("home folder", via_http[1]["error"])
+
+    def test_a_watched_folder_never_loses_audio_a_project_uses(self):
+        r = self.r
+        work = r / "Music/Work"
+        keep = touch(work / "song/hypnomix-out/dehiss/Lead clean.wav")
+        gone = touch(work / "song/hypnomix-out/dehiss/Old take.wav")
+        als = r / "Music/Work/Song.als"
+        with gzip.open(als, "wb") as f:
+            f.write(b'<Ableton><FileRef><Path Value="/x/Lead clean.wav" /></FileRef></Ableton>')
+        self.DC.settings({"watch": [str(work)]})
+        got = {str(i[2].relative_to(self.r.resolve())) for i in self.DC.plan("ok")[0]}
+        self.assertIn("Music/Work/song/hypnomix-out/dehiss/Old take.wav", got)
+        self.assertNotIn("Music/Work/song/hypnomix-out/dehiss/Lead clean.wav", got)
+        self.DC.run()
+        self.assertTrue(keep.exists())
+        self.assertFalse(gone.exists())
+
+    def test_a_saved_folder_that_no_longer_qualifies_still_protects_the_audio_its_projects_use(self):
+        r = self.r
+        with tempfile.TemporaryDirectory() as ext:                  # an external drive, say: outside the home folder
+            proj = Path(ext) / "proj"
+            proj.mkdir()
+            (proj / "song.rpp").write_bytes(b'<REAPER_PROJECT\n  <SOURCE WAVE\n    FILE "/x/b7.wav"\n  >\n>')
+            keep = touch(r / "Documents/Hypnomix/hypnomix-out/b7.wav")
+            gone = touch(r / "Documents/Hypnomix/hypnomix-out/b8.wav")
+            self.DC.save({"watch": [str(proj)]})                    # saved by an older version
+            self.assertEqual(self.DC.watched(), [])                 # not cleaned...
+            self.assertEqual([p.resolve() for p in self.DC.read_only()], [proj.resolve()])   # ...but still read
+            got = self.paths()
+            self.assertNotIn("Documents/Hypnomix/hypnomix-out/b7.wav", got)
+            self.assertIn("Documents/Hypnomix/hypnomix-out/b8.wav", got)
+            v = self.DC.view()
+            self.assertEqual(v["watch"], [str(proj)])               # the person still sees it
+            self.assertEqual([x["folder"] for x in v["refused"]], [str(proj)])
+            self.assertIn("outside your home folder", v["refused"][0]["why"])
+            self.DC.run()
+            self.assertTrue(keep.exists())
+            self.assertFalse(gone.exists())
+
+    def test_read_only_never_reads_the_top_of_the_disk_home_or_library(self):
+        (self.r / "Library").mkdir()
+        self.DC.save({"watch": ["/", str(self.r), str(self.r / "Library"), 5, None, "", "~/nope"]})
+        self.assertEqual(self.DC.read_only(), [])
+        self.assertEqual(self.DC.watched(), [])
+
+    def test_watch_of_the_wrong_type_is_a_message_not_a_crash(self):
+        for bad in (5, {"a": 1}, True, 1.5):
+            code, body = self.DC.handle_post("/api/diskcare/settings", {"watch": bad})
+            self.assertEqual(code, 400, bad)
+            self.assertIn("list of folders", body["error"])
+        code, body = self.DC.handle_post("/api/diskcare/settings", {"watch": [5]})   # a number as a folder name
+        self.assertEqual(code, 400)
+        self.assertEqual(self.DC.load(), {})
+
+    def test_a_hand_edited_state_file_of_the_wrong_shape_is_ignored(self):
+        for w in (5, {"a": 1}, "x", [5, None, ["y"]]):
+            self.DC.save({"watch": w})
+            self.assertEqual(self.DC.watched(), [])
+            self.assertEqual(self.DC.read_only(), [])
+            self.assertIsInstance(self.DC.view()["watch"], list)
+
+    def test_state_file_is_private(self):
+        import stat
+        self.DC.settings({"auto": True})
+        f = self.DC.state_file()
+        self.assertEqual(stat.S_IMODE(f.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(f.parent.stat().st_mode), 0o700)
+
 
 if __name__ == "__main__":
     unittest.main()
