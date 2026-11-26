@@ -24,8 +24,8 @@ Hits inside their tolerance are never touched. Soft ghost notes are ignored, and
 flams (two hits within 40 ms) are left alone. The report lists the messiest bars first.
 
 --apply writes a NEW set (same folder as the original) where each fixed hit gets warp markers:
-one on the hit, moved part of the way to its reference, and one on the hits either side, holding
-them, so only that small stretch of audio is stretched. Everything stays editable in Live (drag
+one on the hit, moved part of the way to its reference, and one on the onsets either side (quiet ones the
+check set aside too), holding them, so only that small stretch of audio is stretched and no other note moves. Everything stays editable in Live (drag
 the markers, or delete them to undo one fix). Only warped, non-looping clips can be fixed; others
 are reported.
 
@@ -236,7 +236,9 @@ def analyse(root, als_dir, names, to_grid, include_off=False, melodic=(), bass=N
             if not ci["path"].exists():
                 notes["missing"].add(str(ci["path"]))
                 continue
-            for h in clip_onsets(ci, tempo):
+            found = clip_onsets(ci, tempo)
+            ci["all_onsets"] = sorted(h["sec"] for h in found)   # every onset, quiet ones too: the anchors of a fix
+            for h in found:
                 h["clip"] = ci
                 hits.append(h)
         if not hits:
@@ -438,11 +440,14 @@ def apply(issues, tracks, tempo, strength, warp_unwarped=False):
             skipped.append((i, "clip is looped (--unroll-loops copies it out pass by pass, then nudges that copy)" if ci["loop_on"] else
                             "clip is not warped (--warp-unwarped switches warp on for it, playing as before)"))
             continue
-        neigh = sorted(hits_by_clip[id(ci)], key=lambda x: x["sec"])
-        k = neigh.index(h)
+        # anchors: the onsets either side, quiet ones included (a hit the ghost filter set aside must stay where it
+        # is: anchoring past it dragged it along with the fix)
+        every = ci.get("all_onsets") or sorted(x["sec"] for x in hits_by_clip[id(ci)])
+        before = [x for x in every if x < h["sec"] - 0.005]
+        after = [x for x in every if x > h["sec"] + 0.005]
         move_b = i["move"] * strength / spb
-        prev_s = neigh[k - 1]["sec"] if k > 0 else h["sec"] - 0.25 * spb
-        next_s = neigh[k + 1]["sec"] if k + 1 < len(neigh) else h["sec"] + 0.25 * spb
+        prev_s = before[-1] if before else h["sec"] - 0.25 * spb
+        next_s = after[0] if after else h["sec"] + 0.25 * spb
         # clips that already carry warp markers (transient-warped loops): markers between the hit and its
         # neighbours are the anchors (no new marker may cross them); one right at the hit is the one that moves
         msecs = sorted(m_s for _, m_s in ci["markers"])

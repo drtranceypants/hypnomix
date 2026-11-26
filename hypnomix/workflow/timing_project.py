@@ -23,28 +23,6 @@ MELODIC_ROLES = {"guitar", "keys", "synth", "strings", "pad", "brass"}
 DRUM_ROLES = {"kick", "snare", "hats", "toms", "overheads", "drums"}
 
 
-def refine(mono, sr, secs, before=0.06, after=0.08):
-    """Each onset moved to the attack it belongs to: on a 1 ms level envelope, the point halfway up from the quietest
-    moment just before to the peak just after. The onset detector works on a ~93 ms spectrum window, so on tonal
-    parts (bass, guitar) it fires up to half a window EARLY while drums land on time; measured on a planted band,
-    the raw detector put bass and guitar 43-50 ms early against the drums, the refined one within 2 ms."""
-    h, w = max(1, int(round(0.001 * sr))), max(2, int(round(0.002 * sr)))
-    e = np.sqrt(np.convolve(mono.astype(np.float64) ** 2, np.ones(w) / w, "same"))[::h]
-    step = h / sr
-    out = []
-    for s in secs:
-        i0, i1 = max(0, int((s - before) / step)), min(len(e) - 1, int((s + after) / step))
-        if i1 - i0 < 5:
-            out.append(s)
-            continue
-        seg = e[i0:i1]
-        pk = int(np.argmax(seg))
-        lo = int(np.argmin(seg[:pk + 1])) if pk > 0 else 0
-        half = seg[lo] + 0.5 * (seg[pk] - seg[lo])
-        out.append((i0 + lo + int(np.argmax(seg[lo:pk + 1] >= half))) * step)
-    return np.array(out)
-
-
 def item_onsets(c, sr_o=TM.SR_O, hop=TM.HOP_O):
     """[{beat-less hit: t (timeline s), src (source s), strength}] heard from one item's active take."""
     import librosa
@@ -65,7 +43,7 @@ def item_onsets(c, sr_o=TM.SR_O, hop=TM.HOP_O):
         return []
     peaks = librosa.onset.onset_detect(onset_envelope=env, sr=sr_o, hop_length=hop, backtrack=False, units="frames")
     strength = np.array([env[p] for p in peaks[: len(frames)]])
-    src = refine(mono, sr, a / sr + frames * hop / sr_o)
+    src = a / sr + frames * hop / sr_o                # the same detector as Live's `timing`
     if tk.stretch:                                     # stretch markers: source -> take time, inverse of the map
         sec0 = tk.section[0] if tk.section else 0.0
         mpos = np.array([m[0] for m in tk.stretch]); msrc = np.array([m[1] for m in tk.stretch]) + sec0

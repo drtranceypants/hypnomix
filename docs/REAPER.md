@@ -51,10 +51,10 @@ New tools that should work in every DAW belong on the model (`project.load(path)
   `ScaleToEnvelopeMode(1, amp)` every 0.5 dB.
 - Stretch markers: straight lines between markers; before the first and after the last, the source runs at normal
   speed from the nearest marker.
-- Onsets: librosa's spectral detector (93 ms window) fires up to ~50 ms EARLY on tonal parts (bass, guitar) and on
-  time on drums; `timing_project.refine` moves each to the half-rise point of a 1 ms level envelope (planted band:
-  bass and guitar within 2 ms of the drums). Stretch-marker nudges checked in REAPER's own render: the hit moves by
-  the planned amount (-34.9 for -35 ms, +15.0 for +15), its neighbours by 0.0.
+- Timing: hits are found with the same onset detector as Live's `timing`. Stretch-marker nudges checked in
+  REAPER's own render: the hit moves by the planned amount (-34.9 for -35 ms, +15.0 for +15), its neighbours by 0.0.
+  An attack refinement was tried and dropped: on synthetic pure tones the detector read bass and guitar ~45 ms
+  early, but on real songs its lean is a few ms and the refinement only swapped early flags for late ones.
 - Rendering with the project's sample rate following the device (`SAMPLERATE x 0`) resamples: set
   `PROJECT_SRATE` and `PROJECT_SRATE_USE` when comparing sample for sample.
 
