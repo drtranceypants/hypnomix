@@ -161,6 +161,9 @@ class Reaper:
     def add_track(self, name=None, file=None, pos=0.0):
         return self.call("add_track", name=name, file=file, pos=pos)
 
+    def transport(self, go=None, at=None):
+        return self.call("transport", go=go, at=at)
+
     def render_master(self, start, end, path):
         path = Path(path).resolve()
         path.parent.mkdir(parents=True, exist_ok=True)

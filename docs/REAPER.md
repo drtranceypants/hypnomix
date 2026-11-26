@@ -15,6 +15,7 @@ Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER"
 | `hypnomix/workflow/scan_project.py` `stack_moves` | vocal stacks: Live's `order.assign_stack` on the model; `rpp_edit.move_item` moves the ITEM chunk (takes and take envelopes go with it); `check(moved=IGUIDs)` |
 | `hypnomix/workflow/timing_project.py` | Live's timing judgement (`session/timing.judge`) on hits read from items; nudges written as stretch markers (`SM`), anchored on every onset either side |
 | `hypnomix/workflow/sidechain_project.py` | sidechained ReaComps: found by their detector channel and the sends landing there, simulated with Live's `sidechain` model, suggestions written as ReaComp floats |
+| `hypnomix/reaper/jsfx/`, `reaper/probes.py` | Hypnomix Probe / Main as JSFX: 20 values per 100 ms into gmem `hypnomix`; the bridge assigns slots and keeps blocks (`probe_blocks`); `probes.feed` relays them into the app's `probe.Hub`; `insert` and `read_cards` for `.rpp` |
 | `hypnomix/workflow/edges_project.py` | Live's word-edge detectors on the model; the REAPER edge fixes |
 | `hypnomix/workflow/fix_project.py` | `fix` for an `.rpp`: one pass into one new file, structure check, re-measure |
 | `hypnomix/reaper/bridge.lua`, `client.py`, `cli.py` | the bridge into the open REAPER, and `hypnomix reaper` |
@@ -67,6 +68,14 @@ New tools that should work in every DAW belong on the model (`project.load(path)
 - A sidechain retune checked in REAPER's render: the bad setting (release 1000 ms on hits 500 ms apart) ducked
   21.0 dB (model 20.7), the suggested one 4.0 dB (model 3.0) and was fully back by the next kick (model 99%).
   ReaComp's release recovers more slowly than Live's model at long settings (6% back vs 36% modelled).
+- **JSFX variable names are case-insensitive**: `N` and `n` are one variable (it made every sample a "block"), and so
+  are `BASE` and `base`. A test checks the hypnomix JSFX for names that differ only in case.
+- Probe shared memory (gmem `hypnomix`): `gmem[0]` = layout version; slot k at `64 + k·194`: count of blocks, sample
+  rate, then a ring of 8 records of (beat, playing, play position, block number, the 20 values). The block count is
+  written last, so the bridge only reads a record once it is complete. A new JSFX needs no REAPER restart when added by
+  path: `TrackFX_AddByName(tr, "JS:hypnomix/hypnomix_probe.jsfx", …)`.
+- The probe measured against the same audio offline: loudness -12.36 vs -12.40 LUFS (BS.1770), peak, L/R and low-end
+  correlation, mid and side identical to 0.01 dB.
 - Rendering with the project's sample rate following the device (`SAMPLERATE x 0`) resamples: set
   `PROJECT_SRATE` and `PROJECT_SRATE_USE` when comparing sample for sample.
 

@@ -8,6 +8,8 @@
   hypnomix reaper fx [FILTER]     plug-ins REAPER has installed (e.g. `fx Rea`, `fx JS:`)
   hypnomix reaper params TRACK FX every parameter of one plug-in as the plug-in shows it (TRACK: name, number or
                                   master; FX: name or number)
+  hypnomix reaper probes install|insert SONG.rpp|cards SONG.rpp
+                                  Hypnomix Probe and Hypnomix Main for REAPER (JSFX): see `hypnomix reaper probes -h`
 
 Every change the bridge makes is one undo step in REAPER, named "hypnomix: ...". See also `hypnomix chain`.
 """
@@ -21,7 +23,11 @@ from hypnomix.reaper.client import Reaper, ReaperError
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix reaper", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["start", "stop", "status", "tracks", "fx", "params"])
+    import sys as _sys
+    if len(_sys.argv) > 1 and _sys.argv[1] == "probes":
+        from hypnomix.reaper import probes
+        return probes.main(_sys.argv[2:])
+    ap.add_argument("cmd", choices=["start", "stop", "status", "tracks", "fx", "params", "probes"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()

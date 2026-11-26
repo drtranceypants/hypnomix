@@ -161,6 +161,36 @@ hypnomix reaper params master 0
 `params` lists every parameter of one plug-in as the plug-in shows it (the track by name, number or `master`; the
 plug-in by name or number).
 
+## 7. Measure while you play: Hypnomix Probe and Hypnomix Main
+
+The same meters as the Live devices, as REAPER effects (JSFX), so the app hears every track **after all its
+plug-ins**, while REAPER plays: nothing is rendered or exported.
+
+```bash
+hypnomix reaper probes install                 # once: copies them into REAPER's Effects/hypnomix
+hypnomix reaper probes insert "Song.rpp"       # → "Song (probes).rpp": a probe last on every track, Main on the master
+hypnomix reaper start                          # the bridge passes what they measure to the app
+hypnomix app                                   # its Live tab: every track's loudness, peak, tone and width
+```
+
+Or add them by hand: Add FX → JS → **Hypnomix Probe** (last on a track) and **Hypnomix Main** (on the master).
+
+- **On each probe:** *What it is* (lead vocal, harmony, kick, bass, guitar … or *auto*: the scan works it out by
+  sound), *Priority* (focus: others give way to it; background: it gives way) and *Protect* (ask before any change).
+- **On Hypnomix Main, the song card:** genre, key and scale (tuning and harmony use them instead of guessing),
+  limiter character, loudness target, true-peak ceiling and amount (the loudness checks and mastering proposals use
+  them).
+
+The menus are saved in the project, so `scan` reads them (`hypnomix reaper probes cards "Song.rpp"` shows what it
+reads). With the app open, press **Record** in its Live tab, play the song or a section in REAPER, press **Stop**: the
+review is made from what was heard (frequency fights while parts play together, the lead vocal against the band
+section by section, a low end that is not mono, Main's loudness against the card). From a terminal:
+`hypnomix probe listen` while you play, then `hypnomix probe report`.
+
+Measured against the same audio offline: loudness within 0.04 LU of a BS.1770 meter, peak, stereo correlation (also
+below 120 Hz) and mid/side exactly. When the bridge starts it gives each probe a slot number (a hidden setting), so
+REAPER may ask to save the project once.
+
 ## Measured in REAPER
 
 | what | result |
@@ -175,6 +205,8 @@ plug-in by name or number).
 
 ## Not yet in REAPER
 
-- Sidechain checks on compressors other than ReaComp (listed, not measured), and the probe devices (Live only).
+- Sidechain checks on compressors other than ReaComp (listed, not measured).
+- The A/B review device (A / B / Blind inside the DAW) and the one-button *Record and review before export* (Live
+  only). In REAPER: `probe listen` while you play, and a render of the master for `probe report --mix`.
 - Where a stretch marker squeezes or stretches a segment, hypnomix's own render reads it at a slightly different
   pitch than REAPER plays it (REAPER keeps the pitch). The timing is exact.

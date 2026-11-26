@@ -1,0 +1,24 @@
+desc:Hypnomix Main (the song card, and the mix measured for the hypnomix app; audio passes through)
+//tags: analysis meter hypnomix
+//author: hypnomix
+// Put it LAST on the master track. The song card: genre, key and scale (tuning and harmony use them instead of
+// guessing), the loudness target, true-peak ceiling, limiter character and amount (the loudness checks and the
+// mastering proposals use them). It also measures the mix like a Hypnomix Probe.
+options:gmem=hypnomix
+
+slider1:genre=0<0,18,1{not set,pop,rock,indie,folk,country,singer-songwriter,r&b / soul,hip-hop,electronic,dance,ambient,jazz,blues,metal,orchestral,world,psychedelic,other}>Genre
+slider2:key=0<0,12,1{not set,C,C#,D,Eb,E,F,F#,G,Ab,A,Bb,B}>Key
+slider3:scale=0<0,6,1{major,minor,dorian,phrygian,lydian,mixolydian,locrian}>Scale
+slider4:mode=0<0,2,1{clean,punch,loud}>Limiter
+slider5:target=-14<-24,-6,0.5>Target LUFS
+slider6:ceiling=-1<-3,0,0.1>Ceiling dBTP
+slider7:amount=100<0,100,1>Amount %
+slider8:slot=-1<-1,4095,1>-slot (set by hypnomix)
+
+import hypnomix_meter.jsfx-inc
+
+in_pin:left input
+in_pin:right input
+out_pin:left output
+out_pin:right output
+

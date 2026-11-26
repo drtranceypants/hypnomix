@@ -582,6 +582,10 @@ def signature(names):
 def read_cards(set_path, cards_file=None):
     """What the person told hypnomix in Live, read from the saved set: per track (role, priority, protect) and the
     song card on Main (genre, key, scale, limiter, target, ceiling, amount), plus chords kept by the app."""
+    if str(set_path).lower().endswith(".rpp"):    # REAPER: the Hypnomix Probe / Main JSFX menus in the project
+        from hypnomix.reaper.probes import read_cards as rpp_cards
+        cf = Path(cards_file) if cards_file else Path(os.environ.get("HYPNOMIX_APP_HOME", "~/Documents/Hypnomix")).expanduser() / "cards.json"
+        return rpp_cards(set_path, cf)
     import gzip
     import xml.etree.ElementTree as ET
     root = ET.fromstring(gzip.open(set_path).read())
@@ -691,6 +695,11 @@ class Hub:
         d.map("/hm/meta", lambda addr, *a: self.on_meta(*a))
         self.server = ThreadingOSCUDPServer(("127.0.0.1", port), d)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        try:                              # REAPER's probes (JSFX) arrive through the hypnomix bridge, not UDP
+            from hypnomix.reaper.probes import feed
+            feed(self)
+        except Exception:
+            pass
         return self
 
     def status(self, window_s=3.0):

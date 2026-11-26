@@ -1,0 +1,21 @@
+desc:Hypnomix Probe (measures this track for the hypnomix app; audio passes through)
+//tags: analysis meter hypnomix
+//author: hypnomix
+// Put it LAST on a track: it hears the track after all its plug-ins. Ten times a second it measures the 20 values
+// the hypnomix app reads (the same as its Live probe): K-weighted RMS, sample peak and RMS per channel, mid, side and
+// L*R, the same below 120 Hz, and 8 bands of the mid signal. The hypnomix bridge (`hypnomix reaper start`) reads them
+// from shared memory and passes them to the app. Tell it what the track is with the menus.
+options:gmem=hypnomix
+
+slider1:role=0<0,19,1{auto,lead vocal,harmony,double,backing vocals,kick,snare,drums,percussion,bass,guitar,acoustic guitar,piano,keys,synth,strings,pad,brass,fx,other}>What it is
+slider2:priority=0<0,2,1{normal,focus: others give way,background: gives way}>Priority
+slider3:protect=0<0,1,1{off,on: ask before any change}>Protect
+slider4:slot=-1<-1,4095,1>-slot (set by hypnomix)
+
+import hypnomix_meter.jsfx-inc
+
+in_pin:left input
+in_pin:right input
+out_pin:left output
+out_pin:right output
+

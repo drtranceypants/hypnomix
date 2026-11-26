@@ -311,6 +311,124 @@ function C.close_tab()
   return { closed = true }
 end
 
+-- ------------------------------------------------------------------ Hypnomix Probe / Main (JSFX) relay
+-- The probes write their 20 values per 100 ms block into shared memory (gmem "hypnomix", see hypnomix_meter.jsfx-inc);
+-- each is given a slot here, and every new block is kept in a ring for the app to fetch (`probe_blocks since=N`).
+local GM_BASE, GM_NV, GM_RING = 64, 20, 8
+local GM_REC = GM_NV + 4
+local GM_BLK = 2 + GM_RING * GM_REC
+local probes = { slots = {}, next_slot = 0, found = {}, last = {}, buf = {}, seq = 0, scanned = 0 }
+local CARD_KEYS = { ["What it is"] = "role", ["Priority"] = "priority", ["Protect"] = "protect", ["Genre"] = "genre",
+                    ["Key"] = "key", ["Scale"] = "scale", ["Limiter"] = "mode", ["Target LUFS"] = "target",
+                    ["Ceiling dBTP"] = "ceiling", ["Amount %"] = "amount" }
+local attached = false
+
+local function probe_scan()
+  if not attached then reaper.gmem_attach("hypnomix"); attached = true end
+  local found = {}
+  local function look(tr, is_main)
+    for k = 0, reaper.TrackFX_GetCount(tr) - 1 do
+      local _, n = reaper.TrackFX_GetFXName(tr, k, "")
+      local kind = n:find("Hypnomix Main", 1, true) and "main" or (n:find("Hypnomix Probe", 1, true) and "probe" or nil)
+      if kind then
+        local key = is_main and "master" or reaper.GetTrackGUID(tr)
+        if not probes.slots[key] then probes.slots[key] = probes.next_slot; probes.next_slot = probes.next_slot + 1 end
+        local slot = probes.slots[key]
+        local sp = -1
+        for p = 0, reaper.TrackFX_GetNumParams(tr, k) - 1 do
+          local _, pn = reaper.TrackFX_GetParamName(tr, k, p, "")
+          if pn:find("slot", 1, true) then sp = p end
+        end
+        if sp >= 0 and math.floor(reaper.TrackFX_GetParam(tr, k, sp) + 0.5) ~= slot then
+          reaper.TrackFX_SetParam(tr, k, sp, slot)
+        end
+        found[#found + 1] = { tr = tr, fx = k, slot = slot, main = is_main or kind == "main", sp = sp }
+        break                                           -- one probe per track: the first (last in chain is advised)
+      end
+    end
+  end
+  look(reaper.GetMasterTrack(0), true)
+  for i = 0, reaper.CountTracks(0) - 1 do look(reaper.GetTrack(0, i), false) end
+  probes.found = found
+end
+
+local function probe_name(f)
+  if f.main then return "Main" end
+  local _, n = reaper.GetTrackName(f.tr)
+  return n
+end
+
+local function probe_poll()
+  local now = reaper.time_precise()
+  if now - probes.scanned > 1.0 then probe_scan(); probes.scanned = now end
+  for _, f in ipairs(probes.found) do
+    local base = GM_BASE + f.slot * GM_BLK
+    local cnt = reaper.gmem_read(base)
+    if probes.last[f.slot] == nil then probes.last[f.slot] = cnt end   -- first sight: start from now
+    local last = probes.last[f.slot]
+    if cnt < last then last = cnt end                          -- the effect was reloaded
+    if cnt - last > GM_RING then last = cnt - GM_RING end      -- fell behind: the ring keeps the newest RING blocks
+    if cnt > last then
+      local vol = reaper.GetMediaTrackInfo_Value(f.tr, "D_VOL")
+      local fader = vol > 0 and 20 * math.log(vol, 10) or -120
+      local pan = reaper.GetMediaTrackInfo_Value(f.tr, "D_PAN")
+      local sr = reaper.gmem_read(base + 1)
+      local name = probe_name(f)
+      for c = last, cnt - 1 do
+        local o = base + 2 + (c % GM_RING) * GM_REC
+        local vals = {}
+        for i = 0, GM_NV - 1 do vals[#vals + 1] = reaper.gmem_read(o + 4 + i) end
+        probes.seq = probes.seq + 1
+        probes.buf[#probes.buf + 1] = { seq = probes.seq, id = 900000 + f.slot, name = name, main = f.main,
+                                        beat = reaper.gmem_read(o), playing = reaper.gmem_read(o + 1),
+                                        fader = fader, pan = pan, sr = sr, vals = vals }
+      end
+      probes.last[f.slot] = cnt
+      while #probes.buf > 4000 do table.remove(probes.buf, 1) end
+    end
+  end
+end
+
+function C.probe_debug(a)       -- what the relay sees: probes found, their slots, and the shared memory at each
+  if not attached then reaper.gmem_attach("hypnomix"); attached = true end
+  local out = { err = probes.err, seq = probes.seq, buffered = #probes.buf, version = reaper.gmem_read(0), probes = {} }
+  for _, f in ipairs(probes.found) do
+    local base = GM_BASE + f.slot * GM_BLK
+    out.probes[#out.probes + 1] = { name = probe_name(f), slot = f.slot, sp = f.sp, count = reaper.gmem_read(base),
+                                     sr = reaper.gmem_read(base + 1), last = probes.last[f.slot] }
+  end
+  return out
+end
+
+function C.transport(a)
+  if a.at then reaper.SetEditCurPos(tonumber(a.at), true, true) end
+  if a.go == "play" then reaper.OnPlayButton() elseif a.go == "stop" then reaper.OnStopButton() end
+  return { state = reaper.GetPlayState(), pos = reaper.GetPlayPosition() }
+end
+
+function C.probe_blocks(a)
+  local since = tonumber(a.since or "0") or 0
+  local out = {}
+  for _, b in ipairs(probes.buf) do if b.seq > since then out[#out + 1] = b end end
+  local meta, names = {}, {}
+  for _, f in ipairs(probes.found) do
+    local params = {}
+    for p = 0, reaper.TrackFX_GetNumParams(f.tr, f.fx) - 1 do
+      if p ~= f.sp then
+        local _, pn = reaper.TrackFX_GetParamName(f.tr, f.fx, p, "")
+        local key = CARD_KEYS[pn]
+        if key then
+          local _, shown = reaper.TrackFX_GetFormattedParamValue(f.tr, f.fx, p, "")
+          params[key] = tonumber(shown) or shown
+        end
+      end
+    end
+    meta[#meta + 1] = { id = 900000 + f.slot, name = probe_name(f), main = f.main, params = params }
+  end
+  for i = 0, reaper.CountTracks(0) - 1 do names[#names + 1] = select(2, reaper.GetTrackName(reaper.GetTrack(0, i))) end
+  return { seq = probes.seq, blocks = out, meta = meta, names = names }
+end
+
 local CHANGES = { set_pins = true, remove_fx = true, add_track = true, add_fx = true, set_param = true, set_named = true, fx_enable = true, set_track = true }
 local running = true
 function C.quit() running = false; return { bye = true } end
@@ -338,6 +456,8 @@ end
 
 local last_beat = 0
 local function loop()
+  local okp, errp = pcall(probe_poll)
+  if not okp then probes.err = tostring(errp) end
   local now = reaper.time_precise()
   if now - last_beat > 1 then
     local f = io.open(DIR .. "/alive", "w"); if f then f:write(tostring(os.time())); f:close() end

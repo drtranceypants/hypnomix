@@ -1,0 +1,98 @@
+// hypnomix meter: the 20 values the hypnomix app reads, every 100 ms, into shared memory (gmem "hypnomix").
+// Imported by hypnomix_probe.jsfx and hypnomix_main.jsfx; the importing effect defines `slot` (set by hypnomix).
+// JSFX names are case-insensitive: N and n are ONE variable, so every name here is distinct in lowercase.
+
+@init
+nvals = 20; ring = 8; rec = nvals + 4;
+slotlen = 2 + ring * rec;                 // per slot: count, sample rate, then `ring` records
+gbase = 64;                               // gmem[0..63]: shared (gmem[0] = layout version)
+gmem[0] = 1;
+blocklen = floor(0.1 * srate + 0.5);      // a 100 ms block
+fill = 0;
+
+// ---- K-weighting (BS.1770), the same coefficients as the Live probe
+function kw_set(sr) local(K, Q, Vh, Vb, a0) (
+  K = tan($pi * 1681.974450955533 / sr); Q = 0.7071752369554196;
+  Vh = 10 ^ (3.999843853973347 / 20); Vb = Vh ^ 0.4996667741545416;
+  a0 = 1 + K / Q + K * K;
+  k1b0 = (Vh + Vb * K / Q + K * K) / a0; k1b1 = 2 * (K * K - Vh) / a0; k1b2 = (Vh - Vb * K / Q + K * K) / a0;
+  k1a1 = 2 * (K * K - 1) / a0; k1a2 = (1 - K / Q + K * K) / a0;
+  K = tan($pi * 38.13547087602444 / sr); Q = 0.5003270373238773;
+  a0 = 1 + K / Q + K * K;
+  k2b0 = 1; k2b1 = -2; k2b2 = 1; k2a1 = 2 * (K * K - 1) / a0; k2a2 = (1 - K / Q + K * K) / a0;
+);
+kw_set(srate);
+
+// a biquad in direct form I: state x1 x2 y1 y2 in this.*
+function bq(x, b0, b1, b2, a1, a2) local(y) (
+  y = b0 * x + b1 * this.x1 + b2 * this.x2 - a1 * this.y1 - a2 * this.y2;
+  this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y;
+  y;
+);
+
+// 3rd-order Butterworth crossover (Max's cross~): a one-pole and a Q=1 biquad, low and high
+function xo_set(f) local(w, K, a0) (
+  w = tan($pi * min(f, srate * 0.45) / srate);
+  this.p = (w - 1) / (w + 1);                                // one-pole coefficient
+  K = w; a0 = 1 + K + K * K;                                 // Q = 1
+  this.lb0 = K * K / a0; this.lb1 = 2 * this.lb0; this.lb2 = this.lb0;
+  this.hb0 = 1 / a0; this.hb1 = -2 / a0; this.hb2 = 1 / a0;
+  this.a1 = 2 * (K * K - 1) / a0; this.a2 = (1 - K + K * K) / a0;
+  this.g = w / (1 + w);
+);
+function xo(x) local(lo1, hi1) (
+  lo1 = this.g * (x + this.lx) - this.p * this.ly;                  // one-pole low-pass
+  this.ly = lo1; this.lx = x;
+  hi1 = x - lo1;                                                       // and its complement (one-pole high-pass)
+  this.low = this.L.bq(lo1, this.lb0, this.lb1, this.lb2, this.a1, this.a2);
+  this.high = this.H.bq(hi1, this.hb0, this.hb1, this.hb2, this.a1, this.a2);
+  this.low;
+);
+
+cl.xo_set(120); cr.xo_set(120);
+c0.xo_set(60); c1.xo_set(120); c2.xo_set(250); c3.xo_set(500); c4.xo_set(2000); c5.xo_set(4000); c6.xo_set(8000);
+
+function clear() (
+  sk0 = sk1 = pk0 = pk1 = s0 = s1 = smid = sside = slr = sl0 = sl1 = sllr = 0;
+  b0 = b1 = b2 = b3 = b4 = b5 = b6 = b7 = 0;
+);
+clear();
+
+@sample
+L = spl0; R = spl1;
+kl = kl2.bq(kl1.bq(L, k1b0, k1b1, k1b2, k1a1, k1a2), k2b0, k2b1, k2b2, k2a1, k2a2);
+kr = kr2.bq(kr1.bq(R, k1b0, k1b1, k1b2, k1a1, k1a2), k2b0, k2b1, k2b2, k2a1, k2a2);
+sk0 += kl * kl; sk1 += kr * kr;
+pk0 = max(pk0, abs(L)); pk1 = max(pk1, abs(R));
+s0 += L * L; s1 += R * R;
+mid = 0.5 * (L + R); side = 0.5 * (L - R);
+smid += mid * mid; sside += side * side; slr += L * R;
+ll = cl.xo(L); lr = cr.xo(R);
+sl0 += ll * ll; sl1 += lr * lr; sllr += ll * lr;
+x = mid;                                  // 8 bands: a chain of crossovers on the mid signal
+v = c0.xo(x); b0 += v * v; x = c0.high;
+v = c1.xo(x); b1 += v * v; x = c1.high;
+v = c2.xo(x); b2 += v * v; x = c2.high;
+v = c3.xo(x); b3 += v * v; x = c3.high;
+v = c4.xo(x); b4 += v * v; x = c4.high;
+v = c5.xo(x); b5 += v * v; x = c5.high;
+v = c6.xo(x); b6 += v * v; x = c6.high;
+b7 += x * x;
+fill += 1;
+fill >= blocklen ? (
+  slot >= 0 ? (
+    sb = gbase + slot * slotlen;
+    cnt = gmem[sb];
+    o = sb + 2 + (cnt % ring) * rec;
+    gmem[o] = beat_position; gmem[o + 1] = (play_state & 1) ? 1 : 0; gmem[o + 2] = play_position; gmem[o + 3] = cnt + 1;
+    o += 4;
+    gmem[o] = sqrt(sk0 / fill); gmem[o + 1] = sqrt(sk1 / fill); gmem[o + 2] = pk0; gmem[o + 3] = pk1;
+    gmem[o + 4] = sqrt(s0 / fill); gmem[o + 5] = sqrt(s1 / fill); gmem[o + 6] = sqrt(smid / fill); gmem[o + 7] = sqrt(sside / fill);
+    gmem[o + 8] = slr / fill; gmem[o + 9] = sqrt(sl0 / fill); gmem[o + 10] = sqrt(sl1 / fill); gmem[o + 11] = sllr / fill;
+    gmem[o + 12] = sqrt(b0 / fill); gmem[o + 13] = sqrt(b1 / fill); gmem[o + 14] = sqrt(b2 / fill); gmem[o + 15] = sqrt(b3 / fill);
+    gmem[o + 16] = sqrt(b4 / fill); gmem[o + 17] = sqrt(b5 / fill); gmem[o + 18] = sqrt(b6 / fill); gmem[o + 19] = sqrt(b7 / fill);
+    gmem[sb + 1] = srate;
+    gmem[sb] = cnt + 1;                 // written last: the bridge reads a record only after this moves
+  );
+  fill = 0; clear();
+);
