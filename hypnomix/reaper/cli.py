@@ -103,7 +103,8 @@ def main():
 STATES = {0: "idle", 1: "built", 2: "matching", 3: "matched", 4: "saved", 5: "no ReaLimit before Hypnomix Main",
           6: "matching stopped: REAPER stopped", 7: "cancelled", 8: "the master is silent", 9: "error (ReaScript console)",
           10: "matched as close as the limiter allows", 11: "no Hypnomix Main on the master",
-          12: "nothing before Hypnomix Main to save", 13: "built from a template"}
+          12: "nothing before Hypnomix Main to save", 13: "built from a template",
+          14: "waiting for an answer in REAPER (a menu or a dialog)"}
 
 
 def chain(r, args, as_json=False):

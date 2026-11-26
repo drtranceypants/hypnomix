@@ -107,7 +107,12 @@ New tools that should work in every DAW belong on the model (`project.load(path)
 Templates are `.RfxChain` files written from the master's state chunk (each plug-in's BYPASS line, block and
 FLOATPOS / WAK lines; FXID lines dropped so REAPER gives new ids) and loaded by splicing them back into the chunk
 just before Main. Match target reads Main's own K-weighted blocks from the probe relay (100 ms each, BS.1770 gate
-over 400 ms windows), adds the master fader, and moves ReaLimit's threshold.
+over 400 ms windows), adds the master fader, and moves ReaLimit's threshold; if it started playback itself it stops
+it again when it is done or cancelled. Build with saved templates asks with `gfx.showmenu`: on macOS the menu only
+stays open from a real window that is already up, so a 1x1 window opens at the mouse and the menu follows a few
+loop passes later (`menu_poll`); a 0x0 window with the menu in the same pass closed by itself after under a second,
+answering "cancelled" (measured in REAPER 7.86). Before every menu or dialog the script reports state 14 (waiting
+for an answer), so Main does not say the bridge is gone while the dialog blocks it.
 
 ## The bridge
 

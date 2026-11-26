@@ -126,6 +126,8 @@ mc_pressed > 0 && time_precise() - mc_pressed > 1.5 && mc_state == mc_from && mc
   gfx_drawstr("Put Hypnomix Main on the master first");
 ) : mc_state == 12 ? (
   gfx_drawstr("Nothing to save: no plug-ins before this effect");
+) : mc_state == 14 ? (
+  gfx_drawstr("Waiting for your answer in REAPER (a menu or a dialog)");
 ) : (
   gfx_drawstr("Build adds a neutral chain; Save keeps yours as a template");
 );

@@ -18,7 +18,7 @@ return function(H)
 local M = {}
 local GM_BUILD, GM_MATCH, GM_SAVE, GM_STATE, GM_A, GM_B = 11, 12, 13, 14, 15, 16
 local S = { IDLE = 0, BUILT = 1, MATCHING = 2, MATCHED = 3, SAVED = 4, NO_LIMITER = 5, STOPPED = 6, CANCELLED = 7,
-            SILENT = 8, ERROR = 9, HARD = 10, NO_MAIN = 11, NOTHING = 12, LOADED = 13 }
+            SILENT = 8, ERROR = 9, HARD = 10, NO_MAIN = 11, NOTHING = 12, LOADED = 13, ASKING = 14 }
 M.S = S
 local TAG = "Hypnomix · "
 local REAEQ, REACOMP, REAXCOMP, REALIMIT = "ReaEQ (Cockos)", "ReaComp (Cockos)", "ReaXcomp (Cockos)", "ReaLimit (Cockos)"
@@ -27,6 +27,7 @@ local CHARACTER = { clean = { release = 120, glue_attack = 30 }, punch = { relea
                     loud = { release = 20, glue_attack = 10 } }
 local presses = {}
 local match = nil
+local menu = nil      -- the template menu, opened over a few passes (see M.build)
 local card_seen = {}
 
 local function say(code, a, b)
@@ -232,28 +233,16 @@ local function build_template(tr, at, name)
   return added
 end
 
-local function pick_template()
-  local list = templates()
-  if #list == 0 then return "hypnomix stock" end
-  local items = { "hypnomix stock" }
-  for _, n in ipairs(list) do items[#items + 1] = n end
-  local opened = false
-  if gfx.getchar() < 0 then gfx.init("", 0, 0, 0, reaper.GetMousePosition()); opened = true end
-  gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
-  local k = gfx.showmenu(table.concat(items, "|"))
-  if opened then gfx.quit() end
-  if k < 1 then return nil end
-  return items[k]
-end
-
-function M.build(name)
+-- Build with a name (the stock chain or a template). With no name and saved templates, a menu asks which: on macOS
+-- a menu shows only from a real window that is already up, so a 1x1 window opens at the mouse and the menu follows
+-- a few passes later (menu_poll). A 0x0 window with the menu at once closed by itself (measured in REAPER 7.86).
+local function build_named(name)
   local tr = master(); local m = main_index(tr)
   if not m then say(S.NO_MAIN); return end
   local have = {}
   for i = 0, m - 1 do if ours(tr, i) then have[#have + 1] = i end end
-  name = name or pick_template()
-  if not name then say(S.CANCELLED); return end
   if #have > 0 and not M.yes then
+    say(S.ASKING)
     if reaper.MB("Replace the Hypnomix chain on the master (" .. #have .. " plug-ins, your edits included)?",
                  "Hypnomix", 4) ~= 6 then say(S.CANCELLED); return end
   end
@@ -272,8 +261,37 @@ function M.build(name)
   return n, miss
 end
 
+function M.build(name)
+  if not main_index(master()) then say(S.NO_MAIN); return end
+  if name then return build_named(name) end
+  local list = templates()
+  if #list == 0 then return build_named("hypnomix stock") end
+  local opened = false
+  if gfx.getchar() < 0 then                  -- no window of ours is open (the review panel would do)
+    local x, y = reaper.GetMousePosition()
+    gfx.init("Hypnomix", 1, 1, 0, x, y); opened = true
+  end
+  menu = { list = list, opened = opened, passes = 0 }
+  say(S.ASKING)
+end
+
+local function menu_poll()
+  local m = menu
+  m.passes = m.passes + 1
+  if m.passes < 3 then return end
+  menu = nil
+  local items = { "hypnomix stock" }
+  for _, n in ipairs(m.list) do items[#items + 1] = n end
+  if m.opened then gfx.x, gfx.y = 0, 0 else gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y end
+  local k = gfx.showmenu(table.concat(items, "|"))
+  if m.opened then gfx.quit() end
+  if k < 1 then say(S.CANCELLED); return end
+  build_named(items[k])
+end
+
 function M.save(name)
   if not name then
+    say(S.ASKING)
     local ok, v = reaper.GetUserInputs("Save the mastering chain", 1, "Template name,extrawidth=120", "my master")
     if not ok then say(S.CANCELLED); return end
     name = v
@@ -301,12 +319,16 @@ local function gated(blocks)                 -- BS.1770: 400 ms windows of 100 m
 end
 
 function M.match()
-  if match then match = nil; say(S.CANCELLED); return end
+  if match then
+    if match.started and reaper.GetPlayState() & 1 == 1 then reaper.OnStopButton() end   -- leave it as we found it
+    match = nil; say(S.CANCELLED); return
+  end
   local fx = limiter()
   if not fx then say(S.NO_LIMITER); return end
   local c = card()
-  match = { fx = fx, target = c.target or -14, round = 0, blocks = {}, wait = 10, seq = H.probes.seq }
-  if reaper.GetPlayState() & 1 == 0 then reaper.OnPlayButton() end
+  local started = reaper.GetPlayState() & 1 == 0
+  match = { fx = fx, target = c.target or -14, round = 0, blocks = {}, wait = 10, seq = H.probes.seq, started = started }
+  if started then reaper.OnPlayButton() end
   say(S.MATCHING, match.target, 1)
 end
 
@@ -328,10 +350,11 @@ local function match_poll()
   local th = param(tr, m.fx, { "Threshold" }); local ce = param(tr, m.fx, { "Ceiling" })
   local thv = H.first_number(H.shown(tr, m.fx, th)); local cev = H.first_number(H.shown(tr, m.fx, ce))
   local gain = cev - thv
-  if L < -60 then match = nil; say(S.SILENT); return end
+  if L < -60 then match = nil; if m.started then reaper.OnStopButton() end; say(S.SILENT); return end
   local diff = m.target - L
   if math.abs(diff) < 0.4 or m.round >= 4 then
     match = nil
+    if m.started then reaper.OnStopButton() end                  -- it started playing for the match: stop it
     say(math.abs(diff) < 0.4 and S.MATCHED or S.HARD, L, gain)
     return
   end
@@ -377,6 +400,7 @@ function M.poll()
       if k == GM_BUILD then M.build() elseif k == GM_MATCH then M.match() else M.save() end
     end
   end
+  if menu then menu_poll() end
   if match then match_poll() end
   local now = reaper.time_precise()
   if now - last_follow > 0.5 then last_follow = now; follow() end
