@@ -281,6 +281,18 @@ class WikiTest(unittest.TestCase):
         self.assertEqual(sorted(f.name for f in root.glob("*.md")), sorted(wiki_md.ROOT_FILES),
                          "add the new file to wiki_md.ROOT_FILES and to pyproject.toml's force-include")
 
+    def test_whole_articles_on_other_pages(self):
+        page = self.root / "home.html"
+        page.write_text("<section id=\"l3\"><h2>x</h2><!--wiki-full:l3-->OLD<!--/wiki-full:l3--><div class=\"demo\">keep</div></section>")
+        changed, missing = wiki_build.refresh_page(page, wiki.local())
+        s = page.read_text()
+        self.assertTrue(changed)
+        self.assertNotIn("OLD", s)
+        self.assertIn('<a href="/wiki/#l4">the next one</a>', s)                         # wiki links go to the wiki
+        self.assertIn('<div class="term" data-label="go"><button class="copy">copy</button><pre>', s)
+        self.assertIn('<!--/wiki-full:l3--><div class="demo">keep</div>', s)             # the rest stays
+        self.assertEqual(wiki_build.refresh_page(page, wiki.local())[0], False)
+
     def test_command_count_on_other_pages(self):
         page = self.root / "home.html"
         page.write_text("<p>all <!--wiki:commands-count-->83<!--/wiki:commands-count--> commands</p>")

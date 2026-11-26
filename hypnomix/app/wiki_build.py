@@ -136,8 +136,17 @@ def teaser(a):
             f'Read “{esc(a["title"])}” in the wiki →</a></p></div>')
 
 
+def for_site(h):
+    """An article's HTML as it appears on another page of the site: links into the wiki go to /wiki/#id, and
+    command blocks get the site's copy button."""
+    h = re.sub(r'<a data-wiki="([^"]+)" href="#">', r'<a href="/wiki/#\1">', h)
+    h = re.sub(r'<a href="#" data-jump="[^"]*">', '<a href="/wiki/">', h)
+    return re.sub(r'(<div class="term"[^>]*>)(?!<button)', r'\1<button class="copy">copy</button>', h)
+
+
 def refresh_page(path, arts):
-    """Rewrite every <!--wiki:ID-->…<!--/wiki:ID--> region of a page. -> (changed, ids not in the wiki)."""
+    """Rewrite every <!--wiki:ID-->…<!--/wiki:ID--> region of a page with a short summary, and every
+    <!--wiki-full:ID-->…<!--/wiki-full:ID--> region with the whole article. -> (changed, ids not in the wiki)."""
     p = Path(path)
     s = p.read_text()
     by = {a["id"]: a for a in arts}
@@ -155,6 +164,15 @@ def refresh_page(path, arts):
         return f"<!--wiki:{aid}-->{teaser(by[aid])}<!--/wiki:{aid}-->"
 
     new = re.sub(r"<!--wiki:([\w-]+)-->.*?<!--/wiki:\1-->", sub, s, flags=re.S)
+
+    def full(m):
+        aid = m.group(1)
+        if aid not in by:
+            missing.append(aid)
+            return m.group(0)
+        return f"<!--wiki-full:{aid}-->\n{for_site(by[aid]['html'])}\n<!--/wiki-full:{aid}-->"
+
+    new = re.sub(r"<!--wiki-full:([\w-]+)-->.*?<!--/wiki-full:\1-->", full, new, flags=re.S)
     if new != s:
         p.write_text(new)
     return new != s, missing
