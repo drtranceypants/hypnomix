@@ -1,0 +1,47 @@
+<!--
+title: The Assistant and the Listener
+sub: chat with an AI that runs hypnomix · optionally, a Google model that hears your songs · your own keys
+group: Start here
+teaser: Rather talk than click? The app's Assistant tab is a chat with the AI of your choice that runs hypnomix for you, and an optional Listener, a Google model that hears a bounce and gives notes by ear. Bring your own keys; nothing changes or leaves your computer without a click.
+-->
+<div class="prose paper">
+      <p><b>Two models, each doing what it is best at.</b> The <b>Assistant</b> talks with you and runs hypnomix: it scans, reads the review, explains each finding and applies what you approve. The <b>Listener</b> only listens: it hears a bounce of your song and writes notes by ear, with timestamps. You can use Claude for the chat and a Google Gemini model as the ear, or any other pair. No Claude Code or terminal needed: it is all in the app's <b>Assistant</b> tab.</p>
+    </div>
+
+    <h3 class="sub-h">1 · Set up the Assistant</h3>
+    <div class="prose paper">
+      <p>Open the app (<code>hypnomix app</code>), go to the <b>Assistant</b> tab, choose an AI provider, paste its key and choose a model (<b>List models</b> shows what your key can use). Any of these work: Claude, OpenAI, Google Gemini, OpenRouter (many models on one key), Groq, Mistral, any OpenAI-compatible service, or a free model on your own computer with Ollama and no key at all.</p>
+      <p>Then just ask: <em>"do a first pass on this set"</em>, <em>"what does the review say about the vocals?"</em>, <em>"apply what I approved"</em>. Attach a set, a folder or a bounce with the buttons under the chat box. Reading and measuring run straight away; anything that would write a set shows the exact command with <b>Run it</b> and <b>Don't</b>, and every write is still a new set next to your original.</p>
+    </div>
+
+    <h3 class="sub-h">2 · Set up the Listener (optional)</h3>
+    <div class="prose paper">
+      <p>Under the chat settings, click <b>Set up a listener</b>. Choose the service, paste that service's key, pick a model and Save. The Listener's key is kept apart from the Assistant's, so the two can be different companies.</p>
+      <ul>
+        <li><b>Google Gemini</b>: a key from <a target="_blank" rel="noopener" href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</a>. There is a free tier, enough for occasional listens; on the free tier Google may use what you send to improve its models, the paid tier does not.</li>
+        <li><b>OpenRouter</b>: one key from <a target="_blank" rel="noopener" href="https://openrouter.ai/keys">openrouter.ai/keys</a> for the same Gemini models and others, pay as you go.</li>
+      </ul>
+      <p><b>List models</b> shows only the models your key can send audio to, best first. The three suggested ones:</p>
+      <ul>
+        <li><code>gemini-4-carbon</code> (the default): the best ear in our test; slowest, a few minutes a song, about 5 cents.</li>
+        <li><code>gemini-4-hydrogen</code>: nearly as good and faster, about 3 cents.</li>
+        <li><code>gemini-3.5-flash</code>: under a minute and the cheapest, about a cent.</li>
+      </ul>
+      <p>How we chose: eight Gemini models listened to the same 7½-minute song whose answers we knew (its tempo, when a line is first sung, when the guitars fade). Only Gemini 4 Carbon got all three; three others got the tempo wrong. Every model undercounted a big stack of harmonies, so don't trust a listener to count your vocal parts.</p>
+    </div>
+
+    <h3 class="sub-h">3 · Ask it to listen</h3>
+    <div class="prose paper">
+      <p>Attach a bounce and ask something like <em>"how does the chorus feel? is the vocal too far back?"</em> or <em>"listen to the whole song and tell me where it drags"</em>. Before anything is sent, the chat shows the song, its length and the rough cost, with <b>Send it</b> and <b>Don't</b>. The notes come back in the chat with timestamps, and are saved next to the song's scan as <code>listen - Song.md</code>.</p>
+      <p><b>What the ear is good at:</b> arrangement and energy (where attention sags), the balance between parts, whether the lead vocal sits in front, low-end feel, harshness in the mids, timing feel and performance.</p>
+      <p><b>What it can't judge:</b> only a reduced mono copy is sent (Gemini hears audio as 16 kHz mono anyway), so stereo width, air above about 8 kHz and exact loudness stay hypnomix's measurements. The listener is told so, and is given the scan's review so it can confirm or question it. Its notes are a second opinion: nothing in them becomes a change unless you approve it, and hypnomix still keeps the human feel (it will not quantise or hard-tune because a listener suggested it).</p>
+    </div>
+
+    <h3 class="sub-h">Without the app</h3>
+    <div class="term" data-label="listen from the terminal"><pre><span class="p">$</span> pip install "hypnomix[assistant,critique]"
+<span class="p">$</span> hypnomix critique "Song.wav" --estimate                 <span class="c"># what would be sent, and roughly what it costs</span>
+<span class="p">$</span> hypnomix critique "Song.wav" --scan "hypnomix-out/scan/Song" --question "is the vocal too far back in the chorus?"</pre></div>
+    <div class="prose paper">
+      <p><code>critique</code> uses the Listener's key and model from the app, or <code>GEMINI_API_KEY</code> / <code>OPENROUTER_API_KEY</code>; <code>--provider</code> and <code>--model</code> choose for one run.</p>
+      <p><b>Your keys and your audio.</b> Keys are kept in <code>~/.hypnomix/ai.json</code>, readable by you only, and each goes only to its own service. The Assistant reads hypnomix's text reports. Audio leaves your computer only when a Listener is set up and you click <b>Send it</b>, one song at a time.</p>
+    </div>
