@@ -87,6 +87,17 @@ How it stays natural:
 From a Live set, the first pass tunes the take files under a track's comp clips and points those clips at the
 tuned takes in the new set: your comp stays your own clips, natively in Live.
 
+**When the scan asks about the key.** If two scales fit some bars equally well, the review asks one question,
+for example "in bars 17-52, is the note F or F#?". Answer it and tune by section:
+
+```bash
+hypnomix fix "scan folder" --approve tune-Lead --key sections --answer "F#" --out "Song (tuned).als"
+```
+
+Each part of a take is tuned in the scale of the section it is heard in. Not sure of the answer? Look at the
+song's own MIDI parts in those bars: if the bass and keys play F# and never F, it is F#. Leave the question
+unanswered and the disputed notes stay exactly as sung. A single key works too: `--key "G major"`.
+
 > Tip: on a real harmony, tune took the median from 25 to 6 cents off, and notes within ±15 cents from 30% to
 > 83%, with syllable timing unchanged.
 

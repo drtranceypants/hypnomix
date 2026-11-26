@@ -71,7 +71,10 @@ hypnomix scan "raw takes/"          # recordings or exported stems from any DAW:
 - `--key`: the key, confirmed by the person. Vocal tuning is not applied without it.
   The vocals group also maps the key section by section (`raw/key.json`); bars where two scales fit equally
   become `key-N` questions ("in bars 17-52, is the note F or F#?"). Answer them with `fix DIR --answer F#`, then
-  tune with `fix DIR --key sections`: each section is tuned in its own scale.
+  tune with `fix DIR --key sections`: each section is tuned in its own scale. In a Live set the takes under the
+  comp are what gets tuned, so the map is laid out in each take's own time through the comp clips: every part
+  of a take is tuned in the scale of the section it is heard in. If the song's own MIDI parts settle the
+  question (count F against F# in those bars), that is the answer.
 - Track roles come from `hypnomix name` (run automatically); override with `--vocal-track` / `--timing-track`
   / `--lead-track` when it's unsure.
 - Groups run in parallel (`--jobs 4`). To spread them over several agents, run one group each with

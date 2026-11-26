@@ -206,6 +206,35 @@ def apply_args(tool, cur, nxt, ids, items, sd, scan, dec, src, timing_tracks, ti
     return args
 
 
+def take_scales(key_json, spans, out):
+    """The scan's section-by-section key map, laid out in one take file's own time.
+
+    The map says which scale each stretch of the SONG is in; a take is tuned as a file, in its own seconds. `spans`
+    ([(song_t0, song_t1, take_t0, take_t1)], from the comp clips that play the take) say which part of the take
+    sounds where in the song, so each played part of the take gets the scale of the section it is heard in. Parts
+    of the take no clip plays keep the map's overall key."""
+    d = json.loads(Path(key_json).read_text())
+    rows = []
+    for s0, s1, r0, r1 in spans:
+        if s1 <= s0 or r1 <= r0:
+            continue
+        for sec in d.get("sections") or []:
+            a, b = max(s0, sec["t0"]), min(s1, sec["t1"])
+            if b <= a:
+                continue
+            to_take = lambda t: r0 + (t - s0) * (r1 - r0) / (s1 - s0)
+            rows.append(dict(sec, t0=round(to_take(a), 4), t1=round(to_take(b), 4)))
+    rows.sort(key=lambda x: x["t0"])
+    merged = []
+    for r in rows:                                            # a warped clip arrives in many small pieces
+        if merged and merged[-1]["bars"] == r["bars"] and r["t0"] - merged[-1]["t1"] < 0.05:
+            merged[-1]["t1"] = max(merged[-1]["t1"], r["t1"])
+        else:
+            merged.append(r)
+    Path(out).write_text(json.dumps(dict(d, sections=merged), indent=1))
+    return merged
+
+
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix fix", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -761,11 +790,7 @@ def main():
         # pitch correction goes on the TAKES under the comp clips: each take file is tuned into a new file of the
         # same length and, in the new set, this track's comp clips play it. The comp stays exactly as it was
         # (positions, edges, fades, warp, gain); no rendered copy of the track is made or swapped in
-        if "--scales" in [str(x) for x in tune_key]:
-            failed.append(f"{f['id']}: not tuned: tuning the takes needs one key (--key \"<key>\"); the section map "
-                          "is in song time and a take file is not")
-            print(f"tune       REFUSED  {f['track']}: pass one --key for the takes")
-            continue
+        by_section = "--scales" in [str(x) for x in tune_key]    # the key map is in song time: laid out per take below
         import gzip as _gz, xml.etree.ElementTree as _ET
         from hypnomix.session import sources as SRC, check as C
         target = name_out
@@ -807,7 +832,22 @@ def main():
             take_ch = CHD.take_time(song_ch, spans, int(_sf.info(str(take)).duration / CHD.HOP_S) + 1)
             chord_npz = tdir / f"{safe_name(take.stem)} (chords).npz"
             CHD.save(chord_npz, take_ch)
-            args = ["tune", take, dest, *tune_key, "--chords", chord_npz] + (["--ref", scan["ref"]] if scan.get("ref") else []) \
+            take_key = tune_key
+            if by_section:
+                tk = tdir / f"{safe_name(take.stem)} (key map).json"
+                secs_t = take_scales(key_json, spans, tk)
+                # only the answers that are about a section this take is heard in (tune refuses any other)
+                from hypnomix.studio.tune import _pc
+                uns = [x for x in secs_t if x.get("unsure") and x.get("disputed")]
+                def about(ans):
+                    bars, _, note = ans.rpartition("=")
+                    if bars:
+                        return any(x["bars"] == bars.strip() for x in uns)
+                    if note.strip().lower() == "both":
+                        return bool(uns)
+                    return any(_pc(note.strip()) in {_pc(n) for d_ in x["disputed"] for n in d_.split(",")} for x in uns)
+                take_key = ["--scales", tk] + [y for ans in answers if about(ans) for y in ("--answer", ans)]
+            args = ["tune", take, dest, *take_key, "--chords", chord_npz] + (["--ref", scan["ref"]] if scan.get("ref") else []) \
                 + O.amount_flags("tune", amounts[f["id"]])
             code, txt = hx(*args)
             ok = code == 0 and dest.exists()

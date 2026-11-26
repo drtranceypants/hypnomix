@@ -269,3 +269,27 @@ class ReviewAndAb(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TakeScales(unittest.TestCase):
+    """The section-by-section key map is in song time; a take is tuned in its own time."""
+
+    def test_each_played_part_of_a_take_gets_the_section_it_is_heard_in(self):
+        import json, tempfile
+        from pathlib import Path
+        from hypnomix.workflow import fix
+        with tempfile.TemporaryDirectory() as td:
+            kj = Path(td) / "key.json"
+            kj.write_text(json.dumps({"key": "G major", "sections": [
+                {"t0": 0.0, "t1": 40.0, "bars": "1-16", "root": 7, "scale": "G major"},
+                {"t0": 40.0, "t1": 80.0, "bars": "17-32", "root": 7, "scale": "G major", "unsure": True,
+                 "disputed": ["F#", "F"], "runner_up": "C major"}]}))
+            # one clip plays take seconds 5-15 at song seconds 35-45 (across the section line); a warped clip
+            # arrives as small pieces: 20-20.25 and 20.25-20.5 of the take at song 60-60.5
+            spans = [(35.0, 45.0, 5.0, 15.0), (60.0, 60.25, 20.0, 20.25), (60.25, 60.5, 20.25, 20.5)]
+            rows = fix.take_scales(kj, spans, Path(td) / "take.json")
+            self.assertEqual([(r["bars"], r["t0"], r["t1"]) for r in rows],
+                             [("1-16", 5.0, 10.0), ("17-32", 10.0, 15.0), ("17-32", 20.0, 20.5)])
+            saved = json.loads((Path(td) / "take.json").read_text())
+            self.assertEqual(saved["key"], "G major")                     # unplayed parts keep the overall key
+            self.assertTrue(saved["sections"][1]["unsure"])               # the question travels with the section
