@@ -1,0 +1,18 @@
+<!--
+title: hypnomix with Ardour
+sub: Ardour 3 to 9 · read and scan a session today; writing fixes back is next
+group: DAW: Ardour
+teaser: Point hypnomix at an Ardour session: it reads the tracks, buses, regions, fades and automation, renders them the way Ardour layers them, and runs the same first-pass checks as on a Live set. Changes are listed for you to make in Ardour for now.
+-->
+<div class="prose paper">
+      <p><b>What works today.</b> hypnomix reads sessions saved by <b>Ardour 3 to 9</b>: tracks and buses, regions (with the way Ardour layers them: upper regions cover lower ones), fade curves, gain envelopes, multi-channel regions, plug-ins and automation. It renders each track from the session without opening Ardour, and <code>scan</code> runs the same checks as on a REAPER project: missing files, clicks at region edges, level jumps at comp cuts, vocal pitch and doubles, plug-ins switched off, the source recordings, boosted noise and "is this deliberate?" questions.</p>
+      <p><b>What isn't there yet.</b> hypnomix doesn't write a new <code>.ardour</code> yet, so findings that change the session are listed as steps for you to do in Ardour. Findings that make new audio (tuning, de-hiss, de-ess) work as for any DAW: you get repaired files to bring in. Writing a new session with your approved changes, then driving the open session with Ardour's own plug-ins, is next on the <a data-wiki="next" href="#">roadmap</a>.</p>
+      <p><b>Not yet checked against Ardour itself.</b> The reader was tested on real Ardour 3, 8 and 9 session files, but not yet against a running Ardour: our renders haven't been compared with Ardour's own export, and pan direction and trim gain still need confirming. If something sounds different from Ardour, tell us.</p>
+    </div>
+    <div class="term" data-label="Ardour"><pre><span class="p">$</span> hypnomix project "Song/"               <span class="c"># what is in the session: tracks, buses, regions, plug-ins, automation</span>
+<span class="p">$</span> hypnomix project "Song/" --render      <span class="c"># render every track the way Ardour layers the regions</span>
+<span class="p">$</span> hypnomix scan "Song/"                  <span class="c"># the first pass: one review list (or point at Song.ardour)</span>
+<span class="p">$</span> hypnomix review "hypnomix-out/scan/Song" --serve   <span class="c"># play A and B, approve or skip</span></pre></div>
+    <div class="prose paper">
+      <p>Ardour can stay open while you scan; nothing is written next to your session. Any way of driving hypnomix works with Ardour: <a data-wiki="setup" href="#">choose your setup</a>.</p>
+    </div>

@@ -57,6 +57,28 @@ def save_settings(**kw):
     return s
 
 
+# ---------------------------------------------------------------- how the wiki is organised
+# By DAW first, then by how you connect an AI (or don't), then the courses, guides and reference. Groups not listed
+# here go just before Reference. An article file names its own group; the Markdown guides and docs are placed here.
+DAW_LIVE, DAW_REAPER, DAW_ARDOUR, DAW_OTHER = ("DAW: Ableton Live", "DAW: REAPER", "DAW: Ardour", "DAW: any other")
+AI_KEY, AI_AGENT, AI_LOCAL = ("AI: your own API key", "AI: Claude Code, Codex and other agent apps", "AI: free and offline")
+GROUP_ORDER = ["Start here", DAW_LIVE, DAW_REAPER, DAW_ARDOUR, DAW_OTHER, AI_KEY, AI_AGENT, "AI: Claude Code skills and subagent", AI_LOCAL,
+               "Training", "How-to", "Guides", "Docs", "Reference", "FAQ"]
+PLACE = {"inside-live": DAW_LIVE, "live": DAW_LIVE, "reaper": DAW_REAPER, "reaper-doc": DAW_REAPER,
+         "agents-doc": AI_AGENT, "claude": AI_AGENT}
+
+
+def organise(arts):
+    """Order the groups (GROUP_ORDER), keeping each group's own order. A group not in the list stays with the
+    article before it, so a new group lands where its files put it until it is given a place here."""
+    rank = {g: i for i, g in enumerate(GROUP_ORDER)}
+    keys, last = [], -1
+    for a in arts:
+        last = rank.get(a["group"], last)
+        keys.append(last)
+    return [a for _, _, a in sorted(zip(keys, range(len(arts)), arts), key=lambda t: t[:2])]
+
+
 # ---------------------------------------------------------------- the source files
 HEAD = re.compile(r"\A\s*<!--(.*?)-->\s*", re.S)
 
@@ -160,6 +182,9 @@ def local(root=None):
             k = (wiki_md.skill_article if f.name == "SKILL.md" else wiki_md.agent_article)(f, taken)
             taken.add(k["id"])
             sk.append(k)
+        for a in gs + ds:                                   # the Markdown guides and docs under their DAW / AI group
+            if a["id"] in PLACE:
+                a["group"] = PLACE[a["id"]]
         at = next((i for i, a in enumerate(arts) if a["group"] in ("Reference", "FAQ")), len(arts))
         arts = arts[:at] + gs + ds + sk + arts[at:]
         if "commands" not in {a["id"] for a in arts}:            # the command reference, from the code itself
@@ -169,7 +194,7 @@ def local(root=None):
                 arts = arts[:at] + [cmd] + arts[at:]
             except Exception:                                      # never let it take the wiki down
                 pass
-        _CACHE.update(key=key, arts=wiki_md.link_files(arts))
+        _CACHE.update(key=key, arts=wiki_md.link_files(organise(arts)))
     return _CACHE["arts"]
 
 

@@ -1,0 +1,18 @@
+<!--
+title: Any other DAW
+sub: Logic, Pro Tools, Studio One, Cubase, FL Studio… · work from exported tracks
+group: DAW: any other
+teaser: Use hypnomix with any DAW: export each track full-length from the same start, scan the folder, approve what you like, and bring the repaired files back. Anything that has to happen in your DAW comes as a clear to-do list.
+-->
+<div class="prose paper">
+      <p>hypnomix can't open Logic, Pro Tools or other DAWs' projects yet, but it can work on their audio. Every check that listens to the recordings works the same: clicks, plosives, hiss, timing, vocal pitch, harmony balance, loudness, release checks.</p>
+    </div>
+    <ol class="steps">
+      <li><b>Export the tracks.</b> Every track as its own file, all from the same start point and the same length, with effects and processing off (raw recordings are what hypnomix fixes). Export a bounce of the mix too if you want the mix and release checks.</li>
+      <li><b>Scan the folder.</b> <code>hypnomix scan "Song exports/" --mix "Song mix.wav"</code> changes nothing and writes one review list.</li>
+      <li><b>Review.</b> In the app, or <code>hypnomix review &lt;scan folder&gt; --serve</code>: play A and B for each finding, approve or skip.</li>
+      <li><b>Apply.</b> Approved audio fixes come back as <b>new files</b> next to the originals; import them in place of the old tracks. Anything that has to be done in your DAW (a fade, a fader move, a mute) is listed as a step to do by hand.</li>
+    </ol>
+    <div class="prose paper">
+      <p>Reading Pro Tools and Logic sessions directly is on the <a data-wiki="next" href="#">roadmap</a>. Any way of driving hypnomix works here too: <a data-wiki="setup" href="#">choose your setup</a>.</p>
+    </div>

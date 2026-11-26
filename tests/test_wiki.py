@@ -226,7 +226,7 @@ class WikiTest(unittest.TestCase):
         wiki._CACHE.clear()
         k = next(a for a in wiki.local() if a["id"] == "skill-mix-engineer")
         self.assertEqual((k["group"], k["title"], k["no"], k["src"]),
-                         ("Skills and agents", "Mix engineer", "skills/mix-engineer/SKILL.md", "skills/mix-engineer/SKILL.md"))
+                         ("AI: Claude Code skills and subagent", "Mix engineer", "skills/mix-engineer/SKILL.md", "skills/mix-engineer/SKILL.md"))
         self.assertEqual(k["sub"], "Turn stems into a song. Use when someone hands over stems.")
         self.assertEqual(k["teaser"], k["sub"])
         self.assertEqual(k["url"], wiki.SITE + "/wiki/#skill-mix-engineer")
@@ -236,7 +236,7 @@ class WikiTest(unittest.TestCase):
         (ag / "hypnomix-scanner.md").write_text("---\nname: hypnomix-scanner\ndescription: Runs one scan group.\ntools: Bash, Read\n---\n\nYou run one part.\n")
         wiki._CACHE.clear()
         arts = wiki.local()
-        self.assertEqual([a["id"] for a in arts if a["group"] == "Skills and agents"], ["skill-mix-engineer", "agent-hypnomix-scanner"])
+        self.assertEqual([a["id"] for a in arts if a["group"] == "AI: Claude Code skills and subagent"], ["skill-mix-engineer", "agent-hypnomix-scanner"])
         g = arts[[a["id"] for a in arts].index("agent-hypnomix-scanner")]
         self.assertEqual((g["title"], g["sub"], g["src"]), ("Subagent: hypnomix-scanner", "Runs one scan group.", "agents/hypnomix-scanner.md"))
         self.assertIn("Tools it may use: <b>Bash, Read</b>", g["html"])
@@ -318,6 +318,31 @@ class WikiTest(unittest.TestCase):
         for a in arts:
             for target in re.findall(r'data-wiki="([^"]+)"', a["html"]):
                 self.assertIn(target, ids, f"{a['id']} links to a missing article {target}")
+
+
+class Organised(unittest.TestCase):
+    """The wiki is organised by DAW, then by how you connect an AI, then courses, guides and reference."""
+    def test_groups_in_order_and_placed(self):
+        from hypnomix.app import wiki as W
+        arts = W.local()
+        groups = list(dict.fromkeys(a["group"] for a in arts))
+        known = [g for g in W.GROUP_ORDER if g in groups]
+        self.assertEqual([g for g in groups if g in W.GROUP_ORDER], known)          # each group once, in order
+        self.assertEqual(groups[0], "Start here")
+        by = {a["id"]: a["group"] for a in arts}
+        self.assertEqual(by["reaper"], W.DAW_REAPER)
+        self.assertEqual(by["inside-live"], W.DAW_LIVE)
+        self.assertEqual(by["ardour"], W.DAW_ARDOUR)
+        self.assertEqual(by["other-daws"], W.DAW_OTHER)
+        self.assertEqual(by["assistant"], W.AI_KEY)
+        self.assertEqual(by["agents"], W.AI_AGENT)
+        self.assertEqual(by["local"], W.AI_LOCAL)
+        self.assertEqual(by["agents-doc"], W.AI_AGENT)
+
+    def test_unknown_group_stays_with_the_article_before_it(self):
+        from hypnomix.app import wiki as W
+        arts = [dict(id="t", group="Training"), dict(id="x", group="Something new"), dict(id="s", group="Start here")]
+        self.assertEqual([a["id"] for a in W.organise(arts)], ["s", "t", "x"])
 
 
 if __name__ == "__main__":

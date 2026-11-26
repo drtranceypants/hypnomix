@@ -1,7 +1,7 @@
 <!--
-title: With an AI agent
-sub: optional · ask for the mix in plain English, from the cloud or fully offline on your Mac
-group: How-to
+title: With Claude Code, Codex or another agent app
+sub: optional · ask for the mix in plain English, in the agent app you already use
+group: AI: Claude Code, Codex and other agent apps
 teaser: Optional: ask for the mix in plain English. Any AI agent that can run commands in a folder can drive hypnomix, from the cloud or fully offline on your Mac.
 -->
 <div class="prose paper">
@@ -10,6 +10,8 @@ teaser: Optional: ask for the mix in plain English. Any AI agent that can run co
       <em>"I'm about to record acoustic guitar on input 2. Set up a track and check my levels."</em><br>
       <em>"Do a first pass on ~/Music/Song Project/Song.als. The mix is Song.wav."</em><br>
       <em>"Master this for Spotify and check it'll survive on a phone."</em></p>
+      <p><b>Which apps.</b> <b>Claude Code</b> picks up <code>CLAUDE.md</code>, the skills and the scanner subagent by itself. <b>Codex</b>, Cursor, Aider and other agents start from <code>AGENTS.md</code>. These are separate apps with their own plan or subscription, and they work on the hypnomix folder from the terminal, so they can do anything hypnomix can.</p>
+      <p><b>Agent app or API key?</b> If you'd rather not install an agent app, the hypnomix app's own <a data-wiki="assistant" href="#">Assistant</a> does the same jobs with just an API key from the AI service you like, paid per use, and can add a Listener that hears your songs. <a data-wiki="setup" href="#">Compare the setups.</a></p>
       <p><b>Rather not use a cloud AI at all?</b> You don't have to. See <a data-wiki="local" href="#">Run your own AI, free and offline</a> below.</p>
       <p><b>What the agent gets.</b> <code>AGENTS.md</code> in the repo is written for any agent: setup, the loop every job follows, the safety rules (ask your preferences first, scan before changing anything, one item at a time with you, new files only, measure again afterwards), the command map and how to extend the code. The <code>skills/</code> folder holds six ready-made workflows (<b>first-pass</b>, <b>harmony-balance</b>, <b>mix-engineer</b>, <b>mastering-engineer</b>, <b>tracking-session</b>, <b>live-mixing</b>), and <code>docs/LESSONS.md</code> lists the real mistakes the rules come from, so your agent doesn't repeat them. Agents with skill support load them directly; any other agent can read them as plain instructions.</p>
       <p><b>Building inside Live.</b> The included MCP config connects the open-source Ableton MCP (telemetry off), so agents that speak MCP can create tracks and load devices, and rebuild an automix inside your set from <code>recipe.json</code>.</p>

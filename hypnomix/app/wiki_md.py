@@ -177,7 +177,7 @@ def doc_article(path, taken=()):
             "url": f"{SITE}/wiki/#{aid}", "file": str(Path(path).resolve()), "src": src_of(path)}
 
 
-SKILLS_GROUP = "Skills and agents"
+SKILLS_GROUP = "AI: Claude Code skills and subagent"
 
 
 def skill_article(path, taken=()):
