@@ -1,5 +1,5 @@
 // The Assistant tab (served at /chat.js; uses the page's own helpers: $, esc, get, post, S, render).
-const C = {items: [], total: 0, busy: false, pending: null, settings: null, open: false, models: [], draft: ''};
+const C = {items: [], total: 0, busy: false, pending: null, settings: null, open: false, models: [], draft: '', usage: null};
 
 (function () {   // the tab's own look, on top of the page's styles
   const st = document.createElement('style');
@@ -17,7 +17,7 @@ async function chatPoll(full) {
   const r = await get('/api/chat/state?since=' + (full ? 0 : C.total));
   const changed = full || r.items.length || r.busy !== C.busy || JSON.stringify(r.pending) !== JSON.stringify(C.pending) || !C.settings;
   if (full || r.total < C.total) C.items = [];
-  C.items.push(...r.items); C.total = r.total; C.busy = r.busy; C.pending = r.pending; C.settings = r.settings;
+  C.items.push(...r.items); C.total = r.total; C.busy = r.busy; C.pending = r.pending; C.settings = r.settings; C.usage = r.usage;
   if (S.view === 'chat' && changed) chatDraw();    // only when something changed: typing is never interrupted
 }
 
@@ -61,6 +61,17 @@ function chatSettings() {
     <div class="row"><button class="primary" id="csave">Save</button> <span class="note" id="csaved"></span></div></div>`;
 }
 
+function chatCost() {
+  const u = C.usage; if (!u || !u.calls) return '';
+  const k = n => n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+  const read = u.input + u.cache_write + u.cache_read;
+  const prov = C.settings && C.settings.provider;
+  const cost = prov === 'ollama' ? 'free (on this computer)' : u.priced ? 'about $' + u.cost.toFixed(2)
+    : 'cost: see your provider\'s price list for these tokens';
+  return `<p class="note" id="ccost">This conversation: ${u.calls} call${u.calls === 1 ? '' : 's'} · ${k(read)} tokens read`
+    + (u.cache_read ? ` (${k(u.cache_read)} from cache, cheaper)` : '') + ` · ${k(u.output)} written · ${cost}</p>`;
+}
+
 function chatView() {
   const st = C.settings, p = st && (st.providers.find(x => x.id === st.provider));
   const ready = p && (p.no_key || p.key_hint) && p.model;
@@ -68,6 +79,7 @@ function chatView() {
   <p class="sub">Talk about your song and let an AI run hypnomix for you. Bring a key from the AI service you like.
   It reads hypnomix's reports, never your audio, and anything that changes a set waits for your click.</p>
   ${!ready || C.open ? chatSettings() : `<p class="note">${esc(p.label)} · ${esc(p.model)} <button id="copen">Settings</button> <button id="creset">New conversation</button></p>`}
+  ${chatCost()}
   <div id="chatlog" aria-live="polite">${C.items.map(chatItem).join('') ||
     '<p class="note">Try: "Do a first pass on my song" (attach the set below), "What does the review say about the vocals?", or "Apply what I approved".</p>'}
     ${C.busy && !C.pending ? '<div class="act"><span class="spin"></span>working…</div>' : ''}</div>

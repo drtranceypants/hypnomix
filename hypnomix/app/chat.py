@@ -37,11 +37,41 @@ PROVIDERS = {
                    model="", keys_at="", no_key=True),
     "custom": dict(label="Other (OpenAI-compatible address)", kind="openai", base_url="", model="", keys_at=""),
 }
+# Claude list prices, $ per million tokens: (input, output, cache read). Writing to the 1-hour cache costs 2x input.
+# Other providers: tokens are counted, the cost is theirs to quote (see their pricing page).
+CLAUDE_PRICES = {
+    "claude-opus-5-5": (4.0, 20.0, 0.20), "claude-sonnet-5-5": (2.0, 10.0, 0.10), "claude-haiku-5-5": (0.10, 0.50, 0.01),
+    "claude-fable-5-2": (8.0, 40.0, 0.20), "claude-fable-5-1": (10.0, 50.0, 1.0), "claude-fable-5": (10.0, 50.0, 1.0),
+    "claude-opus-5": (5.0, 25.0, 0.5), "claude-opus-4-8": (5.0, 25.0, 0.5), "claude-opus-4-7": (5.0, 25.0, 0.5),
+    "claude-opus-4-6": (5.0, 25.0, 0.5), "claude-sonnet-5": (2.0, 10.0, 0.2), "claude-sonnet-4-6": (3.0, 15.0, 0.3),
+    "claude-haiku-4-5": (1.0, 5.0, 0.1),
+}
+CACHE = {"type": "ephemeral", "ttl": "1h"}     # people listen and A/B between messages: 5 minutes is too short
+REVIEW_PAGE = 40                               # findings per read_review page
 CLAUDE_FALLBACKS = {"claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-fable-5-2"}
 
 LOCK = threading.RLock()
+def new_usage():
+    return {"calls": 0, "input": 0, "cache_write": 0, "cache_read": 0, "output": 0, "cost": 0.0, "priced": True}
+
+
 CHAT = {"id": uuid.uuid4().hex[:8], "items": [], "history": [], "provider": None, "busy": False, "pending": None,
-        "stop": False, "error": ""}
+        "stop": False, "error": "", "usage": new_usage()}
+
+
+def count(model, provider, inp=0, out=0, cw=0, cr=0):
+    """Add one call's tokens to the conversation's total, and its cost where the price is known."""
+    u = CHAT["usage"]
+    u["calls"] += 1
+    u["input"] += inp; u["output"] += out; u["cache_write"] += cw; u["cache_read"] += cr
+    if provider == "ollama":
+        return
+    price = CLAUDE_PRICES.get(model) if provider == "anthropic" else None
+    if price is None:
+        u["priced"] = False
+        return
+    pi, po, pr = price
+    u["cost"] += (inp * pi + cw * pi * 2.0 + cr * pr + out * po) / 1e6
 
 
 # ---------------------------------------------------------------- settings (the key stays on this computer)
@@ -119,9 +149,11 @@ TOOLS = [
          description="The songs this app has scanned: name, scan folder, how many findings are decided/approved.",
          params={}),
     dict(name="read_review",
-         description="Every finding of one scanned song (id, tool, track, where, problem, fix, the person's decision). "
-                     "Use the scan folder from list_songs.",
-         params={"dir": ("string", "the scan folder")}),
+         description=(f"The findings of one scanned song, {REVIEW_PAGE} per page (id, tool, track, where, problem, fix, "
+                      "the person's decision), with how many there are of each tool. Page 1 first; read the next pages "
+                      "only when you need them. tool narrows it to one tool (e.g. 'edges'); '' for all."),
+         params={"dir": ("string", "the scan folder from list_songs"), "page": ("integer", "1 for the first page"),
+                 "tool": ("string", "only this tool's findings, or '' for all")}),
     dict(name="run_hypnomix",
          description=("Run one hypnomix command and get its output, e.g. command='scan', args=['/path/Song.als', '--mix', "
                       "'/path/bounce.wav']; command='fix', args=['<scan dir>', '--list']; command='check', ...; "
@@ -213,12 +245,26 @@ def tool(name, inp):
             d = S.scan_dir(inp["dir"])
             p = S.review_payload(d)
             keep = ("id", "tool", "kind", "severity", "track", "where", "problem", "fix", "applies", "recommended")
-            rows = [{k: f.get(k) for k in keep if f.get(k) is not None} for f in p.get("findings", [])]
+            allf = p.get("findings", [])
+            counts = {}
+            for f in allf:
+                counts[f.get("tool")] = counts.get(f.get("tool"), 0) + 1
+            want = str(inp.get("tool") or "").strip()
+            sel = [f for f in allf if not want or f.get("tool") == want]
+            pages = max(1, -(-len(sel) // REVIEW_PAGE))
+            page = min(max(1, int(inp.get("page") or 1)), pages)
             dec = p.get("decisions", {})
-            for r in rows:
+            rows = []
+            for f in sel[(page - 1) * REVIEW_PAGE:page * REVIEW_PAGE]:
+                r = {k: f.get(k) for k in keep if f.get(k) is not None}
+                for k in ("problem", "fix"):                 # long texts trimmed: the page stays readable
+                    if isinstance(r.get(k), str) and len(r[k]) > 600:
+                        r[k] = r[k][:600] + "…"
                 if r["id"] in dec:
                     r["decision"] = dec[r["id"]]
-            return json.dumps(dict(dir=str(d), findings=rows), default=str)[:30000]
+                rows.append(r)
+            return json.dumps(dict(dir=str(d), total=len(allf), shown=f"{want or 'all'}: page {page} of {pages}",
+                                   per_tool=counts, findings=rows), default=str)
         if name == "run_hypnomix":
             cmd, args = str(inp.get("command", "")).strip(), list(inp.get("args") or [])
             from hypnomix import cli
@@ -257,13 +303,16 @@ def system_prompt():
             "How you work here: you cannot type in a terminal; you act only through the tools you are given. "
             "run_hypnomix runs any hypnomix command (the reference below lists them). The usual path for a song is: "
             "scan it (read-only), read the review, explain each finding and what its fix would do, record the "
-            "person's decisions (fix DIR --decide ID=approve|skip, only what they actually said), then apply only "
+            "person's decisions (fix DIR --decide ID=approve,ID=skip,... several in ONE call, only what they actually said), "
+            "then apply only "
             "what they approved into a NEW set (fix DIR --approved --out \"<Song> (fixed).als\" next to the original). "
             "Rules: never overwrite a set; ask them to save and close the set in Live before anything writes; keep the "
             "human feel (gentle, partial edits, never quantise or hard-tune); never apply something they did not "
             "approve; when unsure what a track is or what they want, ask. Commands that write wait for the person "
             "to click Run it: say what the command will do before you run it. Report what changed and what to A/B. "
-            "Paths: they can attach a set or folder with the buttons under the chat box, which pastes its path.\n\n"
+            "Paths: they can attach a set or folder with the buttons under the chat box, which pastes its path. "
+            "Each step you take costs the person money on their AI plan: read the review a page at a time, group "
+            "similar findings when you explain them, and record decisions in batches.\n\n"
             "Reference (written for terminal agents; here, use the tools instead of a shell):\n\n" + guide)
 
 
@@ -277,15 +326,20 @@ def _anthropic_turn(model, key):
     import anthropic
     client = anthropic.Anthropic(api_key=key, max_retries=3)
     tools = anthropic_tools()
-    system = [{"type": "text", "text": system_prompt(), "cache_control": {"type": "ephemeral"}}]
+    system = [{"type": "text", "text": system_prompt(), "cache_control": CACHE}]
     for _ in range(MAX_STEPS):
         if CHAT["stop"]:
             return
-        params = dict(model=model, max_tokens=16000, system=system, tools=tools, messages=CHAT["history"])
+        # cache_control at the top caches the whole conversation so far: each call re-reads it at the cache price
+        params = dict(model=model, max_tokens=16000, system=system, tools=tools, messages=CHAT["history"],
+                      cache_control=CACHE)
         if model in CLAUDE_FALLBACKS:     # on a policy decline, the API retries on the model it picks for that case
             r = client.beta.messages.create(betas=["server-side-fallback-2026-07-01"], fallbacks="default", **params)
         else:
             r = client.messages.create(**params)
+        u = r.usage
+        count(model, "anthropic", u.input_tokens or 0, u.output_tokens or 0,
+              getattr(u, "cache_creation_input_tokens", 0) or 0, getattr(u, "cache_read_input_tokens", 0) or 0)
         content = [b.model_dump(exclude_none=True) for b in r.content]   # thinking blocks kept as they came
         CHAT["history"].append({"role": "assistant", "content": content})
         for b in r.content:
@@ -319,6 +373,10 @@ def _openai_turn(model, key, base):
             return
         r = client.chat.completions.create(model=model, tools=tools,
                                            messages=[{"role": "system", "content": system_prompt()}] + CHAT["history"])
+        u = getattr(r, "usage", None)
+        if u is not None:
+            cached = getattr(getattr(u, "prompt_tokens_details", None), "cached_tokens", 0) or 0
+            count(model, CHAT["provider"], (u.prompt_tokens or 0) - cached, u.completion_tokens or 0, 0, cached)
         m = r.choices[0].message
         calls = m.tool_calls or []
         msg = {"role": "assistant", "content": m.content or ""}
@@ -378,6 +436,7 @@ def send(text):
             raise RuntimeError("the assistant is still working on the last message")
         if CHAT["provider"] not in (None, p):   # the two formats can't share one history: a new conversation
             CHAT["history"] = []
+            CHAT["usage"] = new_usage()
             say("note", f"Switched to {d['label']}: a new conversation starts here.")
         CHAT.update(provider=p, busy=True, stop=False, error="")
         CHAT["history"].append({"role": "user", "content": text})
@@ -421,7 +480,7 @@ def reset():
     with LOCK:
         if CHAT["busy"]:
             raise RuntimeError("stop the assistant first")
-        CHAT.update(id=uuid.uuid4().hex[:8], items=[], history=[], provider=None, pending=None, error="")
+        CHAT.update(id=uuid.uuid4().hex[:8], items=[], history=[], provider=None, pending=None, error="", usage=new_usage())
     _save()
 
 
@@ -435,7 +494,7 @@ def _save():
         f = _store()
         f.parent.mkdir(parents=True, exist_ok=True)
         with LOCK:
-            f.write_text(json.dumps({k: CHAT[k] for k in ("id", "items", "history", "provider")}, default=str))
+            f.write_text(json.dumps({k: CHAT[k] for k in ("id", "items", "history", "provider", "usage")}, default=str))
     except OSError:
         pass
 
@@ -443,7 +502,7 @@ def _save():
 def _load():
     try:
         d = json.loads(_store().read_text())
-        CHAT.update({k: d[k] for k in ("id", "items", "history", "provider") if k in d})
+        CHAT.update({k: d[k] for k in ("id", "items", "history", "provider", "usage") if k in d})
     except (OSError, ValueError, KeyError):
         pass
 
@@ -452,7 +511,8 @@ def state(since=0):
     with LOCK:
         pend = CHAT["pending"]
         return dict(id=CHAT["id"], busy=CHAT["busy"], items=CHAT["items"][since:], total=len(CHAT["items"]),
-                    pending=pend and {k: pend[k] for k in ("id", "command", "args")}, settings=settings_view())
+                    pending=pend and {k: pend[k] for k in ("id", "command", "args")}, settings=settings_view(),
+                    usage=dict(CHAT["usage"]))
 
 
 _load()

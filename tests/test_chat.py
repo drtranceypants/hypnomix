@@ -92,19 +92,23 @@ class Chat(unittest.TestCase):
 
     def test_claude_loop_with_fallbacks_and_cached_system(self):
         n = {"i": 0}
+        use = lambda i, cw, cr, o: types.SimpleNamespace(input_tokens=i, cache_creation_input_tokens=cw,
+                                                         cache_read_input_tokens=cr, output_tokens=o)
 
         class Msgs:
             def create(self, **p):
                 n["i"] += 1
-                assert p["system"][0]["cache_control"] == {"type": "ephemeral"}
+                assert p["system"][0]["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
+                assert p["cache_control"] == {"type": "ephemeral", "ttl": "1h"}     # the whole conversation cached
                 assert all(t["strict"] for t in p["tools"])
                 if n["i"] == 1:
                     assert p["fallbacks"] == "default" and p["betas"] == ["server-side-fallback-2026-07-01"]
-                    return types.SimpleNamespace(stop_reason="tool_use", content=[
+                    return types.SimpleNamespace(stop_reason="tool_use", usage=use(8000, 0, 0, 200), content=[
                         Blk(type="text", text="Checking."), Blk(type="tool_use", id="t1", name="list_songs", input={})])
                 res = p["messages"][-1]["content"][0]
                 assert res["type"] == "tool_result" and res["tool_use_id"] == "t1"
-                return types.SimpleNamespace(stop_reason="end_turn", content=[Blk(type="text", text="No songs yet.")])
+                return types.SimpleNamespace(stop_reason="end_turn", usage=use(50, 1000, 8000, 100),
+                                             content=[Blk(type="text", text="No songs yet.")])
 
         class Fake:
             def __init__(self, **k):
@@ -116,6 +120,25 @@ class Chat(unittest.TestCase):
             CH.send("what songs do I have?")
             wait_idle()
         self.assertEqual([i["text"] for i in CH.state()["items"] if i["kind"] == "assistant"], ["Checking.", "No songs yet."])
+        u = CH.state()["usage"]
+        self.assertEqual((u["calls"], u["input"], u["cache_write"], u["cache_read"], u["output"]), (2, 8050, 1000, 8000, 300))
+        # Opus 5.5: $4 in, $20 out, $0.20 cache read, 1 h cache write at 2x input
+        self.assertAlmostEqual(u["cost"], (8050 * 4 + 1000 * 8 + 8000 * 0.2 + 300 * 20) / 1e6)
+
+    def test_review_comes_in_pages_never_cut_off(self):
+        fs = [dict(id=f"edges-{i}", tool="edges" if i % 2 else "smooth", track="Vox", problem="p" * 900, fix="f")
+              for i in range(1, 101)]
+        with mock.patch("hypnomix.app.server.scan_dir", lambda d: Path(d)), \
+                mock.patch("hypnomix.app.server.review_payload", lambda d: {"findings": fs, "decisions": {"edges-1": "approve"}}):
+            p1 = json.loads(CH.tool("read_review", {"dir": "/x", "page": 1, "tool": ""}))
+            p3 = json.loads(CH.tool("read_review", {"dir": "/x", "page": 3, "tool": ""}))
+            e2 = json.loads(CH.tool("read_review", {"dir": "/x", "page": 2, "tool": "edges"}))
+        self.assertEqual((p1["total"], len(p1["findings"]), p1["shown"]), (100, CH.REVIEW_PAGE, "all: page 1 of 3"))
+        self.assertEqual(len(p3["findings"]), 100 - 2 * CH.REVIEW_PAGE)                  # nothing lost at the end
+        self.assertEqual(p1["per_tool"], {"edges": 50, "smooth": 50})
+        self.assertEqual(p1["findings"][0]["decision"], "approve")
+        self.assertTrue(p1["findings"][0]["problem"].endswith("…"))
+        self.assertEqual({f["id"] for f in e2["findings"]}, {f"edges-{i}" for i in range(81, 101, 2)})
 
     def test_a_refused_key_is_said_plainly(self):
         e = type("AuthenticationError", (Exception,), {})("401")
