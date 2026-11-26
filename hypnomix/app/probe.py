@@ -96,6 +96,7 @@ var BASE = "http://127.0.0.1:__APP__";
 var W = __W__, H = __H__, NV = __NV__;
 var MODE = (jsarguments.length > 1 && jsarguments[1] == "main") ? "main" : "track";
 var MENUS = __MENUS__;                    // control name -> labels (menus), so values are sent as words
+var LABELS = __LABELS__;                  // the name Live shows for each control -> its hm_ name
 var v = [];
 var st = {ready: false, id: 0, name: "", main: false, fader: 0, pan: 0, sr: 0, gain: 0, lastSend: 0, lk: -120, pk: -120,
           playing: 0, beat: 0, sent: 0, ok: 0, busy: false, params: {}, chords: "", sig: "", sigAt: 0, card: false,
@@ -106,11 +107,18 @@ for (var i = 0; i < NV; i++) v.push(0);
 
 function bang() {                         // live.thisdevice: the Live API is ready
     st.ready = true;
+    try { readParams(); } catch (e) { st.err = "params: " + e; }
     refresh();
     slow.interval = 1000; slow.repeat();
     cmdTask.interval = 500; cmdTask.repeat();
 }
 function notifydeleted() { slow.cancel(); cmdTask.cancel(); }
+// when the script is reloaded inside a device that is already running, live.thisdevice does not fire again
+var initTask = new Task(function () {
+    if (st.ready) return;
+    try { var me = new LiveAPI("this_device"); if (me.id && me.id != "0") bang(); } catch (e) { }
+}, this);
+initTask.schedule(1500);
 function loadbang() { mgraphics.redraw(); }
 function now() { return new Date().getTime(); }
 function str(x) { return (x instanceof Array) ? x.join(" ") : String(x); }
@@ -127,8 +135,11 @@ function refresh() {
         st.fader = (s.indexOf("inf") >= 0) ? -120 : parseFloat(s);
         var pan = new LiveAPI(t.unquotedpath + " mixer_device panning");
         st.pan = parseFloat(pan.get("value"));
-        if (MODE == "main" && now() - st.sigAt > 5000) { st.sigAt = now(); st.sig = signature(); loadCard(); }
-    } catch (e) { }
+    } catch (e) { st.err = "refresh: " + e; }
+    if (MODE == "main" && now() - st.sigAt > 5000) {
+        st.sigAt = now();
+        try { st.sig = signature(); loadCard(); } catch (e) { st.err = "signature: " + e; }
+    }
     sendMeta();
     mgraphics.redraw();
 }
@@ -138,15 +149,29 @@ function signature() {                    // the song, recognised by its track n
     for (var i = 0; i < n; i++) names.push(str(new LiveAPI("live_set tracks " + i).get("name")));
     names.sort();
     var h = 0x811c9dc5, t = names.join("\n");
-    for (i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    for (i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = imul32(h, 0x01000193) >>> 0; }
     return ("00000000" + h.toString(16)).slice(-8);
 }
+function imul32(a, b) {                    // Math.imul is missing in Max's JavaScript engine
+    var ah = (a >>> 16) & 0xffff, al = a & 0xffff, bh = (b >>> 16) & 0xffff, bl = b & 0xffff;
+    return ((al * bl) + (((ah * bl + al * bh) << 16) >>> 0)) | 0;
+}
+function readParams() {                   // the menus' saved values, straight from Live
+    var me = new LiveAPI("this_device"), n = me.getcount("parameters");
+    for (var i = 0; i < n; i++) {
+        var p = new LiveAPI("this_device parameters " + i), nm = str(p.get("original_name")), sh = str(p.get("name"));
+        if (nm.indexOf("hm_") != 0) nm = LABELS[sh] || LABELS[nm] || nm;
+        if (nm.indexOf("hm_") == 0) st.params[nm.replace(/^hm_/, "")] = word(nm, parseFloat(p.get("value")));
+    }
+}
 function word(name, v) { var m = MENUS[name]; return m ? m[Math.max(0, Math.min(m.length - 1, Math.round(v)))] : v; }
-function param(name, v) { st.params[name] = word(name, v); sendMeta(); mgraphics.redraw(); }
+function param(name, v) { st.params[name.replace(/^hm_/, "")] = word(name, v); sendMeta(); mgraphics.redraw(); }
 function chords() { st.chords = arrayfromargs(arguments).join(" "); sendMeta(); saveCard(); }
 function sendMeta() {
     if (!st.ready) return;
-    outlet(0, ["/hm/meta", st.id, st.name, MODE == "main" ? 1 : 0, st.sig, JSON.stringify(st.params), st.chords]);
+    var pr = st.params;
+    if (st.err) { pr = JSON.parse(JSON.stringify(st.params)); pr._error = st.err; }
+    outlet(0, ["/hm/meta", st.id, st.name, MODE == "main" ? 1 : 0, st.sig, JSON.stringify(pr), st.chords]);
 }
 function post(path, body, done) {
     var r = new XMLHttpRequest();
@@ -513,7 +538,8 @@ def build(out, tpl=None):
 def script():
     menus = {n: list(spec) for m in CONTROLS.values() for n, _, k, spec, _, _ in m if k == "menu"}
     return (JS.replace("__APP__", str(PORT_APP)).replace("__W__", str(JW)).replace("__H__", str(H))
-            .replace("__NV__", str(NV)).replace("__MENUS__", json.dumps(menus)))
+            .replace("__NV__", str(NV)).replace("__MENUS__", json.dumps(menus))
+            .replace("__LABELS__", json.dumps({lab: n for m in CONTROLS.values() for n, lab, _, _, _, _ in m})))
 
 
 def signature(names):
