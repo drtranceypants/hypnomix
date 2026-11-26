@@ -1,5 +1,6 @@
 """Chapter: hypnomix in your DAW."""
-from hypnomix.app.lessons._common import ALL, LR
+from hypnomix.app.lessons._common import ALL, LR, az_only, enrich, place
+from hypnomix.app.lessons import ch13_hypnomix_steps
 
 CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="hypnomix in your DAW", sub="the app, the devices, and the loop: scan, hear, decide, apply", steps=[
   dict(id="hm-loop", title="How hypnomix works", daws=ALL,
@@ -130,3 +131,7 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="hypnomix in y
             "first-pass, mix, mastering and tracking skills. Setup → How you work switches between them."],
        app=dict(view="chat", label="Open the Assistant")),
  ])
+
+
+_ORDER = [s["id"] for s in CHAPTER["steps"]] + [s["id"] for s in ch13_hypnomix_steps.STEPS]
+CHAPTER["steps"] = enrich(place(CHAPTER["steps"] + az_only(ch13_hypnomix_steps.STEPS), _ORDER), ch13_hypnomix_steps.ENRICH)

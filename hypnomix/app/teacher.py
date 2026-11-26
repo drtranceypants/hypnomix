@@ -76,6 +76,8 @@ def steps(daw, level=DEFAULT_LEVEL):
             for k in EXTRA:
                 if s.get(k):
                     t[k] = _for_daw(s[k], daw) if k == "settings" else s[k]
+            if s.get("hear"):
+                t["hear"] = _hear(s["hear"])
             t["how"] = (s.get("how") or {}).get(daw, [])
             a = (s.get("action") or {}).get(daw)
             if a:
@@ -88,6 +90,17 @@ def steps(daw, level=DEFAULT_LEVEL):
     return out
 
 
+def _hear(items):
+    """A step's `hear` (demo ids, or {demo, listen}) -> what the page needs: title, what to listen for, one button per variant."""
+    from hypnomix.app import teach_audio
+    out = []
+    for h in items:
+        d, listen = (h, None) if isinstance(h, str) else (h["demo"], h.get("listen"))
+        if d in teach_audio.DEMOS:
+            out.append(teach_audio.catalog(d, listen))
+    return out
+
+
 def _for_daw(settings, daw):
     """`settings` is a list of [control, start, why], or {daw: that list} when the controls differ per DAW."""
     return settings.get(daw, []) if isinstance(settings, dict) else settings
@@ -95,6 +108,32 @@ def _for_daw(settings, daw):
 
 def count(daw, level=DEFAULT_LEVEL):
     return sum(len(c["steps"]) for c in steps(daw, level))
+
+
+def glossary(daw=None):
+    """Every word the lessons define (each step's `terms`, plus lessons/glossary.py), A to Z, each with a link to the step that
+    teaches it: [{term, entries: [{meaning, step, title, chapter}]}]. With `daw`, only the words that DAW's lessons teach."""
+    words = {}
+
+    def add(term, meaning, sid, title, chapter):
+        e = words.setdefault(term.strip().lower(), dict(term=term.strip(), entries=[]))
+        if all(x["meaning"] != meaning for x in e["entries"]):
+            e["entries"].append(dict(meaning=meaning, step=sid, title=title, chapter=chapter))
+
+    sid_title = {}
+    for ch in CHAPTERS:
+        for s in ch["steps"]:
+            if daw and daw in DAWS and daw not in s.get("daws", ALL):
+                continue
+            sid_title[s["id"]] = (s["title"], ch["title"])
+            for term, meaning in s.get("terms") or []:
+                add(term, meaning, s["id"], s["title"], ch["title"])
+    for row in lessons.GLOSSARY:
+        sid = row[2] if len(row) > 2 else ""
+        if sid and sid not in sid_title:
+            continue
+        add(row[0], row[1], sid, *(sid_title.get(sid) or ("", "")))
+    return sorted(words.values(), key=lambda e: re.sub(r"[^a-z0-9 ]", "", e["term"].lower()))
 
 
 # ---------------------------------------------------------------- the hands-on actions
@@ -530,59 +569,147 @@ def assistant_note():
                 f"hypnomix with {DAWS.get(d, 'their DAW')}: its loop, its devices for that DAW, the song card, A/B inside the DAW, "
                 "the mastering chain. Skip audio basics unless asked; be precise about hypnomix's commands, buttons and limits, "
                 "and follow the Teacher tab's order when they ask what's next.")
-    return (f"\n\nTeacher mode is on (the 101 crash course): the person is a beginner who may never have used a DAW before, working in "
+    name = "the complete course, A to Z" if lv == "az" else "the 101 crash course"
+    return (f"\n\nTeacher mode is on ({name}): the person is a beginner who may never have used a DAW before, working in "
             f"{DAWS.get(d, 'their DAW')}. Explain in plain words, one idea at a time, define each term the first time you "
             "use it, say exactly where to click in their DAW, and check they're ready before moving on. The Teacher tab "
             "holds the lessons (record to a click, arm a track, set input gain, each effect as it's added, mastering); "
             "follow its order when they ask what's next. Encourage them: mistakes are fine and nothing changes without their OK.")
 
 
-# ---------------------------------------------------------------- the wiki: one article per DAW, from the lessons
-def _md_text(t):
-    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _esc(t))
-
-
+# ---------------------------------------------------------------- the wiki: the courses and the glossary, from the lessons
 def _esc(t):
     return str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+def _md_text(t):
+    return re.sub(r"`([^`]+)`", r"<code>\1</code>", re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _esc(t)))
+
+
 WIKI_GROUP = {"live": "DAW: Ableton Live", "reaper": "DAW: REAPER", "ardour": "DAW: Ardour"}
+URL = "https://hypnomix.bradfieldenterprises.org/wiki/#"
 
 
-def wiki_article(daw, level="101"):
-    """One course for one DAW as a wiki article (HTML in the wiki's own style)."""
-    name = DAWS[daw]
-    thing = "set" if daw == "live" else "project" if daw == "reaper" else "session"
-    lead = (f"A crash course for people new to audio: the words, recording to a click, each effect as you add it, and mastering, "
-            f"from an empty {name} {thing} to a mastered song, then hypnomix's own tools. " if level == "101" else
-            f"For people who already record and mix: hypnomix with {name}, its devices, and the loop from scan to master. ")
-    parts = [f'<p class="lead">{lead}In the app, the <b>Teacher</b> tab walks you through the same steps, and can do the '
-             'hands-on ones for you (it asks first).</p>']
-    for ch in steps(daw, level):
-        parts.append(f"<h3>{_esc(ch['title'])}</h3><p><i>{_esc(ch['sub'])}</i></p>")
-        for s in ch["steps"]:
-            parts.append(f"<h4>{_esc(s['title'])}</h4>" + "".join(f"<p>{_md_text(x)}</p>" for x in s.get("say", [])))
-            if s.get("terms"):
-                parts.append("<dl>" + "".join(f"<dt>{_esc(w)}</dt><dd>{_esc(m)}</dd>" for w, m in s["terms"]) + "</dl>")
-            if s.get("settings"):
-                parts.append('<div class="tablewrap"><table><tr><th>Control</th><th>Where to start</th><th>Why</th></tr>' +
-                             "".join(f"<tr><td>{_esc(a)}</td><td>{_esc(b)}</td><td>{_esc(c)}</td></tr>" for a, b, c in s["settings"]) + "</table></div>")
-            if s.get("how"):
-                parts.append(f"<p><b>In {name}</b></p><ol>" + "".join(f"<li>{_esc(x)}</li>" for x in s["how"]) + "</ol>")
-            if s.get("listen"):
-                parts.append(f'<div class="note-box"><b>Listen:</b> {_esc(s["listen"])}</div>')
-    if daw == "ardour":
-        parts.append('<div class="note-box">Ardour gets the short version for now: hypnomix can read and scan Ardour sessions, '
-                     'but can\'t drive Ardour yet, so every step here is done by hand.</div>')
-    html = '<div class="prose paper">' + "\n".join(parts) + "</div>"
+def _more_html(items, daw):
+    """`more`: a lesson (step:ID), a wiki article (its id) or a command (hypnomix NAME) -> a short line of links."""
+    where = {s["id"]: ch["id"] for ch in CHAPTERS for s in ch["steps"]}
+    titles = {s["id"]: s["title"] for ch in CHAPTERS for s in ch["steps"]}
+    out = []
+    for m in items:
+        if m.startswith("step:") and m[5:] in where:
+            out.append(f'<a data-wiki="learn-{daw}-{where[m[5:]]}" href="#">{_esc(titles[m[5:]])}</a>')
+        elif m.startswith("hypnomix "):
+            out.append(f"<code>{_esc(m)}</code>")
+        elif not m.startswith("step:"):
+            out.append(f'<a data-wiki="{_esc(m)}" href="#">{_esc(m)}</a>')
+    return '<p><b>Read next:</b> ' + " · ".join(out) + "</p>" if out else ""
+
+
+def _step_html(s, daw, name):
+    """One lesson step as lean HTML for the wiki."""
+    parts = [f'<h3 id="{_esc(s["id"])}">{_esc(s["title"])}</h3>' + "".join(f"<p>{_md_text(x)}</p>" for x in s.get("say", []))]
+    if s.get("terms"):
+        parts.append("<dl>" + "".join(f"<dt>{_esc(w)}</dt><dd>{_esc(m)}</dd>" for w, m in s["terms"]) + "</dl>")
+    if s.get("settings"):
+        parts.append('<div class="tablewrap"><table><tr><th>Control</th><th>Where to start</th><th>Why</th></tr>' +
+                     "".join(f"<tr><td>{_esc(a)}</td><td>{_esc(b)}</td><td>{_esc(c)}</td></tr>" for a, b, c in s["settings"]) + "</table></div>")
+    if s.get("how"):
+        parts.append(f"<p><b>In {name}</b></p><ol>" + "".join(f"<li>{_md_text(x)}</li>" for x in s["how"]) + "</ol>")
+    if s.get("listen"):
+        parts.append(f'<div class="note-box"><b>Listen:</b> {_esc(s["listen"])}</div>')
+    for h in s.get("hear") or []:
+        parts.append(f'<p><b>Hear it</b> in the app\'s Teacher tab: {_esc(h["title"])}. {_esc(h["listen"])}</p>')
+    if s.get("mistakes"):
+        parts.append("<p><b>Common mistakes</b></p><ul>" + "".join(f"<li>{_md_text(x)}</li>" for x in s["mistakes"]) + "</ul>")
+    if s.get("try"):
+        parts.append(f"<p><b>Try it:</b> {_md_text(s['try']['do'])} <i>You'll know it worked when: {_md_text(s['try']['success'])}</i></p>")
+    for q in s.get("quiz") or []:
+        opts = "".join(f"<li>{_esc(o)}</li>" for o in q["options"])
+        parts.append(f"<details><summary><b>Check yourself:</b> {_esc(q['q'])}</summary><ol type=\"a\">{opts}</ol>"
+                     f"<p>Answer: {_esc(q['options'][q['answer']])}. {_esc(q['why'])}</p></details>")
+    if s.get("more"):
+        parts.append(_more_html(s["more"], daw))
+    return "".join(parts)
+
+
+def _article(aid, daw, title, sub, html, group=None):
     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
-    aid = f"learn-{daw}" if level == "101" else f"tour-{daw}"
-    title = f"101: make a song from scratch in {name}" if level == "101" else f"Guided tour: hypnomix in {name}"
-    sub = ("teacher mode · the words, recording to a click, each effect, mastering" if level == "101"
-           else "teacher mode · the devices, the song card, A/B, the mastering chain")
-    return dict(id=aid, group=WIKI_GROUP[daw], title=title, sub=sub, no="", teaser="",
-                html=html, text=text, url=f"https://hypnomix.bradfieldenterprises.org/wiki/#{aid}",
-                file=str(Path(__file__).resolve()), generated=True)
+    return dict(id=aid, group=group or WIKI_GROUP.get(daw, "Reference"), title=title, sub=sub, no="", teaser="",
+                html=html, text=text, url=URL + aid, file=str(Path(__file__).resolve()), generated=True)
+
+
+def wiki_articles(daw):
+    """The wiki's articles for one DAW: the tour (one article), the complete course's contents page (`learn-DAW`, so old
+    links keep working) and one article per chapter of that course (`learn-DAW-CHAPTER`)."""
+    name = DAWS[daw]
+    out = [wiki_article(daw, "az"), wiki_article(daw, "tour")]
+    for ch in steps(daw, "az"):
+        n = sum(1 for s in ch["steps"])
+        body = "".join(_step_html(s, daw, name) for s in ch["steps"])
+        lead = f'<p class="lead">{_esc(ch["sub"][:1].upper() + ch["sub"][1:])}. {n} lessons, in {name}. In the app, the <b>Teacher</b> tab teaches the same lessons, with audio examples and quizzes.</p>'
+        if daw == "ardour" and ch["id"] in ("record", "hypnomix"):
+            body += ('<div class="note-box">Ardour gets the short version for now: hypnomix can read and scan Ardour sessions, '
+                     'but can\'t drive Ardour yet, so every step here is done by hand.</div>')
+        out.append(_article(f"learn-{daw}-{ch['id']}", daw, ch["title"], f"teacher mode · {name} · {n} lessons",
+                            '<div class="prose paper">' + lead + body + "</div>"))
+    return out
+
+
+def wiki_article(daw, level="az"):
+    """The tour as one article (`tour-DAW`), or, for the complete course (any other level), its contents page (`learn-DAW`)."""
+    name = DAWS[daw]
+    if level == "tour":
+        parts = [f'<p class="lead">For people who already record and mix: hypnomix with {name}, its devices, and the loop from scan to master. '
+                 'In the app, the <b>Teacher</b> tab walks you through the same steps, and can do the hands-on ones for you (it asks first).</p>']
+        for ch in steps(daw, "tour"):
+            parts.append(f"<h2>{_esc(ch['title'])}</h2><p><i>{_esc(ch['sub'])}</i></p>")
+            parts += [_step_html(s, daw, name) for s in ch["steps"]]
+        if daw == "ardour":
+            parts.append('<div class="note-box">Ardour gets the short version for now: hypnomix can read and scan Ardour sessions, '
+                         'but can\'t drive Ardour yet, so every step here is done by hand.</div>')
+        return _article(f"tour-{daw}", daw, f"Guided tour: hypnomix in {name}",
+                        "teacher mode · the devices, the song card, A/B, the mastering chain", '<div class="prose paper">' + "".join(parts) + "</div>")
+    chs = steps(daw, "az")
+    n101 = count(daw, "101")
+    rows = "".join(f'<li><a data-wiki="learn-{daw}-{c["id"]}" href="#"><b>{_esc(c["title"])}</b></a>: {_esc(c["sub"])} '
+                   f'<span class="note">({len(c["steps"])} lessons)</span></li>' for c in chs)
+    html = ('<div class="prose paper"><p class="lead">The complete course, A to Z: from what sound is to releasing your song, with '
+            f'{name} as your DAW. {sum(len(c["steps"]) for c in chs)} short lessons in {len(chs)} chapters, with audio examples, '
+            f'exercises and quizzes. In the app, the <b>Teacher</b> tab teaches the same course and keeps your place; the <a data-wiki="glossary" href="#">Glossary</a> '
+            f'lists every word. New and short of time? The <b>101 crash course</b> ({n101} steps for {name}) is inside it: the words and the screen, '
+            f'your first recording, mixing one effect at a time, mastering, then the hypnomix tour.</p><ol>{rows}</ol>'
+            f'<p>Already a working engineer? <a data-wiki="tour-{daw}" href="#">The guided tour</a> covers only hypnomix in {name}.</p></div>')
+    return _article(f"learn-{daw}", daw, f"The complete course: make a song from scratch in {name}",
+                    "teacher mode · sound, gear, recording, editing, mixing, mastering, releasing", html)
+
+
+def wiki_glossary():
+    """One article: every word the lessons teach, A to Z, each with the chapter article that teaches it."""
+    daw_of = {}
+    for ch in CHAPTERS:
+        for s in ch["steps"]:
+            daw_of[s["id"]] = next((d for d in DAWS if d in s.get("daws", ALL)), "live"), ch["id"]
+    rows, letter = [], ""
+    for g in glossary():
+        first = (re.sub(r"[^A-Za-z0-9]", "", g["term"])[:1] or "#").upper()
+        if first != letter:
+            letter = first
+            rows.append(f"<h2>{_esc(letter)}</h2>")
+        for e in g["entries"]:
+            d, c = daw_of.get(e["step"], (None, None))
+            link = f' <a data-wiki="learn-{d}-{c}" href="#">{_esc(e["title"])}</a>' if d else ""
+            rows.append(f"<p><b>{_esc(g['term'])}</b>: {_esc(e['meaning'])}{(' <span class=note>→' + link + '</span>') if link else ''}</p>")
+    html = ('<div class="prose paper"><p class="lead">Every word the lessons teach, A to Z, with the lesson that explains it. '
+            'In the app, the Teacher tab has the same list with a filter.</p>' + "".join(rows) + "</div>")
+    return _article("glossary", None, "Glossary", "teacher mode · every word, A to Z", html, group="Reference")
+
+
+def wiki_all():
+    """Every generated article: per DAW the tour, the course contents and its chapters, then the glossary."""
+    out = []
+    for d in DAWS:
+        out += wiki_articles(d)
+    return out + [wiki_glossary()]
 
 
 # ---------------------------------------------------------------- the server's routes
@@ -593,6 +720,14 @@ def handle_get(path, q):
         return 200, state(q.get("daw"), q.get("level"))
     if path == "/api/teach/connections":
         return 200, connections()
+    if path == "/api/teach/glossary":
+        return 200, dict(terms=glossary(q.get("daw")))
+    if path == "/api/teach/hear":
+        from hypnomix.app import teach_audio
+        try:
+            return 200, teach_audio.wav(str(q.get("demo", "")), str(q.get("v", "a"))), "audio/wav"
+        except KeyError:
+            return 404, dict(error="no such demo")
     return None
 
 

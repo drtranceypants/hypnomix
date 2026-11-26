@@ -1,5 +1,6 @@
 """Chapter: The words and the screen."""
-from hypnomix.app.lessons._common import ALL, LR
+from hypnomix.app.lessons._common import ALL, LR, az_only, enrich, place
+from hypnomix.app.lessons import ch04_words_steps
 
 CHAPTER = dict(id="words", levels=("101", "az"), title="The words and the screen", sub="what a DAW is, and the names for everything on it", steps=[
   dict(id="daw", title="What a DAW is", daws=ALL,
@@ -62,3 +63,7 @@ CHAPTER = dict(id="words", levels=("101", "az"), title="The words and the screen
               ["Fader", "the slider that sets a track's volume."], ["Pan", "where a sound sits from left to right."],
               ["Headroom", "the space left between your loudest peak and 0 dB."]]),
  ])
+
+
+_ORDER = ['daw', 'screen-live', 'screen-reaper', 'screen-ardour', 'signal', 'words-audio-settings', 'words-template', 'words-naming-colour']
+CHAPTER["steps"] = enrich(place(CHAPTER["steps"] + az_only(ch04_words_steps.STEPS), _ORDER), ch04_words_steps.ENRICH)

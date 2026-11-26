@@ -18,11 +18,7 @@ _ORDER = ["ch01_sound", "ch02_digital", "ch03_gear", "ch04_words", "ch05_song", 
 def _load():
     out = []
     for name in _ORDER:
-        try:
-            out.append(import_module(f"{__name__}.{name}").CHAPTER)
-        except ModuleNotFoundError as e:
-            if e.name != f"{__name__}.{name}":
-                raise
+        out.append(import_module(f"{__name__}.{name}").CHAPTER)
     return out
 
 

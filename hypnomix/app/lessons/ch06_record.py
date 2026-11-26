@@ -1,5 +1,6 @@
 """Chapter: Your first recording."""
-from hypnomix.app.lessons._common import ALL, LR
+from hypnomix.app.lessons._common import ALL, LR, az_only, enrich, place
+from hypnomix.app.lessons import ch06_record_steps
 
 CHAPTER = dict(id="record", levels=("101", "az"), title="Your first recording", sub="tempo, the click, a beat to play over, a track that's ready, the right level", steps=[
   dict(id="tempo", title="Choose a tempo", daws=ALL,
@@ -101,3 +102,7 @@ CHAPTER = dict(id="record", levels=("101", "az"), title="Your first recording", 
             "For now, keep recording the rest of the song: each instrument gets its own track, recorded the same way."],
        app=dict(view="home", label="Open the Songs tab")),
  ])
+
+
+_ORDER = ['tempo', 'click', 'drums', 'rec-monitoring', 'rec-headphone-mix', 'rec-tune-up', 'track', 'gain', 'rec-voice', 'rec-guitar-bass', 'take', 'rec-punch-loop', 'rec-doubling', 'session-sketch', 'rec-good-enough', 'takes-hypnomix']
+CHAPTER["steps"] = enrich(place(CHAPTER["steps"] + az_only(ch06_record_steps.STEPS), _ORDER), ch06_record_steps.ENRICH)

@@ -5,7 +5,8 @@ away when the disk is nearly full (less than 20 GB or 8% free); then it uses sho
 it's on by default and can be switched off, previewed and run by hand from the "free" button in the app's header.
 
 What it removes, and only that:
-  cache     ~/.hypnomix/cache/render and renders: rendered audio kept to speed up a re-run, idle 7 days
+  cache     ~/.hypnomix/cache/render and renders: rendered audio kept to speed up a re-run, idle 7 days;
+            cache/teach (the Teacher tab's audio examples, made again on demand), idle 14 days
             (1 when the disk is nearly full; the pitch cache only then, idle 14 days)
   scans     audio inside hypnomix scan folders (the app's own, and any folder in "watch") once the whole scan
             has been idle 14 days: A/B clips and renders. Findings, decisions and reports stay, so the review
@@ -259,7 +260,8 @@ def plan(lvl=None):
 
     # cache
     cache = hx_home() / "cache"
-    for name, age in (("render", 1 if low else 7), ("renders", 1 if low else 7), ("pitch", 14 if low else None)):
+    for name, age in (("render", 1 if low else 7), ("renders", 1 if low else 7), ("pitch", 14 if low else None),
+                      ("teach", 1 if low else 14)):
         d = cache / name
         if age is None or not d.is_dir():
             continue

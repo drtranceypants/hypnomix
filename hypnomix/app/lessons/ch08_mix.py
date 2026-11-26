@@ -1,5 +1,6 @@
 """Chapter: Mixing."""
-from hypnomix.app.lessons._common import ALL, LR
+from hypnomix.app.lessons._common import ALL, LR, az_only, enrich, place
+from hypnomix.app.lessons import ch08_mix_a, ch08_mix_b, ch08_mix_c, ch08_mix_d
 
 CHAPTER = dict(id="mix", levels=("101", "az"), title="Mixing, one effect at a time", sub="balance first, then each effect: what it does, why, where to start", steps=[
   dict(id="balance", title="Balance and pan first", daws=ALL,
@@ -114,3 +115,7 @@ CHAPTER = dict(id="mix", levels=("101", "az"), title="Mixing, one effect at a ti
             "Every finding is a suggestion with a before and after to hear; you decide."],
        app=dict(view="home", label="Open the Songs tab")),
  ])
+
+
+_ORDER = ['mix-gain-staging', 'balance', 'mix-static', 'mix-panning', 'mix-lowcuts', 'mix-cut-first', 'eq', 'mix-freq-instruments', 'mix-masking', 'comp', 'mix-comp-depth', 'mix-comp-parallel', 'mix-gates', 'deess', 'reverb', 'mix-reverb-kinds', 'delay', 'mix-delay-kinds', 'mix-modulation', 'saturation', 'mix-sidechain', 'mix-sends', 'groups', 'mix-vocal-chain', 'mix-lead-harmonies', 'mix-drums', 'mix-drum-room', 'mix-bass-kick', 'mix-guitars', 'mix-keys-pads', 'automation', 'mix-rides', 'mix-bus', 'mix-references', 'mix-translation', 'mix-check', 'mix-ear-fatigue', 'mix-finished', 'mix-mistakes']
+CHAPTER["steps"] = enrich(place(CHAPTER["steps"] + az_only(ch08_mix_a.STEPS + ch08_mix_b.STEPS + ch08_mix_c.STEPS + ch08_mix_d.STEPS), _ORDER), ch08_mix_a.ENRICH, ch08_mix_b.ENRICH, ch08_mix_c.ENRICH, ch08_mix_d.ENRICH)

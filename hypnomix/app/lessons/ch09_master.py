@@ -1,5 +1,6 @@
 """Chapter: Mastering."""
-from hypnomix.app.lessons._common import ALL, LR
+from hypnomix.app.lessons._common import ALL, LR, az_only, enrich, place
+from hypnomix.app.lessons import ch09_master_steps
 
 CHAPTER = dict(id="master", levels=("101", "az"), title="Mastering", sub="what it is, and a good chain to start from", steps=[
   dict(id="what", title="What mastering is", daws=ALL,
@@ -50,3 +51,7 @@ CHAPTER = dict(id="master", levels=("101", "az"), title="Mastering", sub="what i
             "Or let hypnomix master the bounce for you with `master` and approve each stage: Tools → master, or the Assistant."],
        app=dict(view="tools", label="Open the Tools tab")),
  ])
+
+
+_ORDER = ['what', 'mst-units', 'mst-streaming', 'prepare', 'chain', 'mst-limiter', 'loud', 'mst-codec', 'mst-dither', 'deliver', 'mst-album', 'mst-versions', 'mst-handoff']
+CHAPTER["steps"] = enrich(place(CHAPTER["steps"] + az_only(ch09_master_steps.STEPS), _ORDER), ch09_master_steps.ENRICH)

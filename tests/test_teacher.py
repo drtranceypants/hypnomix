@@ -127,10 +127,12 @@ class Courses(unittest.TestCase):
         a = T.wiki_article("reaper", "tour")
         self.assertEqual((a["id"], a["group"]), ("tour-reaper", "DAW: REAPER"))
         self.assertIn("Hypnomix Main", a["text"])
-        b = T.wiki_article("live", "101")
+        b = T.wiki_article("live", "az")                               # the contents page; the chapters are articles of their own
         self.assertEqual(b["id"], "learn-live")
-        self.assertIn("EQ Eight", b["text"])
+        self.assertIn("Mixing", b["text"])
         self.assertTrue(b["generated"])
+        c = next(x for x in T.wiki_articles("live") if x["id"] == "learn-live-mix")
+        self.assertIn("EQ Eight", c["text"])
 
     def test_assistant_note_follows_the_level(self):
         with mock.patch.object(T, "choice", return_value=("live", "", "key")):
@@ -139,6 +141,8 @@ class Courses(unittest.TestCase):
             self.assertIn("already knows", T.assistant_note())
         with mock.patch.object(T, "choice", return_value=("reaper", "101", "key")):
             self.assertIn("beginner", T.assistant_note())
+        with mock.patch.object(T, "choice", return_value=("reaper", "az", "key")):
+            self.assertIn("complete course", T.assistant_note())
 
 
 class Actions(unittest.TestCase):
@@ -288,6 +292,37 @@ class Routes(unittest.TestCase):
         call(self.base, "/api/setup/daw", {"teach_level": "nonsense"}, tok)
         self.assertEqual(SU.load()["teach_level"], "")
         self.assertFalse(SU.load()["teach"])
+
+    def test_setup_offers_the_complete_course(self):
+        tok = self.S.TOKEN
+        code, r = call(self.base, "/api/setup/daw", {"daw": "ardour", "teach_level": "az"}, tok)
+        self.assertEqual((code, r), (200, {"daw": "ardour", "teach_level": "az"}))
+        code, st = call(self.base, "/api/teach/state")
+        self.assertEqual((st["level"], st["teach"], st["chapters"][0]["id"]), ("az", True, "sound"))
+        self.assertEqual(list(st["levels"]), ["tour", "101", "az"])
+        code, s = call(self.base, "/api/setup/state")
+        self.assertEqual(s["teach_level"], "az")
+        js = __import__("urllib.request").request.urlopen(self.base + "/setup.js").read().decode()
+        self.assertIn("data-teach", js)
+        self.assertIn("The complete course, A to Z", js)
+        call(self.base, "/api/setup/daw", {"daw": "reaper", "teach_level": "tour"}, tok)
+
+    def test_hear_route_serves_a_wav_and_the_glossary(self):
+        import urllib.error, urllib.request
+        r = urllib.request.urlopen(self.base + "/api/teach/hear?demo=sine-pitch&v=f1k")
+        body = r.read()
+        self.assertEqual(r.headers["Content-Type"], "audio/wav")
+        self.assertEqual(body[:4], b"RIFF")
+        self.assertLess(len(body), 44100 * 2 * 2 * 8 + 100)                 # at most about 8 seconds of 16-bit stereo
+        with self.assertRaises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(self.base + "/api/teach/hear?demo=nope&v=a")
+        self.assertEqual(e.exception.code, 404)
+        code, g = call(self.base, "/api/teach/glossary?daw=live")
+        self.assertEqual(code, 200)
+        self.assertTrue(any(x["term"] == "Compressor" for x in g["terms"]))
+        js = urllib.request.urlopen(self.base + "/teacher.js").read().decode()
+        for word in ("data-thear", "data-tquiz", "glossaryView", "Common mistakes"):
+            self.assertIn(word, js)
 
     def test_actions_need_an_ok(self):
         code, r = call(self.base, "/api/teach/do", {"daw": "live", "step": "tempo", "kind": "tempo", "args": {"bpm": 90}}, self.S.TOKEN)

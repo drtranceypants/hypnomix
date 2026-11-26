@@ -168,8 +168,9 @@ def local(root=None):
     skills = skill_files(root) + agent_files(root)
     cli = Path(__file__).resolve().parents[1] / "cli.py"
     teach = Path(__file__).with_name("teacher.py")              # the teacher-mode courses are articles too
+    lessons = sorted(Path(__file__).with_name("lessons").glob("*.py"))
     key = (str(root), tuple((str(f), f.stat().st_mtime) for f in files + guides + docs + skills
-                            + [x for x in (cli, teach) if x.exists()]))
+                            + [x for x in [cli, teach, *lessons] if x.exists()]))
     if _CACHE.get("key") != key:
         from hypnomix.app import wiki_md
         arts = [parse(f) for f in files]
@@ -198,13 +199,12 @@ def local(root=None):
                 arts = arts[:at] + [cmd] + arts[at:]
             except Exception:                                      # never let it take the wiki down
                 pass
-        try:                                  # teacher mode's courses, one per DAW and level (the real wiki only)
+        try:                                  # teacher mode: per DAW the tour, the course contents and a chapter each; the glossary (the real wiki only)
             if root.resolve() != Path(__file__).with_name("wiki").resolve():
                 raise LookupError
             from hypnomix.app import teacher
             have = {a["id"] for a in arts}
-            arts += [a for a in (teacher.wiki_article(d, lv) for d in teacher.DAWS for lv in ("101", "tour"))
-                     if a["id"] not in have]
+            arts += [a for a in teacher.wiki_all() if a["id"] not in have]
         except Exception:
             pass
         _CACHE.update(key=key, arts=wiki_md.link_files(organise(arts)))
