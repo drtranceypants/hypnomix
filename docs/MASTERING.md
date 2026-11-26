@@ -186,7 +186,8 @@ multiband width → warmth → clipper (punch / loud) → limiter (codec-safe ce
 ## Known limits
 
 - The stages run offline on files. `hypnomix chain` (building the chain in Live from stock devices) does not build the
-  new stages yet.
+  new stages yet. To master by ear inside Live instead, HypnomixMain on Main builds an editable rack of Live's own
+  devices, matches the Limiter to your loudness target and saves your chain as a template (docs/LIVE.md, section 5).
 - The harshness measure is a measurement, not a judgement: a bright hi-hat pattern entering can count. Listen at the
   timestamps before approving `--harsh`.
 - Separation quality limits `rebalance`; the identity is exact only because the residual is kept.

@@ -90,6 +90,10 @@ EQ Eight → Glue Compressor → Utility → Saturator → Limiter on the Main t
 your bounce. `--verify` records the loudest 8 bars from Live and trims the Limiter until it measures on
 target. Nothing is deleted: `--existing bypass` switches off what was already on Main.
 
+No bounce yet? **HypnomixMain** on Main has its own mastering chain: **Build chain** puts an editable rack of
+Live's own devices (every gain at 0 dB) before it, **Match target** turns the Limiter until Main sits on the song
+card's loudness, and **Save** keeps your edited chain, or a rack of your own, as a template (guide 7).
+
 > Tip: watch the limiter line in the notes. Under ~2 dB of reduction is transparent; 3–6 dB starts to flatten
 > drums; more means the mix needs work (usually a kick, snare or bass peaking far above the rest).
 
