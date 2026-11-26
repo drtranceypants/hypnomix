@@ -109,6 +109,26 @@ class WikiTest(unittest.TestCase):
         self.assertNotIn("file", data["articles"][0])
         self.assertEqual((out / "assets" / "clip.mp4").read_bytes(), bytes(range(100)))
 
+    def test_home_page_summaries(self):
+        arts = wiki.local()
+        arts[0]["teaser"] = "Short & sweet."
+        page = self.root / "home.html"
+        page.write_text("<p>top</p><!--wiki:l3-->OLD COPY<!--/wiki:l3--><!--wiki:gone-->keep<!--/wiki:gone--><p>end</p>")
+        changed, missing = wiki_build.refresh_page(page, arts)
+        s = page.read_text()
+        self.assertTrue(changed)
+        self.assertEqual(missing, ["gone"])
+        self.assertNotIn("OLD COPY", s)
+        self.assertIn("<!--wiki:l3--><div class=\"prose paper wiki-teaser\"><p>Short &amp; sweet.</p>", s)
+        self.assertIn('<a href="/wiki/#l3">Read “The first pass” in the wiki →</a>', s)
+        self.assertIn("<!--wiki:gone-->keep<!--/wiki:gone--><p>end</p>", s)
+        self.assertEqual(wiki_build.refresh_page(page, arts), (False, ["gone"]))     # run again: nothing changes
+        arts[0]["teaser"] = ""
+        self.assertTrue(wiki_build.summary(arts[0]).startswith("Run it & read the next one"))
+        faq = {"id": "faq", "title": "FAQ", "html": "<details><summary>Is it free?</summary><div><p>Yes.</p></div></details>"}
+        self.assertEqual(wiki_build.faq_items(faq), [("Is it free?", "Yes.")])
+        self.assertIn('"name": "Is it free?"', wiki_build.faq_jsonld([faq]))
+
     def test_shipped_wiki_is_complete(self):
         """The wiki that ships with the app: every image or video an article uses is there, and nothing extra."""
         import re

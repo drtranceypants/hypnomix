@@ -6,6 +6,12 @@ Writes OUT/index.html (every article on one page: a list to search, one article 
 all of them without), OUT/articles.json (what every copy of the app loads to stay current) and OUT/assets/
 (the images and videos). The template is the site's own page with <!--WIKI--> where the wiki goes, so the
 site keeps its look. Python's standard library only: it runs on the website's computer without installing.
+
+    --page SITE/public/index.html    also refresh the short summaries on another page of the site
+
+On such a page, everything between <!--wiki:ID--> and <!--/wiki:ID--> is replaced by a short summary of the
+article ID (its "teaser:" header line, else its first paragraph) and a link to it in the wiki; for the FAQ,
+the list of questions. So the home page can point into the wiki without keeping its own copy.
 """
 import argparse
 import datetime
@@ -88,7 +94,71 @@ def page(arts, built):
             'aria-label="Search the wiki"><div class="wlist" role="navigation" aria-label="Wiki articles">' + "".join(nav)
             + '<div class="none" hidden>Nothing matches. Try fewer words.</div></div></aside><div>'
             + "\n".join(out) + f'<p class="sub" style="text-align:left">Updated {esc(built)} · the same articles are in '
-            'the hypnomix app\'s Wiki tab.</p></div></div>\n' + SCRIPT)
+            'the hypnomix app\'s Wiki tab.</p></div></div>\n' + SCRIPT + faq_jsonld(arts))
+
+
+def plain(h):
+    t = re.sub(r"<[^>]+>", " ", h)
+    t = html.unescape(re.sub(r"\s+", " ", t)).strip()
+    return t
+
+
+def summary(a, limit=330):
+    """The article's teaser: its "teaser:" header, else its first real paragraph, cut at a sentence."""
+    if a.get("teaser"):
+        return a["teaser"]
+    paras = [plain(p) for p in re.findall(r"<p(?: [^>]*)?>(.*?)</p>", a["html"], re.S)]
+    t = next((p for p in paras if len(p) > 40), paras[0] if paras else a.get("sub", ""))
+    if len(t) > limit:
+        cut = max(t.rfind(". ", 0, limit), t.rfind("? ", 0, limit))
+        t = t[:cut + 1] if cut > 80 else t[:limit].rsplit(" ", 1)[0] + "…"
+    return t
+
+
+def faq_items(a):
+    """[(question, answer text)] from the FAQ article's <details>."""
+    return [(plain(q), plain(ans)) for q, ans in
+            re.findall(r"<details>\s*<summary>(.*?)</summary>(.*?)</details>", a["html"], re.S)]
+
+
+def teaser(a):
+    link = f'/wiki/#{esc(a["id"])}'
+    if a["id"] == "faq":
+        qs = faq_items(a)
+        items = "".join(f'<li><a href="{link}">{esc(q)}</a></li>' for q, _ in qs)
+        return (f'<div class="prose paper wiki-teaser"><ul>{items}</ul><p class="more"><a href="{link}">'
+                f'All {len(qs)} answers in the wiki →</a></p></div>')
+    return (f'<div class="prose paper wiki-teaser"><p>{esc(summary(a))}</p><p class="more"><a href="{link}">'
+            f'Read “{esc(a["title"])}” in the wiki →</a></p></div>')
+
+
+def refresh_page(path, arts):
+    """Rewrite every <!--wiki:ID-->…<!--/wiki:ID--> region of a page. -> (changed, ids not in the wiki)."""
+    p = Path(path)
+    s = p.read_text()
+    by = {a["id"]: a for a in arts}
+    missing = []
+
+    def sub(m):
+        aid = m.group(1)
+        if aid not in by:
+            missing.append(aid)
+            return m.group(0)
+        return f"<!--wiki:{aid}-->{teaser(by[aid])}<!--/wiki:{aid}-->"
+
+    new = re.sub(r"<!--wiki:([\w-]+)-->.*?<!--/wiki:\1-->", sub, s, flags=re.S)
+    if new != s:
+        p.write_text(new)
+    return new != s, missing
+
+
+def faq_jsonld(arts):
+    a = next((x for x in arts if x["id"] == "faq"), None)
+    if not a:
+        return ""
+    qs = [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": ans}} for q, ans in faq_items(a)]
+    data = json.dumps({"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": qs}, ensure_ascii=False)
+    return '<script type="application/ld+json">' + data.replace("</", "<\\/") + "</script>"
 
 
 def commit_time(root):
@@ -107,6 +177,7 @@ def main():
     ap.add_argument("--template", required=True, help="the site's page with <!--WIKI--> where the wiki goes")
     ap.add_argument("--out", required=True, help="the site's /wiki/ folder")
     ap.add_argument("--src", default=str(W.HERE), help="the wiki source (default: this hypnomix's)")
+    ap.add_argument("--page", action="append", default=[], help="another page whose <!--wiki:ID--> summaries to refresh")
     a = ap.parse_args()
     src, out = Path(a.src), Path(a.out)
     arts = W.local(src)
@@ -132,6 +203,10 @@ def main():
         "commit_time": t, "commit": sha, "built": built, "assets": assets,
         "articles": [{k: v for k, v in x.items() if k != "file"} for x in arts]}, ensure_ascii=False))
     print(f"{len(arts)} articles, {len(assets)} images and videos → {out} (source {sha or 'not in git'})")
+    for pg in a.page:
+        changed, missing = refresh_page(pg, arts)
+        print(f"{pg}: summaries {'updated' if changed else 'already current'}"
+              + (f"; not in the wiki: {', '.join(missing)}" if missing else ""))
 
 
 if __name__ == "__main__":

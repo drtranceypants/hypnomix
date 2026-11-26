@@ -6,6 +6,7 @@ fragment under a short header, and the images and videos it shows in hypnomix/ap
     <!--
     title: The first pass
     sub: scan · hear · decide · apply
+    teaser: (optional) the short summary the home page shows; else the first paragraph
     no: lesson 3
     group: Training
     -->
@@ -73,7 +74,7 @@ def parse(path):
     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body)).strip()
     text = text.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"')
     return {"id": aid, "group": meta.get("group", "Wiki"), "title": meta.get("title", aid), "sub": meta.get("sub", ""),
-            "no": meta.get("no", ""), "html": body.strip(), "text": text, "url": f"{SITE}/wiki/#{aid}",
+            "no": meta.get("no", ""), "teaser": meta.get("teaser", ""), "html": body.strip(), "text": text, "url": f"{SITE}/wiki/#{aid}",
             "file": str(Path(path).resolve())}
 
 
