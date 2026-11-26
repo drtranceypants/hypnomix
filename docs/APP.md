@@ -75,5 +75,6 @@ own copy of Live plus one script file; keep the two files in the same folder.
 - If the person prefers clicking to chatting, start `hypnomix app` for them (as a background process, not a
   blocking shell) and say what each screen does. Their decisions land in the same `decisions.json` you read.
 - The app is not a way round the rules: it runs `fix --approved`, with the same gates.
-- Say plainly that the Live device is new: its script has been tested against a simulated Live set. Until the
-  person has loaded it in Live, present it as untested there.
+- The Live devices were tested in Live 12 Suite on a real set (stepping, jumps, A / B / Blind, loudness matching,
+  the probes, Record and review). They are still new: say so, and keep the person's original set closed while an
+  A/B set is open.

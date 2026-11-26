@@ -31,8 +31,7 @@ matching), `plugrender` (offline renders through real VST3/AU chains; `ab --plug
 (style and where to improve, from every set on the computer), mastering stages (`tonal`, `--stabilize`, `--dyneq`,
 `--width-bands`, `--limiter-mode`, `--harsh`, dither, `rebalance`, `translate --preview`), amounts per decision,
 grouped decisions, a question budget, teach, collaborator export/merge, `history` and undo, `scan --quick` and
-`--since`, `watch`, the render cache. Open: loading the three devices in Live on a real set (tested against a
-simulated Live API only); `sfrecord~` settings in Live; take lanes as the A/B switch for clip fixes (the LOM
+`--since`, `watch`, the render cache. Open (the devices were tested in Live 12 on a real set on 2026-11-25): take lanes as the A/B switch for clip fixes (the LOM
 support needs checking); an EQ Eight model for `plugrender`; Audio Units that crash in the offline host; the
 probe's numbers next to a full-file meter on the same song.
 

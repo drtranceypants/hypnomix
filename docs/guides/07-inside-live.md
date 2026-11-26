@@ -111,10 +111,10 @@ Live's own Export makes the final file: no device can start an export in Live.
 
 ## Limits (to verify on your machine)
 
-- The devices have been tested against a simulated Live set; load them in your Live before relying on them.
+- Tested in Live 12 Suite on a real set (2026-11-25): the probe and HypnomixMain measuring playback, the menus and song card reaching the app and `scan`, A / B / Blind and loudness matching on an A/B set, and Record and review before export. Not yet tested: the track-copy switch for clip fixes by ear, and other Live versions.
 - The probe's loudness is measured on 100 ms blocks with the BS.1770 gate; short sections read slightly
   differently from a full-file meter. Peaks are sample peaks: use `measure` on a bounce for true peak.
-- Record and review uses Max's `sfrecord~`; the file lands in `~/Documents/Hypnomix/bounces/`.
+- Record and review writes a 32-bit float WAV with Max's `sfrecord~` into `~/Documents/Hypnomix/bounces/`.
 
 
 # Faster reviews, you still in charge
