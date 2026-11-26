@@ -65,8 +65,16 @@ hypnomix ab "<SCAN_DIR>" --plugins
 For each device-change finding (`devices`, `duck`, `sidechain`, `distortion`), `ab` writes a temporary copy
 of the set with only that fix applied (next to the original, deleted afterwards), renders the track through
 its chain in both, and writes a level-matched pair around the loudest part of the track. Findings on return
-tracks (most `duck` items) can't be previewed, because returns are fed by sends; `ab.json` says so. Without
-`--plugins`, or without pedalboard, `ab` behaves exactly as before.
+tracks (most `duck` items) can't be previewed, because returns are fed by sends; `ab.json` says so.
+
+Without `--plugins` (or without pedalboard) `ab` still previews the device changes it can model, with no real
+plug-in: the track is played through hypnomix's models of Live's Compressor, Glue Compressor, Gate, EQ Eight, Utility
+and Limiter, and the other plug-ins are left out of the chain (the pair says which). Those pairs are labelled
+**a model of the device, not Live itself** in `ab.json` (`"model": true`) and on the review page: the curve of an EQ
+Eight band lands where its settings say, a compressor follows the same gain-reduction model `devices` and `sidechain`
+use, but Live's own filters and detectors differ in small ways. A change to a device with no model (Saturator,
+Reverb, Delay, a rack, a Max for Live device, EQ Eight in L/R or M/S mode, a Gate listening to a sidechain) is
+refused with that reason, and so is a plug-in change without `--plugins`.
 
 The pair is the track on its own, through the devices that could be rendered: listen for what the change
 does, then confirm in Live.

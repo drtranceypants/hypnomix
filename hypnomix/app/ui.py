@@ -146,8 +146,8 @@ function reviewView() {
     const d = dec[f.id] && dec[f.id].decision, ab = R.ab[f.id] || {}, fix = String(f.fix || '');
     const src = x => '/audio?dir=' + encodeURIComponent(R.dir) + '&f=' + encodeURIComponent(x);
     const players = ab.a ? `<div class="ab"><div><label>A · now</label><audio controls preload="none" src="${src(ab.a)}"></audio></div>
-      <div><label>B · with the fix${ab.matched_db ? ' (level-matched ' + (ab.matched_db > 0 ? '+' : '') + ab.matched_db + ' dB)' : ''}</label><audio controls preload="none" src="${src(ab.b)}"></audio></div></div>` : '';
-    const note = ab.note ? `<p class="note">${esc(ab.note)}</p>` : ((f.applies === 'set' || f.applies === 'audio') && !ab.a ? '<p class="note">No before / after clip for this kind of fix: apply it and listen in Live.</p>' : '');
+      <div><label>B · with the fix${ab.model ? ' · a model of the device, not Live itself' : ''}${ab.matched_db ? ' (level-matched ' + (ab.matched_db > 0 ? '+' : '') + ab.matched_db + ' dB)' : ''}</label><audio controls preload="none" src="${src(ab.b)}"></audio></div></div>` : '';
+    const note = ab.note ? `<p class="note">${esc(ab.note)}</p>` : ((f.applies === 'set' || f.applies === 'audio') && !ab.a ? '<p class="note">No before / after clip yet: run <code>hypnomix ab</code> (clip fixes, tuning, timing nudges and device changes it can model). Where it cannot play a fix offline it says why here: then apply that one fix into a new set and listen.</p>' : '');
     const jump = f.jump ? `<button data-jump="${esc(f.id)}" title="Needs the hypnomix device in your Live set">Show in Live</button>` : '';
     const act = f.applies === 'answer' ? '<p class="note">A question, not a fix: put your answer in the box when you apply.</p>'
       : f.applies === 'info' ? (jump ? `<div class="act">${jump}</div>` : '') : `<div class="act">

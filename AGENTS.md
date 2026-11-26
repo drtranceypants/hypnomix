@@ -82,6 +82,11 @@ The scan writes `hypnomix-out/scan/<song>/REVIEW.md` and `findings.json` (most s
 plus each tool's own report under `raw/`. Several agents can scan in parallel: one group each with
 `--only GROUP --out SAME_DIR`, then `hypnomix scan --merge SAME_DIR`.
 
+`--deep` frequency fights are findings with a concrete cut: approved, `fix` writes it as one bell band on the DAW's
+own EQ in a NEW file (an EQ Eight in Live, a ReaEQ in REAPER; an EQ already on the track is reused when it has a free
+band; gentle by default, 2-3 dB; `fix --decide mask-1=approve@50` makes it half). A protected track still needs
+`--allow-protected`.
+
 A set scan also lists takes whose clip-gain boost lifts their noise (`noise`), how far harmonies sit from the
 lead in time, and an **"is this deliberate?"** inventory (`intent`): every automated control, hard pans,
 switched-off tracks. Read that inventory to the person at the first scan and save what they confirm with
@@ -95,9 +100,12 @@ becomes a finding in a scan folder and goes through the same review; `fix --appr
 only the approved moves.
 
 **Previews.** After any scan or plan, run `hypnomix ab "<SCAN_DIR>"`. It builds a before / after pair for each
-fix it can render offline (clip fixes, tuning, repaired recordings), level-matched, in `<SCAN_DIR>/ab/`, and
-says which fixes it cannot preview (timing nudges, device changes: those are heard by applying that one fix
-into a new set). The preview is the track alone without effects: say so.
+fix it can render offline (clip fixes, tuning, repaired recordings, timing nudges, masking cuts, and changes to a
+Compressor, Glue Compressor, Gate, EQ Eight, Utility or Limiter), level-matched, in `<SCAN_DIR>/ab/`, and says
+in `ab.json` which fixes it cannot preview and why (a device hypnomix has no model of, a MIDI note, a return
+track: those are heard by applying that one fix into a new set). Say what a pair is: the track alone without
+effects (clip fixes, timing, tuning); a nudge stretched along its warp markers with Rubber Band, not Live's
+warp engine; and for device changes **a model of the device, not Live itself** (the pair says so).
 
 If the scan prints **"check(s) did NOT run"**, say so. A group with no findings because its check failed is not
 a clean group.

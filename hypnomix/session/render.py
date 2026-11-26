@@ -71,6 +71,11 @@ CACHE_VERSION = 1
 CACHE_STATS = {"hits": 0, "misses": 0, "writes": 0}
 _PUTS = [0]
 _HAVE_RB = [bool(shutil.which("rubberband"))]       # the stretcher in use is part of every key
+# A preview of timing nudges (`hypnomix ab`) turns this on: every warped clip is then stretched ALONG its markers by
+# Rubber Band (a time map: each stretch between two markers plays at its own speed, the pitch stays), the same way
+# for the clip before and after a nudge, instead of read at a varying speed (which moves the pitch where a stretch
+# is large). Looped clips and files that cannot be mapped keep the plain read.
+WARP_TIMEMAP = [False]
 
 
 def cache_dir():
@@ -104,8 +109,8 @@ def cache_key(c, src, spb, SR, tighten, beats, ls, le, start_rel, loop_on):
             cc.remove(el)
     h = hashlib.sha256(ET.tostring(cc))
     h.update(repr((CACHE_VERSION, str(Path(src).resolve()), st.st_mtime_ns, st.st_size, round(spb, 12), SR,
-                   float(tighten or 0), round(beats, 9), ls, le, start_rel, loop_on,
-                   _HAVE_RB[0])).encode())
+                   float(tighten or 0), round(beats, 9), ls, le, start_rel, loop_on, _HAVE_RB[0])
+                  + (("timemap",) if WARP_TIMEMAP[0] else ())).encode())
     return h.hexdigest()
 
 
@@ -221,12 +226,44 @@ def song_end(root):
     return end, strays
 
 
+def _timemap_read(srcm, SR, sec, ms, mb, cb, spb, clip_len):
+    """The clip's source stretched along its warp markers with Rubber Band's time map, pitch kept, or None when it
+    cannot be done (a start before the file, a stretch too short to map): the caller then reads at varying speed.
+    sec = source seconds at every output sample, ms / mb = the markers (source seconds, clip beats), cb = clip beats
+    at every output sample."""
+    if len(sec) < 4096 or sec[0] < 0 or sec[-1] * SR > len(srcm) + 2:
+        return None
+    a, b = int(np.floor(sec[0] * SR)), min(int(np.ceil(sec[-1] * SR)) + 1, len(srcm))
+    keys = [(0, 0)]
+    for s_, b_ in zip(ms, mb):
+        if cb[0] < b_ < cb[-1]:
+            keys.append((int(round(s_ * SR)) - a, int(round((b_ - cb[0]) * spb * SR))))
+    keys.append((b - 1 - a, clip_len))
+    ok = [keys[0]]
+    for k in keys[1:]:                                   # both columns must rise, or Rubber Band refuses the map
+        if k[0] > ok[-1][0] and k[1] > ok[-1][1]:
+            ok.append(k)
+    if len(ok) < 2 or b - a < 2048:
+        return None
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            fi, fo, fm = (os.path.join(td, n) for n in ("i.wav", "o.wav", "m.txt"))
+            sf.write(fi, srcm[a:b].astype(np.float32), SR, subtype="FLOAT")
+            Path(fm).write_text("".join(f"{x} {y}\n" for x, y in ok))
+            subprocess.run(["rubberband", "-3", "-q", "-M", fm, "-D", f"{clip_len / SR:.6f}", fi, fo],
+                           check=True, capture_output=True)
+            y = sf.read(fo, always_2d=True)[0].mean(1)
+    except Exception:
+        return None
+    return np.pad(y, (0, max(0, clip_len - len(y))))[:clip_len]
+
+
 def clip_audio(c, src, spb, SR, tighten, warn, s, e, ls, le, start_rel, loop_on):
     """One clip as Live plays it (start marker, loops, warp, clip gain, fades), length (e - s) beats, or None."""
     multi = None
     if v(c, "./IsWarped") == "true":
         m = sorted((float(w.get("SecTime")), float(w.get("BeatTime"))) for w in c.find("./WarpMarkers"))
-        if len(m) > 2:
+        if len(m) > 2 or (WARP_TIMEMAP[0] and len(m) == 2 and not loop_on and _HAVE_RB[0]):
             multi = m                        # follow every marker (below), not one straight stretch
         (s0, b0), (s1, b1) = m[0], m[-1]
         slope = (s1 - s0) / (b1 - b0) if b1 != b0 else spb
@@ -261,7 +298,10 @@ def clip_audio(c, src, spb, SR, tighten, warn, s, e, ls, le, start_rel, loop_on)
         sec = np.interp(cb, mb, ms)
         sec = np.where(cb < mb[0], ms[0] + (cb - mb[0]) * lo_slope, sec)       # Live extends the end segments
         sec = np.where(cb > mb[-1], ms[-1] + (cb - mb[-1]) * hi_slope, sec)
-        seg = np.interp(sec * SR, np.arange(len(srcm)), srcm, left=0.0, right=0.0)
+        seg = _timemap_read(srcm, SR, sec, ms, mb, cb, spb, clip_len) if (WARP_TIMEMAP[0] and not loop_on
+                                                                        and _HAVE_RB[0]) else None
+        if seg is None:
+            seg = np.interp(sec * SR, np.arange(len(srcm)), srcm, left=0.0, right=0.0)
     else:
         try:
             a = stretched(src, k, SR)        # pitch-preserving stretch of the whole source
