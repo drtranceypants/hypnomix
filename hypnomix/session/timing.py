@@ -252,6 +252,15 @@ def analyse(root, als_dir, names, to_grid, include_off=False, melodic=(), bass=N
         for h in clean:
             h["track"] = tname
         tracks.append((tname, t, clean))
+    tracks, issues = judge(tracks, spb, notes, to_grid, melodic, bass, drums)
+    return tempo, tracks, issues, notes
+
+
+def judge(tracks, spb, notes, to_grid=False, melodic=(), bass=(), drums=()):
+    """The DAW-neutral part: [(track name, track object, hits)] with hits {beat, strength, track} (beats from the
+    song's start) -> (tracks with hits kept on the grid, issues). Fills notes (grid, looseness, feel). Used by the
+    Live set reader above and by REAPER projects (`workflow/timing_project.py`)."""
+    bass, drums, melodic = set(bass or ()), set(drums or ()), set(melodic or ())
     # the song's own grid (straight 16ths, triplets or mixed, bar by bar), from every track's hits
     from hypnomix.core import grid as G
     allh = [h for _, _, hs in tracks for h in hs]
@@ -333,7 +342,7 @@ def analyse(root, als_dir, names, to_grid, include_off=False, melodic=(), bass=N
                 if not x.get("lock"):
                     x["optional"] = True
     issues.sort(key=lambda i: (0 if i.get("lock") else 1 if i.get("low") else 2, i["beat"]))   # low end first
-    return tempo, tracks, issues, notes
+    return tracks, issues
 
 
 def messiest_bars(issues, n=10):

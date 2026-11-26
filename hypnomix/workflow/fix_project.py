@@ -34,6 +34,16 @@ def apply_edits(p, items, dec, log, failed, skipped):
     """Apply each approved finding's edit to the loaded project p. Returns the ids applied."""
     done = []
     orig = list(p.tracks)                      # tracks as they were scanned (order and names change below)
+    timing = [(f, f["edit"]) for f in items if (f.get("edit") or {}).get("op") == "timing"]
+    if timing:                                 # stretch markers, all of one item's nudges together
+        from hypnomix.workflow import timing_project as TP
+        ok, skip = TP.apply(p, timing)
+        skipped += skip
+        done += ok
+        for f, ed in timing:
+            if f["id"] in ok:
+                log.append(f"- {f['id']}: {f['track']} @ {f['where']}: nudged {ed['move'] * 1000:+.0f} ms (stretch markers)")
+        items = [f for f in items if (f.get("edit") or {}).get("op") != "timing"]
     rank = {"edges": 0, "fade": 0, "cut": 1, "dip": 1, "stack": 2, "order": 3, "rename": 4}
     for f in sorted(items, key=lambda f: (rank.get(f.get("edit", {}).get("op"), 1), f["id"])):
         ed = f.get("edit")
@@ -207,6 +217,9 @@ def run(sd, scan, src, out, set_items, tune_items, dec, key, verify=True):
         return None, log, failed, skipped
     print(f"check      structure OK; wrote {out}")
     log += ["### structure check: OK (same tracks, folders, items, positions and lengths)", ""]
+    t_items = [f for f in set_items if f["id"] in done and f.get("tool") == "timing"]
+    if verify and t_items:
+        log += verify_timing(out, sd, t_items, getattr(p, "renamed", {}))
     clip_items = [f for f in set_items if f["id"] in done and f.get("tool") in ("clips", "edges")]
     if verify and clip_items:
         log += verify_clips(out, sd, clip_items, getattr(p, "renamed", {}))
@@ -251,3 +264,21 @@ def verify_clips(out, sd, items, renamed=None):
     print("verify     " + line[2:])
     (Path(sd) / "raw" / "verify.json").write_text(json.dumps({"still": still, "found": now}, indent=1, default=str))
     return ["### verify (the new project, measured again)", "", line, ""]
+
+
+def verify_timing(out, sd, items, renamed=None):
+    """Run the timing check again on the new project (hits read through the new stretch markers)."""
+    from hypnomix.project import load
+    from hypnomix.workflow import timing_project as TP
+    p = load(out)
+    ro = items[0]["edit"].get("roles") or {}
+    rn = lambda xs: [(renamed or {}).get(t, t) for t in xs]
+    tracks = rn(ro.get("tracks") or sorted({f["track"] for f in items}))
+    tr, issues, notes = TP.analyse(p, tracks, False, rn(ro.get("melodic", [])), rn(ro.get("bass", [])),
+                                   rn(ro.get("drums", [])))
+    left = {(i["track"], TP.TM.where(i["beat"])) for i in issues}
+    still = [f["id"] for f in items if ((renamed or {}).get(f["track"], f["track"]), f["where"]) in left]
+    line = (f"- timing: {len(items) - len(still)} of {len(items)} approved hits no longer out of time"
+            + (f"; still measured: {', '.join(still)} (a partial move by design: listen there)" if still else ""))
+    print("verify     " + line[2:])
+    return ["### verify timing (the new project, measured again)", "", line, ""]

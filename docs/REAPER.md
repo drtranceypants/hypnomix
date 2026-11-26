@@ -13,6 +13,7 @@ Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER"
 | `hypnomix/project/rpp_edit.py` | edits on the parsed chunks (fades, item volume, volume dips and eases, new takes, reorder, rename) and the structure check |
 | `hypnomix/workflow/scan_project.py` | `scan` on an `.rpp` (and Ardour) |
 | `hypnomix/workflow/scan_project.py` `stack_moves` | vocal stacks: Live's `order.assign_stack` on the model; `rpp_edit.move_item` moves the ITEM chunk (takes and take envelopes go with it); `check(moved=IGUIDs)` |
+| `hypnomix/workflow/timing_project.py` | Live's timing judgement (`session/timing.judge`) on hits read from items; nudges written as stretch markers (`SM`), anchored on every onset either side |
 | `hypnomix/workflow/edges_project.py` | Live's word-edge detectors on the model; the REAPER edge fixes |
 | `hypnomix/workflow/fix_project.py` | `fix` for an `.rpp`: one pass into one new file, structure check, re-measure |
 | `hypnomix/reaper/bridge.lua`, `client.py`, `cli.py` | the bridge into the open REAPER, and `hypnomix reaper` |
@@ -50,6 +51,10 @@ New tools that should work in every DAW belong on the model (`project.load(path)
   `ScaleToEnvelopeMode(1, amp)` every 0.5 dB.
 - Stretch markers: straight lines between markers; before the first and after the last, the source runs at normal
   speed from the nearest marker.
+- Onsets: librosa's spectral detector (93 ms window) fires up to ~50 ms EARLY on tonal parts (bass, guitar) and on
+  time on drums; `timing_project.refine` moves each to the half-rise point of a 1 ms level envelope (planted band:
+  bass and guitar within 2 ms of the drums). Stretch-marker nudges checked in REAPER's own render: the hit moves by
+  the planned amount (-34.9 for -35 ms, +15.0 for +15), its neighbours by 0.0.
 - Rendering with the project's sample rate following the device (`SAMPLERATE x 0`) resamples: set
   `PROJECT_SRATE` and `PROJECT_SRATE_USE` when comparing sample for sample.
 

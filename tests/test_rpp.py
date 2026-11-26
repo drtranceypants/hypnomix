@@ -431,6 +431,39 @@ class Reaper(unittest.TestCase):
         self.assertEqual(st[0]["moves"], [])
         self.assertTrue(all("lanes" in h["why"] for h in st[0]["hand"]))
 
+    def test_onset_refine_removes_tonal_bias(self):
+        """A 55 Hz pluck: the spectral onset detector fires tens of ms early; the refined onset is on the attack."""
+        from hypnomix.workflow.timing_project import refine
+        t = np.arange(int(1.0 * SR)) / SR
+        y = np.zeros(int(3 * SR))
+        for at in (0.5, 1.5, 2.3):
+            i = int(at * SR)
+            y[i:i + len(t)] += (np.sin(2 * np.pi * 55 * t) * np.exp(-t * 6) * np.minimum(1, t / 0.002))[: len(y) - i]
+        got = refine(y, SR, np.array([0.45, 1.44, 2.26]))           # where the detector put them: early
+        self.assertTrue(np.all(np.abs(got - np.array([0.5, 1.5, 2.3])) < 0.003), got)
+
+    def test_timing_markers(self):
+        """Nudges become one SM line per item: anchors hold their audio in place, the hit moves, nothing crosses."""
+        from hypnomix.project.rpp_edit import locator
+        from hypnomix.workflow import timing_project as TP
+        p = project.load(self.song)
+        lead = p.tracks[1]
+        c = lead.clips[0]
+        loc = locator(lead, c)
+        f = dict(id="timing-1", track=lead.name)
+        ed = dict(op="timing", item=loc, src=0.5, move=-0.02, prev=0.3, next=0.8)
+        done, skipped = TP.apply(p, [(f, ed)])
+        self.assertEqual((done, skipped), (["timing-1"], []))
+        self.assertTrue(any(isinstance(l, rpp.Line) and l.key == "SM" for l in c.native.children))   # written in the item
+        marks = c.take.stretch
+        self.assertEqual([round(m[1], 6) for m in marks], [0.3, 0.5, 0.8])                   # source positions
+        self.assertEqual([round(m[0], 6) for m in marks], [0.3, 0.48, 0.8])                  # take time: hit 20 ms early
+        q = project.load(self.song)
+        bad = dict(op="timing", item=locator(q.tracks[1], q.tracks[1].clips[0]), src=0.5, move=-0.3, prev=0.3, next=0.8)
+        done, skipped = TP.apply(q, [(f, bad)])                    # the hit would land before its own anchor
+        self.assertEqual(done, [])
+        self.assertIn("cross", skipped[0][1])
+
     def test_unsupported_suffix(self):
         with self.assertRaises(SystemExit):
             project.load(self.dir / "x.ptx")

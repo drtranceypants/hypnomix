@@ -45,7 +45,7 @@ WORDS = {
 }
 W = dict(WORDS["reaper"])
 
-GROUPS = ["names", "files", "clips", "vocals", "effects", "recordings", "noise", "intent", "mix", "stems"]
+GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "recordings", "noise", "intent", "mix", "stems"]
 SR = 44100
 LIMITER_WORDS = ("limit", "maximi", "loudmax", "clipper")
 
@@ -485,6 +485,37 @@ def g_clips(p, R, od, a, vocals=()):
     return out, notes
 
 
+def g_timing(p, R, od, a, role):
+    """Instrument hits out of time with the band (Live's `timing`, on the model); fixes are stretch markers."""
+    from hypnomix.workflow import timing_project as TP
+    tracks = getattr(a, "timing_track", None) or [t for t, r in role.items() if r not in ("lead_vocal", "backing_vocal", "fx")]
+    if not tracks:
+        return [], ["timing: no instrument tracks found (name them, or pass --timing-track)"]
+    melodic = [t for t in tracks if role.get(t) in TP.MELODIC_ROLES]
+    bass = [t for t in tracks if role.get(t) == "bass"]
+    drums = [t for t in tracks if role.get(t) in TP.DRUM_ROLES]
+    tr, issues, notes_ = TP.analyse(p, tracks, False, melodic, bass, drums)
+    fs = TP.findings(p, tr, issues, notes_)
+    for f in fs:                                       # the re-check after a fix judges with the same roles
+        if f.get("edit"):
+            f["edit"]["roles"] = dict(tracks=tracks, melodic=melodic, bass=bass, drums=drums)
+    if p.daw != "reaper":
+        for f in fs:
+            f.pop("edit", None)
+            if f["applies"] == "set":
+                f["applies"] = "manual"
+    notes = [f"timing: song looseness {notes_['looseness'] * 1000:.0f} ms across {len(tr)} instrument tracks "
+             "(the band's natural feel; only outliers are listed)"]
+    if bass or drums:
+        notes.append(f"timing: low end first: bass ({', '.join(bass) or 'none found'}) against the drums "
+                     f"({', '.join(drums) or 'none found'})")
+    if melodic:
+        notes.append(f"timing: melodic parts ({', '.join(melodic)}) only get optional, partial nudges")
+    if p.daw == "reaper":
+        notes.append("timing: approved nudges are written as stretch markers on the items (drag or delete them in REAPER)")
+    return fs, notes
+
+
 def g_vocals(p, R, od, a, role):
     vox = a.vocal_track or [t for t, r in role.items() if r in ("lead_vocal", "backing_vocal")]
     files = {t: R.files[t] for t in vox if t in R.files}
@@ -705,12 +736,12 @@ def run(a, path, od, groups):
     W.update(WORDS.get(p.daw, WORDS["reaper"]))
     print(f"  {W['daw']} project: {len(p.tracks)} tracks, {p.tempo:g} BPM, {p.end():.0f} s")
     R = Renders(p, od)
-    if {"names", "clips", "vocals", "stems"} & set(groups):
+    if {"names", "clips", "timing", "vocals", "stems"} & set(groups):
         R.build(a.jobs)
         print(f"  rendered {len(R.files)} tracks → {R.dir}")
-    role = roles(p, R) if {"vocals", "clips"} & set(groups) else {}
+    role = roles(p, R) if {"vocals", "clips", "timing"} & set(groups) else {}
     vocal_names = [t for t, r in role.items() if r in ("lead_vocal", "backing_vocal")]
-    fns = {"names": g_names, "files": g_files, "clips": lambda p, R, od, a: g_clips(p, R, od, a, vocal_names), "effects": g_effects, "recordings": g_recordings, "noise": g_noise,
+    fns = {"timing": lambda p, R, od, a: g_timing(p, R, od, a, role), "names": g_names, "files": g_files, "clips": lambda p, R, od, a: g_clips(p, R, od, a, vocal_names), "effects": g_effects, "recordings": g_recordings, "noise": g_noise,
            "intent": g_intent, "mix": g_mix, "stems": g_stems,
            "vocals": lambda p, R, od, a: g_vocals(p, R, od, a, role)}
     warn = list(getattr(p, "warnings", [])) + sorted(set(R.warn))
