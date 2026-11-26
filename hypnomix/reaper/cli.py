@@ -11,6 +11,11 @@
   hypnomix reaper record          Record and review before export (the same as the button on Hypnomix Main): plays
                                   from the edit cursor while the probes listen; run it again or stop REAPER, and the
                                   hypnomix app renders exactly what played and reviews it
+  hypnomix reaper chain build [NAME] | match | save NAME | state
+                                  the mastering chain (the same as the buttons on Hypnomix Main): build the stock
+                                  chain of REAPER's own plug-ins (or a saved template) before Main, turn ReaLimit
+                                  until the master hits the song card's target while REAPER plays, keep the chain
+                                  as FXChains/hypnomix/NAME.RfxChain
   hypnomix reaper review          the Hypnomix panel in REAPER: step through the app's review, A / B / Blind
   hypnomix reaper probes install|insert SONG.rpp|cards SONG.rpp
                                   Hypnomix Probe and Hypnomix Main for REAPER (JSFX): see `hypnomix reaper probes -h`
@@ -34,7 +39,7 @@ def main():
     if len(_sys.argv) > 1 and _sys.argv[1] == "review":
         from hypnomix.reaper import review
         return review.main(_sys.argv[2:])
-    ap.add_argument("cmd", choices=["start", "stop", "status", "tracks", "fx", "params", "probes", "review", "record"])
+    ap.add_argument("cmd", choices=["start", "stop", "status", "tracks", "fx", "params", "probes", "review", "record", "chain"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
@@ -52,6 +57,8 @@ def main():
                    "short": "stopped: under a second played, so there is nothing to review",
                    "no app": "the hypnomix app is not relaying (start `hypnomix app`, with the bridge running)"}[out["did"]])
             return
+        if a.cmd == "chain":
+            return chain(r, a.args, a.json)
         if a.cmd == "stop":
             r.stop()
             print("bridge stopped")
@@ -85,6 +92,41 @@ def main():
         print(json.dumps(out, indent=1))
     except ReaperError as e:
         sys.exit(str(e))
+
+
+STATES = {0: "idle", 1: "built", 2: "matching", 3: "matched", 4: "saved", 5: "no ReaLimit before Hypnomix Main",
+          6: "matching stopped: REAPER stopped", 7: "cancelled", 8: "the master is silent", 9: "error (ReaScript console)",
+          10: "matched as close as the limiter allows", 11: "no Hypnomix Main on the master",
+          12: "nothing before Hypnomix Main to save", 13: "built from a template"}
+
+
+def chain(r, args, as_json=False):
+    """The mastering chain on Hypnomix Main, from a terminal (no dialogs: Build replaces without asking)."""
+    what = args[0] if args else "state"
+    if what == "build":
+        out = r.call("chain_build", name=" ".join(args[1:]) or "hypnomix stock", yes=1)
+    elif what == "save":
+        if len(args) < 2:
+            sys.exit("hypnomix reaper chain save NAME")
+        out = r.call("chain_save", name=" ".join(args[1:]))
+    elif what == "match":
+        out = r.call("chain_match")
+    elif what == "state":
+        out = r.call("chain_state")
+    else:
+        sys.exit("hypnomix reaper chain build [NAME] | match | save NAME | state")
+    if as_json:
+        print(json.dumps(out, indent=1))
+        return
+    print(STATES.get(int(out.get("state", 0)), out.get("state")))
+    if what == "build":
+        print(f"{out['added']} plug-ins before Hypnomix Main" + (f"; not set: {'; '.join(out['missing'])}" if out.get("missing") else ""))
+    elif what == "save":
+        print(f"{int(out['plugins'])} plug-ins → {out['dir']}")
+    elif what == "state":
+        for f in out["fx"]:
+            print(f"  {f['renamed'] or f['name']}" + ("" if f["on"] else "  (off)"))
+        print("templates: " + ", ".join(["hypnomix stock"] + out.get("templates", [])))
 
 
 if __name__ == "__main__":

@@ -641,12 +641,25 @@ local function answer(id, ok, body, err)
   os.rename(tmp, out)
 end
 
+-- ------------------------------------------------------------------ the mastering chain (Hypnomix Main's buttons)
+local HERE = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "")
+local chain_ok, MC = pcall(function()
+  return dofile(HERE .. "masterchain.lua")({ set_shown = set_shown, shown = shown, first_number = first_number,
+                                             probes = probes })
+end)
+if chain_ok then MC.commands(C) else probes.err = "masterchain: " .. tostring(MC); MC = nil end
+CHANGES.chain_build = false; CHANGES.chain_save = false; CHANGES.chain_match = false   -- they make their own undo steps
+
 local last_beat = 0
 local function loop()
   local okp, errp = pcall(probe_poll)
   if not okp then probes.err = tostring(errp) end
   local okr, errr = pcall(rec_poll)
   if not okr then probes.err = "record: " .. tostring(errr) end
+  if MC then
+    local okc, errc = pcall(MC.poll)
+    if not okc then probes.err = "chain: " .. tostring(errc) end
+  end
   if panel.open then
     local okd, errd = pcall(panel_draw)
     if not okd then panel.flash = "panel: " .. tostring(errd); panel.flash_until = reaper.time_precise() + 10 end

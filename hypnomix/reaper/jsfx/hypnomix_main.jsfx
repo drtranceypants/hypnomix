@@ -25,7 +25,7 @@ in_pin:right input
 out_pin:left output
 out_pin:right output
 
-@gfx 460 64
+@gfx 460 132
 // Record and review before export: a press goes to the hypnomix bridge (gmem[8] counts presses); the bridge plays
 // the project from the edit cursor and keeps what played, the app renders that stretch of the master and reviews it.
 // gmem[9] is the state the bridge reports (0 idle, 1 recording, 2 rendering, 3 no app, 4 reviewing, 5 too short,
@@ -68,3 +68,64 @@ rr_down && !rr_was ? rr_armed = rr_in;
 );
 !rr_down ? rr_armed = 0;
 rr_was = rr_down;
+
+// The mastering chain (masterchain.lua in the bridge): presses counted in gmem[11] Build, gmem[12] Match target,
+// gmem[13] Save; the bridge reports gmem[14] (state) with gmem[15] and gmem[16] (two numbers for it).
+mc_y = 70; mc_h = 24; mc_w = 108;
+mc_state = gmem[14]; mc_a = gmem[15]; mc_b = gmem[16];
+gfx_set(0.85, 0.8, 0.72, 1); gfx_x = 8; gfx_y = mc_y - 14; gfx_drawstr("Mastering chain (REAPER's own plug-ins, before this one)");
+mc_down = mouse_cap & 1;
+mc_i = 0;
+loop(3,
+  gfx_set(mc_state == 2 && mc_i == 1 ? 0.45 : 0.32, 0.30, 0.26, 1);
+  gfx_rect(8 + mc_i * (mc_w + 8), mc_y, mc_w, mc_h);
+  gfx_set(0.95, 0.93, 0.89, 1); gfx_x = 18 + mc_i * (mc_w + 8); gfx_y = mc_y + 6;
+  gfx_drawstr(mc_i == 0 ? "Build chain" : mc_i == 1 ? (mc_state == 2 ? "Stop matching" : "Match target") : "Save chain");
+  // like Record: armed on press, counted on RELEASE over the same button (REAPER does not start playing while the
+  // mouse is held in an FX window, and Match target starts playback)
+  mc_in = mouse_x >= 8 + mc_i * (mc_w + 8) && mouse_x < 8 + mc_i * (mc_w + 8) + mc_w && mouse_y >= mc_y && mouse_y < mc_y + mc_h;
+  mc_down && !mc_was && mc_in ? mc_armed = mc_i + 1;
+  !mc_down && mc_was && mc_armed == mc_i + 1 ? (
+    mc_in ? (gmem[11 + mc_i] += 1; mc_pressed = time_precise(); mc_from = mc_state;);
+    mc_armed = 0;
+  );
+  mc_i += 1;
+);
+!mc_down && mc_was ? mc_armed = 0;
+mc_was = mc_down;
+gfx_set(0.85, 0.8, 0.72, 1); gfx_x = 8; gfx_y = mc_y + mc_h + 9;
+mc_pressed > 0 && mc_state != mc_from ? (mc_pressed = 0);
+mc_pressed > 0 && time_precise() - mc_pressed > 1.5 && mc_state == mc_from && mc_state != 2 ? (
+  gfx_drawstr("No answer: start the bridge (hypnomix reaper start)");
+) : mc_state == 1 ? (
+  gfx_drawstr("Built: "); gfx_drawnumber(mc_a, 0); gfx_drawstr(" plug-ins, gains at 0 dB. Open the FX chain to edit.");
+  mc_b > 0 ? (gfx_x = 8; gfx_y += 14; gfx_drawnumber(mc_b, 0); gfx_drawstr(" settings not found: see the ReaScript console"));
+) : mc_state == 13 ? (
+  gfx_drawstr("Built from your template: "); gfx_drawnumber(mc_a, 0); gfx_drawstr(" plug-ins");
+) : mc_state == 2 ? (
+  mc_b == 1 ? gfx_drawstr("Matching: play the loudest part (round 1, 8 s)") : (
+    gfx_drawstr("Measured "); gfx_drawnumber(mc_a, 1); gfx_drawstr(" LUFS; round "); gfx_drawnumber(mc_b, 0););
+) : mc_state == 3 ? (
+  gfx_drawstr("Master "); gfx_drawnumber(mc_a, 1); gfx_drawstr(" LUFS: on target. ReaLimit gain "); gfx_drawnumber(mc_b, 1); gfx_drawstr(" dB");
+) : mc_state == 10 ? (
+  gfx_drawstr("Master "); gfx_drawnumber(mc_a, 1); gfx_drawstr(" LUFS, ReaLimit gain "); gfx_drawnumber(mc_b, 1);
+  gfx_drawstr(" dB:"); gfx_x = 8; gfx_y += 14; gfx_drawstr("the limiter is working hard. Lower the target, or less dynamics first");
+) : mc_state == 4 ? (
+  gfx_drawstr("Saved "); gfx_drawnumber(mc_a, 0); gfx_drawstr(" plug-ins as a template (FXChains/hypnomix)");
+) : mc_state == 5 ? (
+  gfx_drawstr("No ReaLimit before this effect: build the chain, or add ReaLimit");
+) : mc_state == 6 ? (
+  gfx_drawstr("Matching stopped: REAPER stopped playing");
+) : mc_state == 7 ? (
+  gfx_drawstr("Cancelled");
+) : mc_state == 8 ? (
+  gfx_drawstr("The master is silent: play the song, then Match target");
+) : mc_state == 9 ? (
+  gfx_drawstr("Something went wrong: see the ReaScript console");
+) : mc_state == 11 ? (
+  gfx_drawstr("Put Hypnomix Main on the master first");
+) : mc_state == 12 ? (
+  gfx_drawstr("Nothing to save: no plug-ins before this effect");
+) : (
+  gfx_drawstr("Build adds a neutral chain; Save keeps yours as a template");
+);

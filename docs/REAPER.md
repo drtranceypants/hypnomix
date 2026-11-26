@@ -97,6 +97,17 @@ New tools that should work in every DAW belong on the model (`project.load(path)
 - Item lanes (REAPER 7): the track has `FREEMODE 2` (fixed lanes) or `1` (free positioning) and items carry `YPOS`;
   hypnomix never moves items off or onto such tracks.
 
+## The mastering chain on Hypnomix Main
+
+`hypnomix/reaper/masterchain.lua`, loaded by the bridge. Main's buttons count presses in gmem[11] (Build), [12]
+(Match target), [13] (Save); the script answers in gmem[14] (state code, listed in the script and in
+`reaper/cli.py` STATES) with gmem[15] and [16] (two numbers). The chain is the plug-ins before Main whose
+`renamed_name` starts "Hypnomix · ". Plug-ins are inserted with `TrackFX_AddByName(..., -1000 - position)`.
+Templates are `.RfxChain` files written from the master's state chunk (each plug-in's BYPASS line, block and
+FLOATPOS / WAK lines; FXID lines dropped so REAPER gives new ids) and loaded by splicing them back into the chunk
+just before Main. Match target reads Main's own K-weighted blocks from the probe relay (100 ms each, BS.1770 gate
+over 400 ms windows), adds the master fader, and moves ReaLimit's threshold.
+
 ## The bridge
 
 `bridge.lua` runs inside REAPER, started by running REAPER's program with the script path (it runs in the

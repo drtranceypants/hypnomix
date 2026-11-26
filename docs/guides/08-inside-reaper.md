@@ -245,6 +245,27 @@ playing is not reviewed (Main says so). If Main's window says the app did not an
 with the bridge running and press again; if it says the review could not run, the app shows why. REAPER's own
 Render is still how you make the final file.
 
+## 10. A mastering chain on Hypnomix Main
+
+Hypnomix Main's window (open it on the master) has three more buttons, the same as HypnomixMain in Live. They
+need the bridge running (`hypnomix reaper start`), not the app.
+
+| button | what it does |
+|---|---|
+| **Build chain** | puts REAPER's own plug-ins just before Hypnomix Main, each renamed "Hypnomix · ...": Tone (ReaEQ: high-pass 25 Hz, low shelf 90 Hz, bells at 300 Hz and 3 kHz, high shelf 10 kHz, all at 0 dB), Glue (ReaComp 2:1, attack 30 ms, threshold -12 dB, RMS, soft knee), Tame (ReaXcomp, bypassed until a band jumps out), Warmth (JS: Saturation, bypassed), Width (bass mono below 120 Hz: M/S encoder, side high-pass, mid all-pass, decoder) and Limiter (ReaLimit, ceiling from the card, gain 0 dB). If you have saved templates, a menu asks which to build. Building again asks before it replaces the Hypnomix plug-ins. |
+| **Match target** | plays (or keeps playing) and listens to Main after the chain, then turns ReaLimit's threshold (its gain) until the master lands on the card's Target LUFS, the master fader included, in up to four rounds of about 8 seconds. Play the loudest part. It works with any chain before Main that has a ReaLimit. |
+| **Save chain** | asks for a name and keeps **everything before Hypnomix Main** as `FXChains/hypnomix/NAME.RfxChain` in REAPER's resource folder: your edited chain or a chain of your own, with every setting, third-party plug-ins included. REAPER's own Add FX chain opens these files too. |
+
+While the plug-ins are the ones hypnomix built (named "Hypnomix · ..."), they follow the song card: the Ceiling
+sets ReaLimit's ceiling (its gain is kept) and the Limiter character sets ReaLimit's release (clean 120 ms, punch
+60 ms, loud 20 ms) and the Glue's attack (loud: 10 ms). Plug-ins of your own are never changed, except ReaLimit's
+gain by Match target. Every change is one undo step.
+
+From a terminal: `hypnomix reaper chain build [NAME]`, `chain match`, `chain save NAME`, `chain state`.
+
+ReaLimit limits sample peaks, so the true peak can land a little over the ceiling: Record and review (section 9)
+measures true peak, or leave a little more room in the ceiling.
+
 ## Measured in REAPER
 
 | what | result |
