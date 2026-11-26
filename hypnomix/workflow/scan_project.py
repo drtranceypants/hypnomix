@@ -45,7 +45,7 @@ WORDS = {
 }
 W = dict(WORDS["reaper"])
 
-GROUPS = ["files", "clips", "vocals", "effects", "recordings", "noise", "intent", "mix", "stems"]
+GROUPS = ["names", "files", "clips", "vocals", "effects", "recordings", "noise", "intent", "mix", "stems"]
 SR = 44100
 LIMITER_WORDS = ("limit", "maximi", "loudmax", "clipper")
 
@@ -138,6 +138,89 @@ def roles(p, R):
     return out
 
 
+# ---------------------------------------------------------------- names and order (Live's `name` and `order`, fed from the model)
+def name_rows(p, R):
+    """Per-track guesses in `hypnomix name`'s format (rows by track index), from the project and its renders."""
+    from hypnomix.session import names as NM
+    rows, parent = {}, {}
+    for t in p.tracks:
+        tid = str(t.index)
+        parent[tid] = str(t.parent.index) if t.parent is not None else None
+        kind = "Group" if t.kind == "folder" else ("Midi" if t.kind == "midi" else "Audio")
+        files = [Path(c.path).name for c in t.clips if c.path][:20]
+        devs = [d.name for d in t.devices if d.on]
+        rec = {"old": t.name, "kind": kind, "group": t.parent.name if t.parent is not None else None, "on": t.on,
+               "sources": sorted({str(c.path) for c in t.clips if c.path})}
+        rec["text_clue"] = NM.text_clue(t.name if not NM.DEFAULT_NAME.match(t.name) else "", " ".join(devs),
+                                        " ".join(files), " ".join(c.name for c in t.clips[:20]))
+        if kind == "Audio" and t.name in R.files:
+            y, sr = sf.read(str(R.files[t.name]), dtype="float32")
+            F = NM.audio_features(y, sr)
+            rec["features"] = F
+            lab, conf, why = NM.classify_audio(F)
+        elif kind == "Audio":
+            lab, conf, why = "Instrument", 0.0, "nothing heard (muted, or no audio items)"
+        elif kind == "Midi":
+            dl = " ".join(devs).lower()
+            if "drum" in dl or "kit" in dl or "rs5k" in dl or "samplomatic" in dl:
+                lab, conf, why = "Drums", 0.7, "drum sampler"
+            elif devs:
+                lab, conf, why = "Synth", 0.45, "instrument plug-in"
+            else:
+                lab, conf, why = "Instrument", 0.2, "no clues"
+        else:
+            lab, conf, why = None, 0, "folder"
+        if rec["text_clue"] and lab != "Vocal" and rec["text_clue"] not in ("Synth",):
+            if conf < 0.75 or rec["text_clue"] in ("Lead Vocal", "Harmony", "Kick", "Snare", "Hats", "Guitar", "Bass", "Strings"):
+                lab, conf, why = rec["text_clue"], max(conf, 0.7), f"text clue ({why})"
+        rec.update(label=lab, confidence=round(conf, 2), reason=why)
+        rows[tid] = rec
+    NM.propose(rows, parent)
+    return rows, parent
+
+
+def g_names(p, R, od, a):
+    """Default-named tracks ("Track 3", "Audio 2") named by how they sound, and the tracks put in working order
+    (drums, bass, keys/guitar/synth, vocals, other melodic; low to high), as for a Live set."""
+    from hypnomix.session import order as OR
+    from hypnomix.workflow import prefs as P
+    rows, parent = name_rows(p, R)
+    nd = od / "raw" / "names"
+    nd.mkdir(parents=True, exist_ok=True)
+    (nd / "names.json").write_text(json.dumps({"set": str(p.path), "tracks": list(rows.values())}, indent=1, default=float))
+    out, n = [], 0
+    for tid, r in rows.items():
+        if r.get("new") in (None, r["old"]):
+            continue
+        n += 1
+        sure = float(r.get("confidence") or 0) >= 0.5
+        f = _f("name", n, tool="name", kind="track-name" if sure else "track-name-question", track=r["old"],
+               old=r["old"], new=r["new"],
+               problem=(f"default name '{r['old']}'; it sounds like {r['new']!r} ({r.get('reason')})" if sure else
+                        f"default name '{r['old']}', and what it is isn't clear from its sound ({r.get('reason')}; "
+                        f"best guess {r['new']!r})"),
+               fix=(f"rename it {r['new']!r}" if sure else
+                    f"ask what it is, then record the name: `fix DIR --decide name-{n}=approve --note \"<name>\"`"))
+        out.append(_edit(p, f, op="rename", index=int(tid)))
+    notes = [f"names: {n} default-named track(s) to name" if n else "names: every track already has a name"]
+    if str(P.get(P.load(), "cleanup.order", "on")).lower() in ("off", "no", "false", "0"):
+        notes.append("order: skipped (your preference cleanup.order=off)")
+        return out, notes
+    orow = []
+    for t in p.tracks:
+        r = rows[str(t.index)]
+        lab = r.get("final") or r.get("label")
+        orow.append(dict(id=str(t.index), name=t.name, kind=r["kind"], parent=parent[str(t.index)],
+                         label=lab, cat=OR.category(lab, float(r.get("confidence") or 0)), pitch=OR.pitch_key(r)))
+    new_ids = OR.propose_order(orow)
+    for f in OR.findings(orow, new_ids, []):
+        f["fix"] = f["fix"].replace("sound, routing and sends unchanged", "sound, folders, routing and sends unchanged")
+        out.append(_edit(p, f, op="order", order=[int(i) for i in f["track_order"]]))
+    notes.append("order: track order is ON by default (skip the order item to keep yours, or `hypnomix prefs set "
+                 "cleanup.order=off`); vocal-stack clip moves are Live-only for now")
+    return out, notes
+
+
 # ---------------------------------------------------------------- groups
 def g_files(p, R, od, a):
     out = []
@@ -196,7 +279,7 @@ def spikes(levels_db, block_s=0.01, spike_db=SPIKE_DB):
     return out
 
 
-def g_clips(p, R, od, a):
+def g_clips(p, R, od, a, vocals=()):
     from hypnomix.project.rpp_edit import locator
     from hypnomix.session.smooth import HIT_DB, PLOSIVE_HZ, PLOSIVE_MAX_DIP, PLOSIVE_SHARE, SPIKES_PER_MIN
     out, n, notes, regular, onsets = [], 0, [], [], 0
@@ -282,6 +365,22 @@ def g_clips(p, R, od, a):
         notes.append("spikes not checked on tracks with regular hits (drums): " + ", ".join(regular))
     if onsets:
         notes.append(f"clips: {onsets} loud consonant(s) opening a phrase left alone (part of the singing)")
+    # item edges and fades that cut into a word, on the vocal tracks (Live's `edges`, on the model)
+    if vocals:
+        from hypnomix.workflow import edges_project as EP
+        try:
+            found, where = EP.scan(p, set(vocals))
+            ef = EP.findings(p, found, where, W)
+            for k, f in enumerate(ef, 1):
+                f["id"] = f"edges-{k}"
+            out += ef
+            rec = sum(1 for f in ef if f.get("recommended"))
+            notes.append(f"edges: {len(ef)} item(s) on vocal item edges, {rec} clear-cut fix(es) recommended; "
+                         "cuts are listen-only")
+        except Exception as e:
+            notes.append(f"edges: failed ({type(e).__name__}: {e})")
+    else:
+        notes.append("edges: no vocal tracks found, so no word edges checked")
     if p.daw == "reaper":
         notes.append("clips: approved fixes are written into a NEW .rpp by `hypnomix fix` (the original is never touched)")
     return out, notes
@@ -479,7 +578,7 @@ def g_intent(p, R, od, a):
             elif c.level > 10 ** (9 / 20):
                 add(t.name, f"{W['item']} '{c.name}' is turned up {20 * math.log10(c.level):+.1f} dB", _where(p, c.start))
             if c.stretch_markers:
-                add(t.name, f"{W['item']} '{c.name}' has {c.stretch_markers} stretch marker(s) (checks play it straight)",
+                add(t.name, f"{W['item']} '{c.name}' has {c.stretch_markers} stretch marker(s) (followed in the checks' renders)",
                     _where(p, c.start))
     return out, [f"intent: {n} thing(s) that look deliberate, listed as questions"]
 
@@ -507,11 +606,12 @@ def run(a, path, od, groups):
     W.update(WORDS.get(p.daw, WORDS["reaper"]))
     print(f"  {W['daw']} project: {len(p.tracks)} tracks, {p.tempo:g} BPM, {p.end():.0f} s")
     R = Renders(p, od)
-    if {"clips", "vocals", "stems"} & set(groups):
+    if {"names", "clips", "vocals", "stems"} & set(groups):
         R.build(a.jobs)
         print(f"  rendered {len(R.files)} tracks → {R.dir}")
-    role = roles(p, R) if "vocals" in groups else {}
-    fns = {"files": g_files, "clips": g_clips, "effects": g_effects, "recordings": g_recordings, "noise": g_noise,
+    role = roles(p, R) if {"vocals", "clips"} & set(groups) else {}
+    vocal_names = [t for t, r in role.items() if r in ("lead_vocal", "backing_vocal")]
+    fns = {"names": g_names, "files": g_files, "clips": lambda p, R, od, a: g_clips(p, R, od, a, vocal_names), "effects": g_effects, "recordings": g_recordings, "noise": g_noise,
            "intent": g_intent, "mix": g_mix, "stems": g_stems,
            "vocals": lambda p, R, od, a: g_vocals(p, R, od, a, role)}
     warn = list(getattr(p, "warnings", [])) + sorted(set(R.warn))

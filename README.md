@@ -110,9 +110,11 @@ hypnomix fix  <scan folder> --approved --out "Song (fixed).als"          # apply
 
 **REAPER:** `hypnomix project Song.rpp` shows what is in a project (folders, items, takes, plug-ins, automation)
 and `--render` renders its tracks without opening REAPER. `scan` on an `.rpp` checks missing files, item edges and
-comp cuts, spikes, vocal pitch and doubles, plug-ins, the source recordings, boosted noise and automation.
+comp cuts, spikes, item edges that cut into a word, vocal pitch and doubles, plug-ins, the source recordings,
+boosted noise and automation, and names default-named tracks and puts them in working order.
 `fix … --out "Song (fixed).rpp"` writes what you approved into **one new project**: item fades, volume eases at
-comp cuts and dips over spikes (as track volume automation), and tuned vocals as **new takes** on your own items,
+comp cuts and dips over spikes (as track volume automation), item edges opened to give a word back its first
+consonant, track names and order (folders and sends kept), and tuned vocals as **new takes** on your own items,
 so the original take is one click away. Checked against REAPER 7.86's own renders.
 `hypnomix reaper start` runs a small bridge inside the REAPER that is open (nothing is installed; every change is
 one undo step), and `hypnomix chain master BOUNCE.wav --reaper --verify` builds the mastering chain on REAPER's

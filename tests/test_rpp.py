@@ -318,6 +318,63 @@ class Reaper(unittest.TestCase):
         self.assertGreater(found[0][3], 12)
         self.assertFalse(found[0][4])                      # sound right before it: not a phrase-opening consonant
 
+    def test_stretch_markers_follow_reaper(self):
+        """Source positions REAPER 7.86 plays (read off a ramp render), item time -> source seconds."""
+        from hypnomix.project.model import Take, stretch_map
+        cases = [(Take("a", offset=0.0, rate=1.0, stretch=[(0.5, 0.5), (1.5, 1.2)]),
+                  [(0.25, 0.25), (0.75, 0.675), (1.25, 1.025), (2.0, 1.7)]),
+                 (Take("b", offset=0.3, rate=1.0, stretch=[(0.5, 0.8), (1.5, 1.2)]),
+                  [(0.01, 0.31), (0.75, 0.9), (1.75, 1.45)]),
+                 (Take("c", offset=0.3, rate=1.25, stretch=[(0.5, 0.8), (1.5, 1.2)]),
+                  [(0.25, 0.6125), (0.5, 0.85), (1.0, 1.1), (1.5, 1.575), (2.25, 2.5125)])]
+        for tk, pts in cases:
+            for x, want in pts:
+                self.assertAlmostEqual(float(stretch_map(tk, np.array([x * tk.rate]))[0]), want, places=3, msg=tk.name)
+
+    def test_reorder_keeps_folders_and_sends(self):
+        from hypnomix.project import rpp_edit as E
+        txt = RPP.replace("  <TRACK {aaaaaaaa", "  <TRACK {aaaaaaaa", 1)
+        root = rpp.parse(txt)
+        guitar = root.chunks("TRACK")[3]
+        guitar.add(rpp.Line(["AUXRECV", 1, 0, 0.5, 0, 0, 0, 0, 0, 0, "-1:U", 0, -1, "''"]))   # a send from Lead Vocal
+        (self.dir / "S.rpp").write_text(rpp.dumps(root))
+        p = project.load(self.dir / "S.rpp")
+        E.reorder(p, [3, 0, 1, 2])                          # Guitar to the top; the folder block keeps its tracks
+        out = self.dir / "S (fixed).rpp"
+        E.save(p, out)
+        self.assertEqual(E.check(self.dir / "S.rpp", out), [])
+        q = project.load(out)
+        self.assertEqual([t.name for t in q.tracks], ["Guitar", "Vocals", "Lead Vocal", "Harmony"])
+        self.assertIs(q.tracks[2].parent, q.tracks[1])
+        self.assertIs(q.tracks[3].parent, q.tracks[1])
+        src = int(q.tracks[0].native.line("AUXRECV").tokens[1])
+        self.assertEqual(q.tracks[src].name, "Lead Vocal")  # the send still comes from the same track
+        with self.assertRaises(ValueError):
+            E.reorder(project.load(self.dir / "S.rpp"), [1, 0, 2, 3])   # a track above its own folder
+
+    def test_edge_trim_keeps_audio_in_place(self):
+        from hypnomix.project import rpp_edit as E
+        from hypnomix.workflow import edges_project as EP
+        p = project.load(self.song)
+        soffs = next(l for l in p.tracks[1].clips[0].take.native if isinstance(l, rpp.Line) and l.key == "SOFFS")
+        soffs.set(0.5)                                      # the take starts 0.5 s into its file: room to open the edge
+        base = self.dir / "Base.rpp"
+        E.save(p, base)
+        p = project.load(base)
+        lead = p.tracks[1]
+        c = lead.clips[0]
+        before = c.start - c.take.offset
+        self.assertAlmostEqual(EP.move_start(lead, c, 0.06), 0.06)
+        EP.set_fade_exact(c, "in", 0.01)
+        out = self.dir / "Song (fixed).rpp"
+        E.save(p, out)
+        self.assertNotEqual(E.check(base, out), [])                  # a moved edge is refused by default
+        self.assertEqual(E.check(base, out, trims=True), [])         # allowed for approved edge fixes
+        d = project.load(out).tracks[1].clips[0]
+        self.assertAlmostEqual(d.start, 0.94, places=6)
+        self.assertAlmostEqual(d.start - d.take.offset, before, places=6)                     # audio anchored
+        self.assertEqual(d.fade_in, 0.01)
+
     def test_unsupported_suffix(self):
         with self.assertRaises(SystemExit):
             project.load(self.dir / "x.ptx")

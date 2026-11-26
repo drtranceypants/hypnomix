@@ -403,11 +403,12 @@ def main():
            "approved: " + ", ".join(tag(f) for f in chosen), ""]
     failed, skipped_all = [], []
 
-    if reaper_ and (set_items or tune_rpp):      # REAPER: one pass into one new .rpp (workflow/fix_project.py)
+    if reaper_ and (set_items or name_items or tune_rpp):   # REAPER: one pass into one new .rpp (fix_project.py)
         from hypnomix.workflow import fix_project as FP
         tune_items = [f for f in audio_items if f.get("tool") == "tune"]
-        wrote, l2, f2, s2 = FP.run(sd, scan, src, out, set_items, tune_items, dec, a.key or scan.get("key"),
-                                   verify=not a.no_verify)
+        wrote, l2, f2, s2 = FP.run(sd, scan, src, out, set_items + name_items, tune_items, dec,
+                                   a.key or scan.get("key"), verify=not a.no_verify)
+        name_items = []
         log += l2
         failed += f2
         skipped_all += s2

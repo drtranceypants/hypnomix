@@ -33,12 +33,42 @@ def _kv(dec, f):
 def apply_edits(p, items, dec, log, failed, skipped):
     """Apply each approved finding's edit to the loaded project p. Returns the ids applied."""
     done = []
-    for f in sorted(items, key=lambda f: (f.get("edit", {}).get("op") != "fade", f["id"])):   # fades first
+    orig = list(p.tracks)                      # tracks as they were scanned (order and names change below)
+    rank = {"edges": 0, "fade": 0, "cut": 1, "dip": 1, "order": 2, "rename": 3}
+    for f in sorted(items, key=lambda f: (rank.get(f.get("edit", {}).get("op"), 1), f["id"])):
         ed = f.get("edit")
         if not ed:
             skipped.append((f, "no project edit recorded for this finding (manual)"))
             continue
         kv = _kv(dec, f)
+        if ed["op"] == "edges":
+            from hypnomix.workflow import edges_project as EP
+            ms = float(_kv(dec, f).get("fade-ms", 10))
+            log.append(f"- {f['id']}: {f['kind']} on {f['track']}")
+            log += EP.apply_edges(p, f, ms)
+            done.append(f["id"])
+            continue
+        if ed["op"] in ("order", "rename"):
+            try:
+                if ed["op"] == "order":
+                    E.reorder(p, ed["order"])
+                    log.append(f"- {f['id']}: tracks reordered: " + ", ".join(t.name for t in p.tracks))
+                else:
+                    t = orig[ed["index"]] if ed["index"] < len(orig) else None
+                    if t is None or t.name != f["old"]:
+                        skipped.append((f, f"track '{f['old']}' is not where the scan found it (renamed since?)"))
+                        continue
+                    note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
+                    new = note if note and "=" not in note else f["new"]
+                    if f.get("kind") == "track-name-question" and not note:
+                        log.append(f"- {f['id']}: approved without a name from the person; using the guess {new!r}")
+                    E.rename(t, new)
+                    p.renamed = {**getattr(p, "renamed", {}), f["old"]: new}
+                    log.append(f"- {f['id']}: {f['old']} → {new}")
+                done.append(f["id"])
+            except ValueError as e:
+                failed.append(f"{f['id']}: {e}")
+            continue
         hit = E.locate(p, ed["item"]) if "item" in ed else None
         tr = hit[0] if hit else (p.track(f["track"]) if ed["op"] == "dip" else None)
         if tr is None or tr.name != f["track"]:
@@ -150,7 +180,7 @@ def run(sd, scan, src, out, set_items, tune_items, dec, key, verify=True):
     if not done and not tuned:
         return None, log, failed, skipped
     E.save(p, out)
-    errs = E.check(src, out)
+    errs = E.check(src, out, trims=any(f.get("tool") == "edges" and f["id"] in done for f in set_items))
     if errs:
         bad = out.with_name(out.stem + " (BROKEN, do not open).rpp")
         out.rename(bad)
@@ -160,12 +190,13 @@ def run(sd, scan, src, out, set_items, tune_items, dec, key, verify=True):
         return None, log, failed, skipped
     print(f"check      structure OK; wrote {out}")
     log += ["### structure check: OK (same tracks, folders, items, positions and lengths)", ""]
-    if verify and done:
-        log += verify_clips(out, sd, [f for f in set_items if f["id"] in done])
+    clip_items = [f for f in set_items if f["id"] in done and f.get("tool") in ("clips", "edges")]
+    if verify and clip_items:
+        log += verify_clips(out, sd, clip_items, getattr(p, "renamed", {}))
     return out, log, failed, skipped
 
 
-def verify_clips(out, sd, items):
+def verify_clips(out, sd, items, renamed=None):
     """Run the clip checks on the new project: which approved problems are no longer measured."""
     import argparse
     from hypnomix.workflow import scan_project as SP
@@ -186,12 +217,14 @@ def verify_clips(out, sd, items):
             y, sr = sf.read(str(path), dtype="float32")
             y = y * envelope_at(env, np.arange(len(y)) / sr, "Volume" in getattr(tr_, "fader_envelopes", ()))
             sf.write(str(path), y.astype(np.float32), sr, subtype="FLOAT")
-    now, _ = SP.g_clips(p, R, vd, a)
+    vox = {(renamed or {}).get(f["track"], f["track"]) for f in items if f.get("tool") == "edges"}
+    now, _ = SP.g_clips(p, R, vd, a, sorted(vox))
     left = {(f["track"], f["kind"], f["where"]): f for f in now}
-    still = [f for f in items if (f["track"], f["kind"], f["where"]) in left]
+    key = lambda f: ((renamed or {}).get(f["track"], f["track"]), f["kind"], f["where"])
+    still = [f for f in items if key(f) in left]
     sizes = []
     for f in still:
-        g = left[(f["track"], f["kind"], f["where"])]
+        g = left[key(f)]
         old_ = next((float(x) for x in __import__("re").findall(r"([+-]?\d+(?:\.\d+)?) dB", f["problem"])), None)
         new_ = next((float(x) for x in __import__("re").findall(r"([+-]?\d+(?:\.\d+)?) dB", g["problem"])), None)
         sizes.append(f"{f['id']} {old_:+.1f} → {new_:+.1f} dB" if old_ is not None and new_ is not None else f["id"])

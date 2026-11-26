@@ -214,6 +214,45 @@ def ease(track, t, size_db, amount=0.5, ease_s=0.3, pre_s=0.01):
     shape_range(env, _Factor([t0, t1, t2], fn), t0, t2)
 
 
+def reorder(project, order):
+    """Put the project's tracks in a new order: `order` lists the current track indices (0-based) top to bottom.
+    Folders must stay blocks (each folder followed by its own tracks, as `order.propose_order` gives them). The folder
+    lines (ISBUS) are rebuilt from the nesting, and every send (AUXRECV, which names its source track by position) is
+    renumbered, so the sound and the routing stay exactly as they were."""
+    tracks = project.tracks
+    if sorted(order) != list(range(len(tracks))):
+        raise ValueError("the new order must list every track once")
+    new = [tracks[i] for i in order]
+    pos = {id(t): k for k, t in enumerate(new)}
+    for k, t in enumerate(new):                       # a track must come after its folder, inside its block
+        if t.parent is not None and not (pos[id(t.parent)] < k):
+            raise ValueError(f"{t.name} would sit above its folder {t.parent.name}")
+    depth = lambda t: 0 if t.parent is None else 1 + depth(t.parent)
+    for k, t in enumerate(new):
+        nxt = new[k + 1] if k + 1 < len(new) else None
+        if nxt is not None and nxt.parent is t:
+            t.native.set("ISBUS", 1, 1)
+        else:
+            d = (depth(nxt) if nxt is not None else 0) - depth(t)
+            if d > 0:
+                raise ValueError(f"{nxt.name} is inside a folder that does not come right before it")
+            t.native.set("ISBUS", 2 if d < 0 else 0, d)
+    old_to_new = {t.index: k for k, t in enumerate(new)}
+    for t in new:
+        for ln in t.native.lines("AUXRECV"):
+            if len(ln.tokens) > 1 and ln.tokens[1].lstrip("-").isdigit() and int(ln.tokens[1]) in old_to_new:
+                tk = list(ln.tokens)
+                tk[1] = old_to_new[int(tk[1])]
+                ln.set(*tk[1:])
+    root = project.native
+    slots = [k for k, c in enumerate(root.children) if isinstance(c, rpp.Chunk) and c.name == "TRACK"]
+    for slot, t in zip(slots, new):
+        root.children[slot] = t.native
+    for k, t in enumerate(new):
+        t.index = k
+    project.tracks = new
+
+
 def rename(track, name):
     track.native.set("NAME", name)
     track.name = name
@@ -245,9 +284,11 @@ def save(project, out):
     return rpp.save(project.native, out)
 
 
-def check(src, out):
-    """Structure check of a written project against the original: [errors]. It must parse, keep every track
-    (name, folder depth) and every item (position, length), and only add takes."""
+def check(src, out, trims=False):
+    """Structure check of a written project against the original: [errors]. With trims=True (approved edge fixes),
+    an item may start or end up to 0.5 s differently as long as its audio stays exactly where it was. It must parse, keep every track (found
+    by its REAPER GUID, so renamed and reordered tracks are still matched), its folder, every item (position,
+    length), and only add takes; and the chunks must balance."""
     from hypnomix.project import reaper
     errs = []
     try:
@@ -256,16 +297,35 @@ def check(src, out):
         return [f"the new project does not read back ({e})"]
     if len(a.tracks) != len(b.tracks):
         errs.append(f"track count changed: {len(a.tracks)} → {len(b.tracks)}")
-    for x, y in zip(a.tracks, b.tracks):
-        if (x.parent.name if x.parent else None) != (y.parent.name if y.parent else None):
+    gid = lambda t: (t.native.tokens[1] if len(t.native.tokens) > 1 else None)
+    by_b = {gid(t): t for t in b.tracks if gid(t)}
+    pairs = [(x, by_b.get(gid(x)) if gid(x) else (b.tracks[x.index] if x.index < len(b.tracks) else None))
+             for x in a.tracks]
+    for x, y in pairs:
+        if y is None:
+            errs.append(f"{x.name}: not found in the new project")
+            continue
+        px, py = x.parent, y.parent
+        if (gid(px) if px else None) != (gid(py) if py else None) or (px is None) != (py is None):
             errs.append(f"{y.name}: its folder changed")
         if len(x.clips) != len(y.clips):
             errs.append(f"{y.name}: item count changed ({len(x.clips)} → {len(y.clips)})")
         for c, d in zip(x.clips, y.clips):
             if abs(c.start - d.start) > 1e-6 or abs(c.length - d.length) > 1e-6:
-                errs.append(f"{y.name}: an item moved or changed length at {c.start:.3f} s")
+                # an approved edge fix trims an item: its audio stays where it was (position - offset/rate kept)
+                anchored = c.take is not None and d.take is not None and abs(
+                    (c.start - c.take.offset / c.take.rate) - (d.start - d.take.offset / d.take.rate)) < 1e-6
+                small = abs(c.start - d.start) <= 0.5 and abs(c.end - d.end) <= 0.5
+                if not (trims and anchored and small):
+                    errs.append(f"{y.name}: an item moved or changed length at {c.start:.3f} s")
             if len(d.takes) < len(c.takes):
                 errs.append(f"{y.name}: an item lost a take at {c.start:.3f} s")
+        sx = sorted(gid(a.tracks[int(l.tokens[1])]) for l in x.native.lines("AUXRECV") if l.tokens[1].isdigit()
+                    and int(l.tokens[1]) < len(a.tracks))
+        sy = sorted(gid(b.tracks[int(l.tokens[1])]) for l in y.native.lines("AUXRECV") if l.tokens[1].isdigit()
+                    and int(l.tokens[1]) < len(b.tracks))
+        if sx != sy:
+            errs.append(f"{y.name}: its sends now come from different tracks")
     text = rpp.dumps(b.native)
     opens = sum(1 for l in text.splitlines() if l.strip().startswith("<"))
     closes = sum(1 for l in text.splitlines() if l.strip() == ">")

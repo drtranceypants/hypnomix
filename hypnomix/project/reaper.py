@@ -12,7 +12,7 @@ What is read, and from where (REAPER writes everything in seconds, so nothing ne
 
 Volume values are linear amplitude (1.0 = 0 dB), envelope points too: REAPER saves amplitudes even when the
 envelope shows fader scaling (VOLTYPE 1), checked against REAPER 7.86. FADEIN/FADEOUT: shape (6 is saved as 5.1),
-length, auto-crossfade length (used when set). Stretch markers and reversed sections are counted and reported; the renderer plays such takes
+length, auto-crossfade length (used when set). Stretch markers are followed (each segment at its own speed); reversed sections are reported; the renderer plays such takes
 straight (a warning says so).
 """
 from pathlib import Path
@@ -99,15 +99,25 @@ def _takes(item, proj_dir, rec, warn, where):
         rate = num(pr.tokens[1], 1.0) if pr is not None and len(pr.tokens) > 1 else 1.0
         keep = (pr.tokens[2] != "0") if pr is not None and len(pr.tokens) > 2 else True
         nm = lines.get("NAME")
-        # stretch markers: one SM line, markers joined by "+" ("SM 0.5 0.5 + 1.5 1.2")
-        sm = sum(1 + c.tokens.count("+") for c in g if isinstance(c, rpp.Line) and c.key == "SM" and len(c.tokens) > 1)
+        # stretch markers: one SM line, markers joined by "+" ("SM 0.5 0.8 + 1.5 1.2"): (take time, source seconds)
+        marks = []
+        for ln in (c for c in g if isinstance(c, rpp.Line) and c.key == "SM"):
+            grp = []
+            for tok in ln.tokens[1:] + ["+"]:
+                if tok == "+":
+                    if len(grp) >= 2:
+                        marks.append((num(grp[0]), num(grp[1])))
+                    grp = []
+                else:
+                    grp.append(tok)
+        sm = len(marks)
         sm_total += sm if n == active else 0
         if rev and n == active:
             warn.append(f"{where}: a reversed take is rendered forwards")
         takes.append(Take(name=nm.tokens[1] if nm is not None and len(nm.tokens) > 1 else "",
                           path=path, offset=num(lines["SOFFS"].tokens[1]) if "SOFFS" in lines else 0.0,
                           gain=gain, rate=rate if rate > 0 else 1.0, preserve_pitch=keep, section=section,
-                          kind=kind, native=g))
+                          kind=kind, stretch=sorted(marks) or None, native=g))
     return takes, min(active, len(takes) - 1), sm_total
 
 
@@ -135,8 +145,7 @@ def _clip(item, proj_dir, rec, warn, tname):
     fo, fos = _fade(item, "FADEOUT")
     mute = item.line("MUTE")
     name = item.get("NAME", default="") or (takes[active].name if takes else "")
-    if sm:
-        warn.append(f"{where}: {sm} stretch marker(s) are not followed by the render (played straight)")
+
     return Clip(name=name, start=pos, length=length, takes=takes, active=active, gain=item_vol,
                 loop=item.get("LOOP", cast=int, default=1) == 1, fade_in=fi, fade_out=fo, fade_in_shape=fis,
                 fade_out_shape=fos, muted=mute is not None and len(mute.tokens) > 1 and mute.tokens[1] == "1",

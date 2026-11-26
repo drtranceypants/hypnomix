@@ -31,6 +31,7 @@ class Take:
     rate: float = 1.0
     preserve_pitch: bool = True
     section: tuple = None          # (start, length) in the source when the take plays a section of a file
+    stretch: list = None           # REAPER stretch markers [(take time, source seconds)], sorted
     kind: str = "audio"
     extra_paths: list = field(default_factory=list)   # more channels of one clip, one file each (Ardour)
     native: object = None
@@ -134,7 +135,9 @@ class Project:
             next((t for t in self.tracks if t.name.lower().startswith(low)), None)
 
     def audio_tracks(self, include_off=False):
-        return [t for t in self.tracks if t.kind == "audio" and t.clips and (include_off or t.on)]
+        """Tracks that play audio: audio tracks, and folder tracks with audio items of their own (REAPER)."""
+        return [t for t in self.tracks if (t.kind == "audio" or (t.kind == "folder" and any(c.kind == "audio" for c in t.clips)))
+                and t.clips and (include_off or t.on)]
 
     def children(self, folder):
         return [t for t in self.tracks if t.parent is folder]
@@ -238,8 +241,28 @@ def fade_window(c, n, sr):
     return w
 
 
+def stretch_map(tk, take_t):
+    """Source seconds for take-time positions through REAPER stretch markers [(take time, source seconds)]: straight
+    lines between markers; before the first and after the last the source runs at normal speed (measured: REAPER
+    7.86 renders match this sample for sample in varispeed mode)."""
+    pos = np.array([m[0] for m in tk.stretch], dtype=float)
+    src = np.array([m[1] for m in tk.stretch], dtype=float)
+    out = np.interp(take_t, pos, src)
+    out = np.where(take_t < pos[0], src[0] + (take_t - pos[0]), out)
+    return np.where(take_t > pos[-1], src[-1] + (take_t - pos[-1]), out)
+
+
 def _read_take(tk, path, n, sr, loop):
     """n samples of one source file as the take plays it."""
+    if tk.stretch:
+        # stretch markers: every segment plays at its own speed. Read along the marker map (varispeed per segment,
+        # like Live's many-warp-marker clips): timing exact; with "preserve pitch" on, REAPER keeps the pitch and
+        # this reading shifts it a little where a segment is stretched a lot
+        src = _source(path, sr)
+        sp = stretch_map(tk, np.arange(n) / sr * tk.rate)
+        if tk.section:
+            sp = sp + tk.section[0]
+        return np.interp(sp * sr, np.arange(len(src)), src, left=0.0, right=0.0)
     if abs(tk.rate - 1.0) > 1e-6 and tk.preserve_pitch:
         src = _stretched(path, tk.rate, sr)
         k = 1.0 / tk.rate                 # source seconds -> seconds in the stretched copy
