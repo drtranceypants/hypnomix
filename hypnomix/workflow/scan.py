@@ -15,7 +15,8 @@ Groups (each can run on its own with --only, so several agents can scan in paral
   files    missing audio files                                  (refs)
   clips    clicks, level jumps at cuts, spikes on clips         (smooth)
   timing   instrument hits out of time with the band            (timing; tracks from `name`)
-  vocals   pitch of every vocal track, harmonies vs the lead    (render + tune --report-only)
+  vocals   pitch of every vocal track, harmonies vs the lead,   (render + tune --report-only,
+           vocal level line to line, upper parts under the melody vocallevel)
   effects  distortion in recordings and device chains,
            sidechain compressors, device-chain audit            (distortion, sidechain, audit)
   mix      loudness, true peak, release checks, translation     (measure, qc, translate; needs --mix)
@@ -354,6 +355,21 @@ def g_vocals(als, od, a, role):
             findings += json.loads(j.read_text())["findings"]
         else:
             notes.append(f"clip levels of lower harmonies: did NOT run ({out.strip()[-160:]})")
+    if len(files) > 1:     # vocal level line to line, and upper parts under the melody (re-run before final exports)
+        j = od / "raw" / "vocallevel.json"
+        args = ["vocallevel", als, "--renders", rd, "--json", j, "--tracks", *files.keys()]
+        if lead in files:
+            args += ["--melody", lead]
+        if (od / "raw" / "order.json").exists():
+            args += ["--order", od / "raw" / "order.json"]
+        code, out = hx(*args)
+        save(od / "raw" / "vocallevel.txt", strip_warnings(out))
+        if j.exists():
+            findings += json.loads(j.read_text())["findings"]
+            notes.append("vocal levels: measured from renders x faders x automation (compressors not modelled); "
+                         "before the final export re-run `hypnomix vocallevel SET --heard DIR` on solo exports")
+        else:
+            notes.append(f"vocal levels: did NOT run ({out.strip()[-160:]})")
     if files:              # the vocal reverb and delay: ducked while the singer sings?
         j = od / "raw" / "duck.json"
         args = ["duck", als, "--json", j, "--renders", rd]
