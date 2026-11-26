@@ -174,6 +174,11 @@ hypnomix clipmatch --als "Song.als" --track "Lead Vox" --apply    # sets Clip Ga
 Matches loudness while the part is sounding (not over the silence between phrases) and reports tone
 differences as EQ Eight moves: a low shelf for proximity effect, a high shelf for an off-axis or distant mic.
 
+Read the report before `--apply`. On a real comp it proposed up to +12 dB for clips recorded quietly, and a
+quiet clip brings its hiss up with it: the report says how far the noise floors differ. Skip the clips that are
+quiet on purpose, and clean the noisy ones first. `--apply` sets the gains in the set that is open in Live
+(checked in Live 12); nothing is saved until you save.
+
 ## Vocal numbers to remember
 
 | what | target |

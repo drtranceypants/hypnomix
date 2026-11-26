@@ -90,6 +90,20 @@ EQ Eight → Glue Compressor → Utility → Saturator → Limiter on the Main t
 your bounce. `--verify` records the loudest 8 bars from Live and trims the Limiter until it measures on
 target. Nothing is deleted: `--existing bypass` switches off what was already on Main.
 
+Before the first run: `hypnomix install` and restart Live (it adds the piece that lets hypnomix load Live's
+devices), and for `--verify` install BlackHole and set Live's output to a Multi-Output Device (your speakers +
+BlackHole). `--dry-run` prints the plan and touches nothing. Checked in Live 12 on a real song: the chain is
+built with the planned values, and verify took Live from 6 dB under the target to on it in two passes. It plays
+the loudest bars out loud while it measures.
+
+```bash
+hypnomix chain strips "hypnomix-out/automix/Song/recipe.json"      # a channel strip on every matching track
+```
+
+`chain strips` puts EQ Eight, Compressor and Utility on each track **whose name contains the stem's name**
+(stem "Bass" finds the track "3-Detuned Lowpass Bass"). A stem with no matching track is listed, never
+guessed: name the track after the stem and run it again.
+
 No bounce yet? **HypnomixMain** on Main has its own mastering chain: **Build chain** puts an editable rack of
 Live's own devices (every gain at 0 dB) before it, **Match target** turns the Limiter until Main sits on the song
 card's loudness, and **Save** keeps your edited chain, or a rack of your own, as a template (guide 7).

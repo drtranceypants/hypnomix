@@ -231,8 +231,11 @@ Main and sets their values; needs `hypnomix install`) and `clipmatch --als --app
 the target) and `chain strips` (EQ Eight, Compressor and Utility on each track whose name matches a stem) are
 checked in Live 12 too. Stems that match no track name are listed, not guessed.
 
-**New, not yet opened in Live** (say so): the sets written by `tempomap`, `loops`, `tighten`, `breathe`,
-`variations`, `order`, `tidy`, `motion` and `borrow`. They pass `check` and their offline previews measure as intended. They are taste tools: show
+**Opened in Live 12, not yet judged by ear** (say so): the sets written by `tighten` (warp markers on every
+hit) and `breathe` (tempo automation, read back from Live at the right tempo), and `fix` sets with `tidy` and
+`order` applied.
+**New, not yet opened in Live** (say so): the sets written by `tempomap`, `loops`, `variations`, `motion` and
+`borrow`. They pass `check` and their offline previews measure as intended. They are taste tools: show
 the report and the preview, and apply only when asked. A tempo map with under half its beats on real hits is
 guesswork: the tools say so and refuse to write from it.
 

@@ -54,8 +54,8 @@ happened, why, and what to do instead. Where the tools now enforce the lesson, i
     *Do:* reach for clip gain, file tools and offline set edits before anything that needs a restart.
 15. **A feature was described before it was tried.** The person went looking for a menu option that wasn't
     there.
-    *Do:* say what you verified and what you assume. `chain` and `clipmatch --als --apply` are still marked
-    untested in Live.
+    *Do:* say what you verified and what you assume. `chain` and `clipmatch --als --apply` stayed marked
+    untested until they had run in Live (where `chain` turned out to set one control wrongly).
 16. **A fix was approved, failed quietly, and the problem stayed.** Nobody measured afterwards.
     *Now enforced:* `fix` measures the new set again and reports "no longer measured" or "still measured";
     failures set exit code 1. Report exactly that.

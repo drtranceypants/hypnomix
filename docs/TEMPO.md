@@ -52,8 +52,10 @@ set they write, and can be previewed without opening Live. Nothing here snaps a 
 - Before `breathe --apply --warp-clips`, tell the person which clips will have warp switched on, and that
   exposed vocals can pick up warp artefacts.
 - `tighten` and `variations` need a constant tempo; run them before `breathe`, not after.
-- Not yet verified in Live (say so): every set these five write. They pass the structural check and the
-  offline previews measure as intended; opening them in Live is the remaining test.
+- Opened in Live 12: a `tighten` set and a `breathe` set (with `--warp-clips`) load with every sample online,
+  and Live reads the new tempo at the right bars. Nobody has judged them by ear yet: listen for warp artefacts.
+- Not yet verified in Live (say so): the sets `tempomap`, `loops` and `variations` write. They pass the
+  structural check and the offline previews measure as intended; opening them in Live is the remaining test.
 
 ## Related tools
 
