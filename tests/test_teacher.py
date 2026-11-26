@@ -6,6 +6,7 @@ from unittest import mock
 
 from hypnomix.app import setup as SU
 from hypnomix.app import teacher as T
+from tests.teacher_ids import PINNED
 
 
 class FakeLive:
@@ -64,6 +65,25 @@ class Courses(unittest.TestCase):
                 for s in c["steps"]:
                     self.assertTrue(s["say"], s["id"])
         self.assertIn("Ableton Live", T.steps("live", "tour")[0]["title"])
+
+    def test_published_step_ids_never_change(self):
+        """Progress files and the Assistant key on step ids: today's 101 and tour courses stay exactly as published."""
+        for key, want in PINNED.items():
+            level, daw = key.split("/")
+            got = [(c["id"], tuple(s["id"] for s in c["steps"])) for c in T.steps(daw, level)]
+            self.assertEqual(got, want, key)
+
+    def test_az_holds_every_step_of_the_smaller_courses(self):
+        for d in T.DAWS:
+            az = [s["id"] for c in T.steps(d, "az") for s in c["steps"]]
+            for lv in ("101", "tour"):
+                ids = [s["id"] for c in T.steps(d, lv) for s in c["steps"]]
+                self.assertEqual([i for i in az if i in set(ids)], ids, (d, lv))     # a subset, in the same order
+
+    def test_an_unknown_level_falls_back_to_101(self):
+        self.assertEqual(T.steps("live", "nonsense"), T.steps("live", "101"))
+        with mock.patch("hypnomix.app.setup.load", return_value={"daw": "live", "teach_level": "from-the-future"}):
+            self.assertEqual(T.choice()[1], "101")
 
     def test_live_deepest_ardour_shortest(self):
         for lv in T.LEVELS:
