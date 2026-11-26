@@ -131,6 +131,18 @@ def to_html(text):
 
 
 DOCS_GROUP = "Docs"
+ROOT_FILES = ("README.md", "AGENTS.md")          # read from the top of the repo (bundled into wiki/docs/ when installed)
+REPO = "https://github.com/drtranceypants/hypnomix/blob/main/"
+
+
+def src_of(path):
+    """The file's path in the repo: README.md, docs/LIVE.md, docs/guides/08-inside-reaper.md."""
+    p = Path(path)
+    if p.name in ROOT_FILES:
+        return p.name
+    if p.parent.name == "guides":
+        return f"docs/guides/{p.name}"
+    return f"docs/{p.name}"
 
 
 def doc_article(path, taken=()):
@@ -138,30 +150,37 @@ def doc_article(path, taken=()):
     meta, text = front(Path(path).read_text())
     m = re.search(r"^# (.+)$", text, re.M)
     title = meta.get("title") or (m.group(1).strip() if m else Path(path).stem.title())
-    aid = meta.get("wiki_id") or Path(path).stem.lower()
+    if Path(path).name == "README.md" and "readme" not in title.lower():
+        title += " (README)"
+    aid = meta.get("wiki_id") or Path(path).stem.lower().replace("_", "-")
     if aid in taken:
         aid += "-doc"
     body = to_html(text)
     plain = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", body))).strip()
     from hypnomix.app.wiki import SITE
     return {"id": aid, "group": DOCS_GROUP, "title": re.sub(r"`([^`]+)`", r"\1", title), "sub": meta.get("subtitle", ""),
-            "no": f"docs/{Path(path).name}", "teaser": meta.get("teaser", ""), "html": body, "text": plain,
-            "url": f"{SITE}/wiki/#{aid}", "file": str(Path(path).resolve())}
+            "no": src_of(path), "teaser": meta.get("teaser", ""), "html": body, "text": plain,
+            "url": f"{SITE}/wiki/#{aid}", "file": str(Path(path).resolve()), "src": src_of(path)}
 
 
 def link_files(arts):
-    """`docs/LIVE.md`-style mentions of another article's file become links to that article."""
-    by = {}
-    for a in arts:
-        f = a.get("file") or ""
-        if "/docs/" in f:
-            by["docs/" + f.split("/docs/", 1)[1]] = a["id"]
-    if not by:
-        return arts
-    pat = re.compile(r"<code>(" + "|".join(re.escape(k) for k in sorted(by, key=len, reverse=True)) + r")</code>")
+    """Mentions of a repo file become links: to its article when it is in the wiki (`docs/LIVE.md`,
+    [the app](docs/APP.md)), else to the file on GitHub ([the guide](GUIDE.md))."""
+    by = {a["src"]: a["id"] for a in arts if a.get("src")}
+    code = re.compile(r"<code>(" + "|".join(re.escape(k) for k in sorted(by, key=len, reverse=True)) + r")</code>") \
+        if by else None
+    href = re.compile(r'<a href="((?:docs/)?[\w./-]+\.md)(#[^"]*)?">')
+
+    def to(m):
+        path = m.group(1)
+        if path in by:
+            return f'<a data-wiki="{by[path]}" href="#">'
+        return f'<a href="{REPO}{path}{m.group(2) or ""}" target="_blank" rel="noopener">'
     out = []
     for a in arts:
-        h = pat.sub(lambda m: f'<a data-wiki="{by[m.group(1)]}" href="#"><code>{m.group(1)}</code></a>', a["html"])
+        h = href.sub(to, a["html"])
+        if code:
+            h = code.sub(lambda m: f'<a data-wiki="{by[m.group(1)]}" href="#"><code>{m.group(1)}</code></a>', h)
         out.append(dict(a, html=h) if h != a["html"] else a)
     return out
 
@@ -184,7 +203,7 @@ def article(path):
     from hypnomix.app.wiki import SITE
     return {"id": aid, "group": GROUP, "title": meta.get("title", aid), "sub": meta.get("subtitle", ""),
             "no": f"guide {int(num.group(1))}" if num else "", "teaser": meta.get("teaser", ""), "html": body,
-            "text": plain, "url": f"{SITE}/wiki/#{aid}", "file": str(Path(path).resolve())}
+            "text": plain, "url": f"{SITE}/wiki/#{aid}", "file": str(Path(path).resolve()), "src": src_of(path)}
 
 
 def commands_article():

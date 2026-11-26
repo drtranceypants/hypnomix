@@ -99,8 +99,16 @@ def docs_dir(root=None):
 
 
 def doc_files(root=None):
+    """README.md and AGENTS.md first, then docs/[A-Z]*.md."""
+    from hypnomix.app.wiki_md import ROOT_FILES
+    root = Path(root) if root else HERE
     d = docs_dir(root)
-    return sorted(d.glob("[A-Z]*.md")) if d else []
+    repo = root.resolve().parents[2]
+    first = [repo / n for n in ROOT_FILES if (repo / n).exists() and (repo / "pyproject.toml").exists()]
+    if not first and d is not None:
+        first = [d / n for n in ROOT_FILES if (d / n).exists()]               # an installed hypnomix
+    rest = sorted(f for f in d.glob("[A-Z]*.md") if f.name not in ROOT_FILES) if d else []
+    return first + rest
 
 
 def guide_files(root=None):
@@ -157,6 +165,7 @@ def sources(top):
     d = docs_dir()
     if d is not None and str(d.resolve()).startswith(str(Path(top).resolve())):
         out.append(str(d.resolve().relative_to(Path(top).resolve())) + "/[A-Z]*.md")
+        out += [n for n in ("README.md", "AGENTS.md") if (Path(top) / n).exists()]
     return out
 
 

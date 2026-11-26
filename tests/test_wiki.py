@@ -214,10 +214,23 @@ class WikiTest(unittest.TestCase):
         self.assertIn("<hr>", d["html"])
         self.assertIn("<ul><li>one more</li></ul>", d["html"])
 
+    def test_links_between_files(self):
+        arts = [{"id": "app-doc", "src": "docs/APP.md", "html": ""},
+                {"id": "readme", "src": "README.md",
+                 "html": '<p><a href="docs/APP.md">the app</a>, <a href="GUIDE.md#x">guide</a>, <code>docs/APP.md</code>, '
+                         '<a href="https://example.com/a.md">web</a></p>'}]
+        h = wiki_md.link_files(arts)[1]["html"]
+        self.assertIn('<a data-wiki="app-doc" href="#">the app</a>', h)
+        self.assertIn(f'<a href="{wiki_md.REPO}GUIDE.md#x" target="_blank" rel="noopener">guide</a>', h)
+        self.assertIn('<a data-wiki="app-doc" href="#"><code>docs/APP.md</code></a>', h)
+        self.assertIn('<a href="https://example.com/a.md">web</a>', h)
+
     def test_every_doc_ships_with_the_app(self):
         """Each docs/*.md is listed in pyproject.toml, so an installed hypnomix has the same wiki."""
         root = Path(wiki.__file__).resolve().parents[2]
         toml = (root / "pyproject.toml").read_text()
+        for n in ("README.md", "AGENTS.md"):
+            self.assertIn(f'"{n}" = "hypnomix/app/wiki/docs/{n}"', toml)
         for f in sorted((root / "docs").glob("[A-Z]*.md")):
             self.assertIn(f'"docs/{f.name}" = "hypnomix/app/wiki/docs/{f.name}"', toml,
                           f"add docs/{f.name} to [tool.hatch.build.targets.wheel.force-include]")
