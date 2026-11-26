@@ -7,7 +7,8 @@ It asks how you want to work, and sets that up:
   desktop   a desktop AI app runs hypnomix for you (Claude Code in the Claude app or a terminal, Codex, Cursor…)
 
 Then the connection to Ableton Live (`hypnomix install`, only on a click), and for desktop AI apps a `hypnomix`
-command and a folder with the agent guide. Keys are saved by the Assistant's own settings (~/.hypnomix/ai.json,
+command and a folder with the agent guide and the Claude Code skills; then the optional extras (hypnomix/extras.py),
+each installed only on a click. Keys are saved by the Assistant's own settings (~/.hypnomix/ai.json,
 readable by you alone). The setup's own answers are in ~/.hypnomix/setup.json.
 
 Costs are estimates from list prices for one typical song (scan to approved fixes, about 40 assistant steps:
@@ -18,7 +19,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 STATE = Path("~/.hypnomix/setup.json").expanduser()
-VERSION = 1                      # bump when the setup gains a step people who finished it should see
+VERSION = 2                      # bump when the setup gains a step people who finished it should see
 
 # one typical song through the Assistant: what the cost estimates assume
 TYPICAL = dict(input=1_200_000, repeated=0.9, output=20_000)
@@ -73,7 +74,7 @@ def modes():
              cost="Claude Pro $20 / month (includes Claude Code); Max $100 or $200 / month for heavy use. Other agents: their own plans",
              what="Claude Code (in the Claude desktop app's Code tab, or in a terminal) or another agent like Codex or Cursor runs hypnomix commands, reads the reports and works through a whole song with you. This sets up a `hypnomix` command and a folder with the instructions the agent reads.",
              pros=["The strongest option for long, many-step work: whole songs, batches, your own requests", "A flat monthly price instead of paying per use",
-                   "Also works with the source install and every optional extra"],
+                   "Comes with the hypnomix skills for Claude Code (the first-pass workflow) and works with every optional extra"],
              cons=["A monthly subscription, with usage limits", "Happens in a chat with the agent, beside the app rather than inside it",
                    "Each change still waits for your OK, so expect to read and approve as it goes"]),
     ]
@@ -127,8 +128,8 @@ def save(d):
 
 def bundled():
     """Running from an installer (the Mac app, the Windows setup), not a source checkout."""
-    exe = Path(sys.executable).resolve()
-    return "Hypnomix.app" in exe.parts or (exe.parent.name.lower() == "python" and (exe.parent.parent / "launcher.pyw").exists())
+    from hypnomix.extras import bundled as b
+    return b()
 
 
 def _bin_dir():
@@ -165,8 +166,10 @@ def cli_status():
     found = shutil.which("hypnomix")
     shim = shim_path()
     on_path = str(shim.parent) in os.environ.get("PATH", "").split(os.pathsep)
+    sk = agent_dir() / ".claude" / "skills"
     return dict(command=found or (str(shim) if shim.exists() else ""), shim=str(shim), shim_exists=shim.exists(),
-                on_path=bool(found) or on_path, agent_dir=str(agent_dir()), agent_ready=(agent_dir() / "AGENTS.md").exists())
+                on_path=bool(found) or on_path, agent_dir=str(agent_dir()), agent_ready=(agent_dir() / "AGENTS.md").exists(),
+                skills=sorted(p.name for p in sk.iterdir() if (p / "SKILL.md").exists()) if sk.is_dir() else [])
 
 
 def make_cli():
@@ -193,6 +196,7 @@ def make_cli():
             if src.exists():
                 shutil.copyfile(src, d / name)
                 break
+    skills, agents = copy_skills(d, here)
     cmd = str(shim)
     (d / "CLAUDE.md").write_text(
         "# hypnomix (installed app)\n\n"
@@ -201,19 +205,47 @@ def make_cli():
         "and the command map. GUIDE.md is the user's guide.\n\n"
         f"Run hypnomix as `hypnomix <command>` (or by its full path, `{cmd}`). Start with `hypnomix doctor`.\n"
         "Every change that writes a set needs the person's OK first; hypnomix never overwrites the original.\n"
-        "The songs' scans are in the folder above this one.\n")
+        "The songs' scans are in the folder above this one.\n"
+        + (f"\nClaude Code skills (in .claude/skills): {', '.join(skills)}. For a whole new song, use first-pass.\n" if skills else "")
+        + (f"Subagents (in .claude/agents): {', '.join(agents)}.\n" if agents else ""))
     shutil.copyfile(d / "CLAUDE.md", d / "README.txt")
     return cli_status()
 
 
+def _first(*dirs):
+    return next((x for x in dirs if x.is_dir()), None)
+
+
+def copy_skills(d, here):
+    """The repository's Claude Code skills and subagents, into the folder's .claude/ (where Claude Code finds them).
+    They ship inside the app (the Wiki shows them), from the source checkout or the installed package."""
+    skills, agents = [], []
+    src = _first(here.parents[2] / "skills", here.with_name("wiki") / "skills")
+    if src:
+        dest = d / ".claude" / "skills"
+        for s in sorted(p for p in src.iterdir() if (p / "SKILL.md").exists()):
+            shutil.rmtree(dest / s.name, ignore_errors=True)
+            shutil.copytree(s, dest / s.name)
+            skills.append(s.name)
+    src = _first(here.parents[2] / "agents", here.with_name("wiki") / "agents")
+    if src:
+        dest = d / ".claude" / "agents"
+        dest.mkdir(parents=True, exist_ok=True)
+        for a in sorted(src.glob("*.md")):
+            shutil.copyfile(a, dest / a.name)
+            agents.append(a.stem)
+    return skills, agents
+
+
 def state_view():
     from hypnomix.app import chat as CH
+    from hypnomix import extras as X
     s = load()
     return dict(done=bool(s.get("done")) and s.get("version", 0) >= VERSION, mode=s.get("mode", ""),
                 platform="windows" if sys.platform == "win32" else "mac" if sys.platform == "darwin" else "linux",
                 bundled=bundled(), modes=modes(), providers=PROVIDER_GUIDES, local=LOCAL_GUIDES,
                 typical=TYPICAL, prices_checked=PRICES_CHECKED,
-                settings=CH.settings_view(), live=live_status(), cli=cli_status())
+                settings=CH.settings_view(), live=live_status(), cli=cli_status(), extras=X.status())
 
 
 def connect(body):
@@ -252,6 +284,9 @@ def setup_live():
 def handle_get(path, q):
     if path == "/api/setup/state":
         return 200, state_view()
+    if path == "/api/setup/extras":
+        from hypnomix import extras as X
+        return 200, X.status()
     if path == "/setup.js":
         return 200, Path(__file__).with_name("setup.js").read_bytes(), "text/javascript; charset=utf-8"
     return None
@@ -264,6 +299,12 @@ def handle_post(path, body):
         return 200, setup_live()
     if path == "/api/setup/cli":
         return 200, make_cli()
+    if path == "/api/setup/extra":
+        from hypnomix import extras as X
+        try:
+            return 200, X.install(str(body.get("name", "")))
+        except ValueError as e:
+            return 400, dict(error=str(e), **X.status())
     if path == "/api/setup/finish":
         s = load()
         s.update(done=bool(body.get("done", True)), mode=str(body.get("mode") or s.get("mode") or ""), version=VERSION,

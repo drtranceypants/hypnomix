@@ -29,8 +29,8 @@ def separate_to(src, dest, model="4stem"):
     try:
         from audio_separator.separator import Separator
     except ImportError as e:
-        raise ImportError("stem separation needs the ml extra: pip install -e '.[ml]' (or give stems you already "
-                          "have with --stems DIR)") from e
+        from hypnomix.extras import hint
+        raise ImportError(f"stem separation: {hint('ml')} (or give stems you already have with --stems DIR)") from e
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
@@ -54,7 +54,11 @@ def main():
     a = ap.parse_args()
 
     import logging
-    from audio_separator.separator import Separator
+    try:
+        from audio_separator.separator import Separator
+    except ImportError:
+        from hypnomix.extras import hint
+        sys.exit(f"stem separation: {hint('ml')}")
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     sep = Separator(model_file_dir=str(MODEL_DIR), output_format="WAV", log_level=logging.WARNING)
     sep.load_model(model_filename=MODELS[a.model])

@@ -43,7 +43,7 @@ rm -rf "$res/python/lib/python$PYVER/"{test,idlelib,tkinter,turtledemo,ensurepip
 
 echo "-- hypnomix and its packages"
 # numba/llvmlite: wheels only (newer llvmlite has no Intel Mac wheel; the resolver picks one that does)
-uv pip install --quiet --python "$py" --python-platform "$plat" --no-cache --only-binary llvmlite --only-binary numba "$repo[$EXTRAS]" imageio-ffmpeg
+uv pip install --quiet --python "$py" --python-platform "$plat" --no-cache --only-binary llvmlite --only-binary numba "$repo[$EXTRAS]" imageio-ffmpeg pip   # pip: Setup → Extras installs the other extras with it
 
 echo "-- ffmpeg"
 mkdir -p "$res/bin"

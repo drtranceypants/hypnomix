@@ -57,7 +57,8 @@ def main():
     try:
         import matchering as mg
     except ImportError:
-        sys.exit("reference matching needs the optional GPL extra: uv pip install 'hypnomix[reference]'  (or pip install matchering)")
+        from hypnomix.extras import hint
+        sys.exit(f"reference matching: {hint('reference')}")
     mg.log(lambda *_: None)
     mix, ref = Path(a.mix), Path(a.reference)
     from hypnomix.core.paths import out as _o

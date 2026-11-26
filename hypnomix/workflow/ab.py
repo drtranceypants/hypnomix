@@ -25,6 +25,7 @@ For those, apply the one fix into a new set (`hypnomix fix ... --approve ID`) an
 
 The preview is the track on its own, without effects: it shows what the fix does, not the final sound.
 """
+from hypnomix.extras import hint as extra_hint
 import argparse, json, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
@@ -192,7 +193,7 @@ def main():
     if a.plugins and orig and orig.exists():
         from hypnomix.session import plugrender as PR
         if not PR.have_pedalboard():
-            print("--plugins: pedalboard is not installed (pip install pedalboard): device changes are not previewed")
+            print(f"--plugins: pedalboard is not installed ({extra_hint('plugins')}): device changes are not previewed")
         else:
             cache = {}
             for f in [f for f in findings if f["tool"] in PR.DEVICE_TOOLS and f.get("applies") == "set"]:

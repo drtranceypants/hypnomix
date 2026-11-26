@@ -492,7 +492,7 @@ def make_handler(port):
                     r = UP.handle_get(u.path, q)
                     if r:
                         return self.send(*r)
-                if u.path in ("/setup.js", "/api/setup/state"):    # the guided setup (first run, and the Setup button)
+                if u.path in ("/setup.js", "/api/setup/state", "/api/setup/extras"):    # the guided setup (first run, the Setup button)
                     from hypnomix.app import setup as SU
                     r = SU.handle_get(u.path, q)
                     if r:

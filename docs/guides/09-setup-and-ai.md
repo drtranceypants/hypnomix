@@ -9,8 +9,9 @@ teaser: The installers, the guided setup, and the four ways to work (just the ap
 
 There are two ways to install hypnomix. The **installer** is for most people: download it, open it, done. It
 carries its own Python and ffmpeg, and the first time the app opens a short **guided setup** asks how you want to
-work. The **source install** (the Getting Started guide and the README) is for people who use a terminal, want every optional
-extra, or want the Claude Code skills that ship in the repository.
+work. The **source install** (the Getting Started guide and the README) is for people who use a terminal or want to work
+on hypnomix itself. The installed app gets every optional extra too (the setup's **Extras** step), and the Claude
+Code skills (the **A desktop AI app** option).
 
 ## Install the app
 
@@ -185,7 +186,7 @@ you, in a chat beside the app. This is the strongest option for long, many-step 
 own requests), at a flat monthly price. hypnomix is built and tested with Claude Code. Codex, Cursor and other
 agents that read `AGENTS.md` work too.
 
-**Pros**: the most capable help, a flat price, works with every optional extra. **Cons**: a subscription with
+**Pros**: the most capable help, a flat price, comes with the hypnomix skills for Claude Code, works with every optional extra. **Cons**: a subscription with
 usage limits; the work happens in the agent's chat, not inside the app.
 
 ### Set it up
@@ -197,7 +198,12 @@ usage limits; the work happens in the agent's chat, not inside the app.
    - a `hypnomix` command that runs the app's own copy (Mac: `~/.local/bin/hypnomix`; Windows: in your user's
      WindowsApps folder, which is already on your PATH)
    - a folder **Documents/Hypnomix/AI agent** with `CLAUDE.md`, `AGENTS.md` and `GUIDE.md`: the instructions
-     the agent reads first.
+     the agent reads first
+   - the repository's **Claude Code skills** in that folder's `.claude/skills` (first-pass, mix-engineer,
+     mastering-engineer, live-mixing, harmony-balance, tracking-session) and the scanner subagent in
+     `.claude/agents`. Claude Code finds them on its own. For a new song, ask for a *first pass*: it scans with
+     parallel subagents, then walks you through the fixes one at a time. Clicking the button again updates them
+     to the app's version.
 3. Mac only, once: if the setup says `hypnomix` isn't on your PATH yet, run the line it shows in Terminal, then
    open a new Terminal window.
 
@@ -209,8 +215,24 @@ usage limits; the work happens in the agent's chat, not inside the app.
 - **Other agents**: open the AI agent folder in them.
 
 Keep the hypnomix app open alongside: the review page's A/B players are the quickest way to hear what the agent
-proposes. For the Claude Code skills in the repository (the first-pass workflow with its parallel scanners) and
-every optional extra, use the source install (the Getting Started guide).
+proposes. The optional extras are on the setup's **Extras** step (below).
+
+## Optional extras
+
+The installer leaves out three extras: two are GPL-3.0 (hypnomix itself stays MIT), and one is about a gigabyte.
+The setup's **Extras** step (after Ableton Live) installs any of them on a click:
+
+| Extra | Adds | Licence | Size |
+|---|---|---|---|
+| Reference matching | `reference`: what it would take to sound like a reference song | GPL-3.0 (matchering) | about 150 MB |
+| Your own plug-ins | `plugrender`, `ab --plugins`: render through your real VST3 / AU chains | GPL-3.0 (pedalboard) | about 10 MB |
+| Stem separation and audio to MIDI | `separate`, `midi` | MIT, with PyTorch (BSD) | about 1 GB, plus a 320 MB model the first time stem separation runs |
+
+They download from PyPI into `~/.hypnomix/extras` (on Windows, `C:\Users\<you>\.hypnomix\extras`), outside
+the app. An update to the app keeps them, and deleting that folder removes them. Libraries the app already
+has stay at the app's own versions: if an extra needs a different version, it doesn't install, and the step shows
+pip's message. Stem separation may not install on an Intel Mac, because PyTorch no longer builds for them. The
+Assistant and the Listener are already included. In a source install the same buttons install into that Python.
 
 ## Connecting Ableton Live
 

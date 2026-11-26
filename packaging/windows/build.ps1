@@ -38,7 +38,7 @@ foreach ($d in "test", "idlelib", "tkinter", "turtledemo", "ensurepip") {
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$App\python\tcl"
 
 Write-Host "-- hypnomix and its packages"
-uv pip install --quiet --python $Py --no-cache --only-binary llvmlite --only-binary numba "$Repo[$Extras]" imageio-ffmpeg
+uv pip install --quiet --python $Py --no-cache --only-binary llvmlite --only-binary numba "$Repo[$Extras]" imageio-ffmpeg pip   # pip: Setup -> Extras installs the other extras with it
 if ($LASTEXITCODE) { throw "uv pip install failed" }
 
 Write-Host "-- ffmpeg"

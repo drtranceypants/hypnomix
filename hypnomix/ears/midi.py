@@ -70,8 +70,12 @@ def main():
     ap.add_argument("--to-live", nargs=2, metavar=("TRACK", "SLOT"))
     a = ap.parse_args()
 
-    from basic_pitch.inference import predict
-    from basic_pitch import ICASSP_2022_MODEL_PATH
+    try:
+        from basic_pitch.inference import predict
+        from basic_pitch import ICASSP_2022_MODEL_PATH
+    except ImportError:
+        from hypnomix.extras import hint
+        sys.exit(f"audio to MIDI: {hint('ml')}")
     _, midi, notes = predict(a.audio, ICASSP_2022_MODEL_PATH, onset_threshold=a.onset, frame_threshold=a.frame,
                              minimum_note_length=a.min_ms, minimum_frequency=a.fmin, maximum_frequency=a.fmax,
                              midi_tempo=a.bpm or 120)

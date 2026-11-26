@@ -30,7 +30,8 @@ const css = `
 const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
 
 let U = null, step = 0, mode = '', prov = 'gemini', loc = 'ollama', key = '', model = '', listen = true, msg = null, busy = false, liveLog = '', cliDone = null;
-const STEPS = ['Welcome', 'How you work', 'Connect', 'Ableton Live', 'Done'];
+const STEPS = ['Welcome', 'How you work', 'Connect', 'Ableton Live', 'Extras', 'Done'], LAST = STEPS.length - 1;
+let poll = null;
 const ext = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u.replace(/^https?:\/\//, ''))}</a>`;
 const list = (xs, cls) => `<ul class="${cls}">${xs.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
 
@@ -44,19 +45,19 @@ async function open(force) {
   if (!document.getElementById('su')) { const d = document.createElement('div'); d.id = 'su'; document.body.appendChild(d); }
   draw();
 }
-function close() { const d = document.getElementById('su'); if (d) d.remove(); }
+function close() { const d = document.getElementById('su'); if (d) d.remove(); clearTimeout(poll); poll = null; }
 window.openSetup = () => open(true);
 
 function draw() {
   const d = document.getElementById('su'); if (!d) return;
-  const body = [welcome, choose, connect, live, done][step]();
+  const body = [welcome, choose, connect, live, extras, done][step]();
   const canNext = step !== 1 || mode;
   d.innerHTML = `<div class="box" role="dialog" aria-modal="true" aria-label="hypnomix setup">
     <div class="steps">${STEPS.map((s, i) => `<span class="${i === step ? 'on' : ''}">${i + 1}. ${s}</span>`).join('')}</div>
     ${body}
     <div class="nav"><div>${step > 0 ? '<button class="ghost" data-su="back">Back</button>' : ''}
-      <button class="ghost" data-su="skip">${step === 4 ? 'Close' : 'Skip setup'}</button></div>
-      <div>${step < 4 ? `<button class="primary" data-su="next" ${canNext ? '' : 'disabled'}>${step === 0 ? 'Start' : 'Next'}</button>` : '<button class="primary" data-su="finish">Finish</button>'}</div></div></div>`;
+      <button class="ghost" data-su="skip">${step === LAST ? 'Close' : 'Skip setup'}</button></div>
+      <div>${step < LAST ? `<button class="primary" data-su="next" ${canNext ? '' : 'disabled'}>${step === 0 ? 'Start' : 'Next'}</button>` : '<button class="primary" data-su="finish">Finish</button>'}</div></div></div>`;
 }
 
 function welcome() {
@@ -111,7 +112,8 @@ function connect() {
   <b>Then</b><ol><li><b>Claude desktop app</b>: open the <b>Code</b> tab, choose the folder above, and say: <i>"Read CLAUDE.md, run hypnomix doctor, then scan my song: (drag the .als file in)"</i>.</li>
   <li><b>Terminal</b>: <pre>${win ? `cd "${esc(folder)}"\nclaude` : `cd "${esc(folder)}" && claude`}</pre></li>
   <li><b>Other agents</b>: open that folder in it; it reads AGENTS.md.</li></ol>` : ''}${msgHtml()}
-  <p class="small">The app stays useful alongside: review findings with the A/B players while the agent works. For every optional extra and the agent skills, install from the source (Wiki → Install).</p>`;
+  ${c.agent_ready && c.skills && c.skills.length ? `<p class="small">Claude Code finds the hypnomix skills in the folder on its own (${c.skills.map(esc).join(', ')}): for a new song, ask for a <b>first pass</b>.</p>` : ''}
+  <p class="small">The app stays useful alongside: review findings with the A/B players while the agent works. The optional extras (reference matching, your own plug-ins, stem separation) are on the <b>Extras</b> step.</p>`;
 }
 
 function live() {
@@ -122,6 +124,28 @@ function live() {
     <p>This copies the AbletonOSC remote script into Live's User Library${l.ableton ? '' : ' (no Ableton folder was found on this computer: it will be created)'}. A different copy already there is backed up first. Nothing else in Live changes.</p>
     <button class="act" data-su="live" ${busy ? 'disabled' : ''}>${busy ? 'Copying…' : 'Connect to Live'}</button>${msgHtml()}
     <p class="small">Then restart Live and choose <b>Settings → Link, Tempo &amp; MIDI → Control Surface: AbletonOSC</b>. REAPER or Ardour? Nothing to install here: see Wiki → hypnomix in REAPER.</p>`;
+}
+
+function extras() {
+  const X = U.extras, rows = X.extras.filter(e => !e.included), inc = X.extras.filter(e => e.included);
+  return `<h2>Optional extras</h2><p class="sub">Each adds a few commands. Install any of them now or later (the Setup button brings you back here). They download from PyPI${X.bundled ? ` into <code>${esc(X.where)}</code>, outside the app, so updating the app keeps them` : ` into this Python (<code>${esc(X.where)}</code>)`}.</p>
+  ${rows.map(e => `<div class="cost" style="padding:10px 12px">
+    <b>${esc(e.title)}</b> <span class="small">· ${esc(e.size)} · ${esc(e.license)}</span>
+    <p style="margin:4px 0">${esc(e.what)}${e.commands.length ? ` <span class="small">Commands: ${e.commands.map(c => `<code>${esc(c)}</code>`).join(', ')}</span>` : ''}</p>
+    ${e.installed ? '<div class="msg ok" style="margin:4px 0">Installed.</div>'
+      : `<button class="act" data-extra="${esc(e.id)}" ${e.running || !X.pip ? 'disabled' : ''}>${e.running ? 'Installing…' : e.ok === false ? 'Try again' : 'Install'}</button>`}
+    ${e.log && (e.running || e.ok === false) ? `<pre style="max-height:160px;overflow:auto">${esc(e.log.split('\n').slice(-14).join('\n'))}</pre>` : ''}
+    ${e.ok === false && !e.running ? '<div class="msg bad" style="margin:4px 0">It did not install: the last lines are above. Nothing in the app changed.</div>' : ''}</div>`).join('')}
+  ${!X.pip ? (X.bundled ? '<div class="msg bad">This copy of the app can\'t install extras. Download the newest installer from the hypnomix site and install it over this one.</div>'
+    : '<div class="msg bad">This Python has no pip, and uv isn\'t on the PATH. In a terminal: <code>uv pip install \'hypnomix[reference,plugins,ml]\'</code> (or only the ones you want).</div>') : ''}
+  ${msgHtml()}
+  <p class="small">The GPL-3.0 extras are separate projects, so hypnomix itself stays MIT: you download them from their authors, and using them is fine for any music, commercial too. Stem separation may not install on Intel Macs (PyTorch has stopped building for them). Already included: ${inc.map(e => esc(e.title)).join(', ')}.</p>`;
+}
+
+async function refreshExtras() {
+  try { U.extras = await get('/api/setup/extras'); } catch (_) { return; }
+  if (step === 4) draw();
+  clearTimeout(poll); poll = U.extras.extras.some(e => e.running) ? setTimeout(refreshExtras, 1500) : null;
 }
 
 function done() {
@@ -155,13 +179,18 @@ async function test() {
 
 document.addEventListener('click', async e => {
   if (!document.getElementById('su')) { const b = e.target.closest('[data-setup]'); if (b) open(true); return; }
-  const t = e.target.closest('[data-su],[data-mode],[data-prov],[data-loc]'); if (!t || !t.closest('#su')) return;
+  const t = e.target.closest('[data-su],[data-mode],[data-prov],[data-loc],[data-extra]'); if (!t || !t.closest('#su')) return;
   keep();
   if (t.dataset.mode) { mode = t.dataset.mode; model = ''; msg = null; return draw(); }
   if (t.dataset.prov) { prov = t.dataset.prov; model = ''; key = ''; msg = null; return draw(); }
+  if (t.dataset.extra) {
+    msg = null;
+    try { U.extras = await post('/api/setup/extra', { name: t.dataset.extra }); } catch (err) { msg = { ok: false, html: esc(err.message) }; }
+    draw(); return refreshExtras();
+  }
   if (t.dataset.loc) { loc = t.dataset.loc; model = ''; msg = null; return draw(); }
   const a = t.dataset.su;
-  if (a === 'next') { step = Math.min(4, step + 1); msg = null; return draw(); }
+  if (a === 'next') { step = Math.min(LAST, step + 1); msg = null; return draw(); }
   if (a === 'back') { step = Math.max(0, step - 1); msg = null; return draw(); }
   if (a === 'test') return test();
   if (a === 'cli') {

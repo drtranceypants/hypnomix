@@ -249,12 +249,13 @@ To give hypnomix access to more of your plug-ins' parameters, run `hypnomix inst
 
 `loop` and `diagnose` record what Live plays through [BlackHole](https://github.com/ExistentialAudio/BlackHole). `hypnomix install` explains the two-minute setup.
 
-Optional features:
+Optional features (in the installed app: Setup → Extras installs them on a click):
 
 | extra | adds | install |
 |---|---|---|
 | `reference` | `hypnomix reference` (Matchering; GPL-3.0, kept separate so hypnomix stays MIT) | `uv pip install -e ".[reference]"` |
 | `ml` | `hypnomix separate` (split a finished song into stems) and `hypnomix midi` (audio → MIDI) | `uv pip install -e ".[ml]"` |
+| `plugins` | `hypnomix plugrender` and `ab --plugins`: render through your real VST3 / AU chains (pedalboard; GPL-3.0) | `uv pip install -e ".[plugins]"` |
 | `critique` | `hypnomix critique` (a cloud model listens and writes notes by ear; Gemini or OpenRouter key, from the app's settings or `GEMINI_API_KEY` / `OPENROUTER_API_KEY`) | `uv pip install -e ".[critique]"` |
 
 ## With Claude Code

@@ -44,7 +44,8 @@ from inside Live, apply in the app.
 
 Most people should use the **installer** for Mac or Windows from hypnomix.bradfieldenterprises.org/download: no
 terminal, and a guided setup on first open. The guide "Setting Up, and Choosing an AI" covers it. The steps below are the
-**source install**, for the terminal, Claude Code's skills and every optional extra.
+**source install**, for the terminal and for working on hypnomix itself. (The installed app also installs the
+optional extras from its setup, and gives Claude Code the hypnomix skills.)
 
 You need macOS, Python 3.9 or newer, ffmpeg, Rubber Band 3+ (for tuning and alignment) and, for the Live
 features, Ableton Live 11 or 12 (Max for Live for the devices). The file tools work without Live and with

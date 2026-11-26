@@ -42,6 +42,7 @@ Limits, honestly:
     approximation of Live's (centre is unity, constant power)
   - the compressor models are approximations of Live's (see `hypnomix sidechain`)
 """
+from hypnomix.extras import hint as extra_hint
 import argparse, gzip, json, math, os, plistlib, re, struct, subprocess, sys, tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -615,7 +616,7 @@ class SetRenderer:
                 continue
             if info["kind"] in ("vst3", "au", "vst2"):
                 if not have_pedalboard():
-                    row["status"] = "skipped: pedalboard is not installed (pip install pedalboard)"
+                    row["status"] = "skipped: pedalboard is not installed (" + extra_hint("plugins") + ")"
                     continue
                 plan = prepare(info, self.do_probe)
                 if not plan["ok"]:
@@ -802,12 +803,12 @@ def main():
         return
 
     if not have_pedalboard():
-        print("NOTE: pedalboard is not installed (pip install pedalboard): plug-ins will be skipped, only Live's "
+        print(f"NOTE: pedalboard is not installed ({extra_hint('plugins')}): plug-ins will be skipped, only Live's "
               "modelled devices and the mixer are rendered.", file=sys.stderr)
 
     if a.check:
         if not have_pedalboard():
-            sys.exit("--check needs pedalboard: pip install pedalboard")
+            sys.exit("--check needs pedalboard: " + extra_hint("plugins"))
         rows, bad = [], 0
         for t in pick:
             for info in chain_of(t):
