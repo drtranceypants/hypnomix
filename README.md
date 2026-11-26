@@ -42,7 +42,7 @@ leaves your time for playing, dialling in sounds and listening.
 | A take played without a click | follows the beat, click check for your ears, then warp to the grid or let the grid follow; best loops lined up | `tempomap`, `loops` |
 | A looped song that feels static | tempo that breathes, effect moves in your own style, unused takes and loops on switched-off tracks | `breathe`, `motion`, `variations`, `borrow` |
 | Working out which parts clash | which two parts fight over which frequencies, and the cut that fixes it; mic phase | `masking`, `align`, `stems` |
-| Getting loud without wrecking it | a measured mastering chain, test-encoded so it won't clip after upload; offline or built in Live | `master`, `chain` |
+| Getting loud without wrecking it | a measured mastering chain, test-encoded so it won't clip after upload; offline, built in Live, or an editable rack on HypnomixMain saved as your own template | `master`, `chain`, `probe` |
 | The pre-release checklist | phone, car and mono checks, streaming loudness, true peak, section-by-section balance | `translate`, `qc`, `sections`, `match` |
 | Measuring every track while you play | a Max for Live probe last on each track measures it after all its plug-ins; one play of the song is a deep scan, no renders or exports | `probe` |
 | Hearing each fix with your real chain | every fix as a switched-off B inside Live: A / B / Blind, loudness-matched; or offline renders through your own VST3/AU plug-ins | `abset`, `plugrender`, `ab --plugins` |
@@ -61,7 +61,8 @@ approve and skip (`prefs`), so proposals start from your standards.
 hypnomix app        # a web app on your own computer: choose a song, hear each fix, approve, apply
 hypnomix device     # optional: a Max for Live device to step through the findings inside Live
 hypnomix probe device # optional: HypnomixProbe (every track) and HypnomixMain (Main): meters, what each track is,
-                      #   the song card (genre, key, chords, loudness), record and review before export
+                      #   the song card (genre, key, chords, loudness), an editable mastering chain of
+                      #   Live's own devices (Build, Match target, Save), record and review before export
 hypnomix abset DIR    # optional: every fix as a switch in Live: A / B / Blind on the device (docs/LIVE.md)
 hypnomix aligndevice  # optional: Hypnomix Align, a Max for Live device to align a vocal stack (docs/ALIGN.md)
 macapp/build.sh     # optional: build your own Hypnomix.app (a Dock icon around the same web app)
@@ -182,7 +183,7 @@ See [docs/WORKFLOW.md](docs/WORKFLOW.md); what's coming, including Logic Pro and
 | `live` | Faders in exact dB, sends, pans, mute and solo; any device or VST/AU parameter, raw or in displayed units ("2.5 kHz", "-3 dB"); transport; snapshots; input routing, arming, monitoring and punch recording with take lanes. |
 | `loop` | Plays bars, records them, measures them, and compares with the previous take and your profile. `--ab "db Lead -2" --revert` for one-change A/Bs. |
 | `diagnose` | Solos each group in the loudest section of a song: who owns the sub, the bass and the vocal band. |
-| `probe` | Max for Live meters on every track, after their plug-ins: loudness (BS.1770), peak, 8 bands, width, low-end mono, ten times a second with the bar. Each probe says what its track is, its priority and whether it is protected; HypnomixMain on Main carries the song card and records Main for a review before export. `probe listen` / the app's Live tab turn one play of the song into a review. See docs/LIVE.md. |
+| `probe` | Max for Live meters on every track, after their plug-ins: loudness (BS.1770), peak, 8 bands, width, low-end mono, ten times a second with the bar. Each probe says what its track is, its priority and whether it is protected; HypnomixMain on Main carries the song card, builds an editable mastering chain of Live's own devices in a rack (Build chain; Match target turns its Limiter to your loudness target; Save keeps your edited chain or your own rack as a template) and records Main for a review before export. `probe listen` / the app's Live tab turn one play of the song into a review. See docs/LIVE.md. |
 | `abset` | One new set with every proposed fix next to what you have, switched off (a copy of the changed device, or a muted copy of the track): the Hypnomix device switches A / B / Blind instantly with every plug-in, loudness-matched from the probe on Main. |
 | `plugrender` | Renders tracks from a set offline through their real VST3/AU plug-ins, restored from the state Live saved (optional `plugins` extra, pedalboard). Live's Utility, Compressor, Glue and Limiter are modelled; other devices are named as skipped. `ab --plugins` previews device fixes through the chain. |
 
