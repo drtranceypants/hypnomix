@@ -50,7 +50,7 @@ version in place and opens again. Your songs, settings and keys stay as they are
 | step | what it asks |
 |---|---|
 | How you work | just the app, an AI key, a model on your computer, or a desktop AI app (compared below) |
-| Your DAW | Ableton Live, REAPER, Ardour or something else (the Wiki puts your DAW's pages first), and **teacher mode**: no thanks, the tour of hypnomix in your DAW (for engineers), or the 101 crash course (for people new to audio). The wiki's Teacher mode page has both courses |
+| Your DAW | Ableton Live, REAPER, Ardour or something else (the Wiki puts your DAW's pages first), and **teacher mode**: no thanks, the tour of hypnomix in your DAW (for engineers), the 101 crash course, or the complete course, A to Z (for people new to audio). The wiki's Teacher mode page has all three |
 | Connect | for an AI key: which company, your key, a test. For a local model: Ollama or LM Studio, and a test. For a desktop app: a `hypnomix` command and an agent folder |
 | your DAW's step | Live: copies the AbletonOSC remote script into Live's User Library, on your click (and offers to update an older copy for teacher mode). REAPER: starts the bridge. Ardour or another DAW: nothing to install |
 | Extras | the optional extras, each on a click |
