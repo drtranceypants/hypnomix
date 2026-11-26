@@ -140,7 +140,10 @@ Every option is the same as for a Live set. The differences (`hypnomix/studio/al
    `SM take-time source-time + …`, the source time including the take's offset, as `SetTakeStretchMarker` saves
    it). Existing stretch markers are followed, and replaced by the combined map. Where the plan would play audio
    backwards (two neighbouring words moved opposite ways across a short gap), the map is eased: the mean of the
-   closest forward and backward paths that never play slower than 0.25x; the report gives the largest change.
+   closest forward and backward paths that never play slower than 0.25x of the item's current speed. Where it
+   wants audio from before the file starts (an item that begins at the file's first sample, pulled later), the
+   item starts at the first sample and catches up at no less than 0.25x: the same rule as Live's alignset. The
+   report gives the largest change.
 3. Pitch / formant (and timing, with `--takes`) become a **new active take on each item**
    (`rpp_edit.add_take(offset=0, rate=1)`), playing a file made for that item: the part's final render divided by
    the items' own gain and fades (each item gets its share where items crossfade), so played through the item it

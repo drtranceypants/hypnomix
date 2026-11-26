@@ -298,8 +298,9 @@ In the new project:
 - **Timing** is **stretch markers on the active take of each part's own items**: the fewest that follow the plan
   within half a millisecond. Drag or delete any of them afterwards. Stretch markers already on an item are
   followed and replaced by the combined ones. Where two neighbouring words move opposite ways across a short gap,
-  the change is eased over a little more time (stretch markers can't play audio backwards); the report says by how
-  much.
+  the change is eased over a little more time (stretch markers can't play audio backwards). An item that begins
+  at its file's first sample but should start a little later in the file starts there and catches up. The report
+  says by how much either was eased.
 - **Pitch and formant** can't be stretch markers: each item of that part gets a **new take**, made active, playing
   a file rendered for that item (timing, then pitch, then formant). The original take stays on the item: switch
   takes to compare. The files go in a `hypnomix aligned` folder next to the project.

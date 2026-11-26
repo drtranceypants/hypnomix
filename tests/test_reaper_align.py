@@ -116,6 +116,24 @@ class StretchMarkers(unittest.TestCase):
         want = before + np.array([0.0, 0.03, 0.0])
         self.assertTrue(np.allclose(now, want, atol=0.0006), (now, want))
 
+    def test_steep_moves_and_the_file_start_are_eased_not_skipped(self):
+        from hypnomix.project.model import Clip, Take
+        from hypnomix.studio import alignset_rpp as A
+        c = Clip(name="c", start=0.0, length=4.0, takes=[Take(name="t", path=Path("/x.wav"))])
+        plan = np.zeros(500)
+        plan[:100] = -2.0                     # pushed 20 ms later at the start of a file that starts at 0
+        plan[150:200] = 5.0                   # opposite moves across a 50 ms gap: the plan plays the gap backwards
+        plan[205:250] = -5.0
+        marks, err = A.item_markers(c, plan)
+        self.assertIsNotNone(marks)
+        self.assertEqual(marks[0], (0.0, 0.0))                            # starts at the file's first sample
+        self.assertTrue(all(b[0] > a[0] and b[1] > a[1] for a, b in zip(marks, marks[1:])))
+        self.assertGreater(A.item_markers.eased, 10)
+        tk = c.take
+        tk.stretch = marks
+        self.assertAlmostEqual(float(A.take_source(c, np.array([0.5]))[0]), 0.48, delta=0.001)   # the plan, caught up
+        self.assertAlmostEqual(float(A.take_source(c, np.array([1.7]))[0]), 1.75, delta=0.001)
+
     def test_nothing_to_move_writes_nothing(self):
         from hypnomix.project.model import Clip, Take
         from hypnomix.studio import alignset_rpp as A

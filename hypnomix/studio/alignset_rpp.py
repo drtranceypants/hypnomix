@@ -55,7 +55,8 @@ def take_source(c, take_t):
 def item_markers(c, plan, tol_s=0.0005):
     """New stretch markers [(take time, source seconds)] so the item plays, at timeline time T, the audio it played
     at T + plan(T) before. Returns (marks, max error ms), ([], 0) when nothing moves, or (None, why). Where the plan
-    would play audio backwards (or slower than MIN_SPEED), it is eased; item_markers.eased says by how many ms."""
+    would play audio backwards (or slower than MIN_SPEED), or from before the start of the file, it is eased;
+    item_markers.eased says by how many ms."""
     from hypnomix.studio.alignset import rdp
     from hypnomix.project.model import Take, stretch_map
     tk = c.take
@@ -69,22 +70,29 @@ def item_markers(c, plan, tol_s=0.0005):
     tau = (T - c.start) * tk.rate
     src = take_source(c, (T + o - c.start) * tk.rate)
     eased = 0.0
-    if np.any(np.diff(src) <= MIN_SPEED * np.diff(tau)):
+    d = MIN_SPEED * np.diff(take_source(c, tau))      # MIN_SPEED of the item's current (unmoved) speed
+    if np.any(np.diff(src) <= d):
         # the move changes faster than audio can be slowed down (two neighbouring words moved opposite ways across a
         # short gap: the plan would play the gap backwards). Stretch markers can't, so the change is eased over a
         # little more time there: the mean of the closest forward and backward paths that never go slower than
         # MIN_SPEED (both follow the plan wherever it is not too steep)
         want = src.copy()
         fwd, bwd = src.copy(), src.copy()
-        d = MIN_SPEED * np.diff(tau)
         for i in range(1, len(fwd)):
             fwd[i] = max(fwd[i], fwd[i - 1] + d[i - 1])
         for i in range(len(bwd) - 2, -1, -1):
             bwd[i] = min(bwd[i], bwd[i + 1] - d[i])
         src = (fwd + bwd) / 2
         eased = float(np.abs(src - want).max() / tk.rate * 1000)
-    if src[0] < -1e-6:
-        return None, "the move would play from before the start of its file: left as it was"
+    if src[0] < 0:
+        # the plan wants audio from before the file starts (an item that begins at the file's first sample, pulled
+        # later): start at the first sample and catch up with the plan, never slower than MIN_SPEED (the same rule
+        # as Live's alignset)
+        want = src.copy()
+        src[0] = 0.0
+        for i in range(1, len(src)):
+            src[i] = max(src[i], src[i - 1] + d[i - 1])
+        eased = max(eased, float(np.abs(src - want).max() / tk.rate * 1000))
     keep = rdp(tau, src, tol_s * tk.rate)
     marks = [(float(a), float(b)) for a, b in zip(tau[keep], src[keep])]
     if any(b[0] <= a[0] + 1e-6 or b[1] <= a[1] + 1e-6 for a, b in zip(marks, marks[1:])):
@@ -287,7 +295,7 @@ def run(a, defaults=None):
         md.append(f"- {t.name}: {row['markers']} stretch markers on {row['items']} item(s)"
                   + (f"; within {row['max_err_ms']:.2f} ms of the plan" if row.get("max_err_ms") is not None else "")
                   + (f" (eased by up to {row['eased_ms']:.0f} ms where the move changed faster than audio can be "
-                     "slowed: between words)" if row.get("eased_ms") else "")
+                     "slowed, or wanted audio from before the file starts)" if row.get("eased_ms") else "")
                   + ("; skipped: " + "; ".join(row["skipped"]) if row["skipped"] else ""))
         result["parts"].append(row)
     if pf:
