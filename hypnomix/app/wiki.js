@@ -64,6 +64,64 @@ try { W.id = localStorage.getItem('hypnomix.wiki') || null; } catch (e) {}
   document.head.appendChild(st);
 })();
 
+// A second layer behind wiki.py's sanitiser (the same lists: a test compares them). An article's HTML is parsed in an
+// inert document and rebuilt from this allow-list before it goes into the page, whichever copy it came from: other tags
+// and attributes are dropped, scripts, frames, forms and drawings are removed with their content, and a link or file
+// must be http, https, mailto, a relative path or a #fragment.
+const CLEAN_TAGS = 'a abbr article aside audio b blockquote br caption cite code col colgroup dd del details dfn div dl dt em figcaption figure footer h1 h2 h3 h4 h5 h6 header hr i img ins kbd li mark ol p pre q s samp section small source span strong sub summary sup table tbody td tfoot th thead tr track u ul var video wbr'.split(' ');
+const CLEAN_DROP = 'script style iframe frame frameset object embed applet param link meta base form input button select option optgroup textarea label fieldset legend datalist output svg math template noscript title head xmp noembed noframes plaintext canvas dialog portal map area'.split(' ');
+const CLEAN_ATTRS = {
+  '*': 'class id title aria-label aria-hidden data-src data-label',
+  a: 'href target rel data-jump data-wiki', img: 'src alt width height loading',
+  video: 'src poster controls loop muted playsinline preload width height', audio: 'src controls loop muted preload',
+  source: 'src type', track: 'src kind srclang label default', td: 'colspan rowspan', th: 'colspan rowspan scope',
+  col: 'span', colgroup: 'span', ol: 'start reversed', details: 'open'};
+const CLEAN_CLASSES = 'arrow c demo-cap demo-loops devdemo devloop devpanel extra faq flow frame-paper group groups lead no note note-box o p pair paper prose shot shots step steps sub sub-h tablewrap tagline term walkthrough warn-box'.split(' ');
+const CLEAN_BOOL = ['controls', 'loop', 'muted', 'playsinline', 'default', 'reversed', 'open'];
+const CLEAN_URL = ['href', 'src', 'poster', 'data-src'];
+const CLEAN_VALUE = {
+  id: /^s-[\w-]{1,100}$/, title: /^[\s\S]{1,300}$/, alt: /^[\s\S]{0,300}$/, 'aria-label': /^[\s\S]{1,300}$/,
+  'aria-hidden': /^(true|false)$/, 'data-jump': /^[\w.:-]{1,120}$/, 'data-wiki': /^[\w.:-]{1,120}$/, 'data-label': /^[\s\S]{1,200}$/,
+  target: /^_blank$/, width: /^\d{1,5}(px|%)?$/, height: /^\d{1,5}(px|%)?$/, loading: /^(lazy|eager)$/, preload: /^(none|metadata|auto)$/,
+  type: /^[\w.+-]+\/[\w.+-]+(; ?codecs="?[\w.,+ -]+"?)?$/, kind: /^(subtitles|captions|descriptions|chapters|metadata)$/,
+  label: /^[\s\S]{1,100}$/, srclang: /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$/, scope: /^(row|col|rowgroup|colgroup)$/,
+  colspan: /^\d{1,4}$/, rowspan: /^\d{1,4}$/, span: /^\d{1,4}$/, start: /^\d{1,6}$/};
+function wikiUrl(v) {      // -> the link or file name, or null when it is not http, https, mailto, a relative path or a #fragment
+  v = String(v == null ? '' : v).replace(/[\x00-\x1f\x7f]/g, '').trim();
+  if (!v || v.length > 2000) return null;
+  const probe = v.replace(/[\s\x00-\x20\x7f-\x9f\u200b-\u200f\u2028\u2029\u2060\ufeff]/g, '').toLowerCase();
+  if (/^(\/\/|\\|\/\\)/.test(probe)) return null;
+  const m = probe.match(/^([a-z][a-z0-9+.-]*):/);
+  return m && !['http', 'https', 'mailto'].includes(m[1]) ? null : v;
+}
+function wikiClean(html) {
+  const doc = new DOMParser().parseFromString('<!doctype html><html><body>' + String(html == null ? '' : html) + '</body></html>', 'text/html');
+  const walk = node => {
+    for (const el of [...node.childNodes]) {
+      if (el.nodeType === 3) continue;
+      if (el.nodeType !== 1) { el.remove(); continue; }                      // comments and the like
+      const tag = el.localName;
+      if (el.namespaceURI !== 'http://www.w3.org/1999/xhtml' || CLEAN_DROP.includes(tag)) { el.remove(); continue; }
+      walk(el);
+      if (!CLEAN_TAGS.includes(tag)) { el.replaceWith(...el.childNodes); continue; }
+      const ok = ((CLEAN_ATTRS['*'] + ' ' + (CLEAN_ATTRS[tag] || '')).split(' '));
+      for (const at of [...el.attributes]) {
+        const n = at.name.toLowerCase(), v = at.value.trim();
+        let keep = ok.includes(n);
+        if (keep && CLEAN_BOOL.includes(n)) el.setAttribute(n, '');
+        else if (keep && CLEAN_URL.includes(n)) { const u = wikiUrl(v); if (u === null) keep = false; else el.setAttribute(n, u); }
+        else if (keep && n === 'rel') { const t = v.toLowerCase().split(/\s+/).filter(x => ['noopener', 'noreferrer', 'nofollow'].includes(x)); if (t.length) el.setAttribute(n, t.join(' ')); else keep = false; }
+        else if (keep && n === 'class') { const t = v.split(/\s+/).filter(x => CLEAN_CLASSES.includes(x)); if (t.length) el.setAttribute(n, t.join(' ')); else keep = false; }
+        else if (keep) keep = !!CLEAN_VALUE[n] && CLEAN_VALUE[n].test(v);
+        if (!keep) el.removeAttribute(at.name);
+      }
+      if (tag === 'a' && el.getAttribute('target') === '_blank' && !el.hasAttribute('rel')) el.setAttribute('rel', 'noopener');
+    }
+  };
+  walk(doc.body);
+  return doc.body.innerHTML;
+}
+
 async function wikiLoad() { W.index = await get('/api/wiki'); return W.index; }
 function wikiAbout() {
   const a = W.index.about, when = a.updated ? new Date(a.updated * 1000).toLocaleDateString() : '';
@@ -124,10 +182,10 @@ async function wikiView() {
   return `<div class="wiki"><aside><input type="search" id="wq" placeholder="Search the wiki" value="${esc(W.q)}" aria-label="Search the wiki">
     <nav id="wlist">${wikiList()}</nav></aside>
     <article class="wa">${wikiBanner()}${a.no ? `<div class="no">${esc(a.no)}</div>` : ''}<h1>${esc(a.title)}${a.editable ? ` <button id="wedit" style="font-size:.8rem;vertical-align:middle">Edit</button>` : ''}</h1>
-      ${a.sub ? `<p class="sub">${esc(a.sub)}</p>` : ''}${a.html}
+      ${a.sub ? `<p class="sub">${esc(a.sub)}</p>` : ''}${wikiClean(a.html)}
       <div class="next">${prev ? `<button data-wart="${esc(prev.id)}">← ${esc(prev.title)}</button>` : '<span></span>'}
         ${next ? `<button data-wart="${esc(next.id)}">${esc(next.title)} →</button>` : ''}</div>
-      <div class="foot"><span>On the website: <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.url)}</a></span></div>
+      <div class="foot"><span>On the website: ${/^https:\/\//.test(a.url) ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.url)}</a>` : esc(a.url)}</span></div>
       ${wikiAbout()}</article></div>`;
 }
 

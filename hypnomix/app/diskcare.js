@@ -68,7 +68,10 @@ function popup() {
     <div id="dcplan">${P ? planHtml(P.plan) : ''}</div>
     <div class="small" style="margin-top:8px">Never removed: audio a Live, REAPER or Ardour project uses, findings and reports, anything changed in the last hour. <a href="#" data-wiki="diskcare">How it works</a></div>`;
   document.body.appendChild(p);
-  const save = async body => { D = await post('/api/diskcare/settings', body); draw(); };
+  const save = async body => {
+    try { D = await post('/api/diskcare/settings', body); draw(); }
+    catch (e) { alert(e.message); p.remove(); popup(); }       // a folder that can't be watched: say why, show the saved list
+  };
   p.querySelector('#dcauto').addEventListener('change', e => save({ auto: e.target.checked }));
   p.querySelector('#dcwavs').addEventListener('change', e => save({ wavs: e.target.checked }));
   p.querySelector('#dcwatch').addEventListener('change', e => save({ watch: e.target.value }));

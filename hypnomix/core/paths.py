@@ -20,3 +20,63 @@ def out_at(custom, *parts):
         p.mkdir(parents=True, exist_ok=True)
         return p
     return out(*parts)
+
+
+def _is_home_or_above(d):
+    """True for the user's home folder and every folder above it: those are never ours to tighten."""
+    try:
+        home, d = Path.home().resolve(), Path(d).resolve()
+    except (OSError, RuntimeError):
+        return False
+    return d == home or d in home.parents
+
+
+def private_dir(d):
+    """Make the folder if needed, readable by you alone (0700). Folders that have to be made on the way are 0700 too,
+    made from the top down. A folder that already exists and is yours is tightened to 0700; one owned by someone else
+    is left as it is, and so is your home folder or anything above it (a mistaken setting never locks you out).
+    Everything that reads these folders (the REAPER bridge, the Max devices, the app) runs as you, so nothing else
+    needs access. No effect on Windows."""
+    d = Path(d).expanduser()
+    if not d.is_absolute():
+        d = Path.cwd() / d
+    for p in reversed([d, *d.parents]):                          # top down, so each made folder gets 0700 itself
+        if not p.exists():
+            try:
+                p.mkdir(mode=0o755 if _is_home_or_above(p) else 0o700)
+            except FileExistsError:
+                pass
+    try:
+        if (hasattr(os, "getuid") and d.stat().st_uid == os.getuid() and (d.stat().st_mode & 0o777) != 0o700
+                and not _is_home_or_above(d)):
+            d.chmod(0o700)
+    except OSError:
+        pass
+    return d
+
+
+def write_private(path, text, mode=0o600, encoding=None):
+    """Write a small file of hypnomix's own (state, settings, helper scripts) readable by you alone (default 0600), in
+    a folder made private by private_dir(). An existing file with a looser mode is tightened too."""
+    p = Path(path).expanduser()
+    private_dir(p.parent)
+    fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    try:
+        with os.fdopen(fd, "w", encoding=encoding) as f:
+            f.write(text)
+    finally:
+        try:
+            os.chmod(p, mode)
+        except OSError:
+            pass
+    return p
+
+
+def tighten_home():
+    """At app start: the hypnomix home folder (~/.hypnomix) is made 0700 if it exists and is yours. Not done when
+    HYPNOMIX_HOME points at your own home folder or above it, so a mistaken setting never locks you out of something."""
+    try:
+        if HOME.is_dir() and HOME != Path.home() and HOME not in Path.home().parents:
+            private_dir(HOME)
+    except OSError:
+        pass

@@ -18,6 +18,7 @@ teaser: Renders, A/B clips and caches add up to gigabytes. While the app is open
 <tr><td><b>Old WAVs on the Desktop and in Downloads</b> (only if you switch it on)</td><td>older than 30 days. They're <i>moved</i> to <code>~/.hypnomix/holding</code>, not deleted, and deleted from there 14 days later. <b>Restore moved WAVs</b> puts the last batch back.</td></tr>
 </table></div>
 <p>The app's own scans are always included. If you scan into your project folders (from the command line or an AI agent), add those folders under <b>Also look in</b> and their hypnomix scans and <code>hypnomix-out</code> folders are looked after too.</p>
+<p>Because Disk care deletes old audio inside the folders you add, each one must be a folder that exists inside your home folder. It can't be your whole home folder, the top of the disk, <code>Library</code>, or all of <code>Music</code>, <code>Desktop</code> or <code>Documents</code> at once: pick the folder your projects are in (a folder inside those is fine). If you add one that isn't allowed, the app says why and keeps the list as it was. A folder you saved with an earlier version that isn't allowed now (a project folder on an external drive, say) is no longer cleaned, but it is still read, so the audio its projects use stays protected.</p>
 <h3>What it never touches</h3>
 <ul>
 <li>Any audio file a Live, REAPER or Ardour project on this computer uses. Projects under Music, Documents, Desktop and the folders you added are read to check.</li>

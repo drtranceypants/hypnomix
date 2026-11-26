@@ -54,22 +54,60 @@ def _num(body, k, lo, hi):
     return v
 
 
-def argv_for(body, set_path, out_dir):
-    """The alignset command line for a device request (also used by the tests)."""
-    guide = str(body["guide"]).strip()
-    parts = [str(p).strip() for p in body.get("parts") or [] if str(p).strip() and str(p).strip() != guide]
+def set_file(raw):
+    """A Live set or REAPER project that exists: the same check as Choose set. -> its full path, or ValueError."""
+    try:
+        f = Path(str(raw)).expanduser().resolve()          # follow links first: what it points at must be a set
+        ok = f.is_file() and f.suffix.lower() in (".als", ".rpp")
+    except (OSError, RuntimeError, ValueError):
+        ok = False
+    if not ok:
+        raise ValueError(f"not a Live set or REAPER project: {raw} (save the set in Live first, then Choose set)")
+    return str(f)
+
+
+def _name(v, what):
+    v = str(v).strip()
+    if v.startswith("-"):                  # it would be read as an option of the command, not as a track name
+        raise ValueError(f"{what} \"{v}\": a track name cannot start with a dash here; rename the track")
+    return v
+
+
+def _secs(v):
+    t = float(v)
+    if not 0 <= t <= 36000:
+        raise ValueError("a time must be between 0 and 36000 seconds")
+    return t
+
+
+def track_names(body):
+    """-> (guide, parts) from a request: track names (text), the parts without the guide. ValueError when they are not."""
+    raw_parts = body.get("parts") or []
+    if not isinstance(body.get("guide"), str) or not isinstance(raw_parts, list) or not all(isinstance(p, str) for p in raw_parts):
+        raise ValueError("guide is a track name and parts is a list of track names")
+    guide = _name(body["guide"], "guide")
+    parts = [_name(p, "part") for p in raw_parts if p.strip() and p.strip() != guide]
     if not guide or not parts:
         raise ValueError("choose a guide track and at least one part")
+    return guide, parts
+
+
+def argv_for(body, set_path, out_dir):
+    """The alignset command line for a device request (also used by the tests)."""
+    guide, parts = track_names(body)
     argv = ["alignset", str(set_path), "--guide", guide, "--parts", *parts, "--out", str(out_dir),
             "--json", str(Path(out_dir) / "result.json")]
     s0, s1 = _num(body, "start_s", 0, 36000), _num(body, "end_s", 0, 36000)
     if s0 is not None and s1 is not None and s1 > s0 + 0.5:
         argv += ["--range", f"{s0:.3f}-{s1:.3f}"]
-    for a, b in body.get("protect") or []:
-        if float(b) > float(a):
-            argv += ["--protect", f"{float(a):.3f}-{float(b):.3f}"]
-    for t in body.get("sync") or []:
-        argv += ["--sync", f"{float(t):.3f}"]
+    try:
+        for a, b in body.get("protect") or []:
+            if _secs(b) > _secs(a):
+                argv += ["--protect", f"{float(a):.3f}-{float(b):.3f}"]
+        for t in body.get("sync") or []:
+            argv += ["--sync", f"{_secs(t):.3f}"]
+    except TypeError:
+        raise ValueError("protect is a list of [start, end] seconds and sync a list of seconds")
     from hypnomix.studio import alignopts as AO
     if body.get("preset"):
         if body["preset"] not in AO.PRESETS:
@@ -86,7 +124,7 @@ def argv_for(body, set_path, out_dir):
     if body.get("no_chord_check"):          # only when the person asked; otherwise alignset checks the chords
         argv.append("--no-chord-check")     # against the set's own instrument tracks
     if body.get("chords"):
-        argv += ["--chords", str(body["chords"])]
+        argv += ["--chords", _name(body["chords"], "chords")]
     if body.get("takes"):                   # REAPER: timing as new takes instead of stretch markers
         argv.append("--takes")
     if body.get("apply"):
@@ -113,11 +151,16 @@ def handle_post(path, body):
         sp = body.get("set") or ALIGN["set"]
         if not sp:
             return 400, {"error": "choose the Live set first (save it in Live, then Choose set)"}
-        ALIGN["set"] = sp
-        out = _work()
+        try:
+            sp = set_file(sp)                      # a path in the request gets the same check as Choose set
+            out = _work()
+            argv = argv_for(body, sp, out)
+            guide, parts = track_names(body)
+        except (ValueError, KeyError, TypeError) as e:
+            return 400, {"error": str(e) or "bad request"}
+        ALIGN["set"] = sp                          # remembered only once the whole request is good
         (out / "result.json").unlink(missing_ok=True)
-        argv = argv_for(body, sp, out)
-        ALIGN["job"] = S.run_job("align", f"Align: {', '.join(body.get('parts') or [])} to {body.get('guide')}",
+        ALIGN["job"] = S.run_job("align", f"Align: {', '.join(parts)} to {guide}",
                                  [("Aligning (writes a new " + ("project" if str(sp).lower().endswith(".rpp") else "set") + ", changes nothing in yours)", argv, True)], out)
         ALIGN["result"] = None
         return 200, {"job": ALIGN["job"], "argv": argv}

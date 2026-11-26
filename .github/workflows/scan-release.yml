@@ -41,18 +41,23 @@ permissions:
 
 env:
   FILES: "Hypnomix-mac-arm64.dmg Hypnomix-mac-intel.dmg Hypnomix-windows-setup.exe"
+  TAG: ${{ inputs.tag }}      # used only as "$TAG" / $env:TAG, never written into a script, and checked first in every job
 
 jobs:
   defender:
     runs-on: windows-latest
     steps:
+      - name: Check the tag
+        shell: pwsh
+        run: |
+          if ($env:TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?\z') { throw "The tag must be a release version like v0.1.1." }
       - name: Download the installers
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           New-Item -ItemType Directory dist | Out-Null
-          foreach ($f in $env:FILES.Split(" ")) { gh release download "${{ inputs.tag }}" -R "${{ github.repository }}" -p $f -D dist }
+          foreach ($f in $env:FILES.Split(" ")) { gh release download $env:TAG -R $env:GITHUB_REPOSITORY -p $f -D dist }
       - name: Microsoft Defender scan
         shell: pwsh
         run: |
@@ -72,19 +77,23 @@ jobs:
           }
           $out | Set-Content defender.md
           if ($bad) { exit 1 }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with: { name: defender, path: defender.md }
 
   clamav:
     runs-on: ubuntu-latest
     steps:
+      - name: Check the tag
+        run: |
+          re='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+          [[ "$TAG" =~ $re ]] || { echo "::error::The tag must be a release version like v0.1.1."; exit 1; }
       - name: Download the installers
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir dist
-          for f in $FILES; do gh release download "${{ inputs.tag }}" -R "${{ github.repository }}" -p "$f" -D dist; done
+          for f in $FILES; do gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$f" -D dist; done
           (cd dist && sha256sum *) | tee sums.txt
       - name: ClamAV scan
         run: |
@@ -101,7 +110,7 @@ jobs:
           done
           echo >> clamav.md; echo '```' >> clamav.md; cat sums.txt >> clamav.md; echo '```' >> clamav.md
           exit $bad
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with: { name: clamav, path: clamav.md }
 
@@ -110,13 +119,17 @@ jobs:
     env:
       HAS_VT: ${{ secrets.VT_API_KEY != '' }}
     steps:
+      - name: Check the tag
+        run: |
+          re='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+          [[ "$TAG" =~ $re ]] || { echo "::error::The tag must be a release version like v0.1.1."; exit 1; }
       - name: Download the installers
         if: env.HAS_VT == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir dist
-          for f in $FILES; do gh release download "${{ inputs.tag }}" -R "${{ github.repository }}" -p "$f" -D dist; done
+          for f in $FILES; do gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$f" -D dist; done
       - name: Upload to VirusTotal and wait for every engine's verdict
         env:
           VT: ${{ secrets.VT_API_KEY }}
@@ -124,12 +137,16 @@ jobs:
           {
             echo "## VirusTotal"; echo
             if [ "$HAS_VT" != "true" ]; then
-              echo "Not run: the repository has no VT_API_KEY secret yet."
+              echo "Not run: the repository has no VT_API_KEY secret yet. A release is not published without a VirusTotal verdict."
             else
               echo "About 70 antivirus engines, plus sandbox behaviour where VirusTotal runs one. Each link shows the latest verdicts:"; echo
             fi
           } > virustotal.md
-          [ "$HAS_VT" = "true" ] || exit 0
+          if [ "$HAS_VT" != "true" ]; then
+            cat virustotal.md
+            echo "::error::VirusTotal did not run: the repository has no VT_API_KEY secret. Add it (Settings, Secrets and variables, Actions), then run scan-release again for this tag. A release is not published without a VirusTotal verdict."
+            exit 1
+          fi
           api() { sleep 16; curl -sS -H "x-apikey: $VT" "$@"; }      # the free API allows 4 requests a minute
           bad=0
           for f in dist/*; do
@@ -154,7 +171,7 @@ jobs:
           done
           cat virustotal.md
           exit $bad
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with: { name: virustotal, path: virustotal.md }
 
@@ -163,23 +180,27 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Check the tag
+        run: |
+          re='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'
+          [[ "$TAG" =~ $re ]] || { echo "::error::The tag must be a release version like v0.1.1."; exit 1; }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with: { merge-multiple: true }
       - name: Attach SECURITY-SCAN.md and a summary to the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           {
-            echo "# Security scan: hypnomix ${{ inputs.tag }}"; echo
-            echo "Scanned $(date -u +'%Y-%m-%d %H:%M UTC') by GitHub Actions run ${{ github.run_id }} (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."; echo
+            echo "# Security scan: hypnomix $TAG"; echo
+            echo "Scanned $(date -u +'%Y-%m-%d %H:%M UTC') by GitHub Actions run $GITHUB_RUN_ID ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."; echo
             for f in defender.md clamav.md virustotal.md; do [ -f "$f" ] && { cat "$f"; echo; } || echo "_${f%.md}: no report (the job failed; see the run)_"; done
           } > SECURITY-SCAN.md
           cat SECURITY-SCAN.md
-          gh release upload "${{ inputs.tag }}" SECURITY-SCAN.md -R "${{ github.repository }}" --clobber
-          notes=$(gh release view "${{ inputs.tag }}" -R "${{ github.repository }}" --json body --jq .body | sed '/^## Security scan/,$d')
+          gh release upload "$TAG" SECURITY-SCAN.md -R "$GITHUB_REPOSITORY" --clobber
+          notes=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body --jq .body | sed '/^## Security scan/,$d')
           summary=$(grep -E '^- `|^Not run|^Engine|^ClamAV' SECURITY-SCAN.md | head -20)
           printf '%s\n\n## Security scan\n\n%s\n\nFull report: SECURITY-SCAN.md (attached).\n' "$notes" "$summary" > notes.md
-          gh release edit "${{ inputs.tag }}" -R "${{ github.repository }}" --notes-file notes.md
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file notes.md
       - name: Publish the release, only if every scan is clean
         if: inputs.publish
         env:
@@ -187,9 +208,14 @@ jobs:
           RESULTS: "defender=${{ needs.defender.result }} clamav=${{ needs.clamav.result }} virustotal=${{ needs.virustotal.result }}"
         run: |
           echo "$RESULTS"
+          # VirusTotal has to have actually run and returned a verdict for every installer: no key means no publish
+          if [ ! -f virustotal.md ] || grep -q '^Not run' virustotal.md; then
+            echo "::error::Not published: VirusTotal did not run (the repository has no VT_API_KEY secret, or its report is missing). The release stays a draft, so nobody gets it. Add the VT_API_KEY secret, then run scan-release again for this tag with publish ticked."
+            exit 1
+          fi
           if [ "$RESULTS" != "defender=success clamav=success virustotal=success" ]; then
             echo "::error::Not published: a scan flagged an installer or did not finish ($RESULTS). The release stays a draft, so nobody gets it. See SECURITY-SCAN.md on the draft; usually the fix is to cut the next version."
             exit 1
           fi
-          gh release edit "${{ inputs.tag }}" -R "${{ github.repository }}" --draft=false --latest
-          echo "Published ${{ inputs.tag }} as the latest release."
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false --latest
+          echo "Published $TAG as the latest release."

@@ -28,10 +28,10 @@ function chatItem(it) {
   if (it.kind === 'tool') return `<div class="act">↳ ${esc(it.text)}</div>`;
   if (it.kind === 'ask') {
     const live = C.pending && C.pending.id === it.id, hear = it.what === 'listen';
-    return `<div class="card ask"><b>${hear ? 'The assistant wants to listen to your song:' : 'The assistant wants to change your project:'}</b><pre>${esc(it.text)}</pre>
+    return `<div class="card ask"><b>${hear ? 'The assistant wants to listen to your song:' : 'The assistant wants to run this command:'}</b><pre>${esc(it.text)}</pre>
       ${live ? `<button class="primary" data-chatok="${esc(it.id)}">${hear ? 'Send it' : 'Run it'}</button> <button data-chatno="${esc(it.id)}">Don't</button>
         <span class="note">${hear ? 'Only this song leaves the computer, as a reduced mono copy, and only to the listening service you chose.'
-          : 'It writes a new set next to the original. Save and close the set in Live first.'}</span>`
+          : 'If it writes a set, it is a new one next to the original. Save and close the set in Live first.'}</span>`
         : `<span class="note">${it.answer === 'ran' ? (hear ? 'You sent it.' : 'You ran it.') : (hear ? 'Not sent.' : 'Not run.')}</span>`}</div>`;
   }
   if (it.kind === 'error') return `<div class="msg err">${esc(it.text)}</div>`;
@@ -61,6 +61,7 @@ function chatSettings() {
     ${needsBase ? `<div class="row"><label for="cbase">Address</label><input type="text" id="cbase" value="${esc(p.base_url)}" placeholder="https://…/v1"></div>` : ''}
     <div class="row"><label for="cmodel">Model</label><input type="text" id="cmodel" list="cmodels" value="${esc(p.model)}" placeholder="choose with List models">
       <datalist id="cmodels">${C.models.map(m => `<option value="${esc(m)}">`).join('')}</datalist><button id="clist">List models</button></div>
+    ${C.notice ? `<div class="row note"><b>${esc(C.notice)}</b></div>` : ''}
     <div class="row"><button class="primary" id="csave">Save</button> <span class="note" id="csaved"></span></div></div>`;
 }
 
@@ -141,6 +142,7 @@ async function chatSaveSettings() {
   if ($('#cbase')) body.base_url = $('#cbase').value;
   if ($('#ckey') && $('#ckey').value) body.key = $('#ckey').value;
   C.settings = await post('/api/chat/settings', body);
+  C.notice = C.settings.notice || '';
 }
 
 document.addEventListener('click', async e => {
@@ -152,7 +154,7 @@ document.addEventListener('click', async e => {
       else { const r = await post('/api/chat/listen-models', {}); C.lmodels = r.models || []; chatDraw(); } }
     else if (b.id === 'clopen') { C.lopen = true; chatDraw(); }
     else if (b.id === 'clforget') { C.settings = await post('/api/chat/settings', {listen_provider: $('#clisten').value, listen_forget: true}); chatDraw(); }
-    else if (b.id === 'csave') { await chatSaveSettings(); C.open = false; chatDraw(); }
+    else if (b.id === 'csave') { await chatSaveSettings(); C.open = !!C.notice; chatDraw(); }
     else if (b.id === 'copen') { C.open = true; chatDraw(); }
     else if (b.id === 'cforget') { C.settings = await post('/api/chat/settings', {provider: $('#cprov').value, forget: true}); chatDraw(); }
     else if (b.id === 'clist') { await chatSaveSettings(); const r = await post('/api/chat/models', {}); C.models = r.models || []; chatDraw();

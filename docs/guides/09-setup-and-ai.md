@@ -45,6 +45,21 @@ version in place and opens again. Your songs, settings and keys stay as they are
 - **Later** hides the banner until the next version.
 - Installed from the source? The banner shows the command instead: `git pull && uv pip install -e .`
 
+**What the update check does and doesn't protect against.** The app only accepts a release whose name is a plain
+version number, and only downloads from the project's own release page on github.com (a redirect must stay on
+GitHub's own servers, and anything else is refused). The installer's fingerprint must match the one published with
+the release; the app checks it again just before installing, and on a Mac the updater checks the new app is intact
+(`codesign --verify`) and says it is the version the release claimed, before it replaces the old one, and leaves the old one
+in place if not. The files must sit in that release's own download folder, so a release can't point at an older version's
+installer. If you use a proxy, the update check uses your computer's proxy settings like any other app. That protects you
+from a damaged download, and from a file on GitHub's download servers being swapped for another. It does **not**
+protect you from someone who controls the GitHub release itself: they could publish a bad installer and a matching
+fingerprint, because the installers aren't yet signed with a publisher key the app can check (the Mac check shows
+the app is whole, not who made it). If that matters to you, update from the source: `git pull`, after reading the
+changes.
+
+hypnomix's own settings and state files in `~/.hypnomix` (updates, setup, Disk care) can be read by you alone.
+
 ## The guided setup
 
 | step | what it asks |

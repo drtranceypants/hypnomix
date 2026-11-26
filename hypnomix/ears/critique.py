@@ -14,6 +14,8 @@ air above 8 kHz by ear), so it is told to take those from hypnomix's measurement
 
 Usage: hypnomix critique song.wav [--scan SCANDIR] [--measure song.json] [--profile PROFILE.md]
        [--question "is the vocal too far back in the chorus?"] [--provider gemini|openrouter] [--model M] [--out DIR]
+--profile and --measure take a plain .md, .json or .txt file (not a hidden file, not in a hidden folder, under 1 MB);
+--scan takes a hypnomix scan folder (one with findings.json or REVIEW.md): what they hold is sent to the service.
 Audio is billed at about 25 tokens per second: a 3½-minute song is about 5,000 tokens (around a cent on Flash).
 """
 import argparse, base64, json, os, subprocess, sys, tempfile, urllib.request, warnings
@@ -141,18 +143,65 @@ def estimate(path, provider, model):
 
 
 # ---------------------------------------------------------------- the listen itself
+MAX_CONTEXT_FILE = 1_000_000                # bytes: a profile or a measurement is a few KB
+
+
+def _same_file(a, b):
+    """The same file under another name (a hard link)."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _context_file(path, what):
+    """Text of a profile / measurement file for the listener: a plain .md, .json or .txt file, not hidden and not
+    in a hidden folder (~/.hypnomix holds your keys), and not huge. Anything else is refused with a plain message,
+    because this text is sent to a cloud model."""
+    p = Path(path).expanduser()
+    shown = [p, p.resolve()]
+    if not p.is_file():
+        raise ValueError(f"{what}: {path} is not a file")
+    if any(x.suffix.lower() not in (".md", ".json", ".txt") for x in shown):
+        raise ValueError(f"{what} must be a .md, .json or .txt file: {p.name} is not")
+    if any(part.startswith(".") and part not in (".", "..") for x in shown for part in x.parts):
+        raise ValueError(f"{what}: {p.name} is hidden or in a hidden folder, so it is not sent to a cloud model; "
+                         "copy it to a normal folder first if you mean it")
+    if p.resolve() == CONF.expanduser().resolve() or _same_file(p, CONF):
+        raise ValueError(f"{what}: that file holds your saved keys")
+    if p.stat().st_size > MAX_CONTEXT_FILE:
+        raise ValueError(f"{what}: {p.name} is over {MAX_CONTEXT_FILE // 1_000_000} MB: use a smaller file")
+    with open(p, errors="replace") as fh:
+        return fh.read(6000)
+
+
+def _scan_review(scan):
+    """REVIEW.md of a scan folder, or None. The folder must look like a scan (findings.json or REVIEW.md in it)."""
+    d = Path(scan).expanduser()
+    if not d.is_dir() or not ((d / "findings.json").is_file() or (d / "REVIEW.md").is_file()):
+        raise ValueError(f"--scan: {scan} is not a hypnomix scan folder (it has no findings.json or REVIEW.md)")
+    rv = d / "REVIEW.md"
+    if not rv.is_file():
+        return None
+    if rv.resolve().parent != d.resolve() or rv.stat().st_size > MAX_CONTEXT_FILE:      # not a link out, not huge
+        raise ValueError(f"--scan: {rv} is not a plain REVIEW.md of that folder")
+    with open(rv, errors="replace") as fh:
+        return fh.read(10000)
+
+
 def context(scan=None, measure=None, profile=None):
     """hypnomix's own numbers and review, as text the model can lean on for what it can't hear."""
     parts = []
     if profile:
-        parts.append("The artist's own style profile (judge against THIS, not generic taste):\n" + Path(profile).read_text()[:6000])
+        parts.append("The artist's own style profile (judge against THIS, not generic taste):\n"
+                     + _context_file(profile, "--profile"))
     if measure:
-        parts.append("hypnomix measurements of this file (JSON):\n" + Path(measure).read_text()[:6000])
+        parts.append("hypnomix measurements of this file (JSON):\n" + _context_file(measure, "--measure"))
     if scan:
-        rv = Path(scan) / "REVIEW.md"
-        if rv.exists():
+        review = _scan_review(scan)
+        if review:
             parts.append("hypnomix's scan review of this song (what it already found; confirm, question or add to it):\n"
-                         + rv.read_text(errors="replace")[:10000])
+                         + review)
     return "\n\n".join(parts)
 
 

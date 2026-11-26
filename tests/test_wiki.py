@@ -346,5 +346,286 @@ class Organised(unittest.TestCase):
         self.assertEqual([a["id"] for a in W.organise(arts)], ["s", "t", "x"])
 
 
+class Harmless(unittest.TestCase):
+    """The articles are shown inside the app's own page, so every one is cleaned on its way to the browser."""
+
+    ATTACKS = [
+        '<img src=x onerror="fetch(\'/api/tool\',{method:\'POST\'})">',
+        '<IMG SRC=x OnErRoR=alert(1)>',
+        '<a href="javascript:alert(1)">x</a>', '<a href="JaVaScRiPt:alert(1)">x</a>',
+        '<a href=" \tjava\nscript:alert(1)">x</a>', '<a href="java&#x09;script:alert(1)">x</a>',
+        '<a href="&#106;avascript:alert(1)">x</a>', '<a href="javascript&colon;alert(1)">x</a>',
+        '<a href="data:text/html,<script>alert(1)</script>">x</a>', '<a href="vbscript:x">x</a>',
+        '<img src="data:image/svg+xml,<svg onload=alert(1)>">',
+        '<svg onload=alert(1)><p>in</p></svg>', '<svg><script>alert(1)</script></svg>',
+        '<svg><style><img src=x onerror=alert(1)></style></svg>', '<math><mi xlink:href="javascript:alert(1)">x</mi></math>',
+        '<script>alert(1)</script>', '<scr<script>ipt>alert(1)</scr</script>ipt>', '<script src=//evil.example/x.js></script>',
+        '<iframe src="javascript:alert(1)"></iframe>', '<iframe srcdoc="<script>alert(1)</script>"></iframe>',
+        '<object data="x.swf"></object>', '<embed src="x.swf">', '<link rel=stylesheet href=//evil.example/x.css>',
+        '<meta http-equiv="refresh" content="0;url=//evil.example">', '<base href="//evil.example/">',
+        '<form action="//evil.example"><input name=a><button>go</button></form>',
+        '<p style="background:url(javascript:alert(1))" onclick="alert(1)">t</p>', '<div onmouseover=alert(1)>t</div>',
+        '<video src=x onloadstart=alert(1) poster="javascript:alert(1)"></video>',
+        '<video><source src="javascript:alert(1)" onerror=alert(1)></video>',
+        '<details open ontoggle=alert(1)>x</details>', '<body onload=alert(1)>t</body>',
+        '<noscript><p title="</noscript><img src=x onerror=alert(1)>"></noscript>',
+        '<a href="//evil.example/x">x</a>', '<a href="/\\evil.example/x">x</a>',
+        '<b><i>unclosed <p onclick=alert(1)>', '<<img src=x onerror=alert(1)>', '<img src=x onerror=alert(1)//',
+        '<a data-upd="install" data-pick="source:set" data-wart="x">x</a>', '<tr class="cmd" data-tool="scan"><td>x</td></tr>',
+    ]
+    BAD = re.compile(r"on[a-z]+\s*=|javascript:|vbscript:|data:text|srcdoc|<script|<style|<iframe|<svg|<math|<object|<embed|<form|"
+                     r"<input|<link|<meta|<base|style\s*=|data-upd|data-pick|data-tool|//evil", re.I)
+
+    def test_attack_strings_lose_everything_dangerous(self):
+        for s in self.ATTACKS:
+            for wrapped in (s, "<p>before</p>" + s + "<p>after</p>", f'<div class="a">{s}</div>'):
+                out = wiki.sanitize_html(wrapped)
+                self.assertIsNone(self.BAD.search(out), (wrapped, out))
+            self.assertIsNone(self.BAD.search(wiki.sanitize_html(wiki.sanitize_html(s))), s)       # and cleaning twice is stable
+
+    def test_what_is_kept(self):
+        out = wiki.sanitize_html('<p class="lead" style="x" onclick="y">A <a href="https://example.com/a?b=1&amp;c=2" target="_blank">link</a> '
+                                 'and <a href="/wiki/#x">rel</a> <a href="#top" data-jump="s-top">jump</a> '
+                                 '<a href="mailto:a@b.example">mail</a></p><img src="/wiki/assets/a.png" alt="pic" width="400">'
+                                 '<video src="/wiki/assets/c.mp4" controls muted loop playsinline preload="metadata"></video>')
+        self.assertEqual(out, '<p class="lead">A <a href="https://example.com/a?b=1&amp;c=2" target="_blank" rel="noopener">link</a> '
+                              'and <a href="/wiki/#x">rel</a> <a href="#top" data-jump="s-top">jump</a> '
+                              '<a href="mailto:a@b.example">mail</a></p><img src="/wiki/assets/a.png" alt="pic" width="400">'
+                              '<video src="/wiki/assets/c.mp4" controls muted loop playsinline preload="metadata"></video>')
+        self.assertEqual(wiki.sanitize_html("<p>a &amp; b &lt;script&gt;alert(1)&lt;/script&gt;</p>"),
+                         "<p>a &amp; b &lt;script&gt;alert(1)&lt;/script&gt;</p>")                 # words are never turned into tags
+        self.assertEqual(wiki.sanitize_html("<div><p>open <b>bold"), "<div><p>open <b>bold</b></p></div>")
+        self.assertEqual(wiki.sanitize_html("<p>x</p><script>alert(1)</script>y"), "<p>x</p>y")
+        self.assertEqual(wiki.sanitize_html(None), "")
+
+    @staticmethod
+    def _shape(html):
+        """What an article says to the reader: its start tags with attributes, and its words."""
+        from html.parser import HTMLParser
+        tags, words = [], []
+
+        class P(HTMLParser):
+            def handle_starttag(s, tag, attrs):
+                tags.append((tag, tuple(sorted((k, v or "") for k, v in attrs))))
+
+            def handle_data(s, d):
+                words.append(d)
+        p = P(convert_charrefs=True)
+        p.feed(html)
+        p.close()
+        return tags, re.sub(r"\s+", " ", "".join(words)).strip()
+
+    def test_cleaning_loses_nothing_the_shipped_articles_need(self):
+        wiki._CACHE.clear()
+        arts = wiki.local()                               # the article files, guides, docs, skills, commands, teacher courses
+        self.assertGreater(len(arts), 40)
+        for a in arts:
+            before, after = self._shape(a["html"]), self._shape(wiki.sanitize_html(a["html"]))
+            self.assertEqual(before[0], after[0], f"a tag or attribute was lost in '{a['id']}'")
+            self.assertEqual(before[1], after[1], f"words were lost in '{a['id']}'")
+
+    def test_every_article_goes_through_the_cleaner(self):
+        poisoned = {"commit_time": 2_000_000_000, "assets": "x", "articles": [
+            {"id": "evil", "group": "Training", "title": "T", "html": '<p onclick="x">a</p><img src=x onerror=alert(1)><script>alert(1)</script>',
+             "url": "javascript:alert(1)", "file": "/etc/passwd"}, "not an article", {"no": "id"}, {"id": 5}]}
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(wiki, "HOME", Path(td)), \
+                mock.patch.object(wiki, "checkout", lambda: (None, 100, [])):
+            wiki._CACHE.clear()
+            wiki._LIVE.update(checked=time.time(), busy=False, error=None)
+            f = Path(td) / "wiki-live" / "articles.json"
+            f.parent.mkdir()
+            f.write_text(json.dumps(poisoned))
+            a = wiki.article("evil")
+            self.assertEqual(a["html"], '<p>a</p><img src="x">')
+            self.assertEqual(a["url"], wiki.SITE + "/wiki/#evil")
+            self.assertNotIn("file", a)
+            self.assertEqual([x["id"] for x in wiki.index()["articles"]], ["evil"])
+            self.assertEqual(wiki.live()["assets"], [])                                      # a string where a list belongs
+            f.write_text("[1, 2]")                                                           # not even the right shape
+            self.assertIsNone(wiki.live())
+            self.assertEqual(wiki.current()[1]["source"], "this computer")
+        wiki._CACHE.clear()
+        a = json.loads(wiki.handle_get("/api/wiki/article", {"id": wiki.local()[0]["id"]})[1])   # this computer's own copy, too
+        self.assertNotIn("<script", a["html"])
+
+    def test_the_browsers_second_layer_uses_the_same_lists(self):
+        js = (Path(wiki.__file__).with_name("wiki.js")).read_text()
+        lit = lambda name: re.search(r"const %s = '([^']*)'\.split\(' '\)" % name, js).group(1).split()
+        self.assertEqual(lit("CLEAN_TAGS"), wiki.CLEAN_TAGS)
+        self.assertEqual(lit("CLEAN_DROP"), wiki.CLEAN_DROP)
+        block = re.search(r"const CLEAN_ATTRS = \{(.*?)\};", js, re.S).group(1)
+        attrs = {k.strip("' "): v.split() for k, v in re.findall(r"('\*'|\w+): '([^']*)'", block)}
+        self.assertEqual(attrs, {k: v.split() for k, v in wiki.CLEAN_ATTRS.items()})
+        self.assertIn("wikiClean(a.html)", js)                                              # and it is what fills the page
+        self.assertEqual(set(re.search(r"const CLEAN_BOOL = \[(.*?)\]", js).group(1).replace("'", "").replace(" ", "").split(",")), wiki._BOOL)
+        self.assertEqual(lit("CLEAN_CLASSES"), wiki.CLEAN_CLASSES)
+
+    def test_an_article_cannot_reach_the_apps_own_click_handlers(self):
+        """The reviewer's case: <tr class="cmd" data-jump=...> in a poisoned article, clicked, posted with the page's token."""
+        out = wiki.sanitize_html('<table><tr class="cmd primary tab" data-jump="FIND-1" data-id="x" data-d="approve"><td>click</td></tr></table>'
+                                 '<div data-jump="s-a" data-wiki="x">d</div><p class="lead cmd">p</p><span class="primary">Install and restart</span>')
+        self.assertEqual(out, '<table><tr><td>click</td></tr></table><div>d</div><p class="lead">p</p><span>Install and restart</span>')
+        self.assertEqual(wiki.sanitize_html('<a href="#" data-jump="s-a" data-wiki="x" class="cmd">j</a>'),
+                         '<a href="#" data-jump="s-a" data-wiki="x">j</a>')                    # a link may still jump inside its article
+        from hypnomix.app import ui
+        self.assertIn("b.closest('.wa')", ui.PAGE)                                              # and the page's handler ignores anything inside one
+        for cls in ("cmd", "primary", "tab", "live", "brand", "spin", "card"):
+            self.assertNotIn(cls, wiki.CLEAN_CLASSES)
+        js = (Path(wiki.__file__).with_name("wiki.js")).read_text()
+        self.assertIn("a: 'href target rel data-jump data-wiki'", js)
+
+    def test_a_site_file_with_odd_numbers_or_shapes_never_takes_the_wiki_down(self):
+        """The reviewer's case: the literal JSON token Infinity made int() raise OverflowError and the routes dropped the connection."""
+        def good(**kw):
+            return json.dumps({"articles": [{"id": "a", "title": "t", "html": "<p>x</p>"}], **kw})
+        cases = ['{"commit_time": Infinity, "articles": [{"id":"a","title":"t","html":"<p>x</p>"}]}',
+                 '{"commit_time": -Infinity, "articles": [{"id":"a","title":"t","html":"<p>x</p>"}]}',
+                 '{"commit_time": NaN, "articles": [{"id":"a","title":"t","html":"<p>x</p>"}]}',
+                 '{"commit_time": 1e999, "articles": [{"id":"a","title":"t","html":"<p>x</p>"}]}',
+                 good(commit_time=10 ** 40), good(commit_time="9" * 5000), good(commit_time=[1]), good(commit_time={"a": 1}),
+                 good(commit_time=True), good(assets=[1, None, {"a": 1}]),
+                 '{"articles": [{"id":"a","html":"<p>x</p>"}, 5, null, [], {"id": []}], "commit_time": 1.5e300}']
+        for raw in cases:
+            with tempfile.TemporaryDirectory() as td, mock.patch.object(wiki, "HOME", Path(td)), \
+                    mock.patch.object(wiki, "checkout", lambda: (None, 100, [])):
+                wiki._CACHE.clear()
+                wiki._LIVE.update(checked=time.time(), busy=False, error=None)
+                f = Path(td) / "wiki-live" / "articles.json"
+                f.parent.mkdir()
+                f.write_text(raw)
+                lv = wiki.live()
+                self.assertIsNotNone(lv, raw[:60])
+                self.assertLessEqual(lv["commit_time"], 1, raw[:60])                          # never a time that could outrank this computer's copy
+                code, body, _ = wiki.handle_get("/api/wiki", {})
+                self.assertEqual(code, 200, raw[:60])
+                self.assertEqual(wiki.handle_get("/api/wiki/article", {"id": wiki.local()[0]["id"]})[0], 200)
+        self.assertEqual(wiki._int(float("inf")), 0)
+        self.assertEqual(wiki._int(float("nan")), 0)
+        self.assertEqual(wiki._int(3.9), 3)
+        with mock.patch.object(wiki, "_live_file", side_effect=RuntimeError("odd")):          # anything else that goes wrong: no copy, no crash
+            self.assertIsNone(wiki.live())
+            self.assertEqual(wiki.current()[1]["source"], "this computer")
+
+    def test_hostile_markup_costs_little_and_is_cleaned_once(self):
+        t = time.time()
+        for hostile in ("<" * 5_000_000, "<div>" * 1_000_000, "<table><tr><td>" * 333_333, "<!--" * 400_000, "&" * 3_000_000):
+            out = wiki.sanitize_html(hostile)
+            self.assertLessEqual(len(out), 5 * wiki.HTML_MAX, hostile[:12])                  # the output is bounded, too (a "<" becomes "&lt;")
+        self.assertLess(time.time() - t, 25)
+        deep = wiki.sanitize_html("<div>" * (wiki.MAX_DEPTH + 50) + "words")                 # nested past any real page: words only
+        self.assertNotIn("<div", deep)
+        self.assertIn("words", deep)
+        self.assertEqual(wiki.tidy({"id": "a", "html": "x" * (wiki.HTML_MAX + 5)})["html"], "x" * wiki.HTML_MAX)
+        wiki._CLEANED.clear()
+        with mock.patch.object(wiki, "sanitize_html", wraps=wiki.sanitize_html) as sh:
+            for _ in range(5):
+                self.assertEqual(wiki.cleaned("<p onclick=x>a</p>"), "<p>a</p>")
+            self.assertEqual(sh.call_count, 1)
+            wiki.cleaned("<p>b</p>")
+            self.assertEqual(sh.call_count, 2)
+        self.assertEqual(wiki.cleaned(None), "")
+
+    def test_no_dropped_tag_is_also_allowed(self):
+        self.assertEqual(set(wiki.CLEAN_TAGS) & set(wiki.CLEAN_DROP), set())
+        for t in ("script", "style", "iframe", "object", "embed", "link", "meta", "base", "form", "input", "svg", "math"):
+            self.assertIn(t, wiki.CLEAN_DROP)
+
+
+class Files(unittest.TestCase):
+    """Pictures and videos from the website: only kinds the app shows, size capped; what is kept is private."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.root = Path(self._td.name)
+        (self.root / "src" / "assets").mkdir(parents=True)
+        for n, b in (("p.png", b"\x89PNG"), ("x.html", b"<script>alert(1)</script>"), ("d.svg", b"<svg onload=alert(1)/>"),
+                     ("v.mp4", bytes(range(100)))):
+            (self.root / "src" / "assets" / n).write_bytes(b)
+        self.p = [mock.patch.object(wiki, "HERE", self.root / "src"), mock.patch.object(wiki, "HOME", self.root / "home")]
+        for x in self.p:
+            x.start()
+        wiki._LIVE.update(checked=time.time(), busy=False, error=None)
+
+    def tearDown(self):
+        for x in self.p:
+            x.stop()
+        self._td.cleanup()
+
+    def test_only_pictures_video_and_sound_are_served_as_what_they_are(self):
+        for name, ctype in (("p.png", "image/png"), ("v.mp4", "video/mp4")):
+            code, body, t, head = wiki.asset(name)
+            self.assertEqual((code, t), (200, ctype))
+            self.assertNotIn("Content-Disposition", head)
+        for name in ("x.html", "d.svg"):                           # a page or a drawing from the site never runs in the app
+            code, body, t, head = wiki.asset(name)
+            self.assertEqual((code, t, head["Content-Disposition"]), (200, "application/octet-stream", "attachment"))
+        self.assertEqual(wiki._kind("a.HTML"), None)
+        self.assertEqual(wiki._kind("a.WAV"), "audio/wav")
+        self.assertEqual(wiki.asset("v.mp4", "bytes=10-19")[1], bytes(range(10, 20)))              # ranges still work
+
+    class _Resp:
+        def __init__(self, data, length=None):
+            self.data, self.pos, self.headers = data, 0, {"Content-Length": str(len(data) if length is None else length)}
+
+        def read(self, n=-1):
+            n = len(self.data) - self.pos if n is None or n < 0 else n
+            out = self.data[self.pos:self.pos + n]
+            self.pos += len(out)
+            return out
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _site(self, assets):
+        (self.root / "home" / "wiki-live").mkdir(parents=True)
+        (self.root / "home" / "wiki-live" / "articles.json").write_text(json.dumps({"commit_time": 1, "articles": [], "assets": assets}))
+
+    def test_a_fetched_file_is_capped_and_kept_private(self):
+        self._site(["new.png", "huge.png", "liar.png", "page.html"])
+        with mock.patch.object(wiki, "ASSET_MAX", 1000), mock.patch("urllib.request.urlopen") as uo:
+            uo.return_value = self._Resp(b"x" * 500)
+            code, body, t, head = wiki.asset("new.png")
+            self.assertEqual((code, len(body), t), (200, 500, "image/png"))
+            self.assertEqual((self.root / "home" / "wiki-live" / "assets" / "new.png").stat().st_mode & 0o777, 0o600)
+            uo.return_value = self._Resp(b"x" * 2000, length=10)               # says it is small, is not
+            self.assertEqual(wiki.asset("liar.png")[0], 404)
+            uo.return_value = self._Resp(b"x" * 20, length=5000)               # says it is big
+            self.assertEqual(wiki.asset("huge.png")[0], 404)
+            uo.reset_mock()
+            self.assertEqual(wiki.asset("page.html")[0], 404)                   # a kind the app never shows is not even fetched
+            uo.assert_not_called()
+        left = [p.name for p in (self.root / "home" / "wiki-live" / "assets").iterdir()]
+        self.assertEqual(left, ["new.png"])                                     # nothing half-written is left behind
+
+    def test_settings_and_the_site_copy_are_private(self):
+        wiki.save_settings(live=True)
+        self.assertEqual((self.root / "home" / "wiki.json").stat().st_mode & 0o777, 0o600)
+        (self.root / "home" / "wiki.json").chmod(0o644)                         # a file from an older version
+        wiki.save_settings(live=False)
+        self.assertEqual((self.root / "home" / "wiki.json").stat().st_mode & 0o777, 0o600)
+        wiki.save_settings(live=True)
+        body = json.dumps({"commit_time": 5, "articles": [{"id": "a", "html": "<p>x</p>"}], "assets": []}).encode()
+        with mock.patch("urllib.request.urlopen", return_value=self._Resp(body)):
+            wiki._LIVE["checked"] = 0
+            wiki.refresh_live(force=True)
+            for _ in range(100):
+                if not wiki._LIVE["busy"]:
+                    break
+                time.sleep(0.05)
+        f = self.root / "home" / "wiki-live" / "articles.json"
+        self.assertEqual((f.stat().st_mode & 0o777, wiki._LIVE["error"]), (0o600, None))
+        big = b"{" + b" " * (wiki.LIVE_MAX + 10)                                # the list from the site is read up to a limit
+        with mock.patch("urllib.request.urlopen", return_value=self._Resp(big)):
+            wiki.refresh_live(force=True)
+            for _ in range(100):
+                if not wiki._LIVE["busy"]:
+                    break
+                time.sleep(0.05)
+        self.assertIn("larger", wiki._LIVE["error"] or "")
+
+
 if __name__ == "__main__":
     unittest.main()

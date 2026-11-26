@@ -24,7 +24,7 @@ It is a small web server on this computer only (127.0.0.1). Nothing is sent anyw
 in ~/Documents/Hypnomix (change with --home or HYPNOMIX_APP_HOME). Everything it does is a hypnomix command
 you could also type; the log shows each one.
 """
-import argparse, json, os, re, secrets, shlex, subprocess, sys, threading, time
+import argparse, json, os, re, secrets, shlex, socket, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -35,6 +35,9 @@ JOB = {"id": 0, "status": "idle", "log": [], "title": "", "kind": "", "dir": "",
 LIVE = {"seq": 0, "cmd": None, "seen": 0.0, "dir": "", "cursor": -1}
 PROBE = {"hub": None, "error": ""}    # the probe hub (UDP from HypnomixProbe devices in Live)
 AB = {"id": "", "state": "A", "since": 0.0, "last": 0.0, "match": True, "acc": {}, "skip": 0.6}
+MAX_BODY = 1_000_000                   # the largest request body taken (the biggest real one is a few kilobytes)
+IDLE_SECONDS = 60                      # a connection that sends nothing for this long is closed (nothing here streams)
+READ_SECONDS = 30                      # once a request starts, all of it (head and body) must arrive within this, however slowly it drips
 HIDDEN = {"app", "install"}            # not offered in the Tools tab (install asks questions; app is this)
 
 
@@ -334,7 +337,7 @@ def master_record(body, render=None):
         if hub:
             hub.begin("master")
         return {"path": MASTER["path"]}
-    path = body.get("path") or MASTER["path"]
+    path = bounce_file(body["path"]) if body.get("path") else MASTER["path"]     # a path from outside must be our own recording
     if not path:
         d = work() / "bounces"
         d.mkdir(parents=True, exist_ok=True)
@@ -398,6 +401,18 @@ def probe_hub():
 
 
 # ---------------------------------------------------------------- native file dialogs (macOS)
+def bounce_file(raw):
+    """The recording named in a request: a .wav that is already in this app's own bounces folder, or ValueError."""
+    root = (work() / "bounces").resolve()
+    try:
+        f = Path(str(raw)).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        raise ValueError("not a recording this app made: use the path the app gave when the recording started")
+    if f.suffix.lower() != ".wav" or root not in f.parents or not f.is_file():
+        raise ValueError("not a recording this app made: use the path the app gave when the recording started")
+    return str(f)
+
+
 def pick(kind):
     if sys.platform != "darwin":
         return ""
@@ -409,6 +424,18 @@ def pick(kind):
 
 
 # ---------------------------------------------------------------- http
+def security_headers(nonce=None):
+    """On every response: the page cannot be framed, nothing it loads can run unless it is ours, nothing is sniffed."""
+    site = "https://hypnomix.bradfieldenterprises.org"
+    csp = "; ".join([
+        "default-src 'self'", "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'", "form-action 'self'",
+        "connect-src 'self'", f"img-src 'self' data: {site}", f"media-src 'self' blob: {site}",
+        "style-src 'self' 'unsafe-inline'", "script-src 'self'" + (f" 'nonce-{nonce}'" if nonce else ""),
+        "script-src-attr 'none'"])             # no inline handlers (onclick=...) anywhere in the app: listeners only
+    return {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer",
+            "Cross-Origin-Resource-Policy": "same-origin", "Content-Security-Policy": csp}
+
+
 def make_handler(port):
     from hypnomix.app.ui import PAGE
     origins = {f"http://127.0.0.1:{port}", f"http://localhost:{port}"}
@@ -419,31 +446,82 @@ def make_handler(port):
         def log_message(self, *a):
             pass
 
-        def send(self, code, body, ctype="application/json", extra=None):
+        timeout = IDLE_SECONDS
+        _timer = _nonce = None
+
+        def handle_one_request(self):
+            """Wait up to IDLE_SECONDS for a request to begin; once it has, READ_SECONDS to receive all of it (a client
+            that sends one byte a minute holds nothing for long). The clock stops when the request has been read, so a
+            slow answer (a file dialog, a job starting) is never cut."""
+            try:
+                if not self.rfile.peek(1):                      # the client hung up, or sent nothing for IDLE_SECONDS
+                    self.close_connection = True
+                    return
+                self._timer = threading.Timer(READ_SECONDS, self._give_up)
+                self._timer.daemon = True
+                self._timer.start()
+                super().handle_one_request()
+            except (OSError, ValueError):                       # a reset, or the clock ran out mid-request
+                self.close_connection = True
+            finally:
+                self._disarm()
+
+        def _give_up(self):
+            try:
+                self.connection.shutdown(socket.SHUT_RDWR)      # whatever is blocked reading the request wakes up and ends
+            except OSError:
+                pass
+
+        def _disarm(self):
+            t, self._timer = self._timer, None
+            if t:
+                t.cancel()
+
+        def end_headers(self):
+            for k, v in security_headers(self._nonce).items():     # on everything: pages, data, refusals and the library's own error pages
+                self.send_header(k, v)
+            self._nonce = None
+            super().end_headers()
+
+        def send(self, code, body, ctype="application/json", extra=None, nonce=None, close=False):
             if not isinstance(body, (bytes, bytearray)):
                 body = json.dumps(body, default=str).encode()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            self._nonce = nonce
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
+            if close:                         # an early refusal: the request body was not read, so end the connection
+                self.send_header("Connection", "close")
+                self.close_connection = True
             self.end_headers()
             self.wfile.write(body)
 
-        def local(self):
+        def local(self, page=False):
+            """Is this a request from this computer's own browser tab, or a client that sends no browser headers?
+            A browser says where a request came from (Sec-Fetch-Site): from another website it may only open the page."""
             host = (self.headers.get("Host") or "").split(":")[0]
             o = self.headers.get("Origin")
-            return host in ("127.0.0.1", "localhost") and (o is None or o in origins)
+            if host not in ("127.0.0.1", "localhost") or not (o is None or o in origins):
+                return False
+            if self.headers.get("Sec-Fetch-Site") == "cross-site":
+                return bool(page) and self.headers.get("Sec-Fetch-Mode") == "navigate" \
+                    and self.headers.get("Sec-Fetch-Dest") in (None, "document")
+            return True
 
         def do_GET(self):
             u = urlparse(self.path)
             q = {k: v[0] for k, v in parse_qs(u.query).items()}
-            if not self.local():
-                return self.send(403, {"error": "this computer only"})
+            self._disarm()                                       # a GET has no body: the request has arrived
+            if not self.local(page=u.path == "/"):
+                return self.send(403, {"error": "this computer only"}, close=True)
             try:
                 if u.path == "/":
-                    return self.send(200, PAGE.replace("__TOKEN__", TOKEN).encode(), "text/html; charset=utf-8")
+                    nonce = secrets.token_urlsafe(16)               # the page's one inline script carries this; nothing else may run
+                    html = PAGE.replace("__TOKEN__", TOKEN).replace("<script>", f'<script nonce="{nonce}">')
+                    return self.send(200, html.encode(), "text/html; charset=utf-8", nonce=nonce)
                 if u.path == "/api/state":
                     from hypnomix.workflow import prefs as P
                     from hypnomix import cli
@@ -549,9 +627,26 @@ def make_handler(port):
         def do_POST(self):
             u = urlparse(self.path)
             if not self.local():
-                return self.send(403, {"error": "this computer only"})
+                return self.send(403, {"error": "this computer only"}, close=True)
+            cl = self.headers.get("Content-Length")
+            cl = "0" if cl is None else cl.strip()                 # no header: no body; a blank one is not a number
+            if self.headers.get("Transfer-Encoding"):
+                return self.send(400, {"error": "bad request: send the body with a Content-Length (chunked bodies are not taken)"}, close=True)
+            if cl.startswith("-") and cl[1:].isascii() and cl[1:].isdigit():
+                return self.send(400, {"error": "bad request: Content-Length is negative"}, close=True)
+            if not (cl.isascii() and cl.isdigit()):
+                return self.send(400, {"error": "bad request: Content-Length is not a number"}, close=True)
+            n = int(cl) if len(cl) < 19 else MAX_BODY + 1
+            if n > MAX_BODY:
+                return self.send(413, {"error": f"that request is too large (the limit is {MAX_BODY // 1000} KB)"}, close=True)
+            raw = self.rfile.read(n) if n else b""
+            self._disarm()                                       # the whole request has arrived (or the clock ended it: below)
+            if len(raw) < n:
+                return self.send(400, {"error": "bad request: the body ended early"}, close=True)
             try:
-                body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 200000)) or b"{}")
+                body = json.loads(raw or b"{}")
+                if not isinstance(body, dict):
+                    raise ValueError("not an object")
             except ValueError:
                 return self.send(400, {"error": "bad request"})
             try:
