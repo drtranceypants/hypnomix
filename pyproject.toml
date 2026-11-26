@@ -43,6 +43,7 @@ packages = ["hypnomix"]
 [tool.hatch.build.targets.wheel.force-include]
 "docs/guides" = "hypnomix/app/wiki/guides"
 "skills" = "hypnomix/app/wiki/skills"
+"agents" = "hypnomix/app/wiki/agents"
 # and so are the documents in docs/ (listed one by one: docs/launch/ holds drafts that must not ship)
 "README.md" = "hypnomix/app/wiki/docs/README.md"
 "GUIDE.md" = "hypnomix/app/wiki/docs/GUIDE.md"

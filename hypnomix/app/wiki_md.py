@@ -152,6 +152,8 @@ def src_of(path):
         return p.name
     if p.name == "SKILL.md":
         return f"skills/{p.parent.name}/SKILL.md"
+    if p.parent.name == "agents":
+        return f"agents/{p.name}"
     if p.parent.name == "guides":
         return f"docs/guides/{p.name}"
     return f"docs/{p.name}"
@@ -175,7 +177,7 @@ def doc_article(path, taken=()):
             "url": f"{SITE}/wiki/#{aid}", "file": str(Path(path).resolve()), "src": src_of(path)}
 
 
-SKILLS_GROUP = "Skills"
+SKILLS_GROUP = "Skills and agents"
 
 
 def skill_article(path, taken=()):
@@ -187,6 +189,21 @@ def skill_article(path, taken=()):
     a.update(id=aid, group=SKILLS_GROUP, sub=meta.get("description", ""), url=a["url"].rsplit("#", 1)[0] + "#" + aid,
              teaser=meta.get("teaser", "") or meta.get("description", ""))
     return a
+
+
+def agent_article(path, taken=()):
+    """A Claude Code subagent (agents/<name>.md) -> an article: what it is for, which tools it may use, its brief."""
+    meta, text = front(Path(path).read_text())
+    name = meta.get("name") or Path(path).stem
+    aid = f"agent-{name}"
+    tools = meta.get("tools", "")
+    body = (f'<p class="note-box">A subagent: Claude Code starts it for one job and it reports back.'
+            + (f" Tools it may use: <b>{html.escape(tools)}</b>." if tools else "") + "</p>\n" + to_html(text))
+    plain = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", body))).strip()
+    from hypnomix.app.wiki import SITE
+    return {"id": aid, "group": SKILLS_GROUP, "title": f"Subagent: {name}", "sub": meta.get("description", ""),
+            "no": src_of(path), "teaser": meta.get("teaser", "") or meta.get("description", ""), "html": body,
+            "text": plain, "url": f"{SITE}/wiki/#{aid}", "file": str(Path(path).resolve()), "src": src_of(path)}
 
 
 def link_files(arts):

@@ -225,11 +225,20 @@ class WikiTest(unittest.TestCase):
         wiki._CACHE.clear()
         k = next(a for a in wiki.local() if a["id"] == "skill-mix-engineer")
         self.assertEqual((k["group"], k["title"], k["no"], k["src"]),
-                         ("Skills", "Mix engineer", "skills/mix-engineer/SKILL.md", "skills/mix-engineer/SKILL.md"))
+                         ("Skills and agents", "Mix engineer", "skills/mix-engineer/SKILL.md", "skills/mix-engineer/SKILL.md"))
         self.assertEqual(k["sub"], "Turn stems into a song. Use when someone hands over stems.")
         self.assertEqual(k["teaser"], k["sub"])
         self.assertEqual(k["url"], wiki.SITE + "/wiki/#skill-mix-engineer")
         self.assertIn("<p class=\"lead\">Steps.", k["html"])
+        ag = self.src / "agents"
+        ag.mkdir()
+        (ag / "hypnomix-scanner.md").write_text("---\nname: hypnomix-scanner\ndescription: Runs one scan group.\ntools: Bash, Read\n---\n\nYou run one part.\n")
+        wiki._CACHE.clear()
+        arts = wiki.local()
+        self.assertEqual([a["id"] for a in arts if a["group"] == "Skills and agents"], ["skill-mix-engineer", "agent-hypnomix-scanner"])
+        g = arts[[a["id"] for a in arts].index("agent-hypnomix-scanner")]
+        self.assertEqual((g["title"], g["sub"], g["src"]), ("Subagent: hypnomix-scanner", "Runs one scan group.", "agents/hypnomix-scanner.md"))
+        self.assertIn("Tools it may use: <b>Bash, Read</b>", g["html"])
 
     def test_links_between_files(self):
         arts = [{"id": "app-doc", "src": "docs/APP.md", "html": ""},
@@ -247,6 +256,7 @@ class WikiTest(unittest.TestCase):
         root = Path(wiki.__file__).resolve().parents[2]
         toml = (root / "pyproject.toml").read_text()
         self.assertIn('"skills" = "hypnomix/app/wiki/skills"', toml)
+        self.assertIn('"agents" = "hypnomix/app/wiki/agents"', toml)
         for n in wiki_md.ROOT_FILES:
             self.assertIn(f'"{n}" = "hypnomix/app/wiki/docs/{n}"', toml)
         for f in sorted((root / "docs").glob("[A-Z]*.md")):

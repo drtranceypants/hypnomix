@@ -120,6 +120,15 @@ def skill_files(root=None):
     return []
 
 
+def agent_files(root=None):
+    """The Claude Code subagents: agents/*.md in a checkout, or the copy bundled with an installed hypnomix."""
+    root = Path(root) if root else HERE
+    for d in (root.resolve().parents[2] / "agents", root / "agents"):
+        if d.is_dir():
+            return sorted(d.glob("*.md"))
+    return []
+
+
 def guide_files(root=None):
     d = guides_dir(root)
     return sorted(f for f in d.glob("[0-9][0-9]-*.md") if not f.name.startswith("99")) if d else []
@@ -131,7 +140,7 @@ def local(root=None):
     files = sorted((root / "articles").glob("*.html"))
     guides = guide_files(root)
     docs = doc_files(root)
-    skills = skill_files(root)
+    skills = skill_files(root) + agent_files(root)
     cli = Path(__file__).resolve().parents[1] / "cli.py"
     key = (str(root), tuple((str(f), f.stat().st_mtime) for f in files + guides + docs + skills
                             + ([cli] if cli.exists() else [])))
@@ -148,7 +157,7 @@ def local(root=None):
             ds.append(d)
         sk = []
         for f in skills:
-            k = wiki_md.skill_article(f, taken)
+            k = (wiki_md.skill_article if f.name == "SKILL.md" else wiki_md.agent_article)(f, taken)
             taken.add(k["id"])
             sk.append(k)
         at = next((i for i, a in enumerate(arts) if a["group"] in ("Reference", "FAQ")), len(arts))
@@ -185,6 +194,8 @@ def sources(top):
         out += [n for n in ROOT_FILES if (Path(top) / n).exists()]
     if (Path(top) / "skills").is_dir():
         out.append("skills/*/SKILL.md")
+    if (Path(top) / "agents").is_dir():
+        out.append("agents/*.md")
     return out
 
 
