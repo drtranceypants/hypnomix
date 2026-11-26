@@ -1,0 +1,28 @@
+<!--
+title: Check the files before you start
+sub: preflight · mixed rates, stems that do not line up, fake stereo, missing files, names that will not travel · report first
+group: How-to
+teaser: Point it at a folder of stems or at a Live set, REAPER project or Ardour session. It reads every audio file and tells you what is wrong before any work begins: mixed sample rates or bit depths, stems of different length or that start apart, exact duplicates, stereo that is really mono, silent or clipped files, lossy sources, missing files, names other systems refuse.
+-->
+<div class="prose paper">
+      <p>Half of "my mix sounds wrong" is a file problem: one stem at 48 kHz in a 44.1 kHz session, a stem exported a second late, a vocal that is really an mp3, a file the project cannot find. <code>preflight</code> checks all of that first. It only reads.</p>
+    </div>
+    <div class="term" data-label="preflight"><pre><span class="p">$</span> hypnomix preflight "Song stems/"
+<span class="p">$</span> hypnomix preflight "Song.rpp"                <span class="c"># or Song.als, Song.ardour, an Ardour session folder</span>
+<span class="p">$</span> hypnomix preflight "Song stems/" --plan   <span class="c"># the same findings, in a scan folder for the normal review</span></pre></div>
+    <p class="lead">For a folder it reads every audio file in it (<code>--recursive</code> for the folders inside). For a set or project it reads every source file the project plays, through the shared project model, so Live, REAPER and Ardour work the same way.</p>
+    <h3 class="sub-h">What it looks for</h3>
+    <ul>
+      <li><b>Sample rate and bit depth</b> that differ from the rest, and which files are the odd ones out (with no clear majority it says so).</li>
+      <li><b>Length and start</b> (folders): stems of one song that differ in length (<code>--length-tolerance</code>), or whose sound arrives ahead of or behind the others (found by lining up their loudness shapes; <code>--max-lag</code> sets how far it looks). Stems that play different parts match each other weakly, so it only speaks when the match is good and clearly better than lined up: a near-perfect match is a high finding, a good one is "check by ear". On a steady rhythm it names the nearest lag and says it may be a whole number of beats off. A project's clips are placed by position, so they are not compared.</li>
+      <li><b>Exact duplicates</b>: two files with identical audio under different names.</li>
+      <li><b>Fake stereo</b> (left equals right, judged against the file's own peak, so a very quiet stereo file is not called mono), a stereo file with one empty channel, and a list of the mono files.</li>
+      <li><b>Silent or nearly silent</b> files, <b>DC offset</b>, and files that are <b>already clipped</b>.</li>
+      <li><b>Lossy sources</b> (mp3, aac and friends) in a project.</li>
+      <li><b>Missing or offline files</b>, with the tracks that need them.</li>
+      <li><b>Names that will not survive another system</b>: characters Windows refuses, reserved names, a trailing space or dot, names that differ only by capitals, very long names and paths.</li>
+    </ul>
+    <p>Each is a finding with what to do. Nothing is renamed, moved, converted or deleted: it tells you which file and what to change. The report is <b>PREFLIGHT.md</b>; the exit code is 1 when something high turns up (a missing file, a stem that starts apart, heavy clipping), so a script can stop on it.</p>
+    <h3 class="sub-h">With --plan</h3>
+    <p>Every finding goes into a scan folder and through the usual review. The three that <code>prep</code> already repairs are planned as <code>prep</code> steps: DC offset (<code>rumble</code>), flat-topped peaks (<code>declip</code>) and fake stereo (<code>mono</code>); <code>fix --approved</code> writes only the approved ones as new files (<code>prep</code> also puts its usual short fades on the ends of those files). Mixed rates, bit depths and lengths are made uniform by <code>hypnomix prep FOLDER --plan</code> (its format step); the rest, such as re-exporting a stem or finding a file, are yours to do.</p>
+    <p><b>Measured, not heard.</b> A file it calls silent may be an empty track on purpose: say so and skip it. Run it before <code>scan</code>; the scan then works on files that are fit to be scanned. See also <code>refs</code> (missing files in a Live set only).</p>

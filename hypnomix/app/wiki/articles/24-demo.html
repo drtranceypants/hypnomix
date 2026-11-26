@@ -1,0 +1,32 @@
+<!--
+title: Try it on a demo song
+sub: demo · a 40-second song with six labelled problems, to learn the whole loop on nothing of your own
+group: How-to
+teaser: One command writes a short synthetic song (drums, bass, keys, a sung-like lead and a harmony) with six problems put in on purpose: a click, a level jump, hiss, clipped peaks, a harmony that drifts off pitch and drums that fall behind. Scan it, hear each fix, approve two and apply them, on a song that cannot be hurt.
+-->
+<div class="prose paper">
+      <p>The loop is scan, hear, decide, apply. It is easier to learn on something you cannot damage. <code>demo</code> makes a song of about 40 seconds (96 BPM, A minor) from scratch: nothing is downloaded, nothing is shipped, and the same seed always gives the same audio. It is synthetic and sounds like it; the point is the workflow.</p>
+    </div>
+    <div class="term" data-label="demo"><pre><span class="p">$</span> hypnomix demo --kind reaper
+<span class="c"># → …/Hypnomix Demo Song/Hypnomix Demo Song.rpp, the stems in Audio/, and DEMO.md</span>
+<span class="p">$</span> hypnomix scan "…/Hypnomix Demo Song.rpp" --key "A minor"
+<span class="p">$</span> hypnomix ab "&lt;the scan folder&gt;"
+<span class="p">$</span> hypnomix fix "&lt;the scan folder&gt;" --decide clips-1=approve,rec-2=approve
+<span class="p">$</span> hypnomix fix "&lt;the scan folder&gt;" --approved --out "…/Hypnomix Demo Song (fixed).rpp"</pre></div>
+    <p class="lead">The ids are in the scan's <code>REVIEW.md</code>: those two are the click fade and the de-hiss. Approve what you like and the original project and files stay as they are; the fixes are new files and a new project.</p>
+    <h3 class="sub-h">The six problems</h3>
+    <div class="tablewrap"><table>
+      <tr><th>#</th><th>what is wrong</th><th>where</th><th>what finds it</th></tr>
+      <tr><td>1</td><td>a click: the keys' two takes meet with no fade</td><td>0:14.2, Keys</td><td><code>scan</code> (clips), <code>clicks</code></td></tr>
+      <tr><td>2</td><td>a level jump: the lead's second take is 7 dB louder, joined in a held note</td><td>0:27, Lead Vocal</td><td><code>scan</code> (clips)</td></tr>
+      <tr><td>3</td><td>hiss, steady, heard in the pauses</td><td>all of Harmony</td><td><code>scan</code> (recordings), fixed by <code>dehiss</code></td></tr>
+      <tr><td>4</td><td>clipped peaks: the bass recorded too hot</td><td>bars 7 and 8, Bass</td><td><code>scan</code> (recordings), <code>prep</code> declip</td></tr>
+      <tr><td>5</td><td>a harmony that drifts sharp, up to 45 cents</td><td>from 0:20, Harmony</td><td><code>scan</code> (vocals), <code>tune</code></td></tr>
+      <tr><td>6</td><td>hits that drift late, 20 ms up to 65 ms</td><td>bars 9 to 14, Drums</td><td><code>scan</code> (timing)</td></tr>
+    </table></div>
+    <h3 class="sub-h">Two kinds</h3>
+    <ul>
+      <li><code>--kind folder</code> (the default) writes the stems as WAV files in a new folder, as you would export them from any DAW. The comps are flattened, so the click and the level jump are already in the audio: a <code>scan</code> of the folder finds the hiss and the clipping, and <code>clicks</code> lists the click.</li>
+      <li><code>--kind reaper</code> also writes a REAPER project that plays them, with the two comps as separate items, so <code>scan</code> sees all six. REAPER does not need to be open; the project loads and round-trips through hypnomix's own reader.</li>
+    </ul>
+    <p>There is no Live set kind yet: a set written from scratch has not been opened in Live, so it is left out until it has. <b>DEMO.md</b> in the new folder lists each problem with its time and the command that finds it, and a folder that already exists is never reused. Your real work is never involved: everything is made in a new folder you choose with <code>--out</code>.</p>
