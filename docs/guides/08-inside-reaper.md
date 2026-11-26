@@ -95,6 +95,7 @@ Everything you approved goes into **one new project** next to the original:
 | a fade ducking a word | that fade made 10 ms long |
 | track name | the track renamed |
 | track order | the tracks reordered; folders keep their tracks, and every send still comes from the same track |
+| vocal stack | where the parts swap tracks, each item moved to the track for its pitch (lowest part on the lowest track), its volume changed by the fader difference so it plays at the same level; items on lane tracks, under automation, or that would overlap another item are listed for you instead |
 | vocal tuning | each take file pitch-corrected into a new file in `Tuned/`, added to its items as a **new take** and made active |
 
 Your comp is never replaced by a rendered copy. A tuned vocal is a second take on each of your own items, so
@@ -170,7 +171,6 @@ plug-in by name or number).
 
 ## Not yet in REAPER
 
-- Moving vocal-stack items so the lowest harmony sits on the lowest track (Live only for now; the track order is done).
 - Timing nudges for out-of-time hits, sidechain and ducking checks on plug-ins, and the probe devices (Live only).
 - Where a stretch marker squeezes or stretches a segment, hypnomix's own render reads it at a slightly different
   pitch than REAPER plays it (REAPER keeps the pitch). The timing is exact.

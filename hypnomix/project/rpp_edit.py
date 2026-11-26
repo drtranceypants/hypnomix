@@ -253,6 +253,22 @@ def reorder(project, order):
     project.tracks = new
 
 
+def move_item(src, clip, dst, gain_db=0.0):
+    """Move one item (with all its takes and take envelopes) from track src to track dst, kept in time order, its
+    item volume changed by gain_db (the fader difference, so it plays at the same level in the mix)."""
+    item = clip.native
+    src.native.children.remove(item)
+    after = next((k for k, c in enumerate(dst.native.children) if isinstance(c, rpp.Chunk) and c.name == "ITEM"
+                  and float(c.get("POSITION", default=0)) > clip.start), None)
+    dst.native.add(item, at=after)
+    item.parent = dst.native
+    if abs(gain_db) > 1e-9:
+        item_volume(clip, gain_db)
+    src.clips.remove(clip)
+    dst.clips.append(clip)
+    dst.clips.sort(key=lambda c: c.start)
+
+
 def rename(track, name):
     track.native.set("NAME", name)
     track.name = name
@@ -284,8 +300,9 @@ def save(project, out):
     return rpp.save(project.native, out)
 
 
-def check(src, out, trims=False):
-    """Structure check of a written project against the original: [errors]. With trims=True (approved edge fixes),
+def check(src, out, trims=False, moved=()):
+    """Structure check of a written project against the original: [errors]. `moved`: IGUIDs of items an approved
+    vocal-stack fix moved to another track (each must exist once, unshifted). With trims=True (approved edge fixes),
     an item may start or end up to 0.5 s differently as long as its audio stays exactly where it was. It must parse, keep every track (found
     by its REAPER GUID, so renamed and reordered tracks are still matched), its folder, every item (position,
     length), and only add takes; and the chunks must balance."""
@@ -301,6 +318,22 @@ def check(src, out, trims=False):
     by_b = {gid(t): t for t in b.tracks if gid(t)}
     pairs = [(x, by_b.get(gid(x)) if gid(x) else (b.tracks[x.index] if x.index < len(b.tracks) else None))
              for x in a.tracks]
+    moved = {g for g in moved if g}
+    iid = lambda c: c.native.get("IGUID") if c.native is not None else None
+    if moved:                                        # approved vocal-stack moves: each moved item must exist once,
+        where = {}                                   # in the same place, on some track of the new project
+        for t in b.tracks:
+            for d in t.clips:
+                if iid(d) in moved:
+                    where.setdefault(iid(d), []).append(d)
+        for x in a.tracks:
+            for c in x.clips:
+                if iid(c) in moved:
+                    got = where.get(iid(c), [])
+                    if len(got) != 1 or abs(got[0].start - c.start) > 1e-6 or abs(got[0].length - c.length) > 1e-6:
+                        errs.append(f"{x.name}: a moved item at {c.start:.3f} s is missing, doubled or shifted")
+        for t in a.tracks + b.tracks:
+            t.clips = [c for c in t.clips if iid(c) not in moved]
     for x, y in pairs:
         if y is None:
             errs.append(f"{x.name}: not found in the new project")
@@ -310,6 +343,8 @@ def check(src, out, trims=False):
             errs.append(f"{y.name}: its folder changed")
         if len(x.clips) != len(y.clips):
             errs.append(f"{y.name}: item count changed ({len(x.clips)} → {len(y.clips)})")
+        elif {iid(c) for c in x.clips} - {None} != {iid(d) for d in y.clips} - {None}:
+            errs.append(f"{y.name}: holds different items than before (moved without approval)")
         for c, d in zip(x.clips, y.clips):
             if abs(c.start - d.start) > 1e-6 or abs(c.length - d.length) > 1e-6:
                 # an approved edge fix trims an item: its audio stays where it was (position - offset/rate kept)

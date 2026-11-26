@@ -344,7 +344,8 @@ hypnomix reaper start && hypnomix chain master "Song mix.wav" --reaper --verify
 ```
 
 `fix` writes fades, volume rides, word-edge fixes, track names and order into one new `.rpp`, and tuned vocals as
-new takes on the person's own items. Not yet for REAPER: timing nudges, vocal-stack item moves, sidechain checks.
+new takes on the person's own items. Vocal stacks: where harmony parts swap tracks, each item moves to the track for its pitch (same level in the
+mix). Not yet for REAPER: timing nudges, sidechain checks.
 Details: `docs/guides/08-inside-reaper.md`.
 
 ## Other DAWs

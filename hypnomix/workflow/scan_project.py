@@ -179,6 +179,93 @@ def name_rows(p, R):
     return rows, parent
 
 
+def stack_moves(p, orow, min_overlap=0.3):
+    """Vocal stacks in a REAPER project: where two or more vocal parts of one folder sing at once, the lowest part at
+    that moment belongs on the stack's lowest track, the next on the next one up (Live's `order`, on the model).
+    An item moves only when that is safe; otherwise it is listed with the reason:
+      - a track uses fixed or free item lanes (moving an item off its lanes would scramble the comp)
+      - a track's own automation runs over the item (it would play under the other track's rides)
+      - the target track would hold two items at once after all the moves
+    A moved item takes its takes and take envelopes with it, and its volume is changed by the difference between
+    the two faders, so it plays at the same level in the mix."""
+    from hypnomix.core import pitch
+    from hypnomix.project.rpp_edit import locator
+    from hypnomix.session.order import assign_stack
+    byidx = {t.index: t for t in p.tracks}
+    stacks = {}
+    for r in orow:
+        t = byidx[int(r["id"])]
+        if r["kind"] == "Audio" and r["cat"] == 3 and t.on:
+            stacks.setdefault(r["parent"], []).append(t)
+    out = []
+    for gid, members in stacks.items():
+        if len(members) < 2:
+            continue
+        clips = []
+        for t in members:
+            for k, c in enumerate(t.clips):
+                if c.muted or c.kind != "audio" or c.path is None or not Path(c.path).exists():
+                    continue
+                s0 = (c.take.section[0] if c.take.section else 0.0) + c.take.offset
+                clips.append(dict(key=(t.index, k), track=t.index, start=c.start, end=c.end, c=c, t=t,
+                                  s0=s0, s1=s0 + c.length * c.take.rate))
+        if not clips:
+            continue
+        with ThreadPoolExecutor(6) as ex:
+            hzs = list(ex.map(lambda d: pitch.median_between(str(d["c"].path), d["s0"], d["s1"], fmin=70, fmax=1000)
+                              if d["s1"] > d["s0"] else None, clips))
+        for d, hz in zip(clips, hzs):
+            d["hz"] = hz
+        tp = {}
+        for t in members:
+            hs = [d["hz"] for d in clips if d["track"] == t.index and d["hz"]]
+            tp[t.index] = float(np.median(hs)) if hs else 0.0
+        order_ = sorted(tp, key=lambda i: tp[i])
+        want = assign_stack(clips, order_, min_overlap)
+
+        def lanes(t):
+            return t.native.get("FREEMODE", cast=int, default=0) != 0
+
+        def automated(t, a0, a1):
+            return any(a0 <= x <= a1 for pts in t.envelopes.values() for x, _ in pts if len(pts) > 1)
+        cand, hand = [], []
+        for d in clips:
+            if d["key"] not in want:
+                continue
+            src, dst = d["t"], byidx[want[d["key"]]]
+            why = None
+            if lanes(src) or lanes(dst):
+                why = f"'{src.name if lanes(src) else dst.name}' uses item lanes: moving the item would scramble the comp"
+            elif automated(src, d["start"], d["end"]) or automated(dst, d["start"], d["end"]):
+                why = "a track is automated there"
+            gain = 20 * math.log10(src.volume / dst.volume) if src.volume > 0 and dst.volume > 0 else 0.0
+            m = dict(item=locator(src, d["c"]), src=src.index, dst=dst.index, src_name=src.name, dst_name=dst.name,
+                     start=d["start"] * p.tempo / 60, end=d["end"] * p.tempo / 60, hz=d["hz"], key=d["key"],
+                     gain_db=round(gain, 3), clip=d["key"],
+                     chains_differ=[x.name for x in src.devices if x.on] != [x.name for x in dst.devices if x.on])
+            if why:
+                m["why"] = why
+                hand.append(m)
+            else:
+                cand.append(m)
+        span = {d["key"]: (d["start"], d["end"]) for d in clips}
+        while True:                                  # the FINAL layout must have no overlaps on any track
+            where = {d["key"]: d["track"] for d in clips}
+            for m in cand:
+                where[m["key"]] = m["dst"]
+            bad = next((m for m in cand if any(k != m["key"] and where[k] == m["dst"] and
+                                                min(span[m["key"]][1], span[k][1]) - max(span[m["key"]][0], span[k][0]) > 1e-6
+                                                for k in where)), None)
+            if bad is None:
+                break
+            cand.remove(bad)
+            bad["why"] = f"'{bad['dst_name']}' would have two items at once there"
+            hand.append(bad)
+        if cand or hand:
+            out.append(dict(group=gid, tracks=[byidx[i].name for i in order_], moves=cand, hand=hand))
+    return out
+
+
 def g_names(p, R, od, a):
     """Default-named tracks ("Track 3", "Audio 2") named by how they sound, and the tracks put in working order
     (drums, bass, keys/guitar/synth, vocals, other melodic; low to high), as for a Live set."""
@@ -213,11 +300,23 @@ def g_names(p, R, od, a):
         orow.append(dict(id=str(t.index), name=t.name, kind=r["kind"], parent=parent[str(t.index)],
                          label=lab, cat=OR.category(lab, float(r.get("confidence") or 0)), pitch=OR.pitch_key(r)))
     new_ids = OR.propose_order(orow)
-    for f in OR.findings(orow, new_ids, []):
+    stacks = stack_moves(p, orow) if p.daw == "reaper" else []
+    for f in OR.findings(orow, new_ids, stacks):
+        if f["kind"] == "vocal-stack":
+            st = next(x for x in stacks if ", ".join(x["tracks"]) == f["track"])
+            f["fix"] = (f["fix"].replace("level kept the same with clip gain", "level kept the same with item volume")
+                        .replace("By hand in Live", "By hand in REAPER").replace("clip(s)", "item(s)"))
+            f["problem"] = f["problem"].replace("clip", "item")
+            if st["moves"]:
+                out.append(_edit(p, f, op="stack", moves=[{k: m[k] for k in ("item", "src", "dst", "gain_db")}
+                                                           for m in st["moves"]]))
+            else:
+                out.append(f)
+            continue
         f["fix"] = f["fix"].replace("sound, routing and sends unchanged", "sound, folders, routing and sends unchanged")
         out.append(_edit(p, f, op="order", order=[int(i) for i in f["track_order"]]))
-    notes.append("order: track order is ON by default (skip the order item to keep yours, or `hypnomix prefs set "
-                 "cleanup.order=off`); vocal-stack clip moves are Live-only for now")
+    notes.append("order: track order and vocal stacks are ON by default (skip the order items to keep yours, or "
+                 "`hypnomix prefs set cleanup.order=off`)")
     return out, notes
 
 

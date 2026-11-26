@@ -375,6 +375,62 @@ class Reaper(unittest.TestCase):
         self.assertAlmostEqual(d.start - d.take.offset, before, places=6)                     # audio anchored
         self.assertEqual(d.fade_in, 0.01)
 
+    def _stack(self, lanes=False):
+        """A folder of three vocal tracks; in the last section Harmony 1 sings the top part and Harmony 2 the middle."""
+        import uuid
+        for f0 in (196, 247, 294):
+            t = np.arange(int(2.0 * SR)) / SR
+            ph = 2 * np.pi * f0 * t
+            env = np.minimum(1, np.minimum(t / 0.05, (2.0 - t) / 0.1))
+            sf.write(self.dir / "Audio" / f"v{f0}.wav", (0.25 * env * (np.sin(ph) + 0.4 * np.sin(2 * ph))).astype(np.float32),
+                     SR, subtype="FLOAT")
+        g = lambda: "{" + str(uuid.uuid4()).upper() + "}"
+        item = lambda pos, f0: (f"    <ITEM\n      POSITION {pos}\n      LENGTH 2\n      LOOP 0\n      IGUID {g()}\n"
+                                f"      VOLPAN 1 0 1 -1\n      SOFFS 0\n      PLAYRATE 1 1 0 -1 0 0.0025\n"
+                                f"      <SOURCE WAVE\n        FILE \"Audio/v{f0}.wav\"\n      >\n    >")
+        track = lambda name, bus, vol, ps, extra="": (f"  <TRACK {g()}\n    NAME \"{name}\"\n    VOLPAN {vol} 0 -1 -1 1\n"
+                                                      f"    ISBUS {bus}\n{extra}" + "\n".join(item(3 * k, f) for k, f in enumerate(ps)) + "\n  >")
+        txt = "\n".join(['<REAPER_PROJECT 0.1 "7.86/macOS-arm64" 1', "  TEMPO 120 4 4", f"  <TRACK {g()}\n    NAME Vocals\n    ISBUS 1 1\n  >",
+                         track("Lead Vocal", "0 0", 1.0, [196, 196, 196]),
+                         track("Harmony 1", "0 0", 0.5, [247, 247, 294], "    FREEMODE 2\n" if lanes else ""),
+                         track("Harmony 2", "2 -1", 1.0, [294, 294, 247]), ">", ""])
+        path = self.dir / ("Stack lanes.rpp" if lanes else "Stack.rpp")
+        path.write_text(txt)
+        p = project.load(path)
+        orow = [dict(id=str(t.index), kind="Group" if t.kind == "folder" else "Audio", cat=3,
+                     parent=str(t.parent.index) if t.parent else None) for t in p.tracks]
+        return path, p, orow
+
+    def test_vocal_stack_moves(self):
+        from hypnomix.project import rpp_edit as E
+        from hypnomix.workflow.scan_project import stack_moves
+        path, p, orow = self._stack()
+        st = stack_moves(p, orow)
+        self.assertEqual(len(st), 1)
+        mv = st[0]["moves"]
+        self.assertEqual(sorted((m["src_name"], m["dst_name"]) for m in mv),
+                         [("Harmony 1", "Harmony 2"), ("Harmony 2", "Harmony 1")])
+        self.assertEqual(st[0]["hand"], [])
+        for m in mv:                                        # Harmony 1's fader is 6 dB lower: same level in the mix
+            self.assertAlmostEqual(abs(m["gain_db"]), 6.02, places=2)
+            hit = E.locate(p, m["item"])
+            E.move_item(hit[0], hit[1], p.tracks[m["dst"]], m["gain_db"])
+        out = self.dir / "Stack (fixed).rpp"
+        E.save(p, out)
+        guids = {m["item"]["guid"] for m in mv}
+        self.assertEqual(E.check(path, out, moved=guids), [])
+        self.assertNotEqual(E.check(path, out), [])         # moves are refused unless they were approved
+        q = project.load(out)
+        self.assertEqual([c.path.stem for c in q.tracks[2].clips], ["v247"] * 3)
+        self.assertEqual([c.path.stem for c in q.tracks[3].clips], ["v294"] * 3)
+
+    def test_vocal_stack_lanes_are_by_hand(self):
+        from hypnomix.workflow.scan_project import stack_moves
+        _, p, orow = self._stack(lanes=True)
+        st = stack_moves(p, orow)
+        self.assertEqual(st[0]["moves"], [])
+        self.assertTrue(all("lanes" in h["why"] for h in st[0]["hand"]))
+
     def test_unsupported_suffix(self):
         with self.assertRaises(SystemExit):
             project.load(self.dir / "x.ptx")

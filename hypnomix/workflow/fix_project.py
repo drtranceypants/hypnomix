@@ -34,13 +34,29 @@ def apply_edits(p, items, dec, log, failed, skipped):
     """Apply each approved finding's edit to the loaded project p. Returns the ids applied."""
     done = []
     orig = list(p.tracks)                      # tracks as they were scanned (order and names change below)
-    rank = {"edges": 0, "fade": 0, "cut": 1, "dip": 1, "order": 2, "rename": 3}
+    rank = {"edges": 0, "fade": 0, "cut": 1, "dip": 1, "stack": 2, "order": 3, "rename": 4}
     for f in sorted(items, key=lambda f: (rank.get(f.get("edit", {}).get("op"), 1), f["id"])):
         ed = f.get("edit")
         if not ed:
             skipped.append((f, "no project edit recorded for this finding (manual)"))
             continue
         kv = _kv(dec, f)
+        if ed["op"] == "stack":
+            n_ok = 0
+            for m in ed["moves"]:
+                hit = E.locate(p, m["item"])
+                dst = orig[m["dst"]] if m["dst"] < len(orig) else None
+                if hit is None or dst is None:
+                    skipped.append((f, f"an item at {m['item']['start']:.3f} s is no longer where the scan found it"))
+                    continue
+                E.move_item(hit[0], hit[1], dst, m.get("gain_db", 0.0))
+                p.moved = getattr(p, "moved", set()) | {m["item"].get("guid")}
+                log.append(f"- {f['id']}: item at {hit[1].start:.3f} s {hit[0].name} → {dst.name}"
+                           + (f" (item volume {m['gain_db']:+.1f} dB: same level in the mix)" if abs(m.get("gain_db", 0)) > 0.05 else ""))
+                n_ok += 1
+            if n_ok:
+                done.append(f["id"])
+            continue
         if ed["op"] == "edges":
             from hypnomix.workflow import edges_project as EP
             ms = float(_kv(dec, f).get("fade-ms", 10))
@@ -180,7 +196,8 @@ def run(sd, scan, src, out, set_items, tune_items, dec, key, verify=True):
     if not done and not tuned:
         return None, log, failed, skipped
     E.save(p, out)
-    errs = E.check(src, out, trims=any(f.get("tool") == "edges" and f["id"] in done for f in set_items))
+    errs = E.check(src, out, trims=any(f.get("tool") == "edges" and f["id"] in done for f in set_items),
+                   moved=getattr(p, "moved", set()))
     if errs:
         bad = out.with_name(out.stem + " (BROKEN, do not open).rpp")
         out.rename(bad)

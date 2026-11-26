@@ -8,6 +8,7 @@ and the fix after it (and any other tool) analyse each file once. Use pYIN only 
 matters (vocal tuning); for "which part is higher / where is it singing" this is plenty.
 """
 import hashlib
+import threading
 import os
 from pathlib import Path
 
@@ -46,8 +47,11 @@ def track(path, fmin=65.0, fmax=1000.0, sr=22050, hop=256, floor_db=35.0, cache=
     k = _key(path, fmin, fmax, sr, hop, floor_db) if cache else None
     f = CACHE / f"{k}.npz" if k else None
     if f is not None and f.exists():
-        d = np.load(f)
-        return d["t"], d["f0"], d["db"]
+        try:
+            d = np.load(f)
+            return d["t"], d["f0"], d["db"]
+        except Exception:                 # unreadable (an old crash mid-write): measure again below
+            pass
     y, fs = sf.read(str(path), always_2d=True, dtype="float32")
     m = y.mean(1)
     if fs != sr:
@@ -67,9 +71,11 @@ def track(path, fmin=65.0, fmax=1000.0, sr=22050, hop=256, floor_db=35.0, cache=
         f0[a:a + len(est)] = np.where(ok, est, np.nan)
     f0[db < db.max() - floor_db] = np.nan
     t = np.arange(len(db)) * hop / sr
-    if f is not None:
+    if f is not None:                     # written whole, then renamed: parallel readers never see half a file
         CACHE.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(f, t=t, f0=f0, db=db)
+        tmp = f.with_name(f"{k}.{os.getpid()}.{threading.get_ident()}.tmp.npz")
+        np.savez_compressed(tmp, t=t, f0=f0, db=db)
+        os.replace(tmp, f)
     return t, f0, db
 
 

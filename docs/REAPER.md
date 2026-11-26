@@ -12,6 +12,7 @@ Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER"
 | `hypnomix/project/reaper.py` | `.rpp` → model |
 | `hypnomix/project/rpp_edit.py` | edits on the parsed chunks (fades, item volume, volume dips and eases, new takes, reorder, rename) and the structure check |
 | `hypnomix/workflow/scan_project.py` | `scan` on an `.rpp` (and Ardour) |
+| `hypnomix/workflow/scan_project.py` `stack_moves` | vocal stacks: Live's `order.assign_stack` on the model; `rpp_edit.move_item` moves the ITEM chunk (takes and take envelopes go with it); `check(moved=IGUIDs)` |
 | `hypnomix/workflow/edges_project.py` | Live's word-edge detectors on the model; the REAPER edge fixes |
 | `hypnomix/workflow/fix_project.py` | `fix` for an `.rpp`: one pass into one new file, structure check, re-measure |
 | `hypnomix/reaper/bridge.lua`, `client.py`, `cli.py` | the bridge into the open REAPER, and `hypnomix reaper` |
@@ -64,6 +65,8 @@ New tools that should work in every DAW belong on the model (`project.load(path)
   Encoder → ReaEQ (two high passes, pins on channel 2 only) → ReaEQ (all pass, pins on channel 1 only) → JS Mid/Side
   Decoder: leak under -68 dB at 400 Hz and -94 dB at 2 kHz.
 - Plug-in pins: `TrackFX_SetPinMappings`; a channel no output pin writes passes through unchanged.
+- Item lanes (REAPER 7): the track has `FREEMODE 2` (fixed lanes) or `1` (free positioning) and items carry `YPOS`;
+  hypnomix never moves items off or onto such tracks.
 
 ## The bridge
 
