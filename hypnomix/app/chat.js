@@ -43,7 +43,8 @@ function chatMd(t) {
   let h = esc(t);
   h = h.replace(/```([\s\S]*?)```/g, (m, c) => `<pre>${c.replace(/^\w*\n/, '')}</pre>`);
   h = h.replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
-  h = h.split('\n').map(l => /^\s*[-*] /.test(l) ? '• ' + l.replace(/^\s*[-*] /, '') : l).join('<br>');
+  h = h.split('\n').map(l => /^\s*#{1,6} /.test(l) ? '<b>' + l.replace(/^\s*#{1,6} /, '') + '</b>'      // headings: bold lines
+    : /^\s*(-{3,}|\*{3,})\s*$/.test(l) ? '' : /^\s*[-*] /.test(l) ? '• ' + l.replace(/^\s*[-*] /, '') : l).join('<br>');
   return h.replace(/<br>(<pre>)/g, '$1').replace(/(<\/pre>)<br>/g, '$1');
 }
 
