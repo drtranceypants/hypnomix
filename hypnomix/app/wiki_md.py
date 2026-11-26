@@ -145,3 +145,23 @@ def article(path):
     return {"id": aid, "group": GROUP, "title": meta.get("title", aid), "sub": meta.get("subtitle", ""),
             "no": f"guide {int(num.group(1))}" if num else "", "teaser": meta.get("teaser", ""), "html": body,
             "text": plain, "url": f"{SITE}/wiki/#{aid}", "file": str(Path(path).resolve())}
+
+
+def commands_article():
+    """The command reference (PDF guide 9), built from hypnomix's own command list each time, so it never lags."""
+    from hypnomix import cli
+    lines = ["Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full options and examples. "
+             "Commands that change a Live set or a REAPER project always write a new one next to the original.", ""]
+    n = 0
+    for group, cmds in cli.GROUPS:
+        lines += [f"## {group}", "", "| command | what it does |", "|---|---|"]
+        lines += [f"| `{c}` | {d.replace('|', '/')} |" for c, _, d in cmds]
+        lines.append("")
+        n += len(cmds)
+    body = to_html("\n".join(lines))
+    plain = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", body))).strip()
+    from hypnomix.app.wiki import SITE
+    return {"id": "commands", "group": "Reference", "title": "Command reference",
+            "sub": f"all {n} commands, by group, in one line each", "no": "",
+            "teaser": f"All {n} hypnomix commands, by group, in one line each.", "html": body, "text": plain,
+            "url": f"{SITE}/wiki/#commands", "file": "", "generated": True}

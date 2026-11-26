@@ -99,14 +99,23 @@ def local(root=None):
     root = Path(root) if root else HERE
     files = sorted((root / "articles").glob("*.html"))
     guides = guide_files(root)
-    key = (str(root), tuple((f.name, f.stat().st_mtime) for f in files + guides))
+    cli = Path(__file__).resolve().parents[1] / "cli.py"
+    key = (str(root), tuple((f.name, f.stat().st_mtime) for f in files + guides + ([cli] if cli.exists() else [])))
     if _CACHE.get("key") != key:
         from hypnomix.app import wiki_md
         arts = [parse(f) for f in files]
         ids = {a["id"] for a in arts}
         gs = [g for g in (wiki_md.article(f) for f in guides) if g["id"] not in ids]   # an article file wins
         at = next((i for i, a in enumerate(arts) if a["group"] in ("Reference", "FAQ")), len(arts))
-        _CACHE.update(key=key, arts=arts[:at] + gs + arts[at:])
+        arts = arts[:at] + gs + arts[at:]
+        if "commands" not in {a["id"] for a in arts}:            # the command reference, from the code itself
+            try:
+                cmd = wiki_md.commands_article()
+                at = next((i for i, a in enumerate(arts) if a["group"] == "FAQ"), len(arts))
+                arts = arts[:at] + [cmd] + arts[at:]
+            except Exception:                                      # never let it take the wiki down
+                pass
+        _CACHE.update(key=key, arts=arts)
     return _CACHE["arts"]
 
 
@@ -134,7 +143,10 @@ def checkout():
     if code:
         return None, 0, []
     paths = sources(top)
-    _, t = git("log", "-1", "--format=%ct", "--", *paths, cwd=top)
+    cli = Path(__file__).resolve().parents[1] / "cli.py"     # the command reference is built from it: counts for
+    dated = paths + ([str(cli.relative_to(Path(top).resolve()))]    # "which copy is newer", never for Publish
+                     if str(cli).startswith(str(Path(top).resolve())) else [])
+    _, t = git("log", "-1", "--format=%ct", "--", *dated, cwd=top)
     t = t.strip()
     _, st = git("status", "--porcelain", "--", *paths, cwd=top)
     return Path(top), int(t) if t.isdigit() else 0, [ln[3:].split(" -> ")[-1] for ln in st.splitlines() if ln.strip()]
@@ -205,7 +217,7 @@ def article(aid):
     if a is None:
         return None
     out = {k: v for k, v in a.items() if k != "file"}
-    out["editable"] = about["editable"] and about["source"] == "this computer"
+    out["editable"] = about["editable"] and about["source"] == "this computer" and not a.get("generated")
     return out
 
 

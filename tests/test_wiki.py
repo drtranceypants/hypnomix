@@ -85,7 +85,7 @@ class WikiTest(unittest.TestCase):
 
     def test_source_files(self):
         arts = wiki.local()
-        self.assertEqual([a["id"] for a in arts], ["l3", "l4"])
+        self.assertEqual([a["id"] for a in arts], ["l3", "l4", "commands"])
         a = arts[0]
         self.assertEqual((a["title"], a["sub"], a["no"], a["group"]), ("The first pass", "scan · hear", "lesson 3", "Training"))
         self.assertTrue(a["html"].startswith("<p>Run it"))
@@ -96,7 +96,7 @@ class WikiTest(unittest.TestCase):
     def test_server_and_media(self):
         code, body, _ = wiki.handle_get("/api/wiki", {})
         idx = json.loads(body)
-        self.assertEqual([a["id"] for a in idx["articles"]], ["l3", "l4"])
+        self.assertEqual([a["id"] for a in idx["articles"]], ["l3", "l4", "commands"])
         self.assertEqual(idx["about"]["source"], "this computer")
         self.assertNotIn("html", idx["articles"][0])
         a = json.loads(wiki.handle_get("/api/wiki/article", {"id": "l3"})[1])
@@ -136,7 +136,7 @@ class WikiTest(unittest.TestCase):
         self.assertIn('<div class="term" data-label="go"><button class="copy">copy</button><pre>', page)
         self.assertIn('<a href="#l3">← The first pass</a>', page)
         data = json.loads((out / "articles.json").read_text())
-        self.assertEqual([a["id"] for a in data["articles"]], ["l3", "l4"])
+        self.assertEqual([a["id"] for a in data["articles"]], ["l3", "l4", "commands"])
         self.assertEqual(data["assets"], ["clip.mp4"])
         self.assertNotIn("file", data["articles"][0])
         self.assertEqual((out / "assets" / "clip.mp4").read_bytes(), bytes(range(100)))
@@ -168,7 +168,7 @@ class WikiTest(unittest.TestCase):
         (gdir / "99-commands.md").write_text("---\ntitle: Commands\n---\n# Commands\n")   # generated: left out
         wiki._CACHE.clear()
         arts = wiki.local()
-        self.assertEqual([a["id"] for a in arts], ["l3", "l4", "vocals-guide"])
+        self.assertEqual([a["id"] for a in arts], ["l3", "l4", "vocals-guide", "commands"])
         g = arts[2]
         self.assertEqual((g["group"], g["title"], g["sub"], g["no"], g["teaser"]),
                          ("Guides", "Vocal Things", "doubles that sit", "guide 3", "Short."))
@@ -187,6 +187,17 @@ class WikiTest(unittest.TestCase):
         (self.src / "articles" / "03-vocals-guide.html").write_text("<!--\ntitle: Mine\n-->\n<p>x</p>")
         wiki._CACHE.clear()
         self.assertEqual([a["title"] for a in wiki.local() if a["id"] == "vocals-guide"], ["Mine"])  # a file wins
+
+    def test_command_reference_comes_from_the_code(self):
+        from hypnomix import cli
+        c = wiki_md.commands_article()
+        names = [n for _, cmds in cli.GROUPS for n, _, _ in cmds]
+        self.assertEqual((c["id"], c["group"], c.get("generated")), ("commands", "Reference", True))
+        self.assertIn(f"all {len(names)} commands", c["sub"])
+        for n in names:
+            self.assertIn(f"<td><code>{n}</code></td>", c["html"])
+        self.assertIn("commands", [a["id"] for a in wiki.local()])
+        self.assertFalse(wiki.article("commands")["editable"])          # nothing to edit: change the code instead
 
     def test_shipped_wiki_is_complete(self):
         """The wiki that ships with the app: every image or video an article uses is there, and nothing extra."""

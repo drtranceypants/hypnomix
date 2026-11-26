@@ -167,6 +167,9 @@ def commit_time(root):
     g = W.guides_dir(root)
     if g is not None:
         paths.append(str(g / "[0-9][0-9]-*.md"))
+    cli = Path(root).resolve().parents[1] / "cli.py"             # the command reference is built from it
+    if cli.exists():
+        paths.append(str(cli))
     try:
         r = subprocess.run(["git", "log", "-1", "--format=%ct %h", "--", *paths], cwd=root,
                            capture_output=True, text=True, timeout=20)
