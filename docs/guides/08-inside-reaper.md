@@ -112,7 +112,8 @@ tracks and folders, the same items in the same places, sends from the same track
 "(BROKEN, do not open)" and the original stays yours. Then the clip checks run again on the new project, and the
 log says which approved problems are gone and which are only smaller.
 
-Open the new project in REAPER (File → Open, or drag it in) and A/B the changed spots against the original.
+Open the new project in REAPER (File → Open, or drag it in). To hear each fix against what you have *before*
+approving it, see section 8.
 
 ## 5. Master in REAPER, with REAPER's own plug-ins
 
@@ -191,6 +192,38 @@ Measured against the same audio offline: loudness within 0.04 LU of a BS.1770 me
 below 120 Hz) and mid/side exactly. When the bridge starts it gives each probe a slot number (a hidden setting), so
 REAPER may ask to save the project once.
 
+## 8. Hear each fix before you approve it: A/B inside REAPER
+
+```bash
+hypnomix abset scan/Song                 # → "Song (A-B).rpp" next to your project
+hypnomix app                             # open the song's review
+hypnomix reaper review                   # the Hypnomix panel in REAPER
+```
+
+`abset` builds **one new project** in which every proposed fix sits next to what you have, switched off, so the
+project plays exactly like yours until you switch:
+
+- **A plug-in change** (a retuned ReaComp): the changed plug-in is copied in right after yours and bypassed.
+- **Anything else** (fades, rides, edges, timing markers, a tuned take, moved items): the whole track is copied
+  with the fix, named "*track* · B *id*", muted, right after yours, in the same folder and sending where yours sends.
+
+Open the A/B project in REAPER (your original is not touched), then `hypnomix reaper review`. The Hypnomix panel
+follows the review in the app:
+
+| button | what it does |
+|---|---|
+| Prev / Next / Next open | step through the findings; REAPER selects the track and puts the time selection on the spot |
+| A · now / B · fix | switch the finding's plug-ins or tracks, instantly, with every plug-in playing |
+| Blind | X and Y in random order; **I like X / I like Y** records your choice, then tells you which it was |
+| Match on / off | with Hypnomix Main on the master and the bridge running, B is turned up or down to A's loudness |
+| Approve / Skip | your decision, recorded in the review |
+
+Moving to another finding puts the last one back to A, and closing the panel leaves the whole project on A.
+Approving still happens in the review, and `fix --approved` writes the real new project from your **original**,
+not from the A/B project. Track names and order cannot be heard, so they are not in the A/B project. A folder that
+has tracks in it is not copied (its fix is listed: apply it alone to hear it). If the panel is not the window in
+front, the first click only brings it forward.
+
 ## Measured in REAPER
 
 | what | result |
@@ -206,7 +239,7 @@ REAPER may ask to save the project once.
 ## Not yet in REAPER
 
 - Sidechain checks on compressors other than ReaComp (listed, not measured).
-- The A/B review device (A / B / Blind inside the DAW) and the one-button *Record and review before export* (Live
-  only). In REAPER: `probe listen` while you play, and a render of the master for `probe report --mix`.
+- The one-button *Record and review before export* (Live only). In REAPER: `probe listen` while you play, and a
+  render of the master for `probe report --mix`.
 - Where a stretch marker squeezes or stretches a segment, hypnomix's own render reads it at a slightly different
   pitch than REAPER plays it (REAPER keeps the pitch). The timing is exact.

@@ -282,6 +282,16 @@ function C.new_tab()
   return { tab = tostring(proj) }
 end
 
+function C.open_project(a)        -- a project in a NEW tab (closable with close_tab, which never saves it)
+  reaper.Main_OnCommand(40859, 0)
+  reaper.Main_openProject("noprompt:" .. a.path)
+  local proj = reaper.EnumProjects(-1, "")
+  local t = opened_tabs(); t[tostring(proj)] = true
+  local ids = {}; for id in pairs(t) do ids[#ids + 1] = id end
+  reaper.SetExtState("hypnomix", "tabs", table.concat(ids, ","), false)
+  return { tracks = reaper.CountTracks(0) }
+end
+
 function C.add_track(a)
   local n = reaper.CountTracks(0)
   reaper.InsertTrackAtIndex(n, true)
@@ -429,7 +439,117 @@ function C.probe_blocks(a)
   return { seq = probes.seq, blocks = out, meta = meta, names = names }
 end
 
-local CHANGES = { set_pins = true, remove_fx = true, add_track = true, add_fx = true, set_param = true, set_named = true, fx_enable = true, set_track = true }
+-- ------------------------------------------------------------------ the Hypnomix panel (review and A/B)
+-- A window drawn here with REAPER's own gfx; `hypnomix reaper review` keeps it in step with the app (Lua cannot
+-- make web requests): it sets what to show (`panel_set`) and collects the clicks (`panel_events`).
+local panel = { open = false, st = {}, events = {}, buttons = {}, was_down = false, flash = "", flash_until = 0 }
+local PW, PH = 520, 236
+
+function C.panel_open()
+  if not panel.open then gfx.init("Hypnomix", PW, PH); panel.open = true end
+  return { open = true }
+end
+
+function C.panel_close()
+  if panel.open then gfx.quit(); panel.open = false end
+  return { open = false }
+end
+
+function C.panel_set(a)
+  for k, v in pairs(a) do panel.st[k] = v end
+  if a.flash and a.flash ~= "" then panel.flash = a.flash; panel.flash_until = reaper.time_precise() + 4 end
+  return { open = panel.open }
+end
+
+function C.panel_events()
+  local ev = panel.events
+  panel.events = {}
+  return { open = panel.open, events = ev }
+end
+
+function C.jump(a)       -- select the finding's track, put the cursor and the time selection around the spot
+  local tr = track_of(a.track)
+  if tr then reaper.SetOnlyTrackSelected(tr); reaper.Main_OnCommand(40913, 0) end   -- and scroll it into view
+  if a.start then
+    local s, e = tonumber(a.start), tonumber(a["end"] or a.start)
+    reaper.GetSet_LoopTimeRange(true, false, s, e, false)
+    reaper.SetEditCurPos(s, true, true)
+  end
+  return { track = tr ~= nil }
+end
+
+local function wrap(text, width, max_lines)
+  local lines, line = {}, ""
+  for word in tostring(text or ""):gmatch("%S+") do
+    local try = line == "" and word or (line .. " " .. word)
+    if gfx.measurestr(try) > width and line ~= "" then
+      lines[#lines + 1] = line; line = word
+      if #lines >= max_lines then return lines end
+    else line = try end
+  end
+  if line ~= "" and #lines < max_lines then lines[#lines + 1] = line end
+  return lines
+end
+
+local function button(label, x, y, on, action, w)
+  w = w or (gfx.measurestr(label) + 16)
+  gfx.set(on and 0.56 or 0.24, on and 0.78 or 0.24, on and 0.64 or 0.25, 1)
+  gfx.rect(x, y, w, 22, 1)
+  gfx.set(on and 0.1 or 0.93, on and 0.1 or 0.91, on and 0.1 or 0.87, 1)
+  gfx.x, gfx.y = x + 8, y + 5
+  gfx.drawstr(label)
+  panel.buttons[#panel.buttons + 1] = { x = x, y = y, w = w, h = 22, action = action }
+  return x + w + 6
+end
+
+local function panel_draw()
+  if gfx.getchar() < 0 then panel.open = false; panel.events[#panel.events + 1] = "closed"; return end
+  local st = panel.st
+  panel.buttons = {}
+  gfx.set(0.13, 0.125, 0.11, 1); gfx.rect(0, 0, gfx.w, gfx.h, 1)
+  gfx.setfont(1, "Arial", 14, string.byte("b"))
+  gfx.set(0.93, 0.91, 0.87, 1); gfx.x, gfx.y = 10, 8; gfx.drawstr("HYPNOMIX")
+  gfx.setfont(1, "Arial", 13)
+  gfx.set(0.63, 0.6, 0.56, 1); gfx.x, gfx.y = 90, 9
+  gfx.drawstr(st.status or "")
+  gfx.set(0.93, 0.91, 0.87, 1); gfx.x, gfx.y = 10, 30
+  gfx.drawstr(st.head or "")
+  local y = 50
+  gfx.set(0.85, 0.82, 0.77, 1)
+  for _, l in ipairs(wrap(st.problem, gfx.w - 20, 3)) do gfx.x, gfx.y = 10, y; gfx.drawstr(l); y = y + 16 end
+  gfx.set(0.56, 0.78, 0.64, 1)
+  for _, l in ipairs(wrap(st.fix, gfx.w - 20, 2)) do gfx.x, gfx.y = 10, y; gfx.drawstr(l); y = y + 16 end
+  y = math.max(y + 6, 136)
+  local x = 10
+  x = button("Prev", x, y, false, "prev"); x = button("Next", x, y, false, "next"); x = button("Next open", x, y, false, "next_open")
+  x = button("Approve", x + 10, y, st.decision == "approve", "approve"); x = button("Skip", x, y, st.decision == "skip", "skip")
+  if st.ab == "1" then
+    y = y + 30; x = 10
+    if st.blind == "1" then
+      x = button("X", x, y, st.heard == "X", "X"); x = button("Y", x, y, st.heard == "Y", "Y")
+      x = button("I like X", x + 10, y, false, "like_X"); x = button("I like Y", x, y, false, "like_Y")
+    else
+      x = button("A · now", x, y, st.state == "A", "A"); x = button("B · fix", x, y, st.state == "B", "B")
+      x = button("Blind", x + 10, y, false, "blind")
+    end
+    x = button(st.match == "1" and "Match on" or "Match off", x + 10, y, st.match == "1", "match")
+  end
+  if reaper.time_precise() < panel.flash_until then
+    gfx.set(0.98, 0.8, 0.45, 1); gfx.x, gfx.y = 10, gfx.h - 20; gfx.drawstr(panel.flash)
+  end
+  local down = gfx.mouse_cap & 1 == 1
+  if panel.was_down and not down then                    -- a click: on release, where the button is
+    for _, b in ipairs(panel.buttons) do
+      if gfx.mouse_x >= b.x and gfx.mouse_x <= b.x + b.w and gfx.mouse_y >= b.y and gfx.mouse_y <= b.y + b.h then
+        panel.events[#panel.events + 1] = b.action
+      end
+    end
+  end
+  panel.was_down = down
+  gfx.update()
+end
+
+local CHANGES = { jump = false, set_pins = true, remove_fx = true, add_track = true, add_fx = true, set_param = true, set_named = true, fx_enable = true, set_track = true }
 local running = true
 function C.quit() running = false; return { bye = true } end
 
@@ -458,6 +578,10 @@ local last_beat = 0
 local function loop()
   local okp, errp = pcall(probe_poll)
   if not okp then probes.err = tostring(errp) end
+  if panel.open then
+    local okd, errd = pcall(panel_draw)
+    if not okd then panel.flash = "panel: " .. tostring(errd); panel.flash_until = reaper.time_precise() + 10 end
+  end
   local now = reaper.time_precise()
   if now - last_beat > 1 then
     local f = io.open(DIR .. "/alive", "w"); if f then f:write(tostring(os.time())); f:close() end

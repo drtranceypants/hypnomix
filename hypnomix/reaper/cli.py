@@ -8,6 +8,7 @@
   hypnomix reaper fx [FILTER]     plug-ins REAPER has installed (e.g. `fx Rea`, `fx JS:`)
   hypnomix reaper params TRACK FX every parameter of one plug-in as the plug-in shows it (TRACK: name, number or
                                   master; FX: name or number)
+  hypnomix reaper review          the Hypnomix panel in REAPER: step through the app's review, A / B / Blind
   hypnomix reaper probes install|insert SONG.rpp|cards SONG.rpp
                                   Hypnomix Probe and Hypnomix Main for REAPER (JSFX): see `hypnomix reaper probes -h`
 
@@ -27,7 +28,10 @@ def main():
     if len(_sys.argv) > 1 and _sys.argv[1] == "probes":
         from hypnomix.reaper import probes
         return probes.main(_sys.argv[2:])
-    ap.add_argument("cmd", choices=["start", "stop", "status", "tracks", "fx", "params", "probes"])
+    if len(_sys.argv) > 1 and _sys.argv[1] == "review":
+        from hypnomix.reaper import review
+        return review.main(_sys.argv[2:])
+    ap.add_argument("cmd", choices=["start", "stop", "status", "tracks", "fx", "params", "probes", "review"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()

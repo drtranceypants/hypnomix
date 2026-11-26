@@ -14,6 +14,7 @@ slider5:target=-14<-24,-6,0.5>Target LUFS
 slider6:ceiling=-1<-3,0,0.1>Ceiling dBTP
 slider7:amount=100<0,100,1>Amount %
 slider8:slot=-1<-1,4095,1>-slot (set by hypnomix)
+slider9:match=0<-12,12,0.01>-match gain dB (set by hypnomix during A/B)
 
 import hypnomix_meter.jsfx-inc
 
@@ -22,3 +23,12 @@ in_pin:right input
 out_pin:left output
 out_pin:right output
 
+@init
+match_g = 1;
+
+@slider
+match_g = 10 ^ (match / 20);
+
+@sample
+// after the meter (imported above): Main reports the level before matching, like the Live probe
+spl0 *= match_g; spl1 *= match_g;

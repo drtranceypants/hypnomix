@@ -68,14 +68,14 @@ Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full optio
 | `live` | mixer, devices, VST parameters, transport, snapshots, arm/record |
 | `loop` | play bars → record → measure → compare; one-change A/Bs |
 | `probe` | measure every track while Live plays, after all its plug-ins (Max for Live probe): no renders, a review from what was heard |
-| `abset` | one new set with every proposed fix as a switched-off B next to yours: A / B / Blind inside Live, loudness-matched |
+| `abset` | one new set with every proposed fix as a switched-off B next to yours: A / B / Blind inside Live or REAPER (`reaper review`), loudness-matched |
 | `diagnose` | solo every group in the loudest section: who owns the sub, bass, vocal band |
 
 ## Projects: REAPER (.rpp), Ardour (.ardour) and Live (.als)
 
 | command | what it does |
 |---|---|
-| `reaper` | talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters |
+| `reaper` | talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, probes, the A/B review panel |
 | `project` | look inside a REAPER, Ardour or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks |
 
 ## Session files (.als, Live closed or open)

@@ -148,14 +148,32 @@ def locate(f, tempo, bpb):
     return None
 
 
+_RPP_GRID = {}
+
+
+def rpp_grid(path):
+    """(tempo, beats per bar) of a REAPER project, cached by its modification time (asked twice a second)."""
+    key = (str(path), Path(path).stat().st_mtime)
+    if key not in _RPP_GRID:
+        from hypnomix.project import load as _load_project
+        p = _load_project(path)
+        _RPP_GRID.clear()
+        _RPP_GRID[key] = (p.tempo, p.beats_per_bar)
+    return _RPP_GRID[key]
+
+
 def review_payload(d, light=False):
     """light: only what the Live device needs (it asks twice a second): no oversight extras, no fix log."""
     from hypnomix.workflow import review as R, prefs as P
     data, dec, ab = R.load(d)
     meta = json.loads((d / "scan.json").read_text()) if (d / "scan.json").exists() else {}
     source = data.get("set", "")
-    is_set = str(source).lower().endswith(".als")
-    tempo, bpb = set_grid(source) if is_set and Path(source).exists() else (None, 4)
+    rpp_ = str(source).lower().endswith(".rpp")              # a REAPER project jumps and A/Bs like a Live set
+    is_set = str(source).lower().endswith(".als") or rpp_
+    if rpp_ and Path(source).exists():
+        tempo, bpb = rpp_grid(source)
+    else:
+        tempo, bpb = set_grid(source) if is_set and Path(source).exists() else (None, 4)
     for f in data["findings"]:
         span = locate(f, tempo, bpb) if is_set else None
         if span and f.get("track") not in (None, "", "mix"):
@@ -167,7 +185,7 @@ def review_payload(d, light=False):
     return dict(dir=str(d), name=d.name, source=source, is_set=is_set, mode=meta.get("mode", "set" if is_set else "folder"),
                 findings=data["findings"], decisions=dec, ab=ab, prefs=P.summary(P.load()),
                 broken=[n for n in notes if "failed" in n or n.startswith("WARNING") or "did NOT run" in n],
-                fix_log=log[-6000:], suggested_out=(Path(source).stem + " (fixed).als") if is_set else "",
+                fix_log=log[-6000:], suggested_out=(Path(source).stem + (" (fixed).rpp" if rpp_ else " (fixed).als")) if is_set else "",
                 oversight={} if light else ov_payload(d, data["findings"]),
                 ab_live=ab_spec(d), blind=json.loads((d / "blind.json").read_text()) if (d / "blind.json").exists() else [])
 

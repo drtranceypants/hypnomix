@@ -54,11 +54,11 @@ GROUPS = [
         ("live", "hypnomix.live.osc", "mixer, devices, VST parameters, transport, snapshots, arm/record"),
         ("loop", "hypnomix.live.loop", "play bars → record → measure → compare; one-change A/Bs"),
         ("probe", "hypnomix.app.probe", "measure every track while Live plays, after all its plug-ins (Max for Live probe): no renders, a review from what was heard"),
-        ("abset", "hypnomix.workflow.abset", "one new set with every proposed fix as a switched-off B next to yours: A / B / Blind inside Live, loudness-matched"),
+        ("abset", "hypnomix.workflow.abset", "one new set with every proposed fix as a switched-off B next to yours: A / B / Blind inside Live or REAPER (`reaper review`), loudness-matched"),
         ("diagnose", "hypnomix.session.doctor", "solo every group in the loudest section: who owns the sub, bass, vocal band"),
     ]),
     ("Projects: REAPER (.rpp), Ardour (.ardour) and Live (.als)", [
-        ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters"),
+        ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, probes, the A/B review panel"),
         ("project", "hypnomix.project.show", "look inside a REAPER, Ardour or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
     ]),
     ("Session files (.als, Live closed or open)", [

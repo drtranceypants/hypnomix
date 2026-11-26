@@ -284,6 +284,9 @@ def build(sd, ids=None, out=None, extra=()):
     sd = Path(sd)
     data = json.loads((sd / "findings.json").read_text())
     orig = Path(data.get("set") or "")
+    if orig.suffix.lower() == ".rpp":            # a REAPER project: workflow/abset_project.py
+        from hypnomix.workflow import abset_project as AP
+        return AP.build(sd, ids, out, extra)
     if not str(orig).endswith(".als") or not orig.exists():
         raise RuntimeError("this scan has no Live set to build an A/B set from (folder scans: use `hypnomix ab`)")
     cands = candidates(data["findings"], ids)
@@ -328,6 +331,14 @@ def main():
         out, spec = build(a.scan_dir, a.ids, a.out, ["--key", a.key] if a.key else [])
     except RuntimeError as e:
         sys.exit(str(e))
+    if spec.get("daw") == "reaper":
+        ok = sum(1 for it in spec["items"].values() if it["parts"])
+        print(f"\nwrote {out}\n  {ok} of {len(spec['items'])} findings can be switched A/B in REAPER; the original is unchanged")
+        for fid, it in spec["items"].items():
+            if it.get("note"):
+                print(f"  {fid}: {it['note']}")
+        print("Open the A/B project in REAPER, then `hypnomix reaper review`: the Hypnomix panel switches A / B / Blind.")
+        return
     from hypnomix.session import check as C
     err, warn, _ = C.check(str(out), against=spec["original"],
                            added=[b for it in spec["items"].values() for p in it["parts"] if p["mode"] == "tracks" for b in p["b"]])

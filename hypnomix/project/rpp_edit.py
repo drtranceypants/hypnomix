@@ -214,15 +214,11 @@ def ease(track, t, size_db, amount=0.5, ease_s=0.3, pre_s=0.01):
     shape_range(env, _Factor([t0, t1, t2], fn), t0, t2)
 
 
-def reorder(project, order):
-    """Put the project's tracks in a new order: `order` lists the current track indices (0-based) top to bottom.
-    Folders must stay blocks (each folder followed by its own tracks, as `order.propose_order` gives them). The folder
-    lines (ISBUS) are rebuilt from the nesting, and every send (AUXRECV, which names its source track by position) is
-    renumbered, so the sound and the routing stay exactly as they were."""
-    tracks = project.tracks
-    if sorted(order) != list(range(len(tracks))):
-        raise ValueError("the new order must list every track once")
-    new = [tracks[i] for i in order]
+def _layout(project, new, extra_sends=()):
+    """Write the tracks in the order `new` (Track objects, each with .parent and .index = its CURRENT position, or
+    None for a track that is new): folder lines (ISBUS) rebuilt from the nesting, every send (AUXRECV, which names
+    its source by position) renumbered, and `extra_sends` [(new track, source it copies)] given the same sends as
+    that source (in REAPER a send lives on the RECEIVING track)."""
     pos = {id(t): k for k, t in enumerate(new)}
     for k, t in enumerate(new):                       # a track must come after its folder, inside its block
         if t.parent is not None and not (pos[id(t.parent)] < k):
@@ -237,20 +233,89 @@ def reorder(project, order):
             if d > 0:
                 raise ValueError(f"{nxt.name} is inside a folder that does not come right before it")
             t.native.set("ISBUS", 2 if d < 0 else 0, d)
-    old_to_new = {t.index: k for k, t in enumerate(new)}
+    old_to_new = {t.index: k for k, t in enumerate(new) if t.index is not None}
+    mirror = {}
+    for copy_, src in extra_sends:
+        mirror.setdefault(src.index, []).append(pos[id(copy_)])
     for t in new:
-        for ln in t.native.lines("AUXRECV"):
+        for ln in list(t.native.lines("AUXRECV")):
             if len(ln.tokens) > 1 and ln.tokens[1].lstrip("-").isdigit() and int(ln.tokens[1]) in old_to_new:
+                src_old = int(ln.tokens[1])
                 tk = list(ln.tokens)
-                tk[1] = old_to_new[int(tk[1])]
+                tk[1] = old_to_new[src_old]
                 ln.set(*tk[1:])
+                for k in mirror.get(src_old, []):     # the copy sends where its original sends
+                    dup = rpp.Line(["AUXRECV", k, *tk[2:]], indent=ln.indent)
+                    t.native.add(dup, at=t.native.children.index(ln) + 1)
     root = project.native
     slots = [k for k, c in enumerate(root.children) if isinstance(c, rpp.Chunk) and c.name == "TRACK"]
-    for slot, t in zip(slots, new):
-        root.children[slot] = t.native
+    for c in [root.children[k] for k in slots]:
+        root.children.remove(c)
+    at = slots[0] if slots else len(root.children)
     for k, t in enumerate(new):
+        root.add(t.native, at=at + k)
         t.index = k
     project.tracks = new
+
+
+def reorder(project, order):
+    """Put the project's tracks in a new order: `order` lists the current track indices (0-based) top to bottom.
+    Folders must stay blocks (each folder followed by its own tracks, as `order.propose_order` gives them). The folder
+    lines (ISBUS) are rebuilt from the nesting, and every send (AUXRECV, which names its source track by position) is
+    renumbered, so the sound and the routing stay exactly as they were."""
+    tracks = project.tracks
+    if sorted(order) != list(range(len(tracks))):
+        raise ValueError("the new order must list every track once")
+    _layout(project, [tracks[i] for i in order])
+
+
+def fresh_ids(chunk):
+    """New GUIDs everywhere in a copied track (track, items, takes, plug-ins, envelopes), so REAPER sees new things."""
+    if len(chunk.tokens) > 1 and chunk.tokens[1].startswith("{"):
+        chunk.tokens[1] = guid()
+        chunk.raw = None
+    for c in [chunk, *chunk.walk()]:
+        for ln in c.lines():
+            if ln.key in ("TRACKID", "IGUID", "GUID", "FXID", "EGUID") and len(ln.tokens) > 1:
+                ln.set(guid())
+
+
+def insert_copies(project, copies):
+    """Put copies of tracks into the project: `copies` [(original Track, new TRACK chunk, name)]. Each copy goes
+    right after its original (after the whole folder, for a folder), in the same folder, and sends where the
+    original sends. Returns the new Track objects."""
+    from hypnomix.project.model import Track
+    after = {}
+    made = []
+    for orig, chunk, name in copies:
+        chunk.parent = project.native
+        t = Track(name=name, index=None, kind=orig.kind, parent=orig.parent, native=chunk)
+        t.native.set("NAME", name)
+        after.setdefault(id(orig), []).append(t)
+        made.append((t, orig))
+    def block_end(t):                                 # the last track of t's folder block
+        k = project.tracks.index(t)
+        while k + 1 < len(project.tracks) and _inside(project.tracks[k + 1], t):
+            k += 1
+        return project.tracks[k]
+    new, pending = [], {}
+    for orig_id, ts in after.items():
+        o = next(x for x in project.tracks if id(x) == orig_id)
+        pending.setdefault(id(block_end(o)), []).extend(ts)
+    for t in project.tracks:
+        new.append(t)
+        new.extend(pending.get(id(t), []))
+    _layout(project, new, extra_sends=made)
+    return [t for t, _ in made]
+
+
+def _inside(t, folder):
+    p = t.parent
+    while p is not None:
+        if p is folder:
+            return True
+        p = p.parent
+    return False
 
 
 def move_item(src, clip, dst, gain_db=0.0):

@@ -20,6 +20,8 @@ Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER"
 | `hypnomix/workflow/fix_project.py` | `fix` for an `.rpp`: one pass into one new file, structure check, re-measure |
 | `hypnomix/reaper/bridge.lua`, `client.py`, `cli.py` | the bridge into the open REAPER, and `hypnomix reaper` |
 | `hypnomix/engineer/chain_reaper.py` | `chain --reaper` |
+| `hypnomix/workflow/abset_project.py` | `abset` on an `.rpp`: each fix built alone (`fix` on a throwaway scan copy), compared track by track (by GUID); plug-in-only changes copy the FX block after the original with `BYPASS 1` and a new `FXID`; other changes copy the whole track (`fresh_ids`, `MUTESOLO 1`) via `rpp_edit.insert_copies`, which keeps folders (`_layout` rebuilds ISBUS) and mirrors the original's sends (`AUXRECV` lives on the receiving track); writes `ab_live.json` with `daw: reaper` |
+| `hypnomix/reaper/review.py` | `hypnomix reaper review`: polls the app's `/api/live/*`, drives the bridge's gfx panel (`panel_open/set/events/close`), switches plug-ins (`fx_enable`) or mutes, jumps (`jump`: beats × 60/tempo), and sets Main's hidden `match` slider from the app's matching gain |
 
 New tools that should work in every DAW belong on the model (`project.load(path)`), not on raw `.rpp` or `.als`.
 
@@ -105,6 +107,8 @@ change is one undo step. Things that bit:
   that is already gone, or a stale listing answers it twice.
 - Lua's `tonumber` does not read `+0.00`; displays also show `-inf` and `inf`.
 - Plug-in displays can be Latin-1 (`°`): decode answers leniently.
+- The panel is a `gfx` window: it reads the real mouse, so background (synthetic) clicks do not reach it, and the
+  first click on it while REAPER is behind another app only focuses it. Redraws lag a poll or two.
 - Closing a changed project tab asks "save?", and a dialog stops the bridge. Save a throwaway copy, reopen it with
   `Main_openProject("noprompt:" .. path)`, then close (action 40860). The bridge only closes tabs it opened.
 
