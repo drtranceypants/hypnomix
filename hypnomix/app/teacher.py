@@ -624,8 +624,8 @@ def _step_html(s, daw, name):
     if s.get("try"):
         parts.append(f"<p><b>Try it:</b> {_md_text(s['try']['do'])} <i>You'll know it worked when: {_md_text(s['try']['success'])}</i></p>")
     for q in s.get("quiz") or []:
-        opts = "".join(f"<li>{_esc(o)}</li>" for o in q["options"])
-        parts.append(f"<details><summary><b>Check yourself:</b> {_esc(q['q'])}</summary><ol type=\"a\">{opts}</ol>"
+        opts = "".join(f"<li>{chr(97 + i)}) {_esc(o)}</li>" for i, o in enumerate(q["options"]))   # lettered in the text: the wiki's cleaner drops <ol type>
+        parts.append(f"<details><summary><b>Check yourself:</b> {_esc(q['q'])}</summary><ul>{opts}</ul>"
                      f"<p>Answer: {_esc(q['options'][q['answer']])}. {_esc(q['why'])}</p></details>")
     if s.get("more"):
         parts.append(_more_html(s["more"], daw))
