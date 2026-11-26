@@ -182,6 +182,11 @@ TEXT = {
     ("borrow", None): (
         "Loops from an earlier version of the song can add variety that already fits it, on switched-off tracks you "
         "can try.", "add layers off, then switch on what serves the song"),
+    ("colour", None): (
+        "A part that plays the same way in every repeat can start to sound frozen. A different colour on the repeat "
+        "(more width, a little grit, a different room, a slow filter drift, an octave copy) changes how it feels "
+        "without changing a note, on a switched-off copy you can try.",
+        "change one thing in the repeat, not the first time through, and keep it small"),
     ("variations", None): ("Spare takes of the same part add small differences to repeats.", "vary every few repeats"),
     ("automix", None): (
         "Each move of the trial mix (EQ, compression, level, pan, reverb) is one choice you can take or leave.",

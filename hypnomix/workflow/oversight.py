@@ -46,7 +46,7 @@ SCALING = {
 NO_SCALE = {
     "name": "a rename is all or nothing", "order": "track order is all or nothing", "tidy": "retiring or merging "
     "tracks is all or nothing", "motion": "set the depth in the note instead (depth=, dB=, bars=)", "borrow": "a borrowed "
-    "loop is added or not", "voices": "set the dB steps in the note instead", "refs": "a missing file is found or not",
+    "loop is added or not", "colour": "set the strength in the note instead (amount=0.3)", "voices": "set the dB steps in the note instead", "refs": "a missing file is found or not",
 }
 
 
@@ -282,7 +282,7 @@ KIND_CONF = {  # how sure the tool usually is, when it gives no number of its ow
     ("dehiss", None): 0.5, ("vocalign", None): 0.6, ("masking", None): 0.45, ("align", None): 0.7,
     ("name", "track-name"): 0.75, ("name", "track-name-question"): 0.35, ("order", None): 0.8, ("tidy", None): 0.8,
     ("measure", None): 0.95, ("qc", None): 0.95, ("refs", None): 0.99, ("key", None): 0.5, ("voices", None): 0.5,
-    ("sections", None): 0.5, ("match", None): 0.5, ("motion", None): 0.4, ("borrow", None): 0.4,
+    ("sections", None): 0.5, ("match", None): 0.5, ("motion", None): 0.4, ("borrow", None): 0.4, ("colour", None): 0.35,
     ("intent", None): 0.3, ("structure", None): 0.9,
 }
 

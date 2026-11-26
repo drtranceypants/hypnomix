@@ -60,7 +60,7 @@ from pathlib import Path
 
 from hypnomix.workflow import oversight as O
 
-ORDER = ["distortion", "devices", "sidechain", "duck", "smooth", "edges", "cliplevel", "timing", "motion", "borrow", "tidy", "order"]   # track names come last, after all of these
+ORDER = ["distortion", "devices", "sidechain", "duck", "smooth", "edges", "cliplevel", "timing", "motion", "borrow", "colour", "tidy", "order"]   # track names come last, after all of these
 DECISIONS = ("approve", "skip", "change")
 
 
@@ -131,6 +131,8 @@ def recheck(tool, als, sd, scan, timing_tracks, tag):
         args += motion_args(sd, scan)
     if tool == "borrow":
         args += borrow_args(scan)
+    if tool == "colour":
+        args += colour_args(scan)
     hx(*args)
     if not j.exists():
         return None
@@ -160,6 +162,18 @@ def borrow_args(scan):
     for o in scan.get("borrow_from") or []:
         out += ["--from", o]
     return out
+
+
+def colour_args(scan):
+    """The options the colour proposals were made with, so a later run finds the same ones (ids are positions)."""
+    return (["--mix", scan["mix"]] if scan.get("mix") else []) + [str(x) for x in scan.get("colour_args") or []]
+
+
+def added_tracks(items):
+    """Names of the tracks borrow and colour add on purpose (the structure check allows exactly these)."""
+    from hypnomix.session import colour as CO
+    return [f"{f['borrow']['track']} (from original)" for f in items if f["tool"] == "borrow"] + \
+           [CO.track_name(f["colour"]) for f in items if f["tool"] == "colour"]
 
 
 def rematch(items, now):
@@ -205,8 +219,8 @@ def apply_args(tool, cur, nxt, ids, items, sd, scan, dec, src, timing_tracks, ti
             note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
             if note and f["id"] in ids:
                 args += ["--tweak", f"{f['id']}:{note}"]
-    if tool in ("motion", "borrow"):   # the person's fine controls from the review notes
-        args += motion_args(sd, scan) if tool == "motion" else borrow_args(scan)
+    if tool in ("motion", "borrow", "colour"):   # the person's fine controls from the review notes
+        args += motion_args(sd, scan) if tool == "motion" else (borrow_args(scan) if tool == "borrow" else colour_args(scan))
         for f in items:
             note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
             if note and f["id"] in ids:
@@ -578,7 +592,7 @@ def main():
 
         if out:  # structure first: a broken set must never be opened
             from hypnomix.session import check as C, diff as D
-            added = [f"{f['borrow']['track']} (from original)" for f in set_items if f["tool"] == "borrow"]
+            added = added_tracks(set_items)
             errs, warns, _ = C.check(out, src, reordered="order" in applied_tools, added=added,
                                    allow_removed="tidy" in applied_tools)
             if errs:
@@ -597,9 +611,10 @@ def main():
             for tool in applied_tools:
                 if tool == "sidechain":
                     continue
-                if tool in ("motion", "borrow"):   # options, not problems: report what was written instead of re-measuring
+                if tool in ("motion", "borrow", "colour"):   # options, not problems: report what was written instead of re-measuring
                     line = (f"- {tool}: approved " + ("moves written as automation / clip edits" if tool == "motion" else
-                            "loops added on new switched-off tracks") + " (listed above); listen to each")
+                            "loops added on new switched-off tracks" if tool == "borrow" else
+                            "colour chains added on new switched-off tracks") + " (listed above); listen to each")
                     print("verify     " + line[2:])
                     log.append(line)
                     continue
@@ -690,7 +705,7 @@ def main():
             from hypnomix.session import check as C
             errs, _, _ = C.check(target, src, renamed=dict(done_n), reordered=any(f["tool"] == "order" for f in set_items),
                                  allow_removed=any(f["tool"] == "tidy" for f in set_items),
-                                 added=[f"{f['borrow']['track']} (from original)" for f in set_items if f["tool"] == "borrow"])
+                                 added=added_tracks(set_items))
             if errs:
                 bad = Path(target).with_name(Path(target).stem + " (BROKEN, do not open).als")
                 Path(target).rename(bad)
