@@ -22,6 +22,7 @@ Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER"
 | `hypnomix/reaper/bridge.lua`, `client.py`, `cli.py` | the bridge into the open REAPER, and `hypnomix reaper` |
 | `hypnomix/engineer/chain_reaper.py` | `chain --reaper` |
 | `hypnomix/workflow/abset_project.py` | `abset` on an `.rpp`: each fix built alone (`fix` on a throwaway scan copy), compared track by track (by GUID); plug-in-only changes copy the FX block after the original with `BYPASS 1` and a new `FXID`; other changes copy the whole track (`fresh_ids`, `MUTESOLO 1`) via `rpp_edit.insert_copies`, which keeps folders (`_layout` rebuilds ISBUS) and mirrors the original's sends (`AUXRECV` lives on the receiving track); writes `ab_live.json` with `daw: reaper` |
+| `hypnomix/studio/alignset_rpp.py`, `hypnomix/reaper/align.py` | `alignset` on an `.rpp` (stretch markers via `rpp_edit.set_stretch`, pitch / formant / `--takes` as new takes via `add_take(offset=0, rate=1)` on per-item files that sum back to the checked render) and `hypnomix reaper align`: the Hypnomix Align panel (`panel_open mode=align`, `align_where`, `align_draw`) sending the Live device's request to `/api/align/*` |
 | `hypnomix/reaper/review.py` | `hypnomix reaper review`: polls the app's `/api/live/*`, drives the bridge's gfx panel (`panel_open/set/events/close`), switches plug-ins (`fx_enable`) or mutes, jumps (`jump`: beats × 60/tempo), and sets Main's hidden `match` slider from the app's matching gain |
 
 New tools that should work in every DAW belong on the model (`project.load(path)`), not on raw `.rpp` or `.als`.
@@ -125,6 +126,17 @@ change is one undo step. Things that bit:
 - `match` is a built-in EEL2 string function: a slider or variable with that name stops the effect compiling.
 - The panel is a `gfx` window: it reads the real mouse, so background (synthetic) clicks do not reach it, and the
   first click on it while REAPER is behind another app only focuses it. Redraws lag a poll or two.
+- The Align panel shares that window (`panel_open mode=align`). After a click in REAPER's own windows, a click on
+  the panel's body does not reach it: the panel window has to become key first (a click on its title bar does).
+  Its sliders follow a drag and report `set:<name>=<value>` on release; values sent from Python are ignored for a
+  moment after a drag so the slider does not jump back.
+- Stretch markers (`SM`): the source time includes the take's offset (`SetTakeStretchMarker(take, -1, 10, 40)` with
+  SOFFS 30 saves `SM 10 40`). With "preserve pitch", REAPER's stretch engine plays stretched or shifted stretches
+  about 4 ms later than the marker map (median; the same in every élastique mode); in varispeed it is exact.
+- `Main_SaveProjectEx(proj, path, 0)` saves a copy: the tab stays "[Unsaved]". Quitting REAPER (40004) then asks
+  to save it, and the dialog stops every script. Several sessions' command-line scripts all run in the one open
+  REAPER, in whatever tab is current: open a tab of your own (40859), and close only that.
+- Stems: `RENDER_SETTINGS` 3 with the tracks selected (2 renders one mix of the selected tracks).
 - Closing a changed project tab asks "save?", and a dialog stops the bridge. Save a throwaway copy, reopen it with
   `Main_openProject("noprompt:" .. path)`, then close (action 40860). The bridge only closes tabs it opened.
 

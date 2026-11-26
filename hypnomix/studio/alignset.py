@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Align vocal parts inside a saved Live set: the timing goes onto your own clips as warp markers.
+"""Align vocal parts inside a saved Live set (or REAPER project): the timing goes onto your own clips as warp markers.
 
 Nothing is rendered over your comp. Each part's clips get warp markers that move its words toward the guide (or the
 group), written into a NEW set next to the original; every marker can be dragged or deleted in Live afterwards.
@@ -22,6 +22,9 @@ Every part is first rendered from the set exactly as Live plays it (clip gain, f
 engine as `hypnomix vocalign`, checked independently, and only parts that measured closer are written. Times for
 --protect and --sync are song seconds (the device sends them from the loop brace and the playhead).
 Close the set in Live before opening the new one. Assumes a constant tempo.
+
+A REAPER project (SONG.rpp) works the same way: stretch markers on the parts' own items, pitch / formant as new
+takes on those items, in "SONG (aligned).rpp" (see hypnomix/studio/alignset_rpp.py).
 """
 import argparse, json, sys, tempfile
 from pathlib import Path
@@ -136,14 +139,21 @@ def main():
     ap.add_argument("--parts", nargs="+", required=True)
     ap.add_argument("--bars")
     ap.add_argument("--range")
-    ap.add_argument("--apply", nargs="?", const="", default=None, metavar="NEW.als")
+    ap.add_argument("--apply", nargs="?", const="", default=None, metavar="NEW.als|NEW.rpp")
     ap.add_argument("--keep-unwarped", action="store_true")
+    ap.add_argument("--takes", action="store_true",
+                    help="REAPER: the timing goes onto the items as new takes too (playing the checked preview exactly) "
+                         "instead of stretch markers")
     ap.add_argument("--json")
     defaults = {k: ap.get_default(k) for k in vars(ap.parse_args(["x", "--guide", "g", "--parts", "p"]))}
     a = ap.parse_args()
     if a.list_presets:
         print("\n".join(AO.describe(k) for k in AO.PRESETS)); return
     AO.apply_preset(a, a.preset, defaults)
+    if a.set.lower().endswith(".rpp"):
+        from hypnomix.studio import alignset_rpp
+        alignset_rpp.run(a)
+        return
     from hypnomix.session import automation as aa, beats as B, render as R, smooth as sm, timing as tm
     src = Path(a.set).expanduser().resolve()
     tree = aa.load(src)

@@ -1,6 +1,6 @@
 ---
 title: hypnomix in REAPER
-subtitle: Scan a REAPER project, approve the fixes, and build a mastering chain from REAPER's own plug-ins
+subtitle: Scan a REAPER project, approve the fixes, align a vocal stack, and build a mastering chain from REAPER's own plug-ins
 wiki_id: reaper
 ---
 
@@ -266,6 +266,59 @@ From a terminal: `hypnomix reaper chain build [NAME]`, `chain match`, `chain sav
 ReaLimit limits sample peaks, so the true peak can land a little over the ceiling: Record and review (section 9)
 measures true peak, or leave a little more room in the ceiling.
 
+## 11. Align a vocal stack: the Hypnomix Align panel
+
+The REAPER side of the Live **Hypnomix Align** device: doubles and harmonies that land together, with the same
+engine, presets and options (see the vocal alignment guide). Your project is never written: the result is a
+**new project**, `Song (aligned).rpp`, next to yours.
+
+```bash
+hypnomix app                     # leave it running
+hypnomix reaper align            # the Hypnomix Align panel in REAPER
+```
+
+Save the project first (Align reads the saved `.rpp`), then in the panel:
+
+| button | what it does |
+|---|---|
+| Guide ← | the selected track becomes the guide (the one the others follow) |
+| + Part / Clear | the selected tracks become parts (repeat); Clear empties the list |
+| Range: selection / Song | only the time selection, or everywhere |
+| Protect | the time selection is never moved (repeat for more) |
+| Sync here | the edit cursor must line up exactly; Clear marks empties both lists |
+| Tight, Pitch, Vibrato, Formant | drag left / right: how far timing moves; pitch matching (0 = off; the chord under every note is checked first, from the project's own instrument tracks); the guide's vibrato for doubles; formant in semitones, pitch unchanged |
+| Preset | steps through the presets (gentle-stack, natural-double, tight-pop, loose-folk, rap-doubles) |
+| Timing: markers / takes | how the timing is written (below) |
+| Write project | off: Align only measures and makes previews; on: it also writes the new project |
+| Align | runs it; the lanes show each part's loudness before (grey) and after (amber) |
+| Open project | opens the aligned project in a new tab (yours stays open in its own) |
+
+In the new project:
+
+- **Timing** is **stretch markers on the active take of each part's own items**: the fewest that follow the plan
+  within half a millisecond. Drag or delete any of them afterwards. Stretch markers already on an item are
+  followed and replaced by the combined ones. Where two neighbouring words move opposite ways across a short gap,
+  the change is eased over a little more time (stretch markers can't play audio backwards); the report says by how
+  much.
+- **Pitch and formant** can't be stretch markers: each item of that part gets a **new take**, made active, playing
+  a file rendered for that item (timing, then pitch, then formant). The original take stays on the item: switch
+  takes to compare. The files go in a `hypnomix aligned` folder next to the project.
+- **Timing: takes** puts the timing on new takes the same way, instead of stretch markers.
+
+Only parts that measure closer to the group (or the guide) are written; the others are left exactly as they were.
+Items that loop their source and MIDI items are left alone and listed. One tempo is assumed. Without the panel:
+
+```bash
+hypnomix alignset "Song.rpp" --guide "Lead Vox" --parts "Harmony 1" "Harmony 2" --bars 11-21 --bpm 64 --apply
+```
+
+Checked in REAPER 7.86 on a real stack (a lead and three harmonies over ten bars, one harmony a comp of three
+items, one with stretch markers already on it): REAPER plays the new takes as the checked render (within 0.4%),
+and places the stretch markers exactly where planned (median 0.00 ms in varispeed). With pitch kept (the default),
+REAPER's stretch engine plays the words that moved about 4 ms later than planned (90% within 9 ms); **Timing:
+takes** avoids that, at the cost of markers you can drag. If the panel is not the window in front, click its title
+bar first: the first click only brings it forward.
+
 ## Measured in REAPER
 
 | what | result |
@@ -274,6 +327,8 @@ measures true peak, or leave a little more room in the ceiling.
 | fade shapes and crossfades | within 0.0001 and 0.003 |
 | playrate, pitch following | identical |
 | stretch markers | timing within 0.0002 |
+| Align: stretch markers written for a vocal stack | exactly on the plan in varispeed; with pitch kept, moved words about 4 ms late (REAPER's stretch engine) |
+| Align: new takes for pitch / formant / timing | play the checked render within 0.4% |
 | volume rides written by `fix` | REAPER plays them within 0.001 of what hypnomix expects |
 | ReaEQ against the planned EQ | within 0.04 dB |
 | mono low end | under -68 dB of leak at 400 Hz, -94 dB at 2 kHz; the low end mono |

@@ -6,10 +6,13 @@ this runs alignset on the saved set and hands back the result: the report, the p
 after (the device draws them), the previews, the new set, and any rendered pitch / formant files.
 
   GET  /api/align/state         the chosen set, the job, the last result
-  POST /api/align/choose        {path?}: the Live set to work on (no path: a file dialog)
+  POST /api/align/choose        {path?}: the Live set (or REAPER project) to work on (no path: a file dialog)
   POST /api/align/run           {guide, parts, start_s?, end_s?, protect:[[a,b]], sync:[t], preset?, tightness?,
                                  pitch?, vibrato?, formant?, apply?}
   POST /api/align/open          open the new set in Live (macOS: `open`; Live asks to save the current one first)
+
+The REAPER panel (`hypnomix reaper align`) uses the same endpoints with a saved .rpp: the result is a NEW project
+with stretch markers and new takes on the parts' own items.
 
 Local only, like the rest of the app. Nothing is overwritten: alignset always writes a NEW set.
 """
@@ -84,6 +87,8 @@ def argv_for(body, set_path, out_dir):
         argv.append("--no-chord-check")     # against the set's own instrument tracks
     if body.get("chords"):
         argv += ["--chords", str(body["chords"])]
+    if body.get("takes"):                   # REAPER: timing as new takes instead of stretch markers
+        argv.append("--takes")
     if body.get("apply"):
         argv.append("--apply")
     return argv
@@ -100,8 +105,8 @@ def handle_post(path, body):
     if path == "/api/align/choose":
         p = body.get("path") or S.pick("set")
         if p:
-            if not Path(p).expanduser().is_file() or not str(p).endswith(".als"):
-                return 400, {"error": f"not a Live set: {p}"}
+            if not Path(p).expanduser().is_file() or not str(p).lower().endswith((".als", ".rpp")):
+                return 400, {"error": f"not a Live set or REAPER project: {p}"}
             ALIGN["set"] = str(Path(p).expanduser())
         return 200, state()
     if path == "/api/align/run":
@@ -113,7 +118,7 @@ def handle_post(path, body):
         (out / "result.json").unlink(missing_ok=True)
         argv = argv_for(body, sp, out)
         ALIGN["job"] = S.run_job("align", f"Align: {', '.join(body.get('parts') or [])} to {body.get('guide')}",
-                                 [("Aligning (writes a new set, changes nothing in yours)", argv, True)], out)
+                                 [("Aligning (writes a new " + ("project" if str(sp).lower().endswith(".rpp") else "set") + ", changes nothing in yours)", argv, True)], out)
         ALIGN["result"] = None
         return 200, {"job": ALIGN["job"], "argv": argv}
     if path == "/api/align/open":
@@ -121,6 +126,8 @@ def handle_post(path, body):
         target = res.get("out_set")
         if not target or not Path(target).exists():
             return 400, {"error": "no aligned set yet: run Align with Write set on"}
+        if target.lower().endswith(".rpp"):           # REAPER: the panel opens it in a new tab through the bridge
+            return 200, {"opened": target, "reaper": True}
         if sys.platform == "darwin":
             subprocess.run(["open", target])
         return 200, {"opened": target}

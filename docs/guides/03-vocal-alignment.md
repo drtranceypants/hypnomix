@@ -18,6 +18,8 @@ stays sample for sample wherever nothing needs to change.
 | exported files from any DAW, all from the same start | `hypnomix vocalign` | new aligned files and a report |
 | a saved Live set | `hypnomix alignset` | a new set where the timing is **warp markers on your own clips** |
 | Live open, and you'd rather click | the **Hypnomix Align** device | the same as alignset, from inside Live |
+| a saved REAPER project | `hypnomix alignset Song.rpp` | a new project where the timing is **stretch markers on your own items** |
+| REAPER open, and you'd rather click | the **Hypnomix Align** panel (`hypnomix reaper align`) | the same, from inside REAPER (see the REAPER guide) |
 
 All three use one engine, and every result is checked by a second, independent measurement. A part that
 would not end up closer to the others is left exactly as it was.
@@ -214,6 +216,18 @@ passes through it untouched.
 > is tested on real sets, but it has not been loaded in Live yet. If something misbehaves, right-click the
 > device's title → Open Max Window to see which line.
 
+## Inside REAPER: alignset on a .rpp and the Hypnomix Align panel
+
+```bash
+hypnomix alignset "Song.rpp" --guide "Lead Vox" --parts "Harmony 1" "Harmony 2" --bars 11-21 --apply
+hypnomix reaper align    # the panel, with the hypnomix app running
+```
+
+The same engine and options, for a saved REAPER project. The timing becomes **stretch markers on the parts' own
+items**, and pitch / formant become a **new take on each item** (the original take stays: switch takes to
+compare), in a new `Song (aligned).rpp` next to yours. The panel has the Live device's controls, picking from
+REAPER's selected tracks, time selection and edit cursor. The REAPER guide has the details and what was measured.
+
 ## Which tool when
 
 | situation | reach for |
@@ -224,3 +238,4 @@ passes through it untouched.
 | doubles slightly out of tune with the lead | `--pitch 0.35 --chords …` (asks on chord clashes) |
 | a stack that sounds narrow | `--formant` +0.4 / -0.4 on a pair of doubles |
 | a comped vocal in Live you don't want rendered | `alignset` or the Align device |
+| a comped vocal in REAPER you don't want rendered | `alignset Song.rpp` or the Align panel (`hypnomix reaper align`) |

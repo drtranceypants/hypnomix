@@ -509,12 +509,19 @@ end
 -- ------------------------------------------------------------------ the Hypnomix panel (review and A/B)
 -- A window drawn here with REAPER's own gfx; `hypnomix reaper review` keeps it in step with the app (Lua cannot
 -- make web requests): it sets what to show (`panel_set`) and collects the clicks (`panel_events`).
-local panel = { open = false, st = {}, events = {}, buttons = {}, was_down = false, flash = "", flash_until = 0 }
+local panel = { open = false, st = {}, events = {}, buttons = {}, was_down = false, flash = "", flash_until = 0,
+                mode = "review", sliders = {}, drag = nil, hold = {} }
 local PW, PH = 520, 236
+local AW, AH = 640, 380                 -- the Align panel
 
-function C.panel_open()
-  if not panel.open then gfx.init("Hypnomix", PW, PH); panel.open = true end
-  return { open = true }
+function C.panel_open(a)                -- mode=align: the Hypnomix Align panel (`hypnomix reaper align`) in the same window
+  local mode = (a and a.mode) or "review"
+  if panel.open and panel.mode ~= mode then gfx.quit(); panel.open = false end
+  if not panel.open then
+    if mode == "align" then gfx.init("Hypnomix Align", AW, AH) else gfx.init("Hypnomix", PW, PH) end
+    panel.open, panel.mode, panel.st, panel.events = true, mode, {}, {}
+  end
+  return { open = true, mode = panel.mode }
 end
 
 function C.panel_close()
@@ -523,7 +530,10 @@ function C.panel_close()
 end
 
 function C.panel_set(a)
-  for k, v in pairs(a) do panel.st[k] = v end
+  local now = reaper.time_precise()
+  for k, v in pairs(a) do
+    if not (panel.hold[k] and now < panel.hold[k]) then panel.st[k] = v end   -- a slider just moved here wins
+  end
   if a.flash and a.flash ~= "" then panel.flash = a.flash; panel.flash_until = reaper.time_precise() + 4 end
   return { open = panel.open }
 end
@@ -616,6 +626,140 @@ local function panel_draw()
   gfx.update()
 end
 
+
+-- ------------------------------------------------------------------ the Hypnomix Align panel
+-- `hypnomix reaper align` drives it like the review panel: it sets what to show and collects the clicks. The
+-- sliders are moved here (dragged left / right) and reported as "set:<name>=<value>" when let go.
+function C.align_where()       -- what the panel picks from: selected tracks, the time selection, the edit cursor
+  local names = {}
+  for i = 0, reaper.CountSelectedTracks(0) - 1 do
+    names[#names + 1] = select(2, reaper.GetTrackName(reaper.GetSelectedTrack(0, i)))
+  end
+  local s, e = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
+  local _, path = reaper.EnumProjects(-1, "")
+  return { tracks = names, sel_start = s, sel_end = e, cursor = reaper.GetCursorPosition(), project = path or "",
+           dirty = reaper.IsProjectDirty(0), tempo = reaper.Master_GetTempo() }
+end
+
+local SLIDERS = { { "tight", "Tight", 0, 1, "%.0f%%", 100 }, { "pitch", "Pitch", 0, 1, "%.0f%%", 100 },
+                  { "vibrato", "Vibrato", 0, 1, "%.0f%%", 100 }, { "formant", "Formant", -3, 3, "%+.1f st", 1 } }
+
+local function slider(def, x, y, w)
+  local key, label, lo, hi, f, k = table.unpack(def)
+  local v = tonumber(panel.st[key] or lo) or lo
+  gfx.set(0.63, 0.6, 0.56, 1); gfx.x, gfx.y = x, y; gfx.drawstr(label)
+  local bx, by, bw = x + 58, y + 2, w - 58
+  gfx.set(0.24, 0.24, 0.25, 1); gfx.rect(bx, by, bw, 12, 1)
+  local z = (lo < 0) and (bx + bw * (0 - lo) / (hi - lo)) or bx
+  local px = bx + bw * (v - lo) / (hi - lo)
+  gfx.set(0.98, 0.72, 0.3, (v == 0 and lo >= 0) and 0.35 or 1)
+  gfx.rect(math.min(z, px), by, math.max(2, math.abs(px - z)), 12, 1)
+  gfx.set(0.93, 0.91, 0.87, 1); gfx.x, gfx.y = bx + bw + 6, y
+  gfx.drawstr(string.format(f, v * k))
+  panel.sliders[#panel.sliders + 1] = { key = key, x = bx, y = by - 3, w = bw, h = 18, lo = lo, hi = hi }
+end
+
+local function lane(name, before, after, x, y, w, h)
+  gfx.set(0.18, 0.17, 0.16, 1); gfx.rect(x, y, w, h, 1)
+  local function draw(list, r, g_, b, alpha)
+    local pts = {}
+    for v in tostring(list or ""):gmatch("[^,]+") do pts[#pts + 1] = tonumber(v) or -60 end
+    if #pts < 2 then return end
+    gfx.set(r, g_, b, alpha)
+    for i = 2, #pts do
+      local x0, x1 = x + w * (i - 2) / (#pts - 1), x + w * (i - 1) / (#pts - 1)
+      local y0, y1 = y + h - 2 - (h - 4) * (pts[i - 1] + 60) / 60, y + h - 2 - (h - 4) * (pts[i] + 60) / 60
+      gfx.line(x0, y0, x1, y1, 1)
+    end
+  end
+  draw(before, 0.6, 0.6, 0.6, 0.9)
+  draw(after, 0.98, 0.72, 0.3, 1)
+  gfx.set(0.93, 0.91, 0.87, 0.9); gfx.x, gfx.y = x + 4, y + 2; gfx.drawstr(name)
+end
+
+local function align_draw()
+  if gfx.getchar() < 0 then panel.open = false; panel.events[#panel.events + 1] = "closed"; return end
+  local st = panel.st
+  panel.buttons, panel.sliders = {}, {}
+  gfx.set(0.13, 0.125, 0.11, 1); gfx.rect(0, 0, gfx.w, gfx.h, 1)
+  gfx.setfont(1, "Arial", 14, string.byte("b"))
+  gfx.set(0.93, 0.91, 0.87, 1); gfx.x, gfx.y = 10, 8; gfx.drawstr("HYPNOMIX ALIGN")
+  gfx.setfont(1, "Arial", 13)
+  gfx.set(0.63, 0.6, 0.56, 1); gfx.x, gfx.y = 140, 9; gfx.drawstr(st.status or "")
+  local busy = st.busy == "1"
+  -- who
+  local y = 32
+  local x = button("Guide ←", 10, y, false, "guide")
+  gfx.set(0.93, 0.91, 0.87, 1); gfx.x, gfx.y = x, y + 5; gfx.drawstr(st.guide ~= "" and st.guide or "(select the guide track)")
+  y = 58
+  x = button("+ Part", 10, y, false, "part"); x = button("Clear", x, y, false, "clear")
+  gfx.set(0.93, 0.91, 0.87, 1)
+  local pl = wrap(st.parts ~= "" and st.parts or "(select a part, + Part; repeat)", gfx.w - x - 10, 1)
+  gfx.x, gfx.y = x, y + 5; gfx.drawstr(pl[1] or "")
+  -- where
+  y = 86
+  x = button("Range: selection", 10, y, st.range_on == "1", "range")
+  x = button("Song", x, y, st.range_on ~= "1", "song")
+  x = button("Protect", x + 10, y, false, "protect"); x = button("Sync here", x, y, false, "sync")
+  x = button("Clear marks", x, y, false, "clear_marks")
+  gfx.set(0.63, 0.6, 0.56, 1); gfx.x, gfx.y = 10, y + 28
+  gfx.drawstr(st.where or "")
+  -- how
+  y = 136
+  local sw = math.floor((gfx.w - 30) / 2)
+  slider(SLIDERS[1], 10, y, sw - 60); slider(SLIDERS[2], 20 + sw, y, sw - 60)
+  slider(SLIDERS[3], 10, y + 22, sw - 60); slider(SLIDERS[4], 20 + sw, y + 22, sw - 60)
+  y = 186
+  x = button("Preset: " .. (st.preset ~= "" and st.preset or "none"), 10, y, st.preset ~= "", "preset")
+  x = button(st.takes == "1" and "Timing: takes" or "Timing: markers", x + 10, y, st.takes == "1", "takes")
+  x = button(st.write == "1" and "Write project: on" or "Write project: off", x, y, st.write == "1", "write")
+  x = button(busy and "Aligning…" or "Align", x + 10, y, busy, "align")
+  if st.can_open == "1" then x = button("Open project", x, y, false, "open") end
+  gfx.set(0.85, 0.82, 0.77, 1); gfx.x, gfx.y = 10, y + 28
+  gfx.drawstr((wrap(st.result or "", gfx.w - 20, 1))[1] or "")
+  -- lanes: grey before, amber after
+  local top, n = 236, 0
+  local lanes = {}
+  for l in tostring(st.lanes or ""):gmatch("[^|]+") do lanes[#lanes + 1] = l end
+  if #lanes > 0 then
+    local lh = math.min(34, math.floor((gfx.h - top - 26) / #lanes) - 3)
+    for _, l in ipairs(lanes) do
+      local name, before, after = l:match("^([^;]*);([^;]*);?(.*)$")
+      lane(name or "", before, after, 10, top + n * (lh + 3), gfx.w - 20, lh); n = n + 1
+    end
+  end
+  if reaper.time_precise() < panel.flash_until then
+    gfx.set(0.98, 0.8, 0.45, 1); gfx.x, gfx.y = 10, gfx.h - 20; gfx.drawstr(panel.flash)
+  end
+  -- mouse: a slider follows a drag; a button fires on release
+  local down = gfx.mouse_cap & 1 == 1
+  local mx, my = gfx.mouse_x, gfx.mouse_y
+  if down and not panel.was_down then
+    for _, s in ipairs(panel.sliders) do
+      if mx >= s.x - 4 and mx <= s.x + s.w + 4 and my >= s.y and my <= s.y + s.h then panel.drag = s end
+    end
+  end
+  if panel.drag then
+    local s = panel.drag
+    local v = s.lo + (s.hi - s.lo) * math.max(0, math.min(1, (mx - s.x) / s.w))
+    v = (s.hi - s.lo) > 2 and math.floor(v * 10 + 0.5) / 10 or math.floor(v * 100 + 0.5) / 100
+    panel.st[s.key] = tostring(v)
+    panel.hold[s.key] = reaper.time_precise() + 1.5
+    if not down then
+      panel.events[#panel.events + 1] = "set:" .. s.key .. "=" .. tostring(v)
+      panel.drag = nil
+    end
+  elseif panel.was_down and not down then
+    for _, b in ipairs(panel.buttons) do
+      if mx >= b.x and mx <= b.x + b.w and my >= b.y and my <= b.y + b.h then
+        panel.events[#panel.events + 1] = b.action
+      end
+    end
+  end
+  panel.was_down = down
+  gfx.update()
+end
+
 local CHANGES = { jump = false, set_pins = true, remove_fx = true, add_track = true, add_fx = true, set_param = true, set_named = true, fx_enable = true, set_track = true }
 local running = true
 function C.quit() running = false; return { bye = true } end
@@ -661,7 +805,7 @@ local function loop()
     if not okc then probes.err = "chain: " .. tostring(errc) end
   end
   if panel.open then
-    local okd, errd = pcall(panel_draw)
+    local okd, errd = pcall(panel.mode == "align" and align_draw or panel_draw)
     if not okd then panel.flash = "panel: " .. tostring(errd); panel.flash_until = reaper.time_precise() + 10 end
   end
   local now = reaper.time_precise()

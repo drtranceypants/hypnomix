@@ -24,7 +24,7 @@ GROUPS = [
         ("soundcheck", "hypnomix.studio.soundcheck", "set your input gain before recording; live meter"),
         ("takes", "hypnomix.studio.takes", "rank takes by clipping, noise, pitch, timing; comp list per section"),
         ("vocalign", "hypnomix.studio.vocalign", "align doubles and harmonies to the lead: timing, optional pitch match, formant"),
-        ("alignset", "hypnomix.studio.alignset", "align vocal parts inside a Live set: warp markers on your own clips"),
+        ("alignset", "hypnomix.studio.alignset", "align vocal parts inside a Live set or REAPER project: warp / stretch markers on your own clips"),
         ("tune", "hypnomix.studio.tune", "natural pitch correction: each note's centre to the song's tuning, vibrato and slides kept"),
         ("clipmatch", "hypnomix.studio.clipmatch", "even out clips recorded at different gain / mic positions (files or a Live track)"),
         ("dehiss", "hypnomix.studio.dehiss", "spectral de-hiss + smart gate for one track (free stand-in for a spectral de-noiser)"),
@@ -58,7 +58,7 @@ GROUPS = [
         ("diagnose", "hypnomix.session.doctor", "solo every group in the loudest section: who owns the sub, bass, vocal band"),
     ]),
     ("Projects: REAPER (.rpp), Ardour (.ardour) and Live (.als)", [
-        ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, probes, the A/B review panel"),
+        ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, probes, the A/B review panel, the Align panel"),
         ("project", "hypnomix.project.show", "look inside a REAPER, Ardour or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
     ]),
     ("Session files (.als, Live closed or open)", [

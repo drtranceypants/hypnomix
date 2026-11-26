@@ -17,6 +17,8 @@
                                   until the master hits the song card's target while REAPER plays, keep the chain
                                   as FXChains/hypnomix/NAME.RfxChain
   hypnomix reaper review          the Hypnomix panel in REAPER: step through the app's review, A / B / Blind
+  hypnomix reaper align           the Hypnomix Align panel in REAPER: align a vocal stack (guide, parts, presets,
+                                  protect, sync, pitch with the chord check, formant) into a NEW aligned project
   hypnomix reaper probes install|insert SONG.rpp|cards SONG.rpp
                                   Hypnomix Probe and Hypnomix Main for REAPER (JSFX): see `hypnomix reaper probes -h`
 
@@ -39,7 +41,11 @@ def main():
     if len(_sys.argv) > 1 and _sys.argv[1] == "review":
         from hypnomix.reaper import review
         return review.main(_sys.argv[2:])
-    ap.add_argument("cmd", choices=["start", "stop", "status", "tracks", "fx", "params", "probes", "review", "record", "chain"])
+    if len(_sys.argv) > 1 and _sys.argv[1] == "align":
+        from hypnomix.reaper import align
+        return align.main(_sys.argv[2:])
+    ap.add_argument("cmd", choices=["start", "stop", "status", "tracks", "fx", "params", "probes", "review", "record", "chain",
+                                    "align"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()

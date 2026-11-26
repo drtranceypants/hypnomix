@@ -7,6 +7,8 @@ Every edit changes only the lines it names; everything else is written back exac
   dip(project, track, t0, t1, db, ramp)      a dip in the track's volume envelope between t0 and t1
   ease(project, track, t, db, ease_s)        a jump of `db` at t arrives gradually (Live `smooth`'s ease)
   add_take(clip, path, name)                 a new take playing `path` like the active take, made active
+  add_take(clip, path, name, offset=0, rate=1)  ... or from `offset` in `path` at `rate` (a file rendered for the item)
+  set_stretch(clip, marks)                   the active take's stretch markers [(take time, source seconds)], replaced
   rename(track, name)
 
 Volume envelopes: REAPER saves amplitudes (1.0 = 0 dB) and MULTIPLIES the envelope with the fader (checked in
@@ -67,9 +69,10 @@ def item_volume(clip, db):
     clip.gain = float(t[1])
 
 
-def add_take(clip, path, name=None):
+def add_take(clip, path, name=None, offset=None, rate=None):
     """A new take on the item that plays `path` with the active take's offset, rate and volume, made active.
-    The original take stays on the item (switch takes to A/B)."""
+    With `offset` / `rate`, it plays from `offset` seconds into `path` at that rate instead (pitch kept), for a file
+    rendered for this item. The original take stays on the item (switch takes to A/B)."""
     item = clip.native
     tk = clip.take
     # make every existing take non-selected
@@ -78,9 +81,13 @@ def add_take(clip, path, name=None):
             ln.set(*[x for x in ln.tokens[1:] if x != "SEL"])
     pr = next((c for c in (tk.native or []) if isinstance(c, rpp.Line) and c.key == "PLAYRATE"), None)
     vol = tk.gain
-    lines = [rpp.Line(["TAKE", "SEL"]), rpp.Line(["NAME", name or path.name]),
-             rpp.Line(["TAKEVOLPAN", 0, float(vol), -1]), rpp.Line(["SOFFS", float(tk.offset)]),
-             rpp.Line(["PLAYRATE", *(pr.tokens[1:] if pr is not None else [1, 1, 0, -1, 0, 0.0025])]),
+    rate_toks = list(pr.tokens[1:]) if pr is not None else [1, 1, 0, -1, 0, 0.0025]
+    if rate is not None:
+        rate_toks[0], rate_toks[1] = float(rate), 1             # 1: preserve pitch
+    lines = [rpp.Line(["TAKE", "SEL"]), rpp.Line(["NAME", name or Path(path).name]),
+             rpp.Line(["TAKEVOLPAN", 0, float(vol), -1]),
+             rpp.Line(["SOFFS", float(tk.offset if offset is None else offset)]),
+             rpp.Line(["PLAYRATE", *rate_toks]),
              rpp.Line(["CHANMODE", 0]), rpp.Line(["GUID", guid()])]
     for ln in lines:
         item.add(ln)
@@ -95,6 +102,33 @@ def add_take(clip, path, name=None):
     src.children[0].indent = item._child_indent() + "  "
     src.close_raw = None
     return True
+
+
+def set_stretch(clip, marks):
+    """Replace the active take's stretch markers with `marks` [(take time, source seconds)] (REAPER's SM line: take
+    time from the item start in source seconds at the take's rate, source position within the section, offset
+    included). An empty list removes them."""
+    tk = clip.take
+    group = tk.native
+    item = clip.native
+    old = next((x for x in group if isinstance(x, rpp.Line) and x.key == "SM"), None)
+    toks = []
+    for t, s in sorted(marks):
+        toks += (["+"] if toks else []) + [float(t), float(s)]
+    if old is not None:
+        if toks:
+            old.set(*toks)
+        else:
+            item.children.remove(old)
+            group.remove(old)
+    elif toks:
+        pr = next((x for x in group if isinstance(x, rpp.Line) and x.key == "PLAYRATE"), None)
+        line = rpp.Line(["SM", *toks])
+        at = item.children.index(pr) + 1 if pr is not None and pr in item.children else None
+        item.add(line, at=at)
+        group.insert(group.index(pr) + 1 if pr in group else len(group), line)
+    tk.stretch = sorted(marks) or None
+    clip.stretch_markers = len(marks)
 
 
 # ---------------------------------------------------------------- volume envelope

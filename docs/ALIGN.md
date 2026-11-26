@@ -8,6 +8,8 @@ plug-ins. Three ways in, one engine:
 | exported files (any DAW), all from the same start | `hypnomix vocalign LEAD.wav PART.wav …` | new files next to a report |
 | a saved Live set | `hypnomix alignset SET.als --guide … --parts …` | a new set: the timing as **warp markers on your own clips** |
 | Live open, and you'd rather click | the **Hypnomix Align** device (`hypnomix aligndevice`) | the same as alignset, from inside Live |
+| a saved REAPER project | `hypnomix alignset SONG.rpp --guide … --parts …` | a new project: **stretch markers on your own items**, pitch / formant as new takes |
+| REAPER open, and you'd rather click | the **Hypnomix Align** panel (`hypnomix reaper align`) | the same as alignset on the .rpp, from inside REAPER |
 
 Nothing overwrites your takes or your set. Every part is measured again afterwards with an independent check,
 and a part that would not end up closer is left as it was.
@@ -117,6 +119,36 @@ Drag **Hypnomix Align** onto any track (audio passes through). Save your set, th
 
 The device is new: its script is tested against a simulated Live set, and the alignment it drives is tested
 on real sets, but it has not been loaded in Live yet. If something misbehaves, the Max window says which line.
+
+## In REAPER: alignset on a .rpp, and the Hypnomix Align panel
+
+```bash
+hypnomix alignset "Song.rpp" --guide "Lead Vox" --parts "Harmony 1" "Harmony 2" --bars 11-21 --bpm 64 --apply
+hypnomix reaper align          # the panel (needs `hypnomix app` running)
+```
+
+Every option is the same as for a Live set. The differences (`hypnomix/studio/alignset_rpp.py`):
+
+1. Each track is rendered from the saved project as REAPER plays its items (item and take volume, fades,
+   playrate, stretch markers already there), without fader or plug-ins.
+2. Timing becomes **stretch markers on the active take of the part's own items** (`rpp_edit.set_stretch`; REAPER's
+   `SM take-time source-time + …`, the source time including the take's offset, as `SetTakeStretchMarker` saves
+   it). Existing stretch markers are followed, and replaced by the combined map. Where the plan would play audio
+   backwards (two neighbouring words moved opposite ways across a short gap), the map is eased: the mean of the
+   closest forward and backward paths that never play slower than 0.25x; the report gives the largest change.
+3. Pitch / formant (and timing, with `--takes`) become a **new active take on each item**
+   (`rpp_edit.add_take(offset=0, rate=1)`), playing a file made for that item: the part's final render divided by
+   the items' own gain and fades (each item gets its share where items crossfade), so played through the item it
+   sums back to exactly the checked render. The original take stays.
+4. `Song (aligned).rpp` is written next to yours (`(aligned 2)` and on if it exists), then checked against yours
+   with `rpp_edit.check` (every track, item position and length, folder and send kept; only takes added). A
+   project that fails is renamed `… (FAILED check).rpp`.
+
+The panel is a `gfx` window run by the bridge (`bridge.lua` `align_where`, `panel_open mode=align`, `align_draw`)
+and `hypnomix/reaper/align.py`, which sends the same request to `/api/align/*` as the Live device. Measured in
+REAPER 7.86 on a real stack: stretch markers land exactly on the plan in varispeed (median 0.00 ms, 90% 0.12 ms);
+with pitch kept, REAPER's stretch engine plays moved words about 4 ms late (median 4 ms, 90% 9 ms; identical in
+REAPER's élastique modes); new takes play the checked render within 0.4%.
 
 ## For an AI agent
 
