@@ -19,3 +19,6 @@ from. Claude Code specifics:
   open Live set: the same rules as the Live tools apply (ask first, one driver at a time).
 - Ask before taste calls, before any change to a set, before `hypnomix install`, and before opening, saving or
   quitting anything in Live.
+
+- Every change that alters what a person sees or does updates its wiki article in the same commit (AGENTS.md,
+  "Keep the wiki current"); pushing to main updates the app's Wiki and the website on its own.

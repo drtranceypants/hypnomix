@@ -1,5 +1,6 @@
 """The wiki: one set of article files for the app's Wiki tab and the website's /wiki/ page."""
 import json
+import re
 import sys
 import tempfile
 import time
@@ -262,6 +263,31 @@ class WikiTest(unittest.TestCase):
         for f in sorted((root / "docs").glob("[A-Z]*.md")):
             self.assertIn(f'"docs/{f.name}" = "hypnomix/app/wiki/docs/{f.name}"', toml,
                           f"add docs/{f.name} to [tool.hatch.build.targets.wheel.force-include]")
+
+    def test_every_command_has_an_article(self):
+        """Keep the wiki current: a new command needs a hand-written article (a guide, a doc, README...) that
+        shows how to use it, not only its line in the generated command reference."""
+        import re
+        from hypnomix import cli
+        wiki._CACHE.clear()
+        with mock.patch.object(wiki, "HERE", Path(wiki.__file__).with_name("wiki")):
+            text = " ".join(a["html"] for a in wiki.local() if not a.get("generated"))
+        missing = [n for _, cmds in cli.GROUPS for n, _, _ in cmds
+                   if not re.search(r"hypnomix " + re.escape(n) + r"\b|<code>" + re.escape(n) + r"</code>", text)]
+        self.assertEqual(missing, [], "document these commands in docs/guides/, docs/ or README.md")
+
+    def test_every_top_level_document_is_in_the_wiki(self):
+        root = Path(wiki.__file__).resolve().parents[2]
+        self.assertEqual(sorted(f.name for f in root.glob("*.md")), sorted(wiki_md.ROOT_FILES),
+                         "add the new file to wiki_md.ROOT_FILES and to pyproject.toml's force-include")
+
+    def test_command_count_on_other_pages(self):
+        page = self.root / "home.html"
+        page.write_text("<p>all <!--wiki:commands-count-->83<!--/wiki:commands-count--> commands</p>")
+        arts = wiki.local()
+        n = re.search(r"all (\d+) commands", next(a for a in arts if a["id"] == "commands")["sub"]).group(1)
+        wiki_build.refresh_page(page, arts)
+        self.assertIn(f"all <!--wiki:commands-count-->{n}<!--/wiki:commands-count--> commands", page.read_text())
 
     def test_shipped_wiki_is_complete(self):
         """The wiki that ships with the app: every image or video an article uses is there, and nothing extra."""

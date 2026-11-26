@@ -143,8 +143,12 @@ def refresh_page(path, arts):
     by = {a["id"]: a for a in arts}
     missing = []
 
+    count = re.search(r"all (\d+) commands", by["commands"]["sub"]).group(1) if "commands" in by else None
+
     def sub(m):
         aid = m.group(1)
+        if aid == "commands-count" and count:                 # "all <!--wiki:commands-count-->84<!--/...-->"
+            return f"<!--wiki:commands-count-->{count}<!--/wiki:commands-count-->"
         if aid not in by:
             missing.append(aid)
             return m.group(0)

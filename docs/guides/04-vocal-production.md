@@ -116,6 +116,34 @@ turned down by default: the scan asks first.
 `cliplevel` handles the opposite problem: a clip of a lower harmony sitting more than 4 dB under the rest of its
 track. It offers clip-gain raises up to the track's usual level, never closer than 1.5 dB to the lead.
 
+## Level line to line: vocallevel
+
+Does the vocal stay at an even level from one lyric line to the next, and do the upper harmonies sit just under
+the melody? `vocallevel` checks both, line by line (a line is one phrase of the lead singer's track). The first
+pass runs it for you; run it again before every final export, because restored comps, re-tuned notes and fader
+moves made since the scan can change it.
+
+```bash
+hypnomix vocallevel "Song.als" --heard "solo exports/"              # each vocal track exported solo, as heard
+hypnomix vocallevel "Song.als" --renders "renders/" --melody "Harmony low"
+hypnomix vocallevel "Song.als" --heard "solo exports/" --apply "Song (levels).als"
+```
+
+| check | what it flags |
+|---|---|
+| upper | a part pitched above the melody that is louder than the melody minus 1.5 dB on a line (`--upper-under`); parts below the melody are never flagged |
+| jump | a line where the whole stack is 1.5 dB or more louder or quieter than the lines around it (`--jump`) |
+
+`--melody` names the part the others are measured against: the lead as heard. If the track called "Lead" is
+turned well down and a lower harmony carries the tune, name that harmony. `--heard` (solo exports) measures what
+you actually hear; `--renders` is a quicker first look, and differences read larger because track compressors
+aren't applied.
+
+`--apply` writes the fixes as volume automation on a **new** set: each upper part lowered on the lines where it
+is over, then the stack's lines evened out on the vocal group's volume. Changes ramp in the gaps between lines,
+existing automation is kept, and the song's last two lines are never raised (`--keep-ending`), because an ending
+that dies away is usually on purpose.
+
 ## Polish: deess and breaths
 
 ```bash

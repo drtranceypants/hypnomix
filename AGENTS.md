@@ -261,7 +261,8 @@ for deeper support is in `docs/ROADMAP.md`.
 
 ## Changing the code
 
-- One command = one module; register it in `hypnomix/cli.py` (`GROUPS`) and add a row to `README.md`.
+- One command = one module; register it in `hypnomix/cli.py` (`GROUPS`), add a row to `README.md`, and document
+  it in the guide or doc it belongs to (see "Keep the wiki current" below).
 - Module docstring = the command's help (what it finds, how it fixes, usage). Keep it current.
 - Session tools follow `hypnomix/session/smooth.py`: parse with `hypnomix/session/automation.py` helpers
   (`load`, `save`, envelopes), map clips to audio with `smooth.clip_info` / `file_seconds` (warp markers,
@@ -288,6 +289,25 @@ for deeper support is in `docs/ROADMAP.md`.
   the approved subset.
 - Before committing: no paid product names, no personal paths, no audio files. Other agents may be committing
   here too: commit only the files you changed.
+
+## Keep the wiki current (every change)
+
+The app's Wiki tab and the website's wiki (https://hypnomix.bradfieldenterprises.org/wiki/) are built from the
+files in this repo, so **every change that alters what a person sees or does updates its article in the same
+commit**: a new command, option, check, fix, default or workflow, a renamed thing, a limit that is lifted.
+
+| what changed | edit |
+|---|---|
+| how to use a feature | the guide that covers it, `docs/guides/NN-*.md` (it is also a PDF: `python docs/guides/build.py`) |
+| how a part works in depth | `docs/<TOPIC>.md`, or a new one (list a new file in `pyproject.toml`'s force-include) |
+| the overview, setup, the rules | `README.md`, `GUIDE.md`, `AGENTS.md`, `CLAUDE.md`, `THIRD_PARTY.md` |
+| a skill or a subagent | `skills/<name>/SKILL.md`, `agents/<name>.md` |
+| lessons, install, the FAQ, how-to pages | `hypnomix/app/wiki/articles/NN-id.html` (`teaser:` is its home page summary) |
+| a command's one-line description | `hypnomix/cli.py` (the command reference article is built from it) |
+
+The tests hold the line: a command with no hand-written article, or a new top-level `.md` that the wiki does not
+read, fails `python -m unittest discover -s tests`. Pushing to `main` publishes: the website rebuilds within
+about 10 minutes and every copy of the app shows the newer articles. Never edit the website's wiki pages by hand.
 
 More: `docs/WORKFLOW.md` (the loop in detail), `docs/LESSONS.md` (the mistakes these rules come from),
 `docs/ROADMAP.md` (what to build next, other DAWs).
