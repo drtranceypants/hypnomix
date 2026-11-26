@@ -15,6 +15,7 @@ envelope shows fader scaling (VOLTYPE 1), checked against REAPER 7.86. FADEIN/FA
 length, auto-crossfade length (used when set). Stretch markers are followed (each segment at its own speed); reversed sections are reported; the renderer plays such takes
 straight (a warning says so).
 """
+import contextvars
 import os
 import re
 from pathlib import Path
@@ -47,14 +48,56 @@ def resolve(path, proj_dir, record_path=""):
         record_path = str(record_path or "").replace("\\", "/")
     p = Path(text)
     foreign = os.sep != "\\" and re.match(r"^[A-Za-z]:/", text) is not None       # a Windows path on a Mac or Linux
+    # for an import, an absolute path outside the project folder is never touched (it may be a network share):
+    # it is returned as it is, for the importer to decide about (TOUCH_OUTSIDE, set by hypnomix.project.import_reaper)
+    elsewhere = p.is_absolute() and not _under(p, proj_dir) and not TOUCH_OUTSIDE.get()
+    if elsewhere:
+        return p
     cands = [p] if p.is_absolute() else []
     cands += ([] if foreign else [proj_dir / p])
     cands += [proj_dir / record_path / p.name, proj_dir / p.name, proj_dir / "Audio" / p.name, proj_dir / "Media" / p.name]
+    if not TOUCH_OUTSIDE.get():                  # an import: a candidate outside the folder (a '..' path, an absolute
+        out = [c for c in cands if not _under(c, proj_dir)]                    # recording folder) is never touched
+        cands = [c for c in cands if _under(c, proj_dir)]
+        for c in cands:
+            if c.exists():
+                return c
+        if out:
+            return Path(os.path.normpath(str(out[0])))
     for c in cands:
         if c.exists():
             return c
-    hits = list(proj_dir.rglob(p.name)) if proj_dir.exists() else []
-    return hits[0] if hits else (p if p.is_absolute() or foreign else proj_dir / p)
+    hit = _index(proj_dir).get(p.name.lower()) if p.name else None      # one walk of the folder per project
+    return hit if hit else (p if p.is_absolute() or foreign else proj_dir / p)
+
+
+TOUCH_OUTSIDE = contextvars.ContextVar("hypnomix_reaper_touch_outside", default=True)
+
+
+def _under(p, folder):
+    """Is path `p` inside `folder`, from the text alone (no file is touched)?"""
+    a, b = os.path.normpath(os.path.abspath(str(p))), os.path.normpath(os.path.abspath(str(folder)))
+    return a == b or a.startswith(b.rstrip(os.sep) + os.sep)
+
+
+SEARCH_LIMIT = 20000              # entries looked at below the project folder when a file is not where it says
+_INDEX = {}
+
+
+def _index(proj_dir):
+    """File name (lower case) -> the first such file below `proj_dir`, built once per read (see read)."""
+    key = str(proj_dir)
+    if key not in _INDEX:
+        found, n = {}, 0
+        if proj_dir.is_dir():
+            for q in proj_dir.rglob("*"):
+                n += 1
+                if n > SEARCH_LIMIT:
+                    break
+                if q.is_file():
+                    found.setdefault(q.name.lower(), q)
+        _INDEX[key] = found
+    return _INDEX[key]
 
 
 def _source(ch, proj_dir, rec):
@@ -223,6 +266,7 @@ def read(path):
     path = Path(path).expanduser().resolve()
     root = rpp.load(path)
     proj_dir = path.parent
+    _INDEX.pop(str(proj_dir), None)               # the folder may have changed since the last read
     rec = root.get("RECORD_PATH", default="") or ""
     tempo_ln = root.line("TEMPO")
     tempo = num(tempo_ln.tokens[1], 120.0) if tempo_ln is not None else 120.0

@@ -63,9 +63,9 @@ The ten changes you will notice most, in plain words:
   everything matched what HypnoMix wrote. The new Live sets (hand-off locators, the EQ Eight band, colour chains) have
   not been opened in Live, the `.ardour` snapshots have not been opened in a released DAW, the new tools have not been run on
   real songs, and nothing new has been judged by ear.
-- DAW mode (the HypnoMix engine, the DAW view and the Assistant on it), the Store, `als2ardour` and `chain --ardour`
-  were checked by unit tests on synthetic data and stand-in servers, and DAW mode against the real engine on its silent
-  test backend only. No session written by `als2ardour` has been opened in a released DAW, and nothing was tried
+- DAW mode (the HypnoMix engine, the DAW view and the Assistant on it), the Store, `als2ardour`, `import` and
+  `chain --ardour` were checked by unit tests on synthetic data and stand-in servers, and DAW mode against the real engine on its silent
+  test backend only. No session written by `als2ardour` or `import` has been opened in a released DAW (for `import`: checked: .als through als2ardour's own tests; .logicx decoded from real packages saved by version 10.7, with fader values, mutes, plug-in names and region places compared with the window image each package stores of itself (the program that made them was not run), and one of them imported, opened in the HypnoMix engine on its silent test backend and its tracks, faders and regions read back; .dawproject, .rpp, .ptx and .aaf only with files made by the tests or stand-in readers.), and nothing was tried
   through a real sound card, in recording, or by adding HypnoMix DAW from Setup (no archive is published yet).
 
 Items marked *(to verify)* below rest on research that has not been tested here yet.

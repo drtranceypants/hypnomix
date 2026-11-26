@@ -309,6 +309,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         sendSession(["op": "open", "path": url.path])
     }
 
+    // File → Import Project…: a project from another DAW becomes a NEW session beside it (the DAW view runs the
+    // import through POST /api/daw/import and offers to open the result). A .logicx project is a package: allowed whole.
+    @objc func importProject() {
+        let panel = NSOpenPanel()
+        panel.title = "Import Project"
+        panel.message = "Choose a project from another DAW: a .als set, a .logicx project, a .dawproject file or a .rpp project (a .ptx session or an .aaf export with the HypnoMix DAW add-on). It is only read."
+        panel.prompt = "Import"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.treatsFilePackagesAsDirectories = false
+        panel.allowsMultipleSelection = false
+        let outside = NSButton(checkboxWithTitle: "Also copy audio from outside the project", target: nil, action: nil)
+        outside.state = .off
+        panel.accessoryView = outside
+        panel.isAccessoryViewDisclosed = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        sendSession(["op": "import", "path": url.path, "allow_outside": outside.state == .on ? "1" : "0"])
+    }
+
     func sendSession(_ req: [String: String]) {
         if web.url?.host == "127.0.0.1", web.url?.path.hasPrefix("/daw") == true { callMenu(req); return }
         pendingSession = req                                   // another page (or still starting): the DAW view first
@@ -344,6 +363,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
             let fileMenu = NSMenu(title: "File")
             let n = fileMenu.addItem(withTitle: "New Session…", action: #selector(newSession), keyEquivalent: "n"); n.target = self
             let o = fileMenu.addItem(withTitle: "Open Session…", action: #selector(openSession), keyEquivalent: "o"); o.target = self
+            fileMenu.addItem(.separator())
+            let i = fileMenu.addItem(withTitle: "Import Project…", action: #selector(importProject), keyEquivalent: "i"); i.target = self
             file.submenu = fileMenu
         }
         let edit = NSMenuItem(); main.addItem(edit)

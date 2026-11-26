@@ -2005,7 +2005,7 @@ def make_handler(port):
                     html = PAGE.replace("__TOKEN__", TOKEN).replace("__DAWMODE__", "true" if DW.STATE["daw"] and SU.is_done() else "false")
                     html = html.replace("<script>", f'<script nonce="{nonce}">')
                     return self.send(200, html.encode(), "text/html; charset=utf-8", nonce=nonce)
-                if u.path == "/daw" or u.path.startswith("/daw/") or u.path == "/api/daw/state":   # DAW mode
+                if u.path == "/daw" or u.path.startswith("/daw/") or u.path in ("/api/daw/state", "/api/daw/import"):   # DAW mode (an import's status needs its random job id)
                     from hypnomix.app import daw as DW
                     r = DW.handle_get(u.path, q, TOKEN)             # the DAW view's page comes with its own nonce
                     if r:

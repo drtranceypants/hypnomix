@@ -181,6 +181,7 @@ class Tempo:
         if pts[0][0] > 0:
             pts.insert(0, (0.0, pts[0][1]))
         self.pts = pts
+        self._beats = [b for b, _ in pts]
         self.bpm = [v for b, v in pts if b <= 0][-1]
         self.ramps = [(a, b) for a, b in zip(pts, pts[1:]) if b[0] > a[0] and abs(b[1] - a[1]) > 1e-6]
         self.steps = [b for a, b in zip(pts, pts[1:]) if b[0] == a[0] and abs(b[1] - a[1]) > 1e-6]
@@ -205,10 +206,8 @@ class Tempo:
 
     def seconds(self, beat):
         pts = self.pts
-        i = 0
-        for k in range(len(pts)):
-            if pts[k][0] <= beat:
-                i = k
+        import bisect
+        i = max(0, bisect.bisect_right(self._beats, beat) - 1)   # the last point at or before `beat` (fast for many)
         if i == len(pts) - 1:
             return self._cum[i] + (beat - pts[i][0]) * 60.0 / pts[i][1]
         return self._cum[i] + self._seg(pts[i], pts[i + 1], beat)
@@ -252,11 +251,15 @@ class Tempo:
         if not self.ramps:
             return 0.0
         segs = segs or self.segments()
-        worst = 0.0
+        worst, ramps, i = 0.0, sorted(self.ramps, key=lambda r: r[0][0]), 0
         for (b0, v0), nxt in zip(segs, segs[1:] + [None]):
             if nxt is None:
                 break
-            for a, b in self.ramps:
+            while i < len(ramps) and ramps[i][1][0] <= b0:     # ramps that end before this step: done with them
+                i += 1
+            for a, b in ramps[i:]:                             # only the ramps this step overlaps (both are sorted)
+                if a[0] >= nxt[0]:
+                    break
                 lo, hi = max(a[0], b0), min(b[0], nxt[0])
                 for j in range(1, 8):
                     x = lo + (hi - lo) * j / 8 if hi > lo else None
@@ -266,6 +269,44 @@ class Tempo:
 
 
 # ---------------------------------------------------------------- reading the set
+MAX_SET_ELEMENTS = 10_000_000       # elements in a set's XML (a big real set has a few million)
+
+
+class XMLRefused(ValueError):
+    """A project's XML declares a DTD or entities, or has too many elements: refused while parsing."""
+
+
+def parse_xml(raw, max_elements=None):
+    """Parse a project's XML, whatever its encoding, with expat itself: a DTD or an entity declaration is refused by
+    the parser (a byte search would miss UTF-16), so no entity is ever expanded; past `max_elements` elements it
+    stops. -> the root element (an ElementTree Element, as ET.fromstring gives)."""
+    import pyexpat
+    tb, count = ET.TreeBuilder(), [0]
+    parser = pyexpat.ParserCreate()
+    parser.buffer_text = True
+
+    def refuse(*_a):
+        raise XMLRefused("it declares a DTD or entities, which a project file never has")
+
+    def start(tag, attrs):
+        count[0] += 1
+        if max_elements and count[0] > max_elements:
+            raise XMLRefused(f"it has more than {max_elements} elements")
+        tb.start(tag, attrs)
+    parser.StartDoctypeDeclHandler = refuse
+    parser.EntityDeclHandler = refuse
+    parser.StartElementHandler = start
+    parser.EndElementHandler = tb.end
+    parser.CharacterDataHandler = tb.data
+    try:
+        for k in range(0, len(raw), 1 << 20):
+            parser.Parse(raw[k:k + (1 << 20)], False)
+        parser.Parse(b"", True)
+    except pyexpat.ExpatError as e:
+        raise ET.ParseError(str(e)) from e
+    return tb.close()
+
+
 def load_xml(path):
     """The set's XML root: Live writes gzip; a plain-XML .als is read too (both under the same size cap). Anything
     else stops with a message. A set saved by a later Live than HypnoMix has been tested with prints one warning line,
@@ -280,7 +321,7 @@ def load_xml(path):
             if os.path.getsize(path) > CAP:                         # the same cap for plain XML, before reading it
                 raise ValueError(f"this file is larger than {CAP >> 30} GB: it is not a project HypnoMix will open")
             raw = Path(path).read_bytes()
-        root = ET.fromstring(raw)
+        root = parse_xml(raw, MAX_SET_ELEMENTS)                     # a DTD or entities are refused while parsing
     except (OSError, EOFError, ValueError, ET.ParseError) as e:
         raise SystemExit(f"{path}: not a readable Live set ({e})")
     if root.tag != "Ableton":
@@ -631,6 +672,33 @@ def short_stem(stem, limit=NAME_BYTES):
     return stem if len(b) <= limit else b[:limit].decode("utf-8", "ignore").rstrip()
 
 
+MAX_FILE_SECONDS = 4 * 3600         # a file that must be converted, or is compressed: longer is not copied in
+PCM_FORMATS = ("WAV", "WAVEX", "AIFF", "W64", "RF64", "CAF")   # their size follows their length: copied at any length
+MAX_MEMORY_SAMPLES = 1 << 26        # a file converted in memory (a stretch, or no ffmpeg): samples x channels at most
+MAX_UPSAMPLE = 8                    # the session rate at most 8x a file's own
+MAX_CONVERT_FILE = 8 << 30          # bytes ffmpeg may write for one converted file (a hard limit on the process)
+DISK_MARGIN = 2 << 30               # what a copy must leave free on the disk
+
+
+FFMPEG_TIMEOUT = 1800                # a conversion that takes longer than 30 minutes is stopped
+
+
+def _probe_seconds(path):
+    """The length of a file libsndfile cannot open (mp3, m4a ...), from ffprobe when it is there, or None."""
+    import shutil
+    import subprocess
+    exe = shutil.which("ffprobe")
+    if exe is None:
+        return None
+    try:
+        cp = subprocess.run([exe, "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1",
+                             str(path)], capture_output=True, timeout=30)
+        v = float(cp.stdout.decode("ascii", "replace").strip() or "nan")
+        return v if math.isfinite(v) else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
 class Sources:
     """Copies each source file once into the session, one mono file per channel. Files are copied in blocks, so a long
     recording never has to fit in memory twice; only a file that needs another sample rate or a stretch is read whole
@@ -640,14 +708,87 @@ class Sources:
         self.dir, self.sr, self.warn = audio_dir, sr, warn
         self.done = {}           # (path, rate) -> (names, seconds)
         self.used = set()
+        self.next = {}
 
     def _name(self, stem):
+        stem = re.sub(r"[\x00-\x1f\x7f\ufffe\uffff]|[\ud800-\udfff]", "", stem)   # XML cannot hold these
         stem = short_stem(re.sub(r'[\\/:*?"<>|%]', "-", stem).strip() or "audio")
-        name, i = stem, 2
+        name, i = stem, self.next.get(stem.lower(), 2)
         while name.lower() in self.used:          # macOS volumes ignore case: Vox.wav would overwrite vox.wav
             name, i = f"{stem}-{i}", i + 1
+        self.next[stem.lower()] = i               # a counter per stem: many files of one name stay fast
         self.used.add(name.lower())
         return name
+
+    def _unfit(self, path, rate, info, streamed):
+        """Why this file is not converted (too long, too much resampling, too big for memory or the disk), or None.
+        A file that compresses well can declare hours of audio in a few kilobytes. `streamed`: ffmpeg converts it
+        file to file (constant memory); otherwise it is read whole."""
+        if info is not None:
+            secs, fr, ch = float(info.duration), int(info.samplerate), int(info.channels)
+        else:
+            secs, fr, ch = _probe_seconds(path), None, 2
+        if secs is None and not streamed:
+            return "its length cannot be read before decoding it (ffprobe is not installed)"
+        if secs is not None and secs > MAX_FILE_SECONDS:
+            return f"it is {secs / 3600:.1f} hours long; files that must be converted are taken up to " \
+                   f"{MAX_FILE_SECONDS // 3600} hours"
+        if fr and self.sr > fr * MAX_UPSAMPLE:
+            return f"it is at {fr} Hz and would need resampling to {self.sr} Hz, more than {MAX_UPSAMPLE}x"
+        if not streamed and secs * max(fr or self.sr, self.sr) * ch / max(rate, 1e-3) > MAX_MEMORY_SAMPLES:
+            return f"it is too long to convert in memory ({secs / 60:.0f} minutes, {ch} channel(s))"
+        if secs is not None:
+            return self._no_room(secs * self.sr * ch * 4 / max(rate, 1e-3))
+        return None
+
+    def _no_room(self, need):
+        try:
+            free = shutil.disk_usage(self.dir).free
+        except OSError:
+            return None
+        if need > free - DISK_MARGIN:
+            return f"it would need {need / 2**30:.1f} GB in the session, more than the disk has free"
+        return None
+
+    def _ffmpeg(self, path, stem, written, label, fr=None):
+        """Resample or decode with ffmpeg, file to file (constant memory, at most MAX_FILE_SECONDS and
+        MAX_CONVERT_FILE bytes), then copy the result in blocks. None when ffmpeg is not there or fails."""
+        import subprocess
+        import tempfile
+        exe = shutil.which("ffmpeg")
+        if exe is None:
+            return None
+
+        def limit():                                            # a hard cap on what ffmpeg may write (never above
+            import resource                                     # a lower limit already set: that one stays)
+            soft, hard = resource.getrlimit(resource.RLIMIT_FSIZE)
+            cap = MAX_CONVERT_FILE if hard == resource.RLIM_INFINITY else min(MAX_CONVERT_FILE, hard)
+            if soft != resource.RLIM_INFINITY:
+                cap = min(cap, soft)
+            resource.setrlimit(resource.RLIMIT_FSIZE, (cap, hard))
+        with tempfile.TemporaryDirectory(prefix="hypnomix-convert-") as td:
+            tmp = Path(td) / "x.wav"
+            try:
+                cp = subprocess.run([exe, "-nostdin", "-y", "-loglevel", "error", "-i", str(path), "-vn",
+                                     "-t", str(MAX_FILE_SECONDS), "-ar", str(self.sr), "-c:a", "pcm_f32le",
+                                     "-rf64", "auto", str(tmp)], stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=FFMPEG_TIMEOUT,
+                                    preexec_fn=limit if os.name == "posix" else None)
+            except subprocess.TimeoutExpired as e:
+                raise ValueError(f"converting it took longer than {FFMPEG_TIMEOUT // 60} minutes: stopped") from e
+            except (OSError, subprocess.SubprocessError) as e:
+                raise ValueError(f"ffmpeg could not be started to convert it ({type(e).__name__})") from e
+            if cp.returncode != 0 or not tmp.is_file():
+                return None
+            info = sf.info(str(tmp))
+            if info.duration >= MAX_FILE_SECONDS - 1:
+                raise ValueError(f"it is longer than {MAX_FILE_SECONDS // 3600} hours")
+            got = self._copy(tmp, info, stem, written)
+        if fr and fr != self.sr:
+            self.warn.append(f"{label}: {fr} Hz, resampled to the session's {self.sr} Hz (file to file, by ffmpeg)")
+        elif not fr:
+            self.warn.append(f"{label}: decoded to the session's {self.sr} Hz (file to file, by ffmpeg)")
+        return got
 
     def add(self, path, rate=1.0):
         """-> ([file names, one per channel], length in seconds) or None when the file can't be read."""
@@ -663,28 +804,50 @@ class Sources:
             container = audio_container(path)
             if container is None:
                 raise ValueError("not an audio file (its contents are not a known audio container)")
-            got = None
             try:
                 info = sf.info(str(path))
-                if abs(rate - 1.0) <= 1e-9 and info.samplerate == self.sr:
-                    got = self._copy(path, info, stem, written)
-                else:
-                    got = self._convert(path, info, rate, stem, written)
-            except (StretchError, MemoryError):
-                raise
-            except OSError as e:
-                if e.errno == errno.ENOSPC:                     # the disk is full: stop, never carry on without audio
-                    raise
-                got = None
             except Exception:
-                got = None
-            if got is None:                                     # not for libsndfile (mp3, m4a ...): decode with ffmpeg
-                self._drop(written)
-                from hypnomix.core import dsp
-                y, sr = dsp.load(path)
-                y = np.asarray(y, dtype=np.float32)
-                y = y[:, None] if y.ndim == 1 else y
-                got = self._write(y, sr, rate, stem, written, "FLOAT", Path(path).name)
+                info = None
+            stretchy = abs(rate - 1.0) > 1e-9
+            if info is not None and not stretchy and info.samplerate == self.sr:
+                why = self._no_room(info.frames * info.channels * 4)
+                if not why and info.format not in PCM_FORMATS and info.duration > MAX_FILE_SECONDS:
+                    why = (f"it is {info.duration / 3600:.1f} hours long; a compressed file is taken up to "
+                           f"{MAX_FILE_SECONDS // 3600} hours (a few kilobytes can declare hours of silence)")
+                if why:
+                    raise ValueError(why)
+                got = self._copy(path, info, stem, written)    # same rate, same speed: streamed, any length
+            else:
+                streamed = not stretchy and shutil.which("ffmpeg") is not None
+                why = self._unfit(path, rate, info, streamed)
+                if why:
+                    raise ValueError(why)
+                got = self._ffmpeg(path, stem, written, Path(path).name,
+                                   info.samplerate if info is not None else None) if streamed else None
+                if got is None:
+                    self._drop(written)
+                    why = self._unfit(path, rate, info, False) if streamed else None   # now read whole: its limits
+                    if why:
+                        raise ValueError(why)
+                    try:
+                        if info is None:
+                            raise ValueError("not for libsndfile")
+                        got = self._convert(path, info, rate, stem, written)
+                    except (StretchError, MemoryError):
+                        raise
+                    except OSError as e:
+                        if e.errno == errno.ENOSPC:             # the disk is full: stop, never carry on without audio
+                            raise
+                        got = None
+                    except Exception:
+                        got = None
+                if got is None:                                 # not for libsndfile (mp3, m4a ...): decode with ffmpeg
+                    self._drop(written)
+                    from hypnomix.core import dsp
+                    y, sr = dsp.load(path)
+                    y = np.asarray(y, dtype=np.float32)
+                    y = y[:, None] if y.ndim == 1 else y
+                    got = self._write(y, sr, rate, stem, written, "FLOAT", Path(path).name)
             self.done[key] = got
         except (StretchError, MemoryError):
             self._drop(written)
@@ -838,9 +1001,10 @@ def a(sec):
 
 
 def legal(name):
-    """Ardour's own rule for track names (Route::ensure_track_or_route_name): these characters become '_'. A very long
-    name is cut (the report keeps Live's full name)."""
-    n = re.sub(r'[<>:"/\\|?*]', "_", name)[:TRACK_NAME_CHARS].rstrip(" .").strip()
+    """Ardour's own rule for track names (Route::ensure_track_or_route_name): these characters become '_'. Control
+    characters (which XML cannot hold) and line breaks go. A very long name is cut (the report keeps Live's full name)."""
+    n = re.sub(r"[\x00-\x1f\x7f\ufffe\uffff]|[\ud800-\udfff]", " ", str(name))
+    n = re.sub(r'[<>:"/\\|?*]', "_", n)[:TRACK_NAME_CHARS].rstrip(" .").strip()
     return n or "Track"
 
 

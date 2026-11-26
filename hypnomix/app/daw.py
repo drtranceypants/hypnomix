@@ -986,6 +986,8 @@ def handle_get(path, q, token):
         except Exception:
             addon = {}
         return 200, dict(st, daw_mode=STATE["daw"], available=available(), addon=addon)
+    if path == "/api/daw/import":
+        return 200, import_status(str(q.get("job") or ""))
     return None
 
 
@@ -1032,6 +1034,9 @@ def handle_post(path, body):
         folder, name = _text(body, "folder"), _text(body, "name")
         ENGINE.check_new(folder, name)                # a name that cannot be used is refused before anything is asked or saved
         return _unsaved(body) or (200, ENGINE.new_session(folder, name))
+    if path == "/api/daw/import":                     # another DAW's project -> a new session (a job; the page polls)
+        return 200, import_start(_text(body, "path"), _text(body, "out", required=False),
+                                 allow_outside=body.get("allow_outside") is True)
     if path == "/api/daw/meta":                       # time signature + track colours from the saved session file
         from hypnomix.app import daw_meta
         s = ENGINE.session or (str(Path(ENGINE.new[0]) / ENGINE.new[1]) if ENGINE.new else None)
@@ -1044,6 +1049,74 @@ def handle_post(path, body):
         except Exception as e:                        # a damaged file: say so, never break the page
             return 500, {"error": f"could not read the session file: {e}"}
     return None
+
+
+# ---------------------------------------------------------------- importing another DAW's project
+# POST /api/daw/import {path, out?, allow_outside?} reads a .als, .logicx, .ptx, .dawproject, .rpp or .aaf project and writes a NEW
+# session folder (hypnomix.project.import_project); the project is only read. It runs as a job (a big project takes
+# minutes): the answer is {job}, and GET /api/daw/import?job=ID answers {state: running | done | failed, session,
+# report, summary, error}. The page then opens the new session with the usual POST /api/daw/open (which asks about
+# unsaved work first). One import runs at a time; one still running after IMPORT_STUCK seconds no longer blocks the
+# next (it is marked failed: its thread cannot be stopped, so the app should be restarted when convenient).
+IMPORT_JOBS = {}
+IMPORT_LOCK = threading.Lock()
+IMPORT_KEEP = 20
+IMPORT_STUCK = 3600
+
+
+def import_out(project):
+    """Where a new session goes when the person names no folder (import_project.default_out: beside the project, or
+    beside its folder for a project that owns its folder, so it is never inside what the import guards)."""
+    from hypnomix.project import import_project
+    return import_project.default_out(project)
+
+
+def import_start(project, out=None, allow_outside=False):
+    from hypnomix.project import import_project
+    p = Path(project).expanduser()
+    if not p.exists():
+        raise ValueError(f"{project}: no such project")
+    if import_project.kind_of(p) is None:
+        raise ValueError(f"{p.name}: not a project HypnoMix can import (.als, .logicx, .ptx, .dawproject, .rpp or "
+                         f".aaf)")
+    target = Path(out).expanduser() if out else import_out(p)
+    with IMPORT_LOCK:
+        for j in IMPORT_JOBS.values():
+            if j["state"] == "running" and time.time() - j["started"] > IMPORT_STUCK:
+                j.update(state="failed", error=f"still running after {IMPORT_STUCK // 60} minutes: given up (restart "
+                                               f"the app to stop it for good)")
+        if any(j["state"] == "running" for j in IMPORT_JOBS.values()):
+            raise ValueError("an import is already running: wait for it to finish")
+        job = secrets.token_hex(6)
+        IMPORT_JOBS[job] = dict(state="running", project=str(p), out=str(target), started=time.time())
+        for old in sorted(IMPORT_JOBS, key=lambda k: IMPORT_JOBS[k]["started"])[:-IMPORT_KEEP]:
+            IMPORT_JOBS.pop(old, None)
+
+    def run():
+        try:
+            f, rep, summary = import_project.convert(p, target, log=lambda *a: None, allow_outside=allow_outside)
+            IMPORT_JOBS[job].update(state="done", session=str(f), report=str(rep), summary=summary, error=None)
+        except SystemExit as e:
+            if IMPORT_JOBS[job]["state"] == "running":
+                IMPORT_JOBS[job].update(state="failed", error=str(e))
+        except Exception as e:                             # never leave the job "running" for ever
+            if IMPORT_JOBS[job]["state"] == "running":
+                IMPORT_JOBS[job].update(state="failed", error=f"{type(e).__name__}: {e}")
+    threading.Thread(target=run, name="hypnomix-import", daemon=True).start()
+    return dict(job=job, state="running", out=str(target))
+
+
+def import_status(job):
+    j = IMPORT_JOBS.get(job or "")
+    if j is None:
+        return dict(state="unknown", error="no such import")
+    out = {k: j.get(k) for k in ("state", "out", "session", "summary", "error")}
+    if j.get("report") and j["state"] == "done":
+        try:
+            out["report"] = Path(j["report"]).read_text(encoding="utf-8")[:20000]
+        except OSError:
+            out["report"] = ""
+    return out
 
 
 # ---------------------------------------------------------------- files dropped on the DAW view

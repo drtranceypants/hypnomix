@@ -60,6 +60,9 @@ def broken_samples(y):
     return int(bad.sum()), int(np.flatnonzero(bad.any(axis=1) if bad.ndim > 1 else bad)[0])
 
 
+FFMPEG_TIMEOUT = 1800                # a decode that takes longer than 30 minutes is stopped
+
+
 def load(path, sr=None):
     """Read audio as float64 (n, ch). Resamples to `sr` if given. Falls back to ffmpeg for mp3/m4a.
 
@@ -104,8 +107,11 @@ def read(path):
             tmp = Path(td) / "x.wav"
             try:
                 subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-c:a", "pcm_f32le", str(tmp)],
-                               check=True, capture_output=True)
+                               check=True, capture_output=True, timeout=FFMPEG_TIMEOUT)
                 y, file_sr = sf.read(str(tmp), always_2d=True, dtype="float64")
+            except subprocess.TimeoutExpired as e:
+                raise AudioReadError(f"can't read '{path}' as audio: decoding it took longer than "
+                                     f"{FFMPEG_TIMEOUT // 60} minutes, so it was stopped") from e
             except Exception as e:
                 raise AudioReadError(f"can't read '{path}' as audio: not an audio file HypnoMix can decode") from e
     return y, int(file_sr)

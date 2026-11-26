@@ -305,8 +305,36 @@
     const v = String(text || '').trim().replace(/\/+$/, ''), i = v.lastIndexOf('/');
     return i < 0 ? { folder: '.', name: v } : { folder: i === 0 ? '/' : v.slice(0, i), name: v.slice(i + 1) };
   };
-  /* the Mac app's File → New Session… / Open Session… (Hypnomix.swift calls this with what its file panel chose) */
+  /* another DAW's project (.als, .logicx, .ptx, .dawproject, .rpp, .aaf) -> a NEW session beside it, then open
+     it (asked first, like Open). The server runs it as a job (POST /api/daw/import, then GET ?job=); the project is
+     only read. `allowOutside`: also copy audio the project points to outside its folder (left out by default).
+     Resolves to the new session's path, or null. */
+  HX.importProject = async function (path, allowOutside) {
+    path = String(path || '').trim();
+    if (!path) throw new Error('type or choose the project to import');
+    const name = path.replace(/\/+$/, '').split('/').pop();
+    const job = await HX.api.post('/api/daw/import', { path, allow_outside: !!allowOutside });
+    HX.toast('Importing ' + name + '… (the project is only read)', 6000);
+    let st = job;
+    for (let i = 0; st.state === 'running' && i < 7200; i++) {
+      await new Promise((ok) => setTimeout(ok, 1500));
+      st = await HX.api.get('/api/daw/import?job=' + encodeURIComponent(job.job));
+    }
+    if (st.state !== 'done') throw new Error(st.error || ('the import is ' + st.state));
+    HX.log('mcp', 'import · ' + st.summary);
+    const open = await HX.dialog({ title: 'Imported ' + name, cancel: false,
+      body: [st.summary + '.', 'The new session is ' + st.session + '. What was left out or changed, and what the file type could not carry (plug-ins, instruments, automation…), is listed in IMPORT-REPORT.md beside it.'],
+      buttons: [{ label: 'Not now', value: false }, { label: 'Open it', value: true, focus: true }] });
+    if (!open) return st.session;
+    if (HX.api.inApp && HX.menuSession) await HX.menuSession({ op: 'open', path: st.session });
+    return st.session;
+  };
+  /* the Mac app's File → New Session… / Open Session… / Import Project… (Hypnomix.swift calls this with what its file panel chose) */
   HX.menuSession = async function (req) {
+    if (req && req.op === 'import') {
+      try { await HX.importProject(req.path, req.allow_outside === '1'); } catch (e) { HX.toast('Could not import: ' + e.message, 8000); HX.log('err', 'import · ' + e.message); }
+      return;
+    }
     if (!HX.api.inApp || !req || (req.op !== 'open' && req.op !== 'new')) return;
     const isNew = req.op === 'new';
     const what = isNew ? 'make the new session ' + req.name : 'open ' + String(req.path || '').split('/').filter(Boolean).pop();
@@ -355,23 +383,27 @@
     const err = h('p.err');
     const stEl = h('pre.eng', null, HX.api.inApp ? 'Asking the app…' : 'Opened outside the HypnoMix app: only the demo song.');
     const go = h('button.btn.primary', { type: 'button' }, 'Connect');
-    const sess = h('input', { placeholder: '/path/to/Song/Song.ardour', spellcheck: 'false', 'aria-label': 'Session path' });
+    const sess = h('input', { placeholder: '/path/to/Song/Song.ardour (or a project to import)', spellcheck: 'false', 'aria-label': 'Session or project path' });
     const btn = (label, fn, info) => h('button.btn', { type: 'button', onclick: () => act(fn), 'data-info': info }, label);
     const act = async (fn) => {
       err.textContent = '';
       try { const st = await fn(); if (st == null) return; stEl.textContent = engLine(st); if (st && st.connected) await attempt(); }
       catch (e) { err.textContent = e.message; }
     };
+    const outside = h('input', { type: 'checkbox', 'aria-label': 'Also copy audio from outside the project' });
+    const outsideRow = HX.api.inApp ? h('label.row.left', { title: 'Import: also copy audio the project points to outside its own folder (left out and listed in the report otherwise)' },
+      outside, ' Import: also copy audio from outside the project') : null;
     const ctl = HX.api.inApp ? h('div.row.left', null,
       btn('Start', () => HX.api.post('/api/daw/start', {}).then((st) => { if (st.connected) HX.engineLost = false; return st; }), 'Start the HypnoMix DAW engine (or use a HypnoMix DAW window that is already running)'),
       btn('Restart', () => HX.guardedPost('/api/daw/restart', {}, 'Restarting the engine closes the open session; it opens again from its saved file.'), 'Stop the engine and start it again on the same session'),
       btn('Stop', stopEngine, 'Stop the engine the app started (a HypnoMix DAW window is only let go of)'),
       btn('Open', () => HX.guardedPost('/api/daw/open', { path: sess.value.trim() }, 'Opening another session closes this one.'), 'Open this session in the engine'),
-      btn('New', () => { const f = HX.splitNewPath(sess.value); return HX.guardedPost('/api/daw/new', f, 'Making a new session closes this one.'); }, 'Make a new session: type the folder and the new name, e.g. ~/Music/New Song')) : null;
+      btn('New', () => { const f = HX.splitNewPath(sess.value); return HX.guardedPost('/api/daw/new', f, 'Making a new session closes this one.'); }, 'Make a new session: type the folder and the new name, e.g. ~/Music/New Song'),
+      btn('Import', () => { const ao = outside.checked; closePop(); HX.importProject(sess.value, ao).catch((e) => HX.toast('Could not import: ' + e.message, 8000)); return null; }, 'Import a project from another DAW (.als, .logicx, .dawproject, .rpp; .ptx and .aaf with the HypnoMix DAW add-on) as a new session beside it, or beside its folder')) : null;
     pop = h('div.connect-pop', { role: 'dialog', 'aria-label': 'The HypnoMix DAW engine', style: { top: r.bottom + 6 + 'px', right: (innerWidth - r.right) + 'px' } },
       h('b', { style: { color: 'var(--tx0)' } }, 'The HypnoMix DAW engine'),
       h('p', null, 'The app runs the engine and passes this page’s calls to it (POST /mcp). Without the engine program, it uses a HypnoMix DAW window that is already open with Preferences → Control Surfaces → MCPHttp on.'),
-      stEl, HX.api.inApp ? sess : null, ctl, err,
+      stEl, HX.api.inApp ? sess : null, ctl, outsideRow, err,
       h('div.row', null, h('button.btn', { type: 'button', onclick: closePop }, 'Close'),
         connected ? h('button.btn', { type: 'button', onclick: showDemoInstead, 'data-info': 'Leave the engine’s session and show the made-up demo song (asks first)' }, 'Show the demo song') : null,
         connected ? null : go));

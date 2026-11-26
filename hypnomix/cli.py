@@ -68,6 +68,7 @@ GROUPS = [
         ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, probes, the A/B review panel, the Align panel"),
         ("preflight", "hypnomix.session.preflight", "sanity of the files before any work: mixed sample rates or bit depths, stems of different length, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel; report first"),
         ("project", "hypnomix.project.show", "look inside a REAPER, HypnoMix DAW or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
+        ("import", "hypnomix.project.import_project", "import a project from another DAW into a NEW HypnoMix DAW session: .als, .logicx, .dawproject, .rpp, or .ptx and .aaf (with the HypnoMix DAW add-on, not available yet); audio copied in, the project only read, what was left out listed"),
         ("als2ardour", "hypnomix.project.als2ardour", "import a Live set into a NEW HypnoMix DAW session folder: tracks, colours, clips as regions (gain, fades, envelopes), faders, sends, groups, tempo; audio copied in; devices listed, never guessed (the set is only read)"),
     ]),
     ("Session files (.als, Live closed or open)", [
