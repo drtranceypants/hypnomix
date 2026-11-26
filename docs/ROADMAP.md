@@ -9,10 +9,16 @@ Items marked *(to verify)* rest on research that has not been tested here yet.
 **Built since this was first written** (sections 1 to 3 below are kept for the reasoning): `ab`, `diff`, `check`,
 the review page (`review`), the wider scan (noise under clip gain, harmony timing, mic phase, masking as
 findings, the "is this deliberate?" inventory, sections, `--like`), `--plan` for `prep` / `automix` / `master`,
-`deess`, `breaths`, `sections`, `match`, and a first test suite. Still open from those sections: `balance`,
-`plugins`, `listen`, `handoff`, the profile comparison in scan, masking fixes written into a set as stock EQ
+`deess`, `breaths`, `sections`, `match`, and a first test suite. Still open from those sections:
+`plugins`, `listen`, the profile comparison in scan, masking fixes written into a set as stock EQ
 bands, and previews for timing nudges and device changes. `deess`, `breaths`, `sections` and `match` need real
 songs before they are trusted.
+
+**`balance` and `handoff` (built, see `docs/WORKFLOW.md`):** `balance` proposes one fader move per part for a folder of
+stems (role, loudness while playing, vocal against the band, your own fader range; faders only; `--plan` and `fix`
+render only the approved moves), and `handoff` turns the by-hand list into a `HANDOFF.md` checklist in the person's
+DAW's words with markers (locators in a new Live set, markers in a new REAPER project, MIDI and CSV for any other).
+Open: opening both written files in Live and REAPER; a 'Make the handoff list' button in the review page.
 
 **Tempo and variety (built, see `docs/TEMPO.md`):** `tempomap`, `loops`, `tighten`, `breathe`, `variations`.
 Open: opening their sets in Live; a first-bar-line check that does not rely on the low end; matching spare
@@ -72,11 +78,9 @@ Checks that exist as tools but are not in the first pass yet, and a few new ones
 | 12 | `deess` | Split-band de-esser for one vocal file: turns down only the "s" moments, reports each one. |
 | 13 | `breaths` | Standalone breath and mouth-noise control (today only inside `prep`), report first. |
 | 14 | `--plan` for `prep`, `automix`, `master` | These apply many moves in one go. `--plan` writes the same moves as findings into a scan folder, so they go through the same review, and `fix` renders only the approved ones. |
-| 15 | `balance` | A static first balance for a folder of stems as proposals: fader per part, with the measurement behind each. |
 | 16 | `match` | Reference matching as findings: "your low end is 3 dB heavier than the reference between 60 and 120 Hz", each with a proposed move. |
 | 17 | `plugins` | List the free plug-ins installed on this computer, check each loads without its window, and save the list to preferences so proposals only name what is there. |
 | 18 | `listen` | Optional: a local, open-weights audio model writes "listening notes" on a bounce. Advice only, labelled as such, never a source of numbers. Runs on the person's machine. |
-| 19 | `handoff` | Turn the by-hand list into the person's DAW's terms and, where possible, into markers at each spot. |
 
 ## 4. Trust
 

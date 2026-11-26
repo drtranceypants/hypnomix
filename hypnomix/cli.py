@@ -8,6 +8,7 @@ import sys
 GROUPS = [
     ("Engineer: stems in, song out", [
         ("automix", "hypnomix.engineer.automix", "stems folder → balanced mix + master, with notes on every move"),
+        ("balance", "hypnomix.engineer.balance", "stems folder → a first fader balance as proposals, with the measurement behind each move (faders only; --plan sends them to the review)"),
         ("master", "hypnomix.engineer.master", "stereo mix → release master at a loudness target (or a reference); options: tonal stabilizer, dynamic EQ, band width, limiter character, harshness, dither, amount"),
         ("rebalance", "hypnomix.engineer.rebalance", "turn vocals / drums / bass / other up or down in a finished stereo mix (separation + residual, true-peak safe)  [extra: ml, or --stems]"),
         ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices: no paid plug-ins"),
@@ -97,6 +98,7 @@ GROUPS = [
         ("ab", "hypnomix.workflow.ab", "before/after clips for each proposed fix, level-matched, so you hear it before approving"),
         ("review", "hypnomix.workflow.review", "the review as one page: play each A/B, tick approve / skip / change"),
         ("history", "hypnomix.workflow.history", "every version fix wrote for a song: list, diff, undo into a new set, rebuild without one item"),
+        ("handoff", "hypnomix.workflow.handoff", "turn the by-hand list into your DAW's own words: HANDOFF.md checklist by position, plus markers (a new set with locators, a new REAPER project with markers, or a MIDI marker file and CSV)"),
         ("watch", "hypnomix.workflow.watch", "watch a set while you work: a quick incremental scan on every save (read-only)"),
     ]),
     ("App: no terminal, no AI needed", [
