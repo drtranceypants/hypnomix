@@ -1,7 +1,7 @@
 // The Teacher tab (hypnomix/app/teacher.py): a step-by-step course from an empty song to a master, in the DAW the
 // person chose in Setup. Uses the page's own helpers: $, esc, get, post, go, S, render.
 // Every hands-on action first says exactly what it will change and waits for "Do it".
-const T = {st: null, daw: '', level: '', at: '', pending: null, result: {}, busy: false};
+const T = {st: null, daw: '', level: '', at: '', pending: null, result: {}, busy: false, quiz: {}, view: '', gl: null, glq: '', audio: null};
 
 (function () {
   const st = document.createElement('style');
@@ -24,6 +24,12 @@ const T = {st: null, daw: '', level: '', at: '', pending: null, result: {}, busy
   .lesson .sure{background:var(--bg);border-radius:8px;padding:10px 12px;margin:8px 0}
   .lesson .ok{color:var(--ok)}.lesson .bad{color:var(--hi)}
   .lesson .nav{display:flex;justify-content:space-between;gap:8px;margin-top:24px;border-top:1px solid var(--line);padding-top:14px;flex-wrap:wrap}
+  .lesson .quiz,.lesson .hear,.lesson .try,.lesson .mist,.lesson .more{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:14px 0}
+  .lesson .try{border-left:3px solid var(--accent)}.lesson .mist ul{margin:4px 0 0}.lesson .more a{cursor:pointer;margin-right:12px;text-decoration:underline}
+  .lesson .opts{display:flex;flex-direction:column;gap:6px;margin:6px 0}.lesson .opts button{text-align:left}
+  .lesson .opts button.right{border-color:var(--ok);color:var(--ok)}.lesson .opts button.wrong{border-color:var(--hi);color:var(--hi)}
+  .lesson .hear .pl{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.lesson .hear .pl button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  .gl{margin:0}.gl h2{font-size:1.1rem;margin:20px 0 4px;color:var(--accent)}.gl p{margin:4px 0}.gl a{cursor:pointer;text-decoration:underline;color:var(--mute);font-size:.88rem}
   @media (max-width:760px){.teach{grid-template-columns:1fr}.teach aside{position:static;max-height:none}}`;
   document.head.appendChild(st);
 })();
@@ -43,10 +49,11 @@ async function teachView() {
   await teachLoad(T.daw);
   const st = T.st;
   const pick = `<div class="daws">${Object.entries(st.daws).map(([k, v]) => `<button data-tdaw="${k}" class="${k === T.daw ? 'sel' : ''}">${esc(v)}</button>`).join('')}</div>`;
-  const lv = `<div class="daws">${[['tour', 'Tour: hypnomix in ' + (st.daws[T.daw] || 'your DAW')], ['101', '101 crash course']].map(([k, v]) => `<button data-tlevel="${k}" class="${k === T.level ? 'sel' : ''}" title="${k === 'tour' ? 'for people who already record and mix' : 'for people new to audio: the basics first, then the tour'}">${esc(v)}</button>`).join('')}</div>`;
+  const lv = `<div class="daws">${[['tour', 'Tour: hypnomix in ' + (st.daws[T.daw] || 'your DAW'), 'for people who already record and mix'], ['101', '101 crash course', 'for people new to audio: the basics first, then the tour'], ['az', 'The complete course, A to Z', 'everything from what sound is to releasing a song: gear, recording, editing, mixing, mastering, cheat sheets']].map(([k, v, d]) => `<button data-tlevel="${k}" class="${k === T.level && !T.view ? 'sel' : ''}" title="${d}">${esc(v)}</button>`).join('')}<button data-tgloss="1" class="${T.view === 'glossary' ? 'sel' : ''}" title="Every word the lessons teach, A to Z">Glossary</button></div>`;
   if (!T.daw) return `<h1>Teacher</h1><p class="sub">A step-by-step course for people who have never used a DAW: from an empty song to a mastered one.</p>
     <div class="card"><p style="margin-top:0">Which DAW will you use? The lessons, and the Wiki, follow your choice.</p>${pick}
     <p class="note">Ableton Live has the most depth, REAPER a little less, and Ardour the short version (it's the least tested with hypnomix).</p></div>`;
+  if (T.view === 'glossary') return glossaryView(pick, lv);
   const all = tsteps(), i = Math.max(0, all.findIndex(s => s.id === T.at)), s = all[i];
   const nav = st.chapters.map((c, ci) => `<h4>${ci + 1} · ${esc(c.title)}</h4>` + c.steps.map(x =>
     `<a data-tstep="${esc(x.id)}" class="${x.id === s.id ? 'on' : ''} ${st.done.includes(x.id) ? 'done' : ''}"><i>${st.done.includes(x.id) ? '✓' : '○'}</i>${esc(x.title)}</a>`).join('')).join('');
@@ -69,11 +76,75 @@ function lessonHTML(s, i, n) {
   if (s.settings) h += `<h3>Where to start</h3><table><tr><th>Control</th><th>Start at</th><th>Why</th></tr>${s.settings.map(([a, b, c]) => `<tr><td>${esc(a)}</td><td><b>${esc(b)}</b></td><td>${esc(c)}</td></tr>`).join('')}</table>`;
   if (s.how && s.how.length) h += `<h3>In ${esc(daw)}</h3><ol>${s.how.map(x => `<li>${tmd(x)}</li>`).join('')}</ol>`;
   if (s.listen) h += `<div class="listen"><b>Listen:</b> ${esc(s.listen)}</div>`;
+  (s.hear || []).forEach(x => { h += hearHTML(x); });
+  if (s.mistakes && s.mistakes.length) h += `<div class="mist"><b>Common mistakes</b><ul>${s.mistakes.map(m => `<li>${tmd(m)}</li>`).join('')}</ul></div>`;
+  if (s.try) h += `<div class="try"><b>Try it</b><p style="margin:4px 0">${tmd(s.try.do)}</p><p class="note" style="margin:0">You'll know it worked when: ${tmd(s.try.success)}</p></div>`;
+  if (s.quiz) h += quizHTML(s);
   if (s.action) h += actionHTML(s);
   else if (T.daw === 'ardour' && ['tempo', 'click', 'drums', 'track', 'take', 'chain'].includes(s.id)) h += `<p class="note">hypnomix can't drive Ardour yet, so this one is by hand: the steps above say where.</p>`;
   if (s.app) h += `<p><button data-view="${esc(s.app.view)}">${esc(s.app.label)}</button></p>`;
+  if (s.more && s.more.length) h += moreHTML(s.more);
   if (r) h += resultHTML(r);
   return h;
+}
+
+function hearHTML(x) {
+  return `<div class="hear"><b>Hear it:</b> ${esc(x.title)}<p style="margin:4px 0">${esc(x.listen)}</p><div class="pl">${x.variants.map(v =>
+    `<button data-thear="${esc(x.demo)}|${esc(v.v)}" title="Play">▶ ${esc(v.label)}</button>`).join('')}</div></div>`;
+}
+
+function quizHTML(s) {
+  const got = T.quiz[s.id] || {};
+  return s.quiz.map((q, qi) => {
+    const c = got[qi];
+    return `<div class="quiz"><b>Check yourself:</b> ${tmd(q.q)}<div class="opts">${q.options.map((o, oi) =>
+      `<button data-tquiz="${esc(s.id)}:${qi}:${oi}" class="${c === oi ? (oi === q.answer ? 'right' : 'wrong') : ''}">${esc(o)}</button>`).join('')}</div>
+      ${c === undefined ? '' : `<p class="${c === q.answer ? 'ok' : 'bad'}" style="margin:4px 0">${c === q.answer ? 'Right.' : 'Not quite: try another.'} ${c === q.answer ? tmd(q.why) : ''}</p>`}</div>`;
+  }).join('');
+}
+
+function moreHTML(more) {
+  const names = {}; (T.st.chapters || []).forEach(c => c.steps.forEach(s => { names[s.id] = s.title; }));
+  const links = more.map(m => m.startsWith('step:') ? `<a data-tjump="${esc(m.slice(5))}">${esc(names[m.slice(5)] || m.slice(5))}</a>`
+    : m.startsWith('hypnomix ') ? `<code>${esc(m)}</code>` : `<a data-wiki="${esc(m)}" href="#">${esc(m)}</a>`);
+  return `<div class="more"><b>Read next:</b> ${links.join(' ')}</div>`;
+}
+
+function glossaryView(pick, lv) {
+  return `<div class="teach"><aside>${pick}${lv}<p class="note">Every word the lessons teach, with the lesson that explains it.</p></aside>
+    <div class="lesson"><div class="no">Teacher</div><h1>Glossary</h1>
+    <input id="tgq" type="search" placeholder="Filter the words" value="${esc(T.glq)}" style="width:100%;max-width:420px">
+    <div id="tgl" class="gl">${glossaryList()}</div></div></div>`;
+}
+
+function glossaryList() {
+  const q = T.glq.trim().toLowerCase();
+  const terms = (T.gl || []).filter(g => !q || g.term.toLowerCase().includes(q) || g.entries.some(e => e.meaning.toLowerCase().includes(q)));
+  if (!terms.length) return `<p class="note">${T.gl ? 'No word matches.' : 'Loading…'}</p>`;
+  let letter = '', h = '';
+  terms.forEach(g => {
+    const l = (g.term.replace(/[^A-Za-z0-9]/g, '')[0] || '#').toUpperCase();
+    if (l !== letter) { letter = l; h += `<h2>${esc(l)}</h2>`; }
+    g.entries.forEach(e => { h += `<p><b>${esc(g.term)}</b>: ${esc(e.meaning)} ${e.step ? `<a data-tjump="${esc(e.step)}">→ ${esc(e.title)}</a>` : ''}</p>`; });
+  });
+  return h;
+}
+
+async function teachJump(id) {
+  T.view = '';
+  await teachLoad(T.daw);
+  if (!tsteps().some(s => s.id === id)) { T.level = 'az'; await teachLoad(T.daw); }
+  T.at = id; T.pending = null; await teachMark('', true, id); render(); window.scrollTo(0, 0);
+}
+
+function teachPlay(b) {
+  const [demo, v] = b.dataset.thear.split('|');
+  if (!T.audio) T.audio = new Audio();
+  const a = T.audio, url = `/api/teach/hear?demo=${encodeURIComponent(demo)}&v=${encodeURIComponent(v)}`;
+  document.querySelectorAll('[data-thear].on').forEach(x => x.classList.remove('on'));
+  if (!a.paused && a.dataset.url === url) { a.pause(); return; }
+  a.pause(); a.dataset.url = url; a.src = url; a.onended = () => b.classList.remove('on'); a.onpause = () => b.classList.remove('on');
+  b.classList.add('on'); a.play().catch(() => b.classList.remove('on'));
 }
 
 function fill(text, s) {
@@ -108,12 +179,22 @@ function teachRedraw() { const y = window.scrollY; teachView().then(h => { if (S
 async function teachMark(id, done, at) { T.st = await post('/api/teach/mark', {daw: T.daw, step: id, done, at, level: T.level}); }
 
 document.addEventListener('click', async e => {
-  const b = e.target.closest('[data-tlevel],[data-tdaw],[data-tstep],[data-tgo],[data-tnext],[data-task],[data-task-do],[data-tdo],[data-tcancel],[data-tstop],#tmode');
+  const b = e.target.closest('[data-tgloss],[data-tjump],[data-thear],[data-tquiz],[data-tlevel],[data-tdaw],[data-tstep],[data-tgo],[data-tnext],[data-task],[data-task-do],[data-tdo],[data-tcancel],[data-tstop],#tmode');
   if (!b || !b.closest('main')) return;
   const ds = b.dataset;
   try {
-    if (ds.tdaw) { T.daw = ds.tdaw; T.at = ''; T.pending = null; T.result = {}; await post('/api/setup/daw', {daw: ds.tdaw}); return teachRedraw(); }
-    if (ds.tlevel) { T.level = ds.tlevel; T.at = ''; T.pending = null; if (T.st && T.st.teach) await post('/api/setup/daw', {teach_level: ds.tlevel}); return teachRedraw(); }
+    if (ds.thear) return teachPlay(b);
+    if (ds.tgloss) { T.view = 'glossary'; T.gl = null; teachRedraw(); const r = await get('/api/teach/glossary?daw=' + encodeURIComponent(T.daw || '')); T.gl = r.terms; return teachRedraw(); }
+    if (ds.tjump) return teachJump(ds.tjump);
+    if (ds.tquiz) {
+      const [sid, qi, oi] = ds.tquiz.split(':'), s = tsteps().find(x => x.id === sid);
+      (T.quiz[sid] = T.quiz[sid] || {})[+qi] = +oi;
+      const done = s.quiz.every((q, k) => T.quiz[sid][k] === q.answer);
+      if (done && !T.st.done.includes(sid)) await teachMark(sid, true, T.at);
+      return teachRedraw();
+    }
+    if (ds.tdaw) { T.view = ''; T.daw = ds.tdaw; T.at = ''; T.pending = null; T.result = {}; await post('/api/setup/daw', {daw: ds.tdaw}); return teachRedraw(); }
+    if (ds.tlevel) { T.view = ''; T.level = ds.tlevel; T.at = ''; T.pending = null; if (T.st && T.st.teach) await post('/api/setup/daw', {teach_level: ds.tlevel}); return teachRedraw(); }
     if (b.id === 'tmode') { await post('/api/setup/daw', {teach_level: b.checked ? T.level : ''}); return; }
     if (ds.tstep) { T.at = ds.tstep; T.pending = null; await teachMark('', true, T.at); render(); window.scrollTo(0, 0); return; }
     const all = tsteps(), i = all.findIndex(s => s.id === T.at);
@@ -142,6 +223,11 @@ document.addEventListener('click', async e => {
       return teachRedraw();
     }
   } catch (err) { alert(err.message); }
+});
+
+document.addEventListener('input', e => {
+  if (e.target.id !== 'tgq') return;
+  T.glq = e.target.value; const l = document.getElementById('tgl'); if (l) l.innerHTML = glossaryList();
 });
 
 window.teachChanged = () => { T.st = null; T.daw = ''; T.level = ''; T.at = ''; if (S.view === 'teach') render(); };

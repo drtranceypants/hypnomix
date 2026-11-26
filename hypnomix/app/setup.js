@@ -124,10 +124,11 @@ function pickDaw() {
   <div class="modes">${U.daws.map(d => `<button class="mode ${daw === d.id ? 'sel' : ''}" data-daw="${d.id}"><b>${esc(d.title)}</b><p>${esc(d.note)}</p></button>`).join('')}</div>
   <h3 style="margin:20px 0 6px;font-size:1.05rem">Teacher mode</h3>
   <p class="small" style="margin:0 0 8px">A guided course in the <b>Teacher</b> tab, in ${esc(DAWNAME[daw] || 'your DAW')}. No AI needed${mode === 'key' || mode === 'local' ? '; the Assistant can explain any step in more detail' : ''}. ${daw === 'live' || daw === 'reaper' ? `hypnomix can do the hands-on steps in ${DAWNAME[daw]} for you, asking first each time.` : daw === 'ardour' ? 'For Ardour it shows you where to click (hypnomix can\'t drive Ardour yet).' : 'Courses exist for Live, REAPER and Ardour.'}</p>
-  <div class="modes" style="grid-template-columns:1fr 1fr 1fr">${[
+  <div class="modes" style="grid-template-columns:1fr 1fr">${[
     ['', 'No thanks', 'Straight to the app. You can start a course later from the Teacher tab.'],
     ['tour', 'Show me hypnomix', `For people who already record and mix: hypnomix with ${DAWNAME[daw] || 'your DAW'}, the devices we've built for it, the song card, A/B inside the DAW, the mastering chain.`],
     ['101', 'The 101 crash course', 'New to audio? The words and the screen, recording to a click (with a drum beat to play over, if you like), arming a track and setting the input gain, each effect as you add it, mastering, then the hypnomix tour.'],
+    ['az', 'The complete course, A to Z', 'Everything, from what sound is: gear and rooms, recording, editing, mixing and mastering in depth, releasing a song, troubleshooting and cheat sheets, with audio examples, quizzes and a glossary. The 101 crash course is inside it.'],
   ].map(([id, t, d]) => `<button class="mode ${teach === id ? 'sel' : ''}" data-teach="${id}" ${daw === 'other' && id ? 'disabled' : ''}><b>${t}</b><p>${esc(d)}</p></button>`).join('')}</div>`;
 }
 
@@ -186,9 +187,9 @@ async function refreshExtras() {
 
 function done() {
   const m = U.modes.find(x => x.id === mode);
-  const next = teach ? `Open the <b>Teacher</b> tab: ${teach === 'tour' ? `the tour starts with how hypnomix works and connecting it to ${esc(DAWNAME[daw] || 'your DAW')}` : `the first lesson is the words and the screen of ${esc(DAWNAME[daw] || 'your DAW')}`}. Go at your own pace; it remembers where you are.` : { app: 'Open the <b>Songs</b> tab and scan your first song.', key: 'Open the <b>Assistant</b> tab and say hello, or ask it to scan a song.',
+  const next = teach ? `Open the <b>Teacher</b> tab: ${teach === 'tour' ? `the tour starts with how hypnomix works and connecting it to ${esc(DAWNAME[daw] || 'your DAW')}` : teach === 'az' ? 'the course starts with what sound is' : `the first lesson is the words and the screen of ${esc(DAWNAME[daw] || 'your DAW')}`}. Go at your own pace; it remembers where you are.` : { app: 'Open the <b>Songs</b> tab and scan your first song.', key: 'Open the <b>Assistant</b> tab and say hello, or ask it to scan a song.',
     local: 'Open the <b>Assistant</b> tab and say hello, or ask it to scan a song.', desktop: 'Open your AI app in the AI agent folder and ask it to scan a song.' }[mode] || '';
-  return `<h2>You're set</h2><p class="sub">${m ? esc(m.title) : 'Setup'}${daw ? ' · ' + esc((U.daws.find(d => d.id === daw) || {}).title || '') : ''}${daw === 'live' && U.live.installed ? ' · Live connected' : ''}${teach === 'tour' ? ' · teacher mode: the tour' : teach === '101' ? ' · teacher mode: the 101 course' : ''}</p>
+  return `<h2>You're set</h2><p class="sub">${m ? esc(m.title) : 'Setup'}${daw ? ' · ' + esc((U.daws.find(d => d.id === daw) || {}).title || '') : ''}${daw === 'live' && U.live.installed ? ' · Live connected' : ''}${teach === 'tour' ? ' · teacher mode: the tour' : teach === '101' ? ' · teacher mode: the 101 course' : teach === 'az' ? ' · teacher mode: the complete course' : ''}</p>
     <p>${next}</p><p class="small">Change any of this later: the <b>Setup</b> button at the top, or the Assistant tab's settings. The Wiki's "Choosing how to work with AI" compares the options in more detail.</p>`;
 }
 

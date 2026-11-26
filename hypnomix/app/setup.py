@@ -266,13 +266,16 @@ def copy_skills(d, here):
     return skills, agents
 
 
+LEVELS = ("tour", "101", "az")                 # the teacher-mode courses (hypnomix/app/teacher.py LEVELS)
+
+
 def _level(s):
     lv = s.get("teach_level") or ("101" if s.get("teach") else "")
-    return lv if lv in ("tour", "101") else ""
+    return lv if lv in LEVELS else "101" if lv else ""          # a level this version doesn't know falls back to 101
 
 
 def _set_level(s, lv):
-    s["teach_level"] = lv if lv in ("tour", "101") else ""
+    s["teach_level"] = lv if lv in LEVELS else ""
     s["teach"] = bool(s["teach_level"])
 
 

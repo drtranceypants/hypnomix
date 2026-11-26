@@ -32,6 +32,13 @@ class DiskCare(unittest.TestCase):
     def paths(self):
         return {str(i[2].relative_to(self.r)) for i in self.DC.plan("ok")[0]}
 
+    def test_the_teacher_tabs_audio_examples_are_covered(self):
+        touch(self.r / ".hypnomix/cache/teach/low-cut-a-v3.wav")                      # idle for weeks: made again on demand
+        touch(self.r / ".hypnomix/cache/teach/low-cut-b-v3.wav", when=time.time())
+        got = self.paths()
+        self.assertIn(".hypnomix/cache/teach/low-cut-a-v3.wav", got)
+        self.assertNotIn(".hypnomix/cache/teach/low-cut-b-v3.wav", got)
+
     def test_clears_old_leftovers_keeps_the_rest(self):
         r = self.r
         touch(r / ".hypnomix/cache/render/abc/x.wav")

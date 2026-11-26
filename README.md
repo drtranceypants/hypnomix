@@ -78,6 +78,9 @@ what you approved into a new set. Every other command is on its Tools screen wit
 any track in your Live set, shows the finding you are on, and moves Live to it: track selected, playhead and
 loop brace on the spot, clip open. See [docs/APP.md](docs/APP.md).
 
+New to audio? The app's **Teacher** tab is a free course in your own DAW (Live, REAPER or Ardour): the complete course from what sound is to releasing a song
+(about 145 lessons, with audio examples, exercises, quizzes and a glossary), a 101 crash course, or a tour of hypnomix for engineers. Turn it on in the app's guided setup.
+
 ### The Assistant: chat with an AI inside the app, your own key
 
 No Claude Code needed. Open the app's **Assistant** tab, choose a provider, paste a key, and talk about your

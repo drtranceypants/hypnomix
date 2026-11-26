@@ -314,7 +314,8 @@ class WikiTest(unittest.TestCase):
         self.assertEqual(len({a["id"] for a in arts}), len(arts))
         used = {m for a in arts for m in re.findall(r'/wiki/assets/([^"]+)"', a["html"])}
         self.assertEqual(used, {p.name for p in (real / "assets").iterdir()})
-        ids = {a["id"] for a in arts}
+        from hypnomix.app import teacher
+        ids = {a["id"] for a in arts} | {a["id"] for a in teacher.wiki_all()}          # the teacher-mode articles are generated
         for a in arts:
             for target in re.findall(r'data-wiki="([^"]+)"', a["html"]):
                 self.assertIn(target, ids, f"{a['id']} links to a missing article {target}")
