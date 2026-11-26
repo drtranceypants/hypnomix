@@ -92,7 +92,7 @@ def hint(name):
     """What to tell someone who runs a command that needs a missing extra."""
     if bundled():
         return f"this needs the optional extra '{name}': in the hypnomix app click Setup, then Extras, and install \"{EXTRAS[name]['title']}\""
-    return f"this needs the optional extra '{name}': uv pip install 'hypnomix[{name}]'  (or pip install 'hypnomix[{name}]')"
+    return f"this needs the optional extra '{name}': in the hypnomix folder, run: uv pip install -e \".[{name}]\""
 
 
 def _python():
@@ -205,7 +205,7 @@ def install(name):
     if name not in EXTRAS or EXTRAS[name].get("included"):
         raise ValueError(f"no extra to install called '{name}'")
     if not can_install() and not bundled():
-        raise ValueError(f"No pip or uv to install with. In a terminal: uv pip install 'hypnomix[{name}]'")
+        raise ValueError(f"No pip or uv to install with. In a terminal, in the hypnomix folder: uv pip install -e \".[{name}]\"")
     if not can_install():
         raise ValueError("This copy of the app has no pip to install extras with. Download the newest installer from "
                          "hypnomix.bradfieldenterprises.org/download/ and install it over this one.")

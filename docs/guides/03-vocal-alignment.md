@@ -11,7 +11,7 @@ stays sample for sample wherever nothing needs to change.
 
 <!--toc-->
 
-## Three ways in
+## Ways in
 
 | you have | use | you get |
 |---|---|---|
@@ -21,7 +21,7 @@ stays sample for sample wherever nothing needs to change.
 | a saved REAPER project | `hypnomix alignset Song.rpp` | a new project where the timing is **stretch markers on your own items** |
 | REAPER open, and you'd rather click | the **Hypnomix Align** panel (`hypnomix reaper align`) | the same, from inside REAPER (see the REAPER guide) |
 
-All three use one engine, and every result is checked by a second, independent measurement. A part that
+All of them use one engine, and every result is checked by a second, independent measurement. A part that
 would not end up closer to the others is left exactly as it was.
 
 ## Timing: the two modes

@@ -20,7 +20,9 @@ level-matched A/B against the mix and ask what they hear before any second attem
 4. **Read the notes:** limiter "avg dB when it does" over ~3 dB means the mix is too quiet or too peaky going in. Suggest fixing the loudest elements in the mix rather than pushing harder.
 5. **Check:** `hypnomix translate master.wav --render` (they can listen to the phone and mono versions) and `hypnomix qc master.wav [--for cd|vinyl]`. Don't deliver anything with a FAIL.
 
-When comparing with a reference, level-match first (the louder one always sounds better) and compare the same section.
+When comparing with a reference, level-match first (the louder one always sounds better) and compare the same section. To compare two bounces of the same song, `hypnomix compare old.wav new.wav` says in plain words what changed, with level-matched A/B clips of the biggest differences.
+
+For delivery: `hypnomix release master.wav --title … --artist … --check` first (read-only), then without `--check`: a new folder with the 24-bit WAV, a dithered 16-bit WAV, MP3 and AAC with tags and cover, and a report that measures every file. For a whole EP or album, `hypnomix album song1.wav song2.wav …` reports which songs sit apart in level or tone before anything is changed. `hypnomix versions --stems DIR --vocals "Lead*,Harm*" --check` shows the plan first (read-only, writes nothing). Without `--check` it writes the instrumental and a cappella, plus a TV mix (with `--tv`) and a radio edit (with `--cut`), into a new folder from the person's own stems.
 
 ## Mastering inside Live (stock devices, no paid plug-ins)
 When they want a chain they can tweak in Live, or don't own a mastering suite: export the full mix from bar 1, then run `hypnomix chain master bounce.wav --target -14 [--reference ref.wav] --dry-run` and show the plan. On their OK, drop `--dry-run` and add `--existing bypass` (switch off current master plug-ins) or `--existing keep`, plus `--verify` if BlackHole is set up. It never deletes devices and saves a mixer snapshot first. Parameters the Live version doesn't have are listed to set by hand.

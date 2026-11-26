@@ -11,6 +11,29 @@ writes down the reason for every move so you can disagree with it.
 
 <!--toc-->
 
+## A first balance: balance
+
+```bash
+hypnomix balance "Song stems/"                                 # the report: one fader move per part, and why
+hypnomix balance "Song stems/" --vocal-over-band 1 --offset bass=-1.5
+hypnomix balance "Song stems/" --plan                          # the moves as findings to approve
+```
+
+Start here when the faders are all at zero and you only want a first balance. `balance` measures how loud each stem plays
+(while it plays, not over the gaps), works out what the part is (by its name, then its sound) and proposes **one fader
+move per part**. Faders only: no EQ, no compression, no pan, no reverb (that is what `automix` adds). For every part the
+report shows its role, how loud it plays, the move and where that leaves it against the anchor part (the lead vocal, or the
+most important part when there is no vocal); it also shows how the lead vocal sits against the whole band together.
+`--anchor`, `--vocal-over-band DB`, `--offset ROLE=DB`, `--min-move` and `--max-move` are yours to set. If you built a
+profile (`hypnomix profile build`), each move is also checked against the fader range of your own finished songs.
+
+With `--plan`, each move is a finding. Approve the ones you like, and `fix --approved` writes only those stems, each with
+its move baked in, and a trial mix into `fixed/balance/` in the scan folder. It is measured, not heard: play the trial
+mix and move the faders until it feels right.
+
+> Careful: `balance`, `compare`, `album`, `versions` and `release` are new. They pass unit tests and hypnomix's own
+> checks on synthetic data only, and have not yet been run on real songs. Keep your originals and listen.
+
 ## Stems in, song out: automix
 
 ```bash
@@ -44,6 +67,13 @@ often that's vocal level and reverb amount.
 | Do the vocal reverb and delay step back for the words? | `duck` |
 | What's distorting, and where? | `distortion` |
 | Which group owns the sub, the bass, the vocal band? | `diagnose` |
+
+When `masking` finds a fight you agree with, the cut can be written for you: approve the finding in a review (or run
+`hypnomix masking Song.als --apply "Song (cut).als" --findings SCAN/findings.json --ids mask-1`) and the cut goes on the part
+that should give way, as one bell band on its own EQ in a new file: an EQ Eight in a Live set, a ReaEQ in a REAPER project.
+It is gentle (2 dB for a fight that happens less than half the time, 3 dB for more), `--scale` or the approval's amount
+makes it smaller, and nothing else on the track changes. When `fix` writes it, the new file gets hypnomix's structure
+check; it has not yet been opened in Live or REAPER. For a folder of stems there is no set to write into, so the cut stays on the by-hand list.
 
 `devices` plays each track through its own chain and judges every stock device by what it actually does:
 barely working, squashing, releasing faster than the bass notes, clamping drum transients. It suggests
@@ -134,6 +164,80 @@ hypnomix qc "Song (master).wav"                 # --for cd | vinyl
 `qc` is the pass/fail list a mastering engineer runs before delivery: format, head and tail silence, cut-off
 endings, clicks at the start, DC, clipped runs, true peak, loudness, dynamic range, phase, low-end mono, L/R
 balance, codec peaks. It exits with code 1 if anything fails, so it can gate a script.
+
+## From master to release
+
+You have a finished master. The steps from here to the files you upload go in this order, and each one only reads your
+master and writes new files into new folders. Every figure is measured, not heard: play what it points at.
+
+**1. Check it: `qc` and `translate`** (the section above). Fix anything `qc` fails before you go on.
+
+**2. Compare with the last bounce, after every round of changes.**
+
+```bash
+hypnomix compare "Song v3.wav" "Song v4.wav" --names "v3,v4"
+```
+
+It lines the two exports up (and says so if one starts later), then writes `COMPARE.md` into
+`hypnomix-out/compare/<old> vs <new>/`. The first line says in plain words what changed ("v4 is 1.2 dB louder, 1.5 dB
+brighter above 8 kHz, a little narrower in the lows; the 2nd chorus-like section changed most"). Under it: loudness, peaks,
+dynamics, tone and stereo width in 8 bands, each section's loudness, and the three spots where the two sound least alike
+once the loudness is matched, as A / B clips in `ab/` that `hypnomix review` can play (when the two differ by more than
+level). Listen to those. It stops politely when the two do not look like the same song (`--force` compares anyway) or the
+sample rates differ (`--resample`).
+
+**3. Several songs? `album`.**
+
+```bash
+hypnomix album "Masters/" --order "Song C,Song A,Song B" --suggest-order
+hypnomix album "Masters/" --plan album-scan        # the proposed moves, as findings to approve
+```
+
+`qc` checks one file; `album` puts the songs side by side and writes `ALBUM.md`. It says which song sits apart in level
+(a quiet ballad is allowed to be quieter, so it looks at the loudest section as well as the whole song and only calls a song
+apart when both are off), which is brighter, darker or boomier than the rest and by how many dB, which is wider or narrower,
+and what gap each pair of songs could have, from how the first one ends and the next one starts. `--suggest-order` lists one
+or two running orders as options; they are never applied. With `--plan`, a gain trim, a gentle tonal tilt and trimmed or
+padded silence become findings: `ab` plays each level-matched, and `fix --approved` writes the approved ones as new files in
+`fixed/`. Play each transition with the next song queued, at one volume, and trust your ears over the figures.
+
+**4. Other versions? `versions`.**
+
+```bash
+hypnomix versions --stems "Song stems/" --vocals "Lead*,Harm*" --mix "Song master.wav" --tv -6 --cut 1:12-1:40 --check
+hypnomix versions --stems "Song stems/" --vocals "Lead*,Harm*" --mix "Song master.wav" --tv -6 --cut 1:12-1:40
+```
+
+From stems you exported yourself (no separation): an instrumental, an a cappella, a TV mix (`--tv`) and a radio edit
+(`--cut`). With `--mix` it first adds the stems up and subtracts them from your master: a tiny leftover means the stems are
+the mix; a big one means master-bus processing, a different level, a different start or a missing stem, and then the
+versions are built from the stems, not carved out of the master. Each version is matched to the master's loudness with gain
+only. `--check` prints the plan and writes nothing. The folder is `hypnomix-out/versions/<name> (versions)/` with
+`VERSIONS.md`. Listen across every join of the radio edit.
+
+**5. Package it: `release`.**
+
+```bash
+hypnomix release "Song master.wav" --title "Song Title" --artist "Artist Name" --album "Album Name" --track 1 --year 2026 \
+    --art cover.jpg --check                       # read-only: the checks, the cover, the ISRC, what it would write
+hypnomix release "Song master.wav" --title "Song Title" --artist "Artist Name" --album "Album Name" --track 1 --year 2026 \
+    --art cover.jpg
+```
+
+It writes a new folder, `hypnomix-out/release/Artist Name - Song Title/`: your master as 24-bit WAV (a byte-for-byte copy
+when it already is one), a 16-bit / 44.1 kHz WAV made from the unrounded master with the same dither `master` uses, MP3 320
+and AAC 256 with the tags and the cover embedded (add `flac` to `--formats` if you want it), a copy of the cover,
+`release.json` and `RELEASE.md`. The files are named "Artist Name - Song Title (24-bit).wav" and so on, and it refuses if
+the folder already exists. `--check` first: the cover has to be square, at least 3000 px, JPEG or PNG, and the ISRC has to be
+shaped like one. A package written with a cover that fails still says so
+on the console and in `RELEASE.md`.
+
+Read `RELEASE.md`: for every file, loudness, true peak and the release checks, and for the MP3 and AAC the true peak
+**after** decoding them again, which is what a listener's player plays. If it is over 0 dBTP it says by how much and that
+mastering again with the ceiling that many dB lower would fix it. It never changes the audio to hide that: it is your
+decision. Open each file once before you upload.
+
+`docs/MASTERING.md` has the same three commands (`release`, `versions`, `compare`) and `album` in more detail.
 
 ## Numbers cheat sheet
 

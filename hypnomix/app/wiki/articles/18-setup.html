@@ -14,8 +14,8 @@ teaser: Pick your DAW and how you want to work: clicking in the app, chatting wi
         <tr><th>DAW</th><th>reads the project</th><th>writes your approved fixes</th><th>works in the open DAW</th><th>read</th></tr>
         <tr><td><b>Ableton Live</b> 11 or 12</td><td>yes (<code>.als</code>)</td><td>yes: a new set next to yours</td><td>yes: Max for Live devices, Live's own mastering chain, A/B inside Live</td><td><a data-wiki="inside-live" href="#">Inside Live</a> · <a data-wiki="loop" href="#">the lessons</a></td></tr>
         <tr><td><b>REAPER</b></td><td>yes (<code>.rpp</code>)</td><td>yes: a new project; tuned vocals as new takes</td><td>yes: a bridge for the mastering chain with REAPER's stock plug-ins</td><td><a data-wiki="reaper" href="#">hypnomix in REAPER</a></td></tr>
-        <tr><td><b>Ardour</b> 3 to 9</td><td>yes (session folder or <code>.ardour</code>)</td><td>not yet: changes are listed for you to make</td><td>planned</td><td><a data-wiki="ardour" href="#">hypnomix with Ardour</a></td></tr>
-        <tr><td><b>Any other DAW</b> (Logic, Pro Tools, Studio One…)</td><td>from exported tracks</td><td>repaired audio as new files; DAW moves as a to-do list</td><td>no</td><td><a data-wiki="other-daws" href="#">Any other DAW</a></td></tr>
+        <tr><td><b>Ardour</b> 3 to 9</td><td>yes (session folder or <code>.ardour</code>)</td><td>yes: fades, gain, dips and fader, pan and mute moves into a new <code>.ardour</code> snapshot (written and re-read by hypnomix; not yet opened in Ardour). The rest is listed for you to do by hand</td><td>planned</td><td><a data-wiki="ardour" href="#">hypnomix with Ardour</a></td></tr>
+        <tr><td><b>Any other DAW</b> (Logic Pro, Pro Tools, Studio One…)</td><td>from exported tracks (no Logic or Pro Tools reader yet)</td><td>repaired audio as new files; DAW moves as a to-do list in your DAW's words, with markers (<code>handoff</code>)</td><td>no</td><td><a data-wiki="other-daws" href="#">Any other DAW</a></td></tr>
       </table>
     </div>
 
@@ -34,4 +34,5 @@ teaser: Pick your DAW and how you want to work: clicking in the app, chatting wi
         <tr><td><b>The terminal</b></td><td>nothing else</td><td>free</td><td>every command, scripted your way</td><td><a data-wiki="use" href="#">How to use it</a></td></tr>
       </table>
       <p>Any way works with any DAW above. You can also mix them: click through the review in the app, then ask an agent app for the master.</p>
+      <p><b>What has been checked where.</b> The Live devices and the Live fix paths were tested in Live 12, and REAPER support in REAPER 7.86. The newest additions (the new commands, EQ bands written for masking cuts, <code>ab</code> previews of timing nudges and device changes, and <code>fix</code> on an Ardour scan) pass unit tests and hypnomix's own structure checks on synthetic data only: the new sets, projects and snapshots have not been opened in their DAWs yet, and the new tools have not been run on real songs. <a data-wiki="next" href="#">What comes next</a>.</p>
     </div>

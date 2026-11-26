@@ -1,6 +1,6 @@
 ---
 name: first-pass
-description: Scan a whole song with every hypnomix tool at once (parallel subagents), then walk the person through the proposed fixes one at a time and apply only what they approve. Use when someone brings a new or unfinished song (a Live set), a folder of raw recordings or exported stems from any DAW, and asks to check it, scan it, "find what's wrong", do a first pass, or clean it up before mixing.
+description: Scan a whole song with every hypnomix tool at once (parallel subagents), then walk the person through the proposed fixes one at a time and apply only what they approve. Use when someone brings a new or unfinished song (a Live set, a REAPER project, an Ardour session), a folder of raw recordings or exported stems from any DAW, and asks to check it, scan it, "find what's wrong", do a first pass, or clean it up before mixing.
 ---
 
 # First pass: scan everything, fix one thing at a time
@@ -20,6 +20,8 @@ until they approve it, originals are never overwritten, and every applied fix is
    and the mix or an instrumental for vocal tuning (`--ref`; defaults to `--mix`). `hypnomix separate mix.wav`
    makes an instrumental if they have none. The key if they know it (`--key "F# major"`).
 4. Scan folder: `hypnomix-out/scan/<song>/` (or `--out`). Use an empty one per scan.
+   For a folder of stems, `hypnomix preflight "<FOLDER>"` first (read-only): mixed sample rates, stems of different
+   length, duplicates, fake stereo, missing files. No song of their own to try the loop on? `hypnomix demo`.
 5. For a set, run `hypnomix name "<SET>" --out "<SCAN_DIR>/raw/names"` once, first: it labels tracks (lead
    vocal, harmonies, drums, guitar…) and the scanners reuse it. If it labels key tracks "Instrument" with low
    confidence, ask what they are, then pass `--vocal-track` / `--timing-track` / `--lead-track`.
@@ -112,7 +114,11 @@ key before approving any vocal-tuning item. `info` items are read-outs: summaris
    vocal files (in `Samples/Tuned/`: put each on a new track at bar 1, warp off, A/B with the original's
    mute); repaired recordings (in `<SCAN_DIR>/fixed/`); and the by-hand list.
 5. Give the A/B: open the new set, compare the fixed spots with the original at the same bars.
-6. When the review is finished: `hypnomix prefs learn "<SCAN_DIR>"`.
+6. If the approved list holds by-hand items (or the person uses a DAW `fix` cannot write to), `hypnomix handoff
+   "<SCAN_DIR>"` turns them into a checklist in their DAW's words, with a marker at each spot.
+7. Before every final export, run `hypnomix vocallevel` again on a set with vocals: edits since the scan can change
+   the level from line to line.
+8. When the review is finished: `hypnomix prefs learn "<SCAN_DIR>"`.
 
 Then stop and ask what they heard. Don't start another round on your own.
 

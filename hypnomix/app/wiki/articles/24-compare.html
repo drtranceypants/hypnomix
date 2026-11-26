@@ -2,20 +2,20 @@
 title: This bounce against the last one
 sub: compare · what changed between two exports, in plain words, with A/B clips
 group: How-to
-teaser: Give it the previous bounce and the new one. It lines them up, then says in one line and a set of tables what changed: loudness, peaks, dynamics, tone by band, stereo width, each section, and the three spots where they differ most as level-matched A/B clips you can play.
+teaser: Give it the previous bounce and the new one. It lines them up, then says in one line and a set of tables what changed: loudness, peaks, dynamics, tone by band, stereo width, each section, and up to three spots where they differ most as level-matched A/B clips you can play.
 -->
 <div class="prose paper">
       <p>After every round of changes, compare a full export with the previous one: did the loudness move, did the top end change, did the second chorus lose its lift? <code>compare</code> answers that for two bounces of the same song and writes it as <b>COMPARE.md</b>.</p>
     </div>
     <div class="term" data-label="compare"><pre><span class="p">$</span> hypnomix compare "Song v3.wav" "Song v4.wav" --names "v3,v4"
-<span class="p">$</span> hypnomix compare old.wav new.wav --bpm 96 --out ~/Desktop/v3-v4</pre></div>
+<span class="p">$</span> hypnomix compare old.wav new.wav --bpm 96 --out v3-v4-report</pre></div>
     <p class="lead">It opens with one line, like "v4 is 1.2 dB louder, 1.5 dB brighter above 8 kHz, a little narrower in the lows; the 2nd chorus-like section changed most", and then the numbers behind it.</p>
     <ul>
       <li><b>Lined up first.</b> If one file starts later (an export with extra silence at the front), it finds by how much, to the sample, and says so. Only the part both share is compared.</li>
       <li><b>Loudness and peaks</b>: integrated, the loudest 10 seconds, true peak. <b>Dynamics</b>: crest, peak-to-loudness, loudness range.</li>
       <li><b>Tone by band</b> (8 bands, sub to air) as each band's share of the song, so loudness does not blur it: which got brighter or darker, by how many dB. <b>Stereo width by band</b>, wider or narrower.</li>
       <li><b>Loudness by section</b>, from <code>sections</code> (give <code>--bpm</code> if its tempo is wrong).</li>
-      <li><b>Where they differ most</b>: three spots, each as a level-matched pair, A (the first file) and B (the second), in <code>ab/</code> next to the report. <code>ab/ab.json</code> is the list <code>review</code> reads, so the same players work. If B is a little louder you still hear tone and balance, not volume.</li>
+      <li><b>Where they differ most</b>: up to three spots where the two sound least alike once the loudness is matched, each as a level-matched pair, A (the first file) and B (the second), in <code>ab/</code> next to the report. <code>ab/ab.json</code> is the list <code>review</code> reads, so the same players work. B is turned up or down, by at most 3 dB, to match A, so you hear tone and balance, not volume. When the two differ by level alone, the report says so and writes no clips.</li>
     </ul>
-    <p>It stops politely when the two do not look like the same song (<code>--force</code> compares anyway), when a file is silent or under two seconds, or when the sample rates differ (<code>--resample</code> brings the second to the first's rate). Neither file is changed, and an existing report is never overwritten.</p>
+    <p>It stops politely when the two do not look like the same song (<code>--force</code> compares anyway), when a file is silent or under two seconds, or when the sample rates differ (<code>--resample</code> brings the second to the first's rate). Neither file is changed. The report goes to <code>hypnomix-out/compare/&lt;old&gt; vs &lt;new&gt;/</code> (or <code>--out</code>), and an existing report is never overwritten.</p>
     <p><b>Measured, not heard:</b> use the A / B clips, and trust your ears over the numbers. See also <code>match</code> (a mix against a reference) and <code>sections</code>.</p>

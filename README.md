@@ -1,6 +1,6 @@
 # hypnomix
 
-**A mixing and mastering engineer for Ableton Live and REAPER, driven by you or by Claude Code.**
+**A mixing and mastering engineer for Ableton Live, REAPER and Ardour, driven by you or by Claude Code.**
 
 Hand it a folder of raw stems and get back a cleaned, balanced, mastered song, plus notes that explain every EQ cut, compressor setting and level in plain words. Or keep your hands on your own session: hypnomix sets exact fader dB and plug-in parameters in the open Live set, records A/B loops, and measures what each change did.
 
@@ -29,41 +29,60 @@ leaves your time for playing, dialling in sounds and listening.
 
 | the chore | what hypnomix does | commands |
 |---|---|---|
-| Hunting clicks, pops and level jumps | finds them at clip edges, loop seams and comp cuts; eases each with a short fade or dip | `smooth`, `clicks` |
-| Finding the hit that's late | detects the song's own grid, locks the bass to the drums first, compares each hit with the band, nudges only clear outliers, part of the way, drums first, then bass, then the rest (audio and MIDI; one pass of a loop can be nudged on its own) | `timing`, `tighten`, `unroll` |
-| Tuning a vocal note by note | measures the song's real tuning and key by section; moves only each note's centre; checks the chord under every note and asks when the target clashes with it or the key is unsure | `tune`, `key` |
-| Lining up doubles and harmonies | word by word: only the words clearly out of time move; presets, protected areas and sync points; optional pitch matching (harmonies keep their interval, chord checked) and formant for width; in a Live set, warp markers on your own clips, or from the Hypnomix Align device; in REAPER, stretch markers or new takes on your own items, or from the Hypnomix Align panel | `vocalign`, `alignset`, `aligndevice`, `reaper align` |
-| Balancing a harmony stack | lists the parts, asks which one leads, turns down only what overshadows it, by your own spacing, judged as heard after each track's effects and written as volume automation | `voices`, `cliplevel` |
-| Chasing hiss, hum, breaths, "s" sounds | de-hiss, de-hum, breaths down (not off), de-ess with a list of every "s", clipped peaks rebuilt | `prep`, `dehiss`, `deess`, `breaths` |
-| Finding what's distorting | clipped takes, hot drive, hard limiting, too-fast bass compression, each with a setting to try | `distortion` |
-| Sidechains and ducking | measures depth and recovery, proposes settings; vocal reverb and delay that step back for the words | `sidechain`, `duck` |
-| Naming, ordering and tidying 40 tracks | names by sound, working order, each harmony on the track for its pitch; switched-off old takes retired after an archive copy, one instrument on one track | `name`, `order`, `tidy` |
-| Checking every compressor and gate | plays each track through its own chain and judges every stock device by what it actually does: barely working, squashing, releasing too fast; suggests threshold, attack and release for the part and tempo | `devices` |
-| A take played without a click | follows the beat, click check for your ears, then warp to the grid or let the grid follow; best loops lined up | `tempomap`, `loops` |
-| A looped song that feels static | tempo that breathes, effect moves in your own style, unused takes and loops on switched-off tracks | `breathe`, `motion`, `variations`, `borrow` |
-| A song that sounds the same throughout | finds the parts that repeat themselves section after section (measured: tone and texture) and proposes a new colour for the repeat: width, grit, space, movement or an octave copy, as a chain of Live's own devices on a switched-off copy, each with a before / after clip | `colour` |
-| Working out which parts clash | which two parts fight over which frequencies, and the cut that fixes it; mic phase | `masking`, `align`, `stems` |
-| Getting loud without wrecking it | a measured mastering chain, test-encoded so it won't clip after upload; offline, built in Live, or an editable rack on HypnomixMain saved as your own template | `master`, `chain`, `probe` |
-| The pre-release checklist | phone, car and mono checks, streaming loudness, true peak, section-by-section balance | `translate`, `qc`, `sections`, `match` |
-| Packaging the release | one folder to upload: your master as 24-bit WAV (untouched), a dithered 16-bit WAV, MP3 320 and AAC 256 with tags and cover, a report that measures every file, including the true peak after the lossy ones are decoded; `--check` first | `release` |
-| Instrumental, a cappella, TV mix, radio edit | from your own exported stems (no separation): checks the stems really add up to your mix, matches each version to its loudness with gain only, crossfades the cuts of a radio edit (to bar lines with `--bpm`), and runs the release checks on every file | `versions` |
-| Is the new bounce better than the last one? | lines the two up, then says in plain words what changed: loudness, peaks, dynamics, tone and stereo width by band, each section, with level-matched A/B clips of the three spots that differ most | `compare` |
-| Measuring every track while you play | a Max for Live probe last on each track measures it after all its plug-ins; one play of the song is a deep scan, no renders or exports | `probe` |
-| Knowing which plug-ins you have | lists what is installed (VST3, Audio Units, CLAP, LV2), marks the free ones hypnomix knows, loads each one safely (a plug-in that crashes or hangs is reported, not fatal) and keeps the list in your preferences so proposals only name what you have | `plugins` |
-| Hearing each fix with your real chain | every fix as a switched-off B inside Live: A / B / Blind, loudness-matched; or offline renders through your own VST3/AU plug-ins | `abset`, `plugrender`, `ab --plugins` |
-| Learning how you mix | reads every set on your computer: your standards, your taste calls, and where you could improve (with the evidence) | `taste --library` |
-| Mastering to your sound | target tone ranges from your own releases; stabilizer, dynamic EQ, width by band, limiter character, harshness, dither, an overall amount; rebalance a finished mix; hear it as MP3/AAC | `tonal`, `master`, `harsh`, `rebalance`, `translate --preview` |
-| Deciding 140 findings | amounts per fix, the same decision for the ones like this, a question budget, why each technique, notes and a collaborator's review merged; every version kept and undoable | `review`, `fix --decide-like`, `history` |
-| A first balance of a folder of stems | one fader move per part with the measurement behind it, the vocal against the band, your own fader range; faders only | `balance` |
-| What's left to do by hand | the by-hand list as a checklist in your DAW's words, in song order, with a marker (locator, REAPER marker, or MIDI/CSV) at each spot | `handoff` |
-| Re-checking after every change | a quick scan in seconds, only the tracks you changed, or on every save | `scan --quick`, `scan --since`, `watch` |
-| Making an EP or album sit together | the songs side by side in plain words: which sit apart in level (judged on the loudest section as well as the whole, so a quiet ballad may be quieter), which are brighter, darker or boomier and by how much, the gap each pair could have, order options; any trim, gentle tilt or silence change is a finding you approve, applied into new files | `album` |
-| Checking the files before you start | mixed sample rates or bit depths and which file is the odd one out, stems of different length or that start apart, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel; report first, `prep` repairs what it can | `preflight` |
-| Learning the loop on nothing of your own | a 40-second synthetic song with six labelled problems (a click, a level jump, hiss, clipped peaks, a drifting harmony, late hits), as stems or a REAPER project: scan it, hear each fix, apply two | `demo` |
+| Hunting clicks, pops and level jumps | Finds clicks at clip edges and loop seams, jumps where one comped clip cuts to the next, plosives and spikes, and eases each with a short fade or dip. It also catches the opposite mistake: a fade or comp edit that cuts into a word. | `smooth`, `edges`, `clicks` |
+| Finding the hit that's late | Detects the song's own grid (straight, triplets or a mix), locks the low end first (bass to the drums), compares every hit with the rest of the band, and nudges only the clear outliers part of the way. Drums go first, then the bass toward the corrected drums, then everything else. Audio gets warp markers you can still drag; MIDI drums and bass are checked too. One pass of a loop can be nudged on its own. | `timing`, `tighten`, `unroll` |
+| Tuning a vocal note by note | Measures the song's real tuning and key (section by section), then moves only each note's centre. Vibrato, scoops and slides stay as sung. It checks the chord under every note, and asks when the target clashes with it or the key is unsure; those notes stay as sung until you answer. | `tune`, `key` |
+| Lining up doubles and harmonies | Works word by word: only the words clearly out of time with the other parts move, the rest stay bit-exact. Optional pitch matching (a harmony keeps its interval, the chord is checked) and formant for width. In Live it writes warp markers on your own clips; in REAPER, stretch markers or new takes on your own items; always into a new set or project. The same from inside Live (the Hypnomix Align device) or from the Hypnomix Align panel in REAPER. | `vocalign`, `alignset`, `aligndevice`, `reaper align` |
+| Balancing a harmony stack | Lists each part with its note and level, asks which one leads, and turns down only the parts that overshadow it, by the amount you pick or the spacing you use in your own finished songs. It is judged as heard, after each track's effects, and written as volume automation. | `voices`, `cliplevel` |
+| Keeping the vocal level even, line to line | Measures the vocal as heard, one lyric line at a time: a line that drops away or jumps out, and an upper harmony louder than the melody. Run it in the first pass and again before every final export, because edits since then can change it. Fixes are written as volume automation into a new set, only if you ask. | `vocallevel` |
+| Chasing hiss, hum, breaths and "s" sounds | Spectral de-hiss, hum and rumble removal, breaths turned down (not off), a split-band de-esser that lists every "s" it touched, clipped peaks rebuilt. `cleanup` rescues a rough demo with the same gentle hand. | `prep`, `dehiss`, `deess`, `breaths`, `cleanup` |
+| Evening out clips recorded on different days | Matches the loudness and tone of clips recorded at different preamp gain or mic distance, so a part sounds like one performance. On files, or on a track in your Live set, where it can set each clip's Clip Gain. | `clipmatch` |
+| Setting your level, picking the take | Listens to your interface input and says how to set the preamp before you record, with a live meter. Afterwards it ranks takes by clipping, noise, hum, pitch and timing and writes a comp list: the best take for each section. The numbers find problems; you pick the performance. | `soundcheck`, `takes` |
+| Finding what's distorting | Clipped takes, drive set too hot, limiters working too hard, compressors releasing faster than a bass note: each named with its track, bar and a setting to try. | `distortion` |
+| Setting up sidechains and ducking | Measures how deep each sidechain ducks and whether it recovers in time, proposes settings for the style you want, and can make the vocal reverb and delay step back while the singer sings. | `sidechain`, `duck` |
+| Naming, ordering and tidying 40 tracks | Names every track by how it sounds, puts them in working order (drums, bass, keys and guitars, vocals) and puts each harmony on the track for its pitch, so one fader is one voice. Switched-off old takes are retired after a full archive copy of the set is saved, and one instrument's clips go on one track. | `name`, `order`, `tidy` |
+| Checking every compressor and gate | Plays each track through its own chain and judges every stock device on the signal it really gets: a compressor that barely works, squashes, or lets go too fast for a bass note; a gate that chops words. It suggests threshold, attack and release for that part and tempo. | `devices` |
+| Mapping a take played without a click | Follows the beat through the take, writes a click check for your ears, then either warps the take onto the grid or makes Live's tempo follow the player. It also picks the best loops and lines them up to try. | `tempomap`, `loops` |
+| Making a looped song feel alive | Small tempo pushes into choruses, filter sweeps and delay throws in the style of your own automation, and unused takes or loops from the original project offered on new, switched-off tracks. | `breathe`, `motion`, `variations`, `borrow` |
+| A song that sounds the same throughout | Finds the parts that repeat themselves section after section (measured: tone and texture) and proposes a new colour for the repeat: width, grit, space, movement or an octave copy. Each is a chain of Live's own devices on a switched-off copy of the part, with a before and after clip. Live sets only for now. | `colour` |
+| Working out which parts clash | Which two parts fight over which frequencies, how often, and the exact cut that fixes it, written once you approve it as a band on the part's EQ, or on a new EQ added to its chain if it has none (EQ Eight in Live, ReaEQ in REAPER). Mic pairs checked for phase and polarity. | `masking`, `align`, `stems` |
+| Stems in, song out | Give it a folder of stems: it cleans them, works out what each one is, EQs, compresses, de-esses, balances, pans, adds one shared reverb and masters the result. MIX NOTES.md explains every move in plain words. With `--plan`, every move becomes a finding you approve first. | `automix` |
+| A first balance of a folder of stems | One fader move per part, with the measurement behind it: its role, how loud it plays, and how the vocal sits against the band, compared with your own fader range when you have a profile. Faders only: no EQ or compression. Anchor part, vocal level and per-role offsets are yours to set. | `balance` |
+| Getting loud without wrecking it | A mastering chain set by measurement, test-encoded to AAC and MP3 so it won't clip after upload, built offline or inside Live from stock devices, or as an editable rack on HypnomixMain that you save as your own template. | `master`, `chain` |
+| Mastering to your sound | Target tone ranges built from your own releases or records you choose; a tonal stabilizer, dynamic EQ, width by band, limiter character, harshness taming, dither and an overall amount. Turn the vocal, drums or bass up or down in a finished mix, true-peak safe. Hear it as MP3 or AAC. Match a reference with Matchering (an extra). | `tonal`, `harsh`, `rebalance`, `reference` |
+| The pre-release checklist | Phone, earbuds, car and mono checks; how much each streaming service will turn it down; silence, true peak, phase and format. Section by section: "the second chorus is 2 LU quieter than the first". Your mix against a song you love, as proposals. | `translate`, `qc`, `sections`, `match` |
+| Packaging the release | One folder to upload: your master as 24-bit WAV (untouched), a dithered 16-bit WAV, MP3 320 and AAC 256 with tags and cover, and a report that measures every file, including the true peak after the lossy ones are decoded. `--check` first. | `release` |
+| Instrumental, a cappella, TV mix, radio edit | From your own exported stems, no separation. Checks the stems really add up to your mix, matches each version to its loudness with gain only, crossfades the cuts of a radio edit (to bar lines with `--bpm`) and runs the release checks on every file. | `versions` |
+| Is the new bounce better than the last one? | Lines the two up and says in plain words what changed: loudness, peaks, dynamics, tone and stereo width by band, each section, with level-matched A/B clips of the three spots that differ most. | `compare` |
+| Making an EP or album sit together | The songs side by side in plain words: which sit apart in level (judged on the loudest section as well as the whole, so a quiet ballad may be quieter), which are brighter, darker or boomier and by how much, the gap each pair could have, and order options. Any trim, gentle tilt or silence change is a finding you approve, applied into new files. | `album` |
+| Checking the files before you start | Mixed sample rates or bit depths and which file is the odd one out, stems of different length or that start apart, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel. Report first; `prep` repairs what it can. | `preflight` |
+| A second opinion by ear | A cloud AI model listens to a bounce and writes notes with timestamps, checked against hypnomix's own measurements. It needs your own key, sends a reduced mono copy, and only when you say so. Its notes are an opinion; the numbers stay measurements. | `critique` |
+| Splitting a song, or turning audio into notes | Splits a finished song into stems, or turns audio into MIDI (and into a Live clip). Both are optional extras and run on your computer. | `separate`, `midi` |
+| Learning the loop on nothing of your own | A 40-second synthetic song with six labelled problems (a click, a level jump, hiss, clipped peaks, a drifting harmony, late hits), as stems or a REAPER project: scan it, hear each fix, apply two. | `demo` |
+| Finding every problem in a song at once | Runs every check on a Live set, a REAPER project, an Ardour session or a folder of recordings, changes nothing, and writes one review list, most severe first. What looks deliberate (your automation, a long reverb tail) is listed as a question, never fixed on its own. | `scan` |
+| Hearing a fix before you say yes | A before and after clip for every fix it can preview, level-matched, so the louder one does not win. In Live, every fix as a switched-off B next to your own device (A / B / Blind), or offline through your own VST3 and AU plug-ins. | `ab`, `abset`, `plugrender` |
+| Deciding 100+ findings | Amounts per fix, the same decision for the ones like this, a question budget, why each technique, notes and a collaborator's review merged. `fix` writes only what you approved into one new set, and every version is kept and can be undone. | `review`, `fix`, `history` |
+| What's left to do by hand | Turns the by-hand list into a checklist in your DAW's words, in song order, with what to listen for, and puts a marker at each spot: locators in a new Live set, markers in a new REAPER project, or a MIDI and CSV marker file for any other DAW. | `handoff` |
+| Re-checking after every change | A quick scan in seconds, only the tracks you changed, or on every save. | `watch` |
+| Learning how you mix | Asks your targets once, reads your own finished songs for your standards and taste calls, and shows where you could improve, with the evidence. Everything stays on your computer. | `prefs`, `taste`, `profile` |
+| Knowing which plug-ins you have | Lists what is installed (VST3, Audio Units, CLAP, LV2), marks the free ones hypnomix knows, loads each one safely (a plug-in that crashes or hangs is reported, not fatal) and keeps the list in your preferences so proposals only name what you have. | `plugins` |
+| Measuring every track while you play | A Max for Live probe last on each track measures it after all its plug-ins; one play of the song is a deep scan, no renders or exports. | `probe` |
+| Looking at the numbers | Loudness, true peak, bands, stereo, tempo and key as data; a spectrogram; pitch and loudness difference between two captures; transient punch and pumping at matched loudness. | `measure`, `spectrogram`, `pitchcheck`, `punch` |
+| Looking inside a project, checking what was written | Tracks, folders, items, takes, plug-ins and automation of a REAPER, Ardour or Live project without opening the DAW, and every track rendered to a full-length file. Tempo, key, routing and plug-in chains of a set; stacked limiters and bypassed devices; missing files; automation envelopes. Every set hypnomix writes gets a structure check and a plain list of what changed. `reaper` talks to the REAPER that is open. | `project`, `render`, `reaper`, `mine`, `audit`, `refs`, `automation`, `check`, `diff` |
+| Hands on the open Live set | Faders in exact dB, any device or plug-in parameter, transport, snapshots, arming and punch recording. Play bars, record, measure and compare for one-change A/Bs. Solo every group in the loudest section to see who owns the sub, the bass and the vocal band. | `live`, `loop`, `diagnose` |
+| Working with no terminal | The whole first pass in a window on your own computer: choose a song, hear each fix, approve, apply. A Max for Live device steps through the findings inside Live and jumps Live to each one. | `app`, `device` |
+| Learning audio production as you go | The app's Teacher tab is a free course in your own DAW (Live, REAPER or Ardour): the complete course from what sound is to releasing a song (13 chapters, 138 to 146 lessons depending on your DAW, with audio examples, exercises, quizzes and a glossary), a 101 crash course, or a tour of hypnomix for engineers. In Live and REAPER a step can do the hands-on part for you, after saying what it will change. | `app` |
+| Setting up, and checking your setup | Copies the AbletonOSC remote script into Live's User Library and walks you through the rest, then checks Live, AbletonOSC, BlackHole, ffmpeg and plug-in parameter access, saying what to fix. | `install`, `doctor` |
 
 What stays yours: the playing, the sounds, the effects, the arrangement and every taste call. It learns your
 habits from your own finished songs (`taste`, `voices --learn`, `motion --learn`, `profile`) and from what you
 approve and skip (`prefs`), so proposals start from your standards.
+
+### Checked where
+
+- The Live devices and the Live fix paths were tested in Live 12.
+- REAPER support was tested in REAPER 7.86.
+- Everything newest passes unit tests and hypnomix's own structure checks on synthetic data only. That is the new commands (`balance`, `handoff`, `plugins`, `colour`, `release`, `compare`, `versions`, `album`, `preflight`, `demo`), masking cuts written as an EQ band, `ab` previews of timing nudges and device changes, and `fix` on an Ardour scan. The new Live sets, REAPER projects and Ardour snapshots have not been opened in their DAWs yet, and the new tools have not been run on real songs. Where a page says "new", read it that way: keep your original and listen.
 
 ## No terminal, no AI: the app and the Live device
 
@@ -85,7 +104,7 @@ any track in your Live set, shows the finding you are on, and moves Live to it: 
 loop brace on the spot, clip open. See [docs/APP.md](docs/APP.md).
 
 New to audio? The app's **Teacher** tab is a free course in your own DAW (Live, REAPER or Ardour): the complete course from what sound is to releasing a song
-(about 145 lessons, with audio examples, exercises, quizzes and a glossary), a 101 crash course, or a tour of hypnomix for engineers. Turn it on in the app's guided setup.
+(138 to 146 lessons depending on your DAW, with audio examples, exercises, quizzes and a glossary), a 101 crash course, or a tour of hypnomix for engineers. Turn it on in the app's guided setup.
 
 ### The Assistant: chat with an AI inside the app, your own key
 
@@ -113,7 +132,8 @@ The assistant runs hypnomix for you and explains each finding.
 - **With the Live device loaded**, it can point Live at a finding (track selected, playhead and loop there).
 
 ```
-pip install "hypnomix[assistant]"     # the two official SDKs it talks through
+# the installers already include it; from source, in the hypnomix folder:
+uv pip install -e ".[assistant]"      # the two official SDKs it talks through
 hypnomix app                          # then open the Assistant tab
 ```
 
@@ -157,9 +177,8 @@ original, then measures the new set again and tells you which problems are gone.
 changed since the scan, never overwrites a file, and won't touch tracks you marked as protected without asking
 again. Every set it writes gets a structure check (`hypnomix check`) and a plain list of what changed
 (`hypnomix diff`). `prep`, `automix` and `master` take `--plan`: instead of doing everything at once, each move
-becomes a finding you approve or skip. Also new: `deess`, `breaths`, `sections` (loudness and vocal balance per
-section) and `match` (your mix against a reference, as proposals). `prefs` remembers what you usually approve and skip, so each review starts closer to how you work.
-See [docs/WORKFLOW.md](docs/WORKFLOW.md); what's coming, including Logic Pro and Pro Tools: [docs/ROADMAP.md](docs/ROADMAP.md).
+becomes a finding you approve or skip. `prefs` remembers what you usually approve and skip, so each review starts closer to how you work.
+See [docs/WORKFLOW.md](docs/WORKFLOW.md). What comes next is opening everything the newest release added in real DAWs and on real songs; after that, colour for REAPER and Ardour and previews (`ab`) for REAPER projects, then Pro Tools and Logic Pro: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## What's in the box
 
@@ -172,10 +191,14 @@ See [docs/WORKFLOW.md](docs/WORKFLOW.md); what's coming, including Logic Pro and
 | `master` | Subsonic clean-up, optional reference tone match, glue compression, mono low end, true-peak limiter to a LUFS target. It test-encodes AAC/MP3 and lowers the ceiling if they would clip, then tops and tails. |
 | `chain` | **No paid plug-ins needed.** Builds the mastering chain on Live's Main track from stock devices (EQ Eight → Glue Compressor → Utility → Saturator → Limiter), dials in every value from an analysis of your bounce, then records the result from Live and trims the Limiter until it measures on target. `chain strips` builds a channel strip on every track from an automix recipe. |
 | `sidechain` | Makes sidechain compression sound good. Finds every Compressor and Glue Compressor in a set with its sidechain on (Glue suggestions snap to its menu values), simulates it on the trigger (audio tracks render straight from the set; drum racks and synths come from an individual-track export via `--stems`) and measures each hit: how deep it ducks, how much has come back by the next hit, how even it is, and whether the release is so short it distorts the bass's low end. Then it suggests settings for a style: `clarity` (2-4 dB, back before the next hit), `pump` (6-10 dB, back right on the next hit) or `vocal-duck` (delay and reverb returns duck under the singer and bloom in the gaps). Writes a gain-reduction plot on the beat grid and before/after previews; `--apply` writes the settings to a new set; `--glue-to-compressor` swaps sidechained Glue Compressors for Live's Compressor with lookahead (same routing, makeup and dry/wet). |
-| `masking` | Which stems fight over which frequencies, how often, and the exact cut that fixes it. Approved in a `--deep` scan, `fix` writes the cut as one band on the part's own EQ in a new set / project (EQ Eight, ReaEQ). |
+| `masking` | Which stems fight over which frequencies, how often, and the exact cut that fixes it. Approved in a `--deep` scan, `fix` writes the cut as one band on the part's EQ, or on a new EQ added to its chain if it has none, in a new set / project (EQ Eight, ReaEQ). |
 | `align` | Phase, polarity and time offset between mics on one source (kick in/out, DI + amp, snare top/bottom). |
 | `translate` | Mono fold-down, phone, earbuds and car simulations, how much each streaming service turns it down, clipping after encoding. `--render` to listen. |
 | `qc` | Release checklist: format, head/tail silence, cut-off endings, DC, clipping, true peak, loudness, phase, codecs. Exits 1 on failure. |
+| `release` | Turns a finished master into the folder you upload, always a new folder: your master as a 24-bit WAV (byte for byte when it already is one), a dithered 16-bit / 44.1 kHz WAV, MP3 320 and AAC 256 with title, artist, album, track, year, genre, ISRC and cover, and a plain-words report on every file, including the true peak after the lossy files are decoded. `--check` first. |
+| `versions` | The other versions a release asks for, from your own exported stems (no separation): instrumental, a cappella, TV mix and radio edit. Checks the stems add up to your mix, matches loudness with gain only, crossfades radio-edit cuts, and runs the release checks on every file. `--check` first. |
+| `compare` | This bounce against the previous one: lines them up, then says in plain words what changed (loudness, peaks, dynamics, tone and stereo width by band, each section), with level-matched A/B clips of the three spots that differ most. |
+| `album` | An EP or album as a whole: which songs sit apart in level (judged on the loudest section as well as the whole), which are brighter, darker or boomier, the gap each pair could have, order options. Writes `ALBUM.md`; report first, and `--plan` turns any trim, tilt or silence change into a finding you approve. |
 
 **Studio: from raw takes to mix-ready stems**
 
@@ -188,8 +211,18 @@ See [docs/WORKFLOW.md](docs/WORKFLOW.md); what's coming, including Logic Pro and
 | `takes` | Ranks takes by clipping, noise, hum, pitch and timing, and writes a comp list: the best take for each section. |
 | `soundcheck` | Listens to your interface input and tells you how to set the preamp before you record. `--watch` gives a live meter. |
 | `cleanup` | Demo rescue: hum, steady noise, rumble, DC, silence. |
+| `vocallevel` | Vocal level line to line: does the vocal stay even from one lyric line to the next, and do the upper parts sit under the melody (1.5 dB by default)? Measured as heard (solo exports) or from renders. Run it in the first scan and again before every final export, because edits made since (restored comps, re-tuned notes, fader moves) can change it. `--apply` writes the fixes as volume automation in a new set. |
 | `dehiss` | Spectral de-hiss plus a smart gate for one track: learns the hiss from the quietest moments, turns down only the frequency bins that sit at hiss level (smoothed so it never sounds watery), and fades the gaps with look-ahead so note attacks and tails stay natural. The gate has hysteresis and a 150 ms hold, so soft note tails can't make it chatter (which sounds like crackle). |
 | `voices` | Balances vocal harmonies around the part **you** choose. Run it with the stems first: it lists the parts (usual note, level, how long they sing together) and asks. Then `--anchor lead|lowest|highest|TRACK` (left as it is), `--reduce above|below|both`, `--above-db` / `--below-db` per step (0, 1, 1.5, 3, 4.5, 6 or any value), `--spread ladder|flat`, `--max-cut`: only turns parts down, bar by bar, where they sing together, into balanced copies. Spacing can also be stated: `--root-step 4 --upper-step 5.5` (the lowest harmony is the basis, the next one up 4 dB under it, higher ones 5.5 dB under it), saved as your default with `voices --confirm`. The suggested setting is `--tame`: harmonies stay a little under the lead (at least 1.5 dB, `--lead-margin`), a higher part more than 1.5 dB louder than the part below it (`--tolerance`) comes down to that edge, the lead is never turned down, and it reports where the harmonies sit at one level (no space between them); nothing goes further unless you choose a step size. With raw renders, `--fader NAME=dB` compares the parts as heard; better, `--set SET.als` measures each part after its track's compressors and fader (loudness per window, BS.1770) and `--apply-set NEW.als` writes the spacing as track volume automation, which comes after the chain and lands exactly. Where the parts above would need more than the cut limit, the lowest harmony comes up instead (`--root-raise`, never closer to the lead than the margin). It reports the spacing it actually achieved. `--split` re-arranges the stems into Voice 1 (lowest) … Voice N (highest) so one fader per voice sets each step of the stack; the voices add up to the inputs exactly. Use post-chain stems (Live: Export → All Individual Tracks). |
+
+**First pass and review**
+
+| command | what it does |
+|---|---|
+| `scan` | Runs every check on a Live set, a REAPER project, an Ardour session or a folder of recordings. Changes nothing; writes `REVIEW.md`. |
+| `preflight` | Sanity of the files before any work: mixed sample rates or bit depths, stems of different length, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel. Report first; `prep` repairs what it can. |
+| `demo` | A 40-second synthetic song with six labelled problems, as a folder of stems or a REAPER project, to try the whole loop on nothing of your own. |
+| `handoff` | Turns the by-hand list into your DAW's own words: `HANDOFF.md`, a checklist in song order, plus markers (a new Live set with locators, a new REAPER project with markers, or a MIDI marker file and CSV for any DAW). |
 
 **Live: hands on the set** (through a patched [AbletonOSC](https://github.com/ideoforms/AbletonOSC), bundled)
 
@@ -221,7 +254,7 @@ See [docs/WORKFLOW.md](docs/WORKFLOW.md); what's coming, including Logic Pro and
 - `unroll` turns a looped Arrangement clip into one copy per pass (same sound, checked by rendering before and after), so a single pass can be nudged or changed on its own.
 - Also `mine`, `audit`, `automation`, `refs`, `profile`.
 
-**Ears:** `measure`, `key` (the song's key, section by section, with a confidence), `sections`, `match`, `spectrogram`, `punch`, `stems`, `separate` (a mix into stems), `midi` (audio to MIDI), `pitchcheck` (pitch and loudness difference between two captures: run it after any re-render), `clicks` (finds clicks and crackle). Run `hypnomix` for the full list and `hypnomix <command> -h` for each one.
+**Ears:** `measure`, `key` (the song's key, section by section, with a confidence), `sections`, `match`, `tonal` (a tone target from your own songs), `harsh` (harsh 2-6 kHz build-ups), `compare` (this bounce against the last), `spectrogram`, `punch`, `stems`, `separate` (a mix into stems), `midi` (audio to MIDI), `pitchcheck` (pitch and loudness difference between two captures: run it after any re-render), `clicks` (finds clicks and crackle). Run `hypnomix` for the full list and `hypnomix <command> -h` for each one.
 
 **Tempo and variety** ([docs/TEMPO.md](docs/TEMPO.md))
 
@@ -251,7 +284,7 @@ command line and Claude Code, install from source as below. The app's guided set
 with AI (just the app, an AI key, a local model, a desktop AI app), with costs: [Setting up, and choosing an AI](docs/guides/09-setup-and-ai.md).
 Building the installers yourself: [packaging/README.md](packaging/README.md).
 
-**From source** (the command line, Claude Code, and every extra). Needs macOS (Windows should work for the file tools and Live control but is untested), Python 3.9+, ffmpeg, and Ableton Live 11 or 12 for the Live features. The file tools work without Live.
+**From source** (the command line, Claude Code, and every extra). Needs macOS or Windows 10/11 (Windows is newer and less tested), Python 3.9+, ffmpeg, and Ableton Live 11 or 12 for the Live features. The file tools work without Live; REAPER and Ardour projects are read directly.
 
 ```bash
 git clone https://github.com/drtranceypants/hypnomix && cd hypnomix
@@ -266,13 +299,14 @@ To give hypnomix access to more of your plug-ins' parameters, run `hypnomix inst
 
 `loop` and `diagnose` record what Live plays through [BlackHole](https://github.com/ExistentialAudio/BlackHole). `hypnomix install` explains the two-minute setup.
 
-Optional features (in the installed app: Setup → Extras installs them on a click):
+Optional features. In the installed app, Setup → Extras installs `reference`, `ml` and `plugins` on a click; the installers already include `assistant` and `critique`. From source, run the install line in the hypnomix folder:
 
 | extra | adds | install |
 |---|---|---|
 | `reference` | `hypnomix reference` (Matchering; GPL-3.0, kept separate so hypnomix stays MIT) | `uv pip install -e ".[reference]"` |
 | `ml` | `hypnomix separate` (split a finished song into stems) and `hypnomix midi` (audio → MIDI) | `uv pip install -e ".[ml]"` |
 | `plugins` | `hypnomix plugrender` and `ab --plugins`: render through your real VST3 / AU chains (pedalboard; GPL-3.0) | `uv pip install -e ".[plugins]"` |
+| `assistant` | the app's Assistant tab: chat with your own key from Anthropic, OpenAI or any OpenAI-compatible service, or a model on your own computer (already in the installers) | `uv pip install -e ".[assistant]"` |
 | `critique` | `hypnomix critique` (a cloud model listens and writes notes by ear; Gemini or OpenRouter key, from the app's settings or `GEMINI_API_KEY` / `OPENROUTER_API_KEY`) | `uv pip install -e ".[critique]"` |
 
 ## With Claude Code
@@ -336,7 +370,7 @@ Plug-ins with more parameters than Live shows by default need `hypnomix install 
 
 Everything is measurement plus rules an engineer would use. There are no black-box models in the mixing chain, so every decision can be written down and argued with. Read [GUIDE.md](GUIDE.md) for the craft behind each tool and the workflows.
 
-It measures; it doesn't listen. Treat the automix as a strong first pass by an assistant, then make the taste calls yourself.
+Its checks measure; they don't listen. The optional Listener (or `critique`) can add notes by ear from a cloud model, but those are an opinion, and the numbers stay measurements. Treat the automix as a strong first pass by an assistant, then make the taste calls yourself.
 
 ## Contributing
 

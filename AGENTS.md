@@ -8,7 +8,7 @@ the tools apply only what was approved, into new files.** Everything below serve
 
 ## What it is
 
-A command-line mixing and mastering toolkit (`hypnomix <command>`). Three kinds of tool:
+A command-line mixing and mastering toolkit (`hypnomix <command>`; `hypnomix` alone lists every command). The kinds of tool:
 
 - **File tools:** read audio files (stems, takes, mixes). Work with any DAW. Never need Live.
 - **Session tools:** read a saved Ableton Live set (`.als`, gzipped XML) plus the audio its clips play. Live can
@@ -27,6 +27,11 @@ A command-line mixing and mastering toolkit (`hypnomix <command>`). Three kinds 
   Starting the bridge installs nothing, but it does run a script in the person's REAPER: say so before starting it.
 - **Live tools:** drive the open Live set through AbletonOSC (`hypnomix live`, `loop`, `diagnose`, `chain`).
   The last resort, not the first: they need Live running, a remote script, and a person at the screen.
+- **The app:** `hypnomix app` is the first pass in a window (scan, hear each fix, approve, apply), with an
+  Assistant tab (chat with the person's own AI key), an optional Listener (a cloud model hears a bounce, only on
+  their click) and **teacher mode**: free courses in their own DAW (Live, REAPER or Ardour), from the complete course
+  A to Z to a 101 crash course and a tour of hypnomix. Point a newcomer at the Teacher tab; it is theirs to use, not
+  something for an agent to drive.
 
 ## Setup
 
@@ -40,7 +45,9 @@ hypnomix doctor                    # checks ffmpeg, Rubber Band, Live, AbletonOS
 help (the module docstring). Output goes to `hypnomix-out/` unless `--out`.
 
 **Never run `hypnomix install` without asking.** It puts a remote script into the person's Live and needs a
-Live restart.
+Live restart. `device`, `aligndevice` and `probe device` also write into the person's Live User Library: do not run
+them bare either (`--out FOLDER`, or `install --dry-run`, shows the result without touching it). In a test run, point
+`HOME`, `HYPNOMIX_HOME`, `HYPNOMIX_APP_HOME` and `HYPNOMIX_USER_HOME` at scratch folders (see CONTRIBUTING.md).
 
 ## The loop (use this for every job)
 
@@ -75,10 +82,13 @@ Preferences shape proposals. They never replace asking: taste calls are always a
 | the person has | run |
 |---|---|
 | a Live set | `hypnomix scan "Song.als" --mix mix.wav --ref instrumental.wav --key "F# major"` |
+| a REAPER project or an Ardour session | `hypnomix scan "Song.rpp"`, `hypnomix scan "Song/"` (or its `.ardour`); the DAW can stay open |
 | raw recordings or exported stems (any DAW) | `hypnomix scan "folder/"` |
 | stems to clean up, mix or master | `hypnomix prep FOLDER --plan`, `automix FOLDER --plan`, `master MIX.wav --plan` |
 | a finished stereo mix only | `hypnomix measure`, `translate`, `qc`, `sections --bpm N`, `match MIX REF` on it; `separate` if stems would help |
 | nothing recorded yet | the `tracking-session` skill (`soundcheck` first) |
+| not sure the files are in good shape | `hypnomix preflight` on the folder, set, project or session first (read-only: sample rates, lengths, duplicates, fake stereo, missing files) |
+| nothing of their own to try it on | `hypnomix demo` (a 40-second song with six labelled problems, as stems or a REAPER project) |
 
 The scan writes `hypnomix-out/scan/<song>/REVIEW.md` and `findings.json` (most severe first, each with an id),
 plus each tool's own report under `raw/`. Several agents can scan in parallel: one group each with
@@ -86,7 +96,7 @@ plus each tool's own report under `raw/`. Several agents can scan in parallel: o
 
 `--deep` frequency fights are findings with a concrete cut: approved, `fix` writes it as one bell band on the DAW's
 own EQ in a NEW file (an EQ Eight in Live, a ReaEQ in REAPER; an EQ already on the track is reused when it has a free
-band; gentle by default, 2-3 dB; `fix --decide mask-1=approve@50` makes it half). A protected track still needs
+band, else a new one goes at the end of the chain; gentle by default, 2-3 dB; `fix --decide mask-1=approve@50` makes it half). A protected track still needs
 `--allow-protected`.
 
 A set scan also lists takes whose clip-gain boost lifts their noise (`noise`), how far harmonies sit from the
@@ -144,7 +154,10 @@ hypnomix fix "<SCAN_DIR>" --approved --out "Song (fixed).als"
 Before it writes anything `fix` prints the clean-ups it adds because they are on by default (`order-1`, `retire-1`,
 `merge-N`; `--no-defaults` leaves them out) and every file it is about to create, the archive copy included: read
 that to the person. At the end it prints **Not applied**: what they decided as "change" (with their note), what they
-approved that must be done by hand, and what was no longer found, each with what to do next. `fix` enforces the
+approved that must be done by hand, and what was no longer found, each with what to do next. To give them that
+by-hand list in their DAW's own words, run `hypnomix handoff "<SCAN_DIR>"`: a `HANDOFF.md` checklist in song order
+with what to listen for, and a marker at each spot (locators in a new Live set, markers in a new REAPER project, or
+`markers.mid` and `markers.csv` for anything else). `fix` enforces the
 safety rules itself and stops rather than guesses. It refuses when: the set changed since the
 scan (re-scan), the output name already exists, an id was recorded as skip or change, a finding is on a protected
 track (ask again, then `--allow-protected`), or the key for vocal tuning was never confirmed (`--key "<key>"`, or `--key sections`: the section-by-section key map,
@@ -210,16 +223,19 @@ which spots to compare between the old and new set. When the review is finished,
 | job | commands | changes |
 |---|---|---|
 | Preferences, sound profile, the person's own standards | `prefs`, `profile`, `taste` (levels, pans, sends, chains from their finished songs), `voices --learn`, `motion --learn` | `~/.hypnomix/` only |
-| Find problems in a set | `scan`, `smooth`, `timing`, `distortion`, `sidechain`, `audit`, `refs`, `mine`, `automation list` | nothing |
+| Find problems in a set | `scan`, `smooth`, `edges`, `timing`, `distortion`, `sidechain`, `audit`, `refs`, `mine`, `automation list` | nothing |
+| Check files before the work, practise | `preflight` (sample rates, lengths, duplicates, fake stereo, missing files; `--plan` for the review), `demo` (a practice song with labelled problems) | nothing; `demo` writes a new folder or project |
 | A REAPER project (see `docs/REAPER.md`) | `project SONG.rpp`, `scan SONG.rpp`, `fix DIR --approved --out NEW.rpp`, `reaper start` (and `status`, `tracks`, `fx`, `params`), `chain master MIX.wav --reaper --verify` | a new `.rpp`; plug-ins on the open REAPER's master (undo steps) |
 | Find problems in recordings | `scan FOLDER`, `stems`, `masking`, `clicks`, `takes`, `align`, `measure`, `spectrogram` | nothing (reports) |
-| Judge a mix | `sections` (give `--bpm`), `match MIX REF`, `translate`, `qc`, `reference`, `punch`, `pitchcheck` | nothing (reports) |
-| Plan many moves for review | `prep --plan`, `automix --plan`, `master --plan` | nothing (findings) |
+| Judge a mix | `sections` (give `--bpm`), `match MIX REF`, `translate`, `qc`, `reference`, `punch`, `pitchcheck`, `key` (the song's key, and a section-by-section map with a confidence) | nothing (reports) |
+| Listen by ear (an extra; sends a reduced mono copy to a cloud model, so ask first every time) | `critique MIX` (the Listener: a cloud model's notes by ear; `--estimate` says what would be sent first) | nothing (notes only; the numbers stay measurements) |
+| Plan many moves for review | `prep --plan`, `automix --plan`, `master --plan`, `balance --plan` (a first fader balance of stems, faders only), `colour --plan`, `album --plan` | nothing (findings) |
 | Hear and review | `ab` (before/after clips), `review` (the page; `--serve` saves clicks) | the scan folder only |
+| Hand the by-hand list to the DAW | `handoff SCAN_DIR` (`HANDOFF.md`, a marker at every spot; `--daw` picks the wording: live, reaper, ardour or generic) | files in `SCAN_DIR/handoff/`; a new set with locators (Live) or a new project with markers (REAPER) |
 | Fix a set | `fix` (approved findings); or `order --apply` (track order, vocal stacks), `smooth --apply`, `timing --apply`, `distortion --apply`, `sidechain --apply`, `automation offset/dip` | a new `.als` |
 | Keep it moving (last step before mixdown; see `docs/WORKFLOW.md` §5) | `motion --learn` (your moves from finished songs), `motion SET --mix MIX --plan` (riser, dip, drift, swell, throw, outro, stutter, gate, drop-out: all options), `borrow SET --mix MIX --plan` (unused loops from the song's original project, on switched-off tracks) | a scan folder; `fix` writes a new `.als` |
 | Tempo and variety (see `docs/TEMPO.md`) | `tempomap` (free-played take: `--click` check, then `--conform` or `--follow`), `loops`, `tighten`, `breathe`, `variations`, `colour` (new timbres where a part repeats itself: Live-device chains on switched-off copies, `--plan` for the review; Live sets only) | a new `.als`, or preview files |
-| Clicking, not typing (see `docs/APP.md`) | `app` (the first pass in a window; decisions land in the same `decisions.json`), `device` (Max for Live: step through findings in Live, jump to each) | scans in `~/Documents/Hypnomix`; a new `.als` on Apply |
+| Clicking, not typing (see `docs/APP.md`) | `app` (the first pass in a window; decisions land in the same `decisions.json`; its Teacher tab is the free course in the person's DAW), `device` (Max for Live: step through findings in Live, jump to each) | scans in `~/Documents/Hypnomix`; a new `.als` on Apply |
 | Inside Live without renders (see `docs/LIVE.md`) | `probe device`, `probe insert SET.als` (new set with every device, no manual placing; also `scan --devices`), `probe listen` / `status` / `report` / `cards SET.als`, `abset SCAN_DIR` (every fix as a switched-off B for A / B / Blind on the device) | a new `.als`; captures in the app folder |
 | Learn the person's style first | `taste --library` (every set on the computer: standards, taste calls, where to improve), `tonal build` (a tone target from their releases) | `~/.hypnomix/` only |
 | Decide faster, stay in charge (see `docs/WORKFLOW.md` 4b) | `fix --decide ID=approve@60`, `--decide-like ID=approve --dry-run`, `review --export / --merge / --settle`, `history` (`--diff`, `--undo`, `--undo-item`) | decisions; undo writes a new `.als` |
@@ -227,12 +243,14 @@ which spots to compare between the old and new set. When the review is finished,
 | Mastering options (see `docs/MASTERING.md`) | `tonal check`, `harsh`, `master --plan` with `--stabilize`, `--dyneq`, `--width-bands`, `--limiter-mode`, `--harsh`, `--dither`, `--amount`; `rebalance`; `translate --preview` | new audio files |
 | Real plug-ins offline (see `docs/PLUGINS.md`) | `plugins` (what is installed; `--check` loads each safely, `--save` into the preferences), `plugrender SET --list / --check / --tracks`, `ab DIR --plugins` | new audio files; `plugins --save` writes the preferences only |
 | Check what was written | `check NEW.als --against OLD.als`, `diff OLD.als NEW.als` | nothing |
-| Vocals | `tune`, `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |
+| Vocals | `tune` (and `key` for the song's key), `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |
+| Vocal level, line to line (run in the first scan and before every final export) | `vocallevel SET --heard DIR` (or `--renders DIR`); `--apply NEW.als` writes volume automation | nothing, or a new `.als` |
 | Vocal alignment in a set | `alignset` (timing as warp markers on the parts' own clips; pitch/formant as files from bar 1), the `aligndevice` for Live; see docs/ALIGN.md. Pitch matching is off unless the person asks | a new set |
 | Device settings and tidy-up in a set | `devices` (stock compressors, gates, limiters, EQ low cut judged on the signal they get), `tidy` (retire switched-off tracks after an archive copy; consolidate), `unroll` (a looped clip into one copy per pass) | a new `.als` |
 | Vocals inside a set (options from the vocals scan) | `duck` (vocal reverb / delay ducking: tune or add), `cliplevel` (lower-harmony clips far under their track) | a new `.als` |
 | Raw takes / stems | `prep`, `cleanup`, `clipmatch`, `render` (set → WAVs, no Live), `separate` (mix → stems) | new audio files |
 | Mix and master files | `automix`, `master` (after their `--plan` was reviewed) | new audio files |
+| Release (see the wiki articles on each) | `release MASTER.wav --check` first, then without it (the upload folder: WAV 24-bit and 16-bit, MP3, AAC, tags, cover); `versions --stems DIR --vocals "…" --check` (instrumental, a cappella, TV mix, radio edit from the person's own stems); `compare OLD.wav NEW.wav`; `album SONGS` (level, tone and gaps across a record) | a new folder or new files; the reports are read-only |
 | Inside Live | `live`, `loop`, `diagnose`, `chain`, `name --apply`, `clipmatch --als --apply`, `midi`, `soundcheck` (audio input) | the open set |
 | Setup | `doctor` (checks), `install` (ask first) | Live's remote scripts |
 
@@ -260,6 +278,15 @@ guesswork: the tools say so and refuse to write from it.
 needs the tempo (`--bpm`; a set scan passes it): without it the bar lines, and so the sections, can be wrong.
 Present their output as "measured, please check by ear", and prefer `--report` before writing a file.
 
+**The newest release: tested on synthetic data only** (say exactly this, never more): the Live devices and the Live
+fix paths were tested in Live 12, and REAPER support in REAPER 7.86. Everything newer passes unit tests and hypnomix's
+own structure checks on synthetic data only: `balance`, `handoff`, `plugins`, `colour`, `release`, `compare`,
+`versions`, `album`, `preflight`, `demo`; masking cuts written as an EQ Eight or ReaEQ band; `ab` previews of timing
+nudges and device changes (models of the devices, not Live); and `fix` on an Ardour scan (the snapshot is written and
+re-read by hypnomix and has NOT been opened in Ardour). The new Live sets, REAPER projects and Ardour snapshots have
+not been opened in their DAWs, and the new tools have not been run on real songs. Tell the person to keep their
+original and listen.
+
 **Which tool for which job** (several overlap on purpose):
 
 - Timing: `timing` fixes the few hits that disagree with the band (use it first, it is the first-pass check).
@@ -270,23 +297,58 @@ Present their output as "measured, please check by ear", and prefer `--report` b
   options on switched-off tracks or as review items.
 - Tempo: `tempomap` is for takes played without a click. `breathe` is for songs recorded to one. Run
   `timing`, `tighten`, `variations` and `borrow` before `breathe`: they need a constant tempo.
+- Vocal level: `vocallevel` measures the vocal line by line (an even level, upper parts under the melody) and is
+  run in the first pass and again before every final export. `voices` spaces the harmony parts around the one the
+  person chooses, or splits them into one track per voice. `cliplevel` raises single lower-harmony clips that sit far
+  under the rest of their own track.
+- Clip edges: `smooth` eases clicks, level jumps and spikes at clip edges and seams. `edges` finds the edges and
+  fades that cut into a word (a lost first consonant). They run in the same scan group; do not mix them up.
+- Pitch and timing of vocals: `tune` corrects the pitch of one take, gently. `vocalign` times (and, if asked,
+  pitch-matches) doubles and harmonies as audio files. `alignset` does that timing inside a saved Live set or REAPER
+  project, as warp or stretch markers on the person's own clips, in a new file.
+- Noise and mouth sounds: `deess` turns down the "s" moments of one vocal. `breaths` turns breaths down, not off.
+  `dehiss` is a spectral de-hiss with a gate for one track. `cleanup` rescues a rough demo (hum, noise, rumble, DC,
+  silence). `prep` is the whole pass over a folder of stems (those steps plus clipping, clicks, plosives, formats and
+  fades); run it with `--plan` first.
+- Master and balance: `balance` proposes a first fader balance for a folder of stems (faders only). `automix` takes
+  stems to a mix and a master (EQ, compression, pan, reverb too). `master` makes a mastered file from a stereo mix.
+  `chain` builds a mastering chain as real devices in Live (or REAPER). `rebalance` turns the vocals, drums, bass or
+  the rest up or down inside a finished stereo mix.
+- Tone against a target: `tonal` builds a target from the person's own songs and says where a mix sits outside it.
+  `match` lists, as proposals, how a mix differs from a song they love. `reference` (an extra) does it with
+  Matchering. `compare` is different: two bounces of the same song, old then new.
+- Hearing a fix: `ab` writes level-matched before and after clips offline (a model for some devices). `abset` writes
+  one new Live set with every fix as a switched-off B, to switch A, B or Blind inside Live. `plugrender` renders
+  tracks through the real VST3 and AU plug-ins offline (an extra; `ab --plugins` uses it).
+- Tracks: `tidy` retires switched-off tracks (after an archive copy) and puts one instrument's clips on one track.
+  `order` puts tracks in working order and each part of a vocal stack on the track for its pitch.
+- Release: `qc` checks one file, pass or fail. `translate` checks how it survives elsewhere (mono, phone, earbuds,
+  car, streaming, codecs). `release` builds the folder to upload and measures every file in it. `album` is not `qc`:
+  it puts the songs of a record side by side (level, tone, gaps). Report first, whichever you run.
+- Before the work: `preflight` checks the files (formats, lengths, duplicates, fake stereo, missing). `scan` checks
+  the sound and the set. Run `preflight` first.
+- After the fixes: `fix` makes the changes it can, into new files. `handoff` turns what `fix` lists as by hand into a
+  checklist and markers in the person's DAW's own words. It changes nothing in place.
 
 ## Other DAWs (Logic Pro, Pro Tools, anything else)
 
 REAPER is supported directly (`scan`/`fix` on the `.rpp`, the bridge, `chain --reaper`: `docs/REAPER.md`), and
-Ardour sessions can be scanned and fixed into a new `.ardour` snapshot. For the rest:
-
+Ardour sessions can be scanned and fixed into a new `.ardour` snapshot (fades, gain, dips, fader, pan and mute; the
+rest stays by hand; not yet opened in Ardour). There is NO reader for Logic Pro or Pro Tools sessions. For those and
+every other DAW:
 
 Today: the file tools and `scan FOLDER`. Ask the person to export each track as a full-length file from the
 same start point, with processing off. Scan the folder, review as above, and `fix` writes repaired copies to
-`<SCAN_DIR>/fixed/`; anything that must happen in their DAW (an EQ cut, a fader move) is given as a to-do in
-their DAW's terms. You cannot edit a Logic or Pro Tools project file, and you don't drive those apps. The plan
-for deeper support is in `docs/ROADMAP.md`.
+`<SCAN_DIR>/fixed/`. Anything that must happen in their DAW (an EQ cut, a fader move) is by hand:
+`hypnomix handoff "<SCAN_DIR>"` writes it as a checklist in their DAW's terms (`--daw generic` if unsure), with
+`markers.mid` and `markers.csv` to import as markers. You cannot edit a Logic or Pro Tools project file, and you
+don't drive those apps. The plan for deeper support (later) is in `docs/ROADMAP.md`.
 
 ## Changing the code
 
-- One command = one module; register it in `hypnomix/cli.py` (`GROUPS`), add a row to `README.md`, and document
-  it in the guide or doc it belongs to (see "Keep the wiki current" below).
+- One command = one module; register it in `hypnomix/cli.py` (`GROUPS`), add it to the chores table (the same
+  row in `README.md` and `hypnomix/app/wiki/articles/25-chores.html`) and to `26-features.html`, and document it in
+  the guide or doc it belongs to (see "Keep the wiki current" below).
 - Module docstring = the command's help (what it finds, how it fixes, usage). Keep it current.
 - Session tools follow `hypnomix/session/smooth.py`: parse with `hypnomix/session/automation.py` helpers
   (`load`, `save`, envelopes), map clips to audio with `smooth.clip_info` / `file_seconds` (warp markers,
@@ -328,6 +390,8 @@ commit**: a new command, option, check, fix, default or workflow, a renamed thin
 | a skill or a subagent | `skills/<name>/SKILL.md`, `agents/<name>.md` |
 | lessons, install, the FAQ, how-to pages | `hypnomix/app/wiki/articles/NN-id.html` (`teaser:` is its home page summary) |
 | a command's one-line description | `hypnomix/cli.py` (the command reference article is built from it) |
+| the list of what hypnomix does | the chores table (`README.md` and `25-chores.html`, the same rows), `26-features.html`, "Commands by job" above |
+| what comes next, which DAWs can do what | `docs/ROADMAP.md`, then `27-next.html`, `28-faq.html`, `28-ardour.html`, `28-other-daws.html`, `18-setup.html` |
 
 The tests hold the line: a command with no hand-written article, or a new top-level `.md` that the wiki does not
 read, fails `python -m unittest discover -s tests`. Pushing to `main` publishes: the website rebuilds within

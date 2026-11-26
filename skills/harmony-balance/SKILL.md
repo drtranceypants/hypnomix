@@ -59,6 +59,8 @@ person wants something different, every number can be overridden in the note
 (`--note "lead-margin=2 tolerance=1"`), and the stronger options (a part to prioritise, a step in dB, ladder or
 flat) are theirs to ask for.
 
+Before every final export, `hypnomix vocallevel` re-checks the vocal level line to line and the upper parts under the melody, as heard.
+
 ## 2b. Lower harmonies sitting too low
 
 The scan also proposes `cliplevel-N` items: a clip of a lower harmony more than 4 dB under the rest of its track

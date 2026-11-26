@@ -68,6 +68,29 @@ Your agent will find these in `AGENTS.md`, but they're worth knowing:
 - **Say what's untested.** If you couldn't check something in a real DAW, say so in the pull request and in
   the docs.
 
+### Testing without touching your own setup
+
+hypnomix keeps your preferences and your scans in your own folders, and a few commands write into Ableton's User
+Library. To try a change safely, run it in an instance that cannot reach any of that:
+
+1. **Point four folders at scratch space.** Make an empty folder and set `HOME`, `HYPNOMIX_HOME`,
+   `HYPNOMIX_APP_HOME` and `HYPNOMIX_USER_HOME` to folders inside it, in the same terminal, before you run anything:
+
+   ```bash
+   S=/tmp/hypnomix-test && mkdir -p $S/fakehome $S/home $S/work
+   export HOME=$S/fakehome HYPNOMIX_HOME=$S/home HYPNOMIX_APP_HOME=$S/work HYPNOMIX_USER_HOME=$S/fakehome
+   ```
+
+2. **A test copy of the app:** `hypnomix app --port 8795 --no-open --home $S/work`, then open
+   `http://127.0.0.1:8795`. Pick a port that is not 8791 (your own app's). If you also test the probes, give the
+   test copy its own probe port with `HYPNOMIX_PROBE_PORT` (the default is 8792).
+3. **Never run these bare:** `hypnomix install`, `hypnomix device`, `hypnomix aligndevice` and
+   `hypnomix probe device`. They write into the Ableton User Library. Use `--out FOLDER` (the device commands) or
+   `--dry-run` (`install`) so they write somewhere else, or show what they would do.
+4. **Do not start Live or REAPER from a test run** unless the test is about them. A test that needs them says so.
+5. **The unit tests need none of this:** `python -m unittest discover -s tests` builds synthetic audio and sets in a
+   temp folder. Run only the files for your area while you work.
+
 ### Making it easier to use
 
 Clearer wording, better error messages, a missing step in a guide, a confusing button: these are some of the

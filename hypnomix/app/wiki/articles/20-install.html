@@ -6,7 +6,7 @@ teaser: The easy way: download the installer for Mac or Windows, open it, and a 
 -->
 <div class="prose paper">
       <p><b>The easy way: the installer.</b> Download it from <a target="_blank" rel="noopener" href="https://hypnomix.bradfieldenterprises.org/download/">the download page</a> (Mac with Apple silicon, Mac with Intel, or Windows 10/11). It carries its own Python and ffmpeg, so there is nothing else to install. On a Mac, drag Hypnomix to Applications; on Windows, run the setup. The first time, your computer warns that the app isn't signed yet: the download page shows how to open it anyway, and links to the public virus-scan reports.</p>
-      <p>When it opens, a <b>guided setup</b> asks how you want to work (on your own, with an AI key such as Gemini's free tier, with a free model on your own computer, or with Claude Code), connects it, connects Ableton Live, and offers the optional extras. <a data-wiki="setup-ai" href="#">Setting Up, and Choosing an AI</a> walks through each option with costs.</p>
+      <p>When it opens, a <b>guided setup</b> asks which DAW you use (and offers <a data-wiki="teacher" href="#">teacher mode</a>), asks how you want to work (on your own, with an AI key such as Gemini's free tier, with a free model on your own computer, or with Claude Code), connects it, connects Ableton Live, and offers the optional extras. <a data-wiki="setup-ai" href="#">Setting Up, and Choosing an AI</a> walks through each option with costs.</p>
       <p><b>Optional extras in the app.</b> Setup's <b>Extras</b> step installs reference matching, your own VST3 / AU plug-ins, and stem separation with audio to MIDI, each on a click. They download from PyPI into <code>~/.hypnomix/extras</code>, outside the app, so an update to the app keeps them. Delete that folder to remove them. Libraries the app already has are kept at the app's own versions.</p>
       <p><b>Claude Code skills in the app.</b> Choosing <b>A desktop AI app</b> makes an <b>AI agent</b> folder with the repository's skills (first-pass, mix-engineer, mastering-engineer and the rest) and its scanner subagent in <code>.claude/</code>. Claude Code finds them when it opens that folder.</p>
       <p><b>From the source</b>, below, is for the terminal and for working on hypnomix itself.</p>
@@ -31,11 +31,13 @@ teaser: The easy way: download the installer for Mac or Windows, open it, and a 
         <div class="term" data-label="terminal"><pre><span class="p">$</span> hypnomix doctor</pre></div>
         <p>It checks Live, AbletonOSC, BlackHole, ffmpeg and plug-in parameter access, and tells you what to fix.</p></li>
       <li><h4>Optional extras</h4>
+        <p>Run each install line in the hypnomix folder. (hypnomix is not on PyPI, so <code>pip install hypnomix</code> does not work.)</p>
         <div class="tablewrap"><table>
           <tr><th>extra</th><th>adds</th><th>install</th></tr>
           <tr><td><code>reference</code></td><td><code>hypnomix reference</code> (Matchering; GPL-3.0, kept separate so hypnomix stays MIT)</td><td><code>uv pip install -e ".[reference]"</code></td></tr>
           <tr><td><code>ml</code></td><td><code>separate</code> (split a song into stems) and <code>midi</code> (audio → MIDI)</td><td><code>uv pip install -e ".[ml]"</code></td></tr>
           <tr><td><code>plugins</code></td><td><code>plugrender</code> and <code>ab --plugins</code>: render through your real VST3 / AU plug-ins (pedalboard; GPL-3.0, kept separate)</td><td><code>uv pip install -e ".[plugins]"</code></td></tr>
+          <tr><td><code>assistant</code></td><td>the app's Assistant tab: your own key from Anthropic, OpenAI or any OpenAI-compatible service, or a model on your own computer (the installers already include it)</td><td><code>uv pip install -e ".[assistant]"</code></td></tr>
           <tr><td><code>critique</code></td><td>a cloud model listens and writes notes by ear (your own Google Gemini or OpenRouter key; also the Assistant's Listening)</td><td><code>uv pip install -e ".[critique]"</code></td></tr>
         </table></div></li>
       <li><h4>Updating later</h4>

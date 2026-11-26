@@ -1,4 +1,4 @@
-"""hypnomix: a mixing and mastering engineer for Ableton Live and REAPER, driven by you or by Claude Code.
+"""hypnomix: a mixing and mastering engineer for Ableton Live, REAPER and Ardour, driven by you or by Claude Code.
 
 Run `hypnomix` for the command list, `hypnomix <command> -h` for each command's help.
 """
@@ -12,7 +12,7 @@ GROUPS = [
         ("balance", "hypnomix.engineer.balance", "stems folder → a first fader balance as proposals, with the measurement behind each move (faders only; --plan sends them to the review)"),
         ("master", "hypnomix.engineer.master", "stereo mix → release master at a loudness target (or a reference); options: tonal stabilizer, dynamic EQ, band width, limiter character, harshness, dither, amount"),
         ("rebalance", "hypnomix.engineer.rebalance", "turn vocals / drums / bass / other up or down in a finished stereo mix (separation + residual, true-peak safe)  [extra: ml, or --stems]"),
-        ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices: no paid plug-ins"),
+        ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices, or the chain in REAPER with --reaper: no paid plug-ins"),
         ("devices", "hypnomix.engineer.devices", "check every Live device by what it does (compressors, gates, limiters, EQ low cut) and suggest settings (writes a new set)"),
         ("duck", "hypnomix.engineer.duck", "duck the vocal reverb and delay: tune the ducking you have, or add a sidechained Compressor fed by the vocals (writes a new set)"),
         ("sidechain", "hypnomix.engineer.sidechain", "sidechain compressors: measure the ducking (depth, recovery, timing) and suggest settings"),

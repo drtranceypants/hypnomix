@@ -5,8 +5,8 @@ faster than real time, without opening Live. Each VST3 and Audio Unit plug-in on
 settings Live saved in the set, the track's audio runs through the chain in order, then through its fader and
 pan. Nothing in the set or its audio is changed: it only writes WAVs.
 
-It is what lets `hypnomix ab` play a before / after of a device change (a compressor setting, a limiter gain)
-as you would hear it on the track, instead of the dry track.
+It is what lets `hypnomix ab --plugins` play a before / after of a device change (a compressor setting, a limiter gain)
+as you would hear it on the track, with your real plug-ins in the chain, instead of the dry track.
 
 ## Install
 
@@ -40,8 +40,8 @@ settings as readable state (many free ones do), setting by setting. Run it first
 | audio clips | yes, as `hypnomix render` does: clip gain, fades, warps (as mono, fed to the chain as stereo) |
 | VST3 plug-ins | yes, found by name in `/Library/Audio/Plug-Ins/VST3` and `~/Library/Audio/Plug-Ins/VST3` |
 | Audio Unit plug-ins | yes, found by their component codes in the two `Components` folders |
-| Live's Utility (gain), Compressor, Glue Compressor, Limiter | yes, with hypnomix's models of them (approximations; a compressor's sidechain from another track is followed) |
-| other Live devices (EQ Eight, Saturator, reverbs, delays…), racks, Max for Live | no: skipped, and listed as skipped |
+| Live's Utility (gain), Compressor, Glue Compressor, Limiter, Gate, EQ Eight | yes, with hypnomix's models of them (approximations; a compressor's sidechain from another track is followed; an EQ Eight in L/R or M/S mode and a Gate that listens to a sidechain have no model and are skipped) |
+| other Live devices (Saturator, reverbs, delays…), racks, Max for Live | no: skipped, and listed as skipped |
 | VST2 plug-ins | no: pedalboard hosts VST3 and AU only |
 | switched-off devices | skipped, as in Live |
 | fader and pan | yes (volume automation too); pan is an approximation of Live's |
@@ -67,8 +67,8 @@ of the set with only that fix applied (next to the original, deleted afterwards)
 its chain in both, and writes a level-matched pair around the loudest part of the track. Findings on return
 tracks (most `duck` items) can't be previewed, because returns are fed by sends; `ab.json` says so.
 
-Without `--plugins` (or without pedalboard) `ab` still previews the device changes it can model, with no real
-plug-in: the track is played through hypnomix's models of Live's Compressor, Glue Compressor, Gate, EQ Eight, Utility
+Without `--plugins` (or without pedalboard) `ab` still previews the device changes it can model (and timing nudges and
+masking cuts, which need neither), with no real plug-in: the track is played through hypnomix's models of Live's Compressor, Glue Compressor, Gate, EQ Eight, Utility
 and Limiter, and the other plug-ins are left out of the chain (the pair says which). Those pairs are labelled
 **a model of the device, not Live itself** in `ab.json` (`"model": true`) and on the review page: the curve of an EQ
 Eight band lands where its settings say, a compressor follows the same gain-reduction model `devices` and `sidechain`

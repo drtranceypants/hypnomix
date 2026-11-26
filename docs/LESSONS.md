@@ -76,10 +76,40 @@ happened, why, and what to do instead. Where the tools now enforce the lesson, i
 22. **A batch cost far more than one job suggested.** Not audio, same lesson: time one track before a whole
     song, and say how long the full run will take.
 
+## Building and testing hypnomix itself
+
+Found in the final review of the work after the public release. Each is a trap for the next person who changes the code.
+
+23. **A test instance still reached the real home folder.** Setting only `HYPNOMIX_HOME` is not enough: code that asks
+    the system for the user's home (the plug-in folders, `~/Documents`, the library scan) ignores it.
+    *Do:* a test instance sets `HOME` as well as `HYPNOMIX_HOME` (and the app's own folders), and a test of anything that
+    writes checks that nothing landed outside the scratch folder.
+24. **A bare smoke test of an install or device command acts on the real machine.** `install`, `device`, `aligndevice`,
+    `probe device` and `chain` write into a User Library or drive a DAW, and running one with no arguments to see "that it
+    still starts" does exactly that.
+    *Do:* never smoke-test those commands bare. Use `-h` or `--dry-run`, in a scratch home, with the DAW closed.
+25. **The de-esser got louder.** A band split built on a causal crossover (one that shifts phase) made the automix
+    de-esser louder instead of quieter.
+    *Do:* split bands with a zero-phase filter, and test the level of the band after the move, not only that it ran.
+26. **A silent fallback hid a bug.** A sign error in the novelty curve meant no section change was ever found, and the
+    song was cut into even slices without a word, so the result looked plausible.
+    *Do:* a fallback says it is a fallback ("no clear section changes were found, so the song is cut into equal
+    slices"), and a test makes sure the real path is the one that runs on a case it should find.
+27. **Decisions followed positions, not findings.** Decisions were kept by finding number, and after a re-scan the list
+    had shifted, so "approve" landed on a different clip.
+    *Now enforced:* a decision is keyed by what the finding is (tool, track, kind and place); one that matches nothing is
+    counted, set aside in a file and never applied. Key by identity wherever a list can change under you.
+28. **A deny-list gate was walked around.** The Assistant was kept from running risky commands by a list of forbidden
+    ones, and a flag written in its short, abbreviated form (the command-line parser accepts any unique start of a flag)
+    was not on the list, so it got through.
+    *Now enforced:* commands run without a click only from a read-only allow-list, per command; an option that is not
+    listed for it, abbreviated or not, is refused. Gate with what is safe, never with what is not.
+
 ## The pattern
 
 Almost every entry is one of four things: acting before asking, trusting a number that wasn't checked, changing
 something that was a choice, or calling something done without measuring it again. The loop in `AGENTS.md`
-(preferences → scan → review → apply → verify → listen) is built to make those four hard to do.
+(preferences → scan → review → apply → verify → listen) is built to make those four hard to do. Entries 23 to 28 are
+a fifth, for people who change hypnomix itself: a test, a fallback or a gate that looks as if it did its job and did not.
 
 Found a new trap? Add it here, in the same three lines, and add the rule to `AGENTS.md` if it is general.

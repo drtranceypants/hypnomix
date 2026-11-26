@@ -35,6 +35,8 @@ def read(path):
 
     path = Path(path).expanduser().resolve()
     root = ET.fromstring(gzip.open(path).read())
+    from hypnomix.session import liveversion as LV
+    LV.warn_read(root)                           # a set from a newer Live: one warning line, never a refusal
     tempo = _v(root, ".//Tempo/Manual", float, 120.0)
     bpb = _v(root, ".//TimeSignatures/RemoteableTimeSignature/Numerator", int, 4)
     spb = 60.0 / tempo

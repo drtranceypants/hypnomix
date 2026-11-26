@@ -25,10 +25,10 @@ Every part of hypnomix follows the same rules. They are why you can let it loose
 | Refuses rather than guesses | if a fix wouldn't make things measurably better, it is left out and the report says why |
 | Your intent wins | automation, hard pans and effects you set are treated as choices; things you mark as deliberate are shown on every review |
 
-> Tip: keep the original set until you have opened the new one in Live and listened. hypnomix checks the new
-> set's structure, but only Live can confirm it opens.
+> Tip: keep the original until you have opened the new set or project in your DAW and listened. hypnomix checks
+> the structure of everything it writes, but only your DAW can confirm that it opens.
 
-## Three ways to use it
+## Four ways to use it
 
 | you'd rather… | use | start with |
 |---|---|---|
@@ -39,6 +39,10 @@ Every part of hypnomix follows the same rules. They are why you can let it loose
 
 They all drive the same commands and follow the same rules, so you can mix them: scan in the app, review
 from inside Live, apply in the app.
+
+What works where: Live sets (`.als`), REAPER projects (`.rpp`) and Ardour sessions (`.ardour`) can be scanned, and
+approved fixes are written into a new file of the same kind. Any other DAW works from exported tracks: see
+"Other DAWs" in guide 2.
 
 ## Install
 
@@ -64,6 +68,35 @@ only for the commands that talk to an open set (`live`, `loop`, `chain`); everyt
 or audio files runs without it.
 
 ## Your first hour
+
+### 0. Try it on a song that cannot be hurt (optional)
+
+```bash
+hypnomix demo                   # a 40-second synthetic song with six labelled problems: plain WAV stems, as exported from any DAW
+hypnomix demo --kind reaper     # the same song, and a REAPER project that plays the stems
+```
+
+It writes `hypnomix-out/demo/Hypnomix Demo Song/`: drums, bass, keys, a sung-like lead and a harmony made from
+scratch (nothing is downloaded, nothing is a recording; a second run makes "Hypnomix Demo Song 2" beside it), and `DEMO.md`, which lists each planted problem with its
+time and the command that finds it: a click, a level jump, hiss, clipped peaks, a harmony that drifts off pitch and
+drums that fall behind. Then follow `DEMO.md`: scan it, hear each fix, approve two, apply them. With `--kind reaper`
+a REAPER project plays the stems, so the scan sees all six; the plain folder shows the hiss and the clipping. That
+project has not yet been opened in REAPER; REAPER does not need to be open to scan it. There is no Live set kind, because a set
+written from scratch has not been opened in Live.
+
+### 0b. Check the files before any work (optional, any song)
+
+```bash
+hypnomix preflight "Song stems/"            # or Song.als, Song.rpp, Song.ardour
+hypnomix preflight "Song stems/" --plan     # the same findings, as a review (see guide 2)
+```
+
+It only reads. It tells you what is wrong with the files themselves: stems with different sample rates or bit
+depths, stems of different length or that start apart, exact duplicates, stereo that is really mono, silent or
+already-clipped files, lossy sources, files a project cannot find, and names other systems refuse. The report is
+`PREFLIGHT.md`; the exit code is 1 when something serious turns up. A file it calls silent may be an empty track on
+purpose: say so and move on. `preflight` is new: it passes unit tests on synthetic data and has not yet been run on the
+files of a real song.
 
 ### 1. Tell it your standards (five minutes, once)
 
@@ -110,7 +143,9 @@ Open the new set, compare the changed spots with the original, and keep what you
 | your preferences and learned habits | `~/.hypnomix/` |
 | scans from the app | `~/Documents/Hypnomix/` |
 | reports and audio from the terminal | `hypnomix-out/` in the folder you run from (set `HYPNOMIX_OUT` to change it) |
-| new sets | next to the original set, with a new name |
+| new sets and projects | next to the original, with a new name |
+| the by-hand checklist | `handoff/` inside the scan folder (guide 2) |
+| the files you upload | `hypnomix-out/release/<Artist> - <Title>/` (guide 6) |
 | tuned vocals from a set | `<project>/Samples/Tuned/` |
 | the Live devices | Live's User Library → Presets → Audio Effects → Max Audio Effect |
 
@@ -126,5 +161,8 @@ after.
 | 3 · Vocal Alignment | you have doubles and harmonies to line up, match or widen |
 | 4 · Vocal Production | tuning, harmony balance, comp edges, hiss, breaths and esses |
 | 5 · Timing, Tempo & Motion | tightening a band, songs without a click, keeping loops alive |
-| 6 · Mixing, Mastering & Release | from stems to a master that survives every speaker |
+| 6 · Mixing, Mastering & Release | from stems to a master that survives every speaker, and from a master to the files you upload |
+| 7 · Inside Live, Faster Reviews | measuring while you play, hearing each fix inside Live, and deciding a long review quickly |
+| 8 · hypnomix in REAPER | the same loop on a REAPER project, from inside REAPER |
+| 9 · Setting Up, and Choosing an AI | installing, and how to connect an AI, or none |
 | Command Reference | you need the one-line answer for any command |

@@ -1,7 +1,7 @@
 # Aligning vocals: timing, pitch, formant
 
 Doubles and harmonies that land together, notes that sit with the guide, and a wider stack, without paid
-plug-ins. Three ways in, one engine:
+plug-ins. Five ways in, one engine:
 
 | you have | use | what you get |
 |---|---|---|

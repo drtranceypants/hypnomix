@@ -5,7 +5,7 @@
     {
       "name": "hypnomix",
       "source": "./",
-      "description": "Mixing and mastering engineer skills for Ableton Live (needs the hypnomix CLI: pip install hypnomix)."
+      "description": "Mixing and mastering engineer skills for Ableton Live, REAPER and Ardour (needs the hypnomix command line: install from the hypnomix folder with uv pip install -e ., or use the installed app)."
     }
   ]
 }

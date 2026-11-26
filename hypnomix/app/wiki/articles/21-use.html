@@ -1,8 +1,8 @@
 <!--
 title: How to use it
-sub: ten recipes that cover most sessions · everything lands in hypnomix-out/ with a Markdown report next to the audio
+sub: twelve recipes that cover most sessions · everything lands in hypnomix-out/ with a Markdown report next to the audio
 group: How-to
-teaser: Ten recipes that cover most sessions: mixing a folder of stems, mastering a finished mix, cleaning up raw recordings, the first pass on a Live set, recording a part, harmony stacks, drums played without a click, and more.
+teaser: Twelve recipes that cover most sessions: mixing a folder of stems, mastering a finished mix, cleaning up raw recordings, the first pass on a song, recording a part, harmony stacks, drums played without a click, packaging a release, and more.
 -->
 <h3 class="sub-h">1 · Mix a folder of stems, start to finish</h3>
     <div class="term" data-label="mix"><pre><span class="p">$</span> hypnomix automix "Night Drive stems/" --name "Night Drive" --reference "reference.wav"
@@ -17,16 +17,18 @@ teaser: Ten recipes that cover most sessions: mixing a folder of stems, masterin
     <div class="term" data-label="prep"><pre><span class="p">$</span> hypnomix prep "raw stems/"
 <span class="p">$</span> hypnomix dehiss "Lead Vox.wav" --reduce 12 --gate 18 --report
 <span class="p">$</span> hypnomix vocalign "Lead.wav" "Double.wav" "Harmony hi.wav" --trim-tails --level -6</pre></div>
-    <h3 class="sub-h">4 · First pass on a Live set: scan → hear → review → fix</h3>
+    <h3 class="sub-h">4 · First pass on a song: scan → hear → review → fix</h3>
     <div class="term" data-label="first pass"><pre><span class="p">$</span> hypnomix prefs                                                    <span class="c"># once: targets, protected tracks</span>
+<span class="p">$</span> hypnomix preflight "raw takes/"                                    <span class="c"># first: are the files in good shape? (changes nothing)</span>
 <span class="p">$</span> hypnomix scan "Song.als" --mix "Song mix.wav" --key "F# major"   <span class="c"># read-only → REVIEW.md</span>
 <span class="p">$</span> hypnomix scan "Song.rpp"                                          <span class="c"># or a REAPER project</span>
 <span class="p">$</span> hypnomix scan "Song/"                                             <span class="c"># or an Ardour session folder</span>
 <span class="p">$</span> hypnomix scan "raw takes/"                                        <span class="c"># or a folder from any DAW</span>
 <span class="p">$</span> hypnomix ab "hypnomix-out/scan/Song"                              <span class="c"># before/after clips, level-matched (clips, tuning, timing, device changes it can model)</span>
 <span class="p">$</span> hypnomix review "hypnomix-out/scan/Song" --serve                  <span class="c"># a page: play A, play B, click</span>
-<span class="p">$</span> hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).als"</pre></div>
-    <p class="lead">Every check runs at once, nothing changes until you approve it, and approved changes land in <b>one new set</b> next to the original, which <code>fix</code> then checks and measures again to confirm each problem is gone. Close the set in Live before <code>fix</code>.</p>
+<span class="p">$</span> hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).als"
+<span class="p">$</span> hypnomix handoff "hypnomix-out/scan/Song"                        <span class="c"># what is left to do by hand, in your DAW's words, with markers</span></pre></div>
+    <p class="lead">Every check runs at once, nothing changes until you approve it, and approved changes land in <b>one new set</b> next to the original, which <code>fix</code> then checks and measures again to confirm each problem is gone. Close the set in Live before <code>fix</code>. No song of your own to try it on? <code>hypnomix demo</code> writes a 40-second song with six labelled problems.</p>
     <h3 class="sub-h">5 · Hands on your open set</h3>
     <div class="term" data-label="live"><pre><span class="p">$</span> hypnomix live snapshot                                   <span class="c"># always first</span>
 <span class="p">$</span> hypnomix live db "Lead Vox" -3.5
@@ -58,6 +60,14 @@ teaser: Ten recipes that cover most sessions: mixing a folder of stems, masterin
 <span class="p">$</span> hypnomix motion --learn "Finished song.als"                <span class="c"># your own effect moves, once</span>
 <span class="p">$</span> hypnomix motion "Song.als" --mix "Song mix.wav" --plan    <span class="c"># risers, dips, throws: options to approve</span></pre></div>
     <p class="lead">Everything in recipes 8 to 10 arrives as an option: a preview file, a switched-off track, or an item in the review. Turn it on, listen in the mix, keep or delete.</p>
+    <h3 class="sub-h">11 · Package the release</h3>
+    <div class="term" data-label="release"><pre><span class="p">$</span> hypnomix release "Song (master).wav" --title "Song" --artist "Me" --art cover.jpg --check   <span class="c"># read-only: what would be made, and what fails</span>
+<span class="p">$</span> hypnomix release "Song (master).wav" --title "Song" --artist "Me" --art cover.jpg           <span class="c"># a new folder: WAV 24-bit and 16-bit, MP3, AAC</span>
+<span class="p">$</span> hypnomix versions --stems "Song stems/" --vocals "Lead*,Harm*" --mix "Song (master).wav" --check   <span class="c"># instrumental, a cappella, TV mix, radio edit</span>
+<span class="p">$</span> hypnomix album "Song 1.wav" "Song 2.wav" "Song 3.wav"                                          <span class="c"># do the songs sit together? (report first)</span></pre></div>
+    <h3 class="sub-h">12 · Is the new bounce better than the last one?</h3>
+    <div class="term" data-label="compare"><pre><span class="p">$</span> hypnomix compare "Song (bounce 1).wav" "Song (bounce 2).wav"       <span class="c"># loudness, tone, width, each section; A/B clips of the biggest differences</span>
+<span class="p">$</span> hypnomix vocallevel "Song.als" --heard "solo exports/"            <span class="c"># before every final export: is the vocal level even, line to line?</span></pre></div>
     <h3 class="sub-h">Numbers cheat sheet</h3>
     <div class="tablewrap"><table>
       <tr><th>what</th><th>target</th><th>why</th></tr>

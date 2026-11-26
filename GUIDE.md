@@ -25,8 +25,13 @@ takes                     align                     masking
 ```
 
 Starting from an unfinished song or a pile of raw takes? Do a first pass before anything else: `hypnomix prefs`
-once, then `hypnomix scan` (a Live set, or a folder of recordings from any DAW), review the list, and
-`hypnomix fix` applies only what you approve. See [docs/WORKFLOW.md](docs/WORKFLOW.md).
+once, then `hypnomix scan` (a Live set, a REAPER project, an Ardour session, or a folder of recordings from any
+DAW), review the list, and `hypnomix fix` applies only what you approve. What it cannot change in your DAW comes
+back as a checklist in your DAW's words (`hypnomix handoff`). See [docs/WORKFLOW.md](docs/WORKFLOW.md).
+
+New to audio? The app's **Teacher** tab (`hypnomix app`) is a free course in your own DAW (Live, REAPER or Ardour):
+the complete course from what sound is to releasing a song, a 101 crash course, or a tour of hypnomix. No AI needed.
+No song of your own to practise on? `hypnomix demo` writes a 40-second song with six labelled problems.
 
 From a folder of stems to a checked master in one go:
 
@@ -80,9 +85,10 @@ You get the best whole take, plus a comp list naming the best take for each 4-ba
 
 ## 3. Editing and prep
 
-Assistant engineers spend hours on this before a mix starts. `hypnomix prep` does it in seconds and logs every fix.
+Assistant engineers spend hours on this before a mix starts. `hypnomix prep` does it in seconds and logs every fix. Check the files first, so a bad export is caught before it costs you an hour:
 
 ```bash
+hypnomix preflight "raw stems/"     # read-only: mixed sample rates, stems of different length, duplicates, fake stereo, missing files
 hypnomix prep "raw stems/"
 ```
 
@@ -138,6 +144,14 @@ hypnomix clipmatch --als "Song.als" --track "Lead Vox" --apply    # set Clip Gai
 
 Loudness is matched while the part is sounding, not over the silence between phrases. Tone differences are measured after loudness and reported as EQ Eight moves: a low shelf for proximity effect, a high shelf for an off-axis or distant mic.
 
+**A vocal that stays even, line to line:**
+
+```bash
+hypnomix vocallevel "Song.als" --heard "solo exports/"        # each vocal track exported solo, as heard
+```
+
+It checks that the vocal does not drop away or jump out from one lyric line to the next, and that the upper harmonies sit under the melody. Run it in the first pass and again before every final export: restored comps, re-tuned notes and fader moves made since can change it. `--apply NEW.als` writes the fixes as volume automation into a new set.
+
 **Two mics on one source:**
 
 ```bash
@@ -154,6 +168,7 @@ The order that works: **balance → tone → dynamics → space**. Most mixing p
 
 ```bash
 hypnomix automix "prepped stems/" --name "Song"           # prep runs first by default
+hypnomix balance "prepped stems/"                         # or only a first fader balance, as proposals (faders only)
 ```
 
 ### What automix does, and the rule behind each move
@@ -250,6 +265,18 @@ hypnomix qc "Song (master).wav"                 # --for cd | vinyl
 
 **qc** is the pass/fail list a mastering engineer runs before delivery: format, leading and trailing silence, cut-off endings, clicks at the start, DC, clipped runs, true peak, loudness, dynamic range, phase, low-end mono, L/R balance, codec peaks. It exits with code 1 if anything fails, so it can gate a script.
 
+**Packaging and comparing.**
+
+```bash
+hypnomix release "Song (master).wav" --title "Song" --artist "Me" --art cover.jpg --check   # read-only first
+hypnomix release "Song (master).wav" --title "Song" --artist "Me" --art cover.jpg           # the folder you upload
+hypnomix versions --stems "Song stems/" --vocals "Lead*,Harm*" --mix "Song (master).wav"    # instrumental, a cappella, TV mix, radio edit
+hypnomix compare "Song (bounce 1).wav" "Song (bounce 2).wav"                                # is the new bounce better than the last?
+hypnomix album "Song 1.wav" "Song 2.wav" "Song 3.wav"                                       # do the songs of a record sit together?
+```
+
+`release` writes a new folder with your master as a 24-bit WAV (untouched), a dithered 16-bit WAV, MP3 320 and AAC 256 with tags and cover, and a report that measures every file, including the true peak after the lossy ones are decoded. `versions` makes the other versions from your own exported stems (no separation) and checks the stems add up to your mix. `compare` says in plain words what changed between two bounces, with level-matched A/B clips of the spots that differ most. `album` puts the songs side by side (level, tone, the gap between each pair) and writes a report first; any change is a finding you approve.
+
 ---
 
 ## 7. Working inside Live
@@ -293,9 +320,9 @@ hypnomix diagnose "Song.als" "Song bounce.wav"
 hypnomix profile build song1.wav song2.wav song3.wav song4.wav song5.wav
 ```
 
-`loop` and `audit` then flag anything outside your usual range.
+`loop` and `audit` then flag anything outside your usual range, and so does `scan` when you give it `--mix` (`--no-profile` leaves that out).
 
-### In REAPER
+### In REAPER, and in Ardour
 
 The same loop works on a REAPER project, with REAPER open: `hypnomix scan "Song.rpp"`, review, then
 `hypnomix fix DIR --approved --out "Song (fixed).rpp"` writes what you approved into a new project (fades, rides,
@@ -303,6 +330,11 @@ word edges, track names and order; tuned vocals as new takes on your own items).
 `hypnomix reaper start` and `hypnomix chain master MIX.wav --reaper --verify` build the chain from REAPER's own
 plug-ins and land it on your loudness target. Every change in REAPER is one undo step. The full walk-through is
 guide 8, `docs/guides/08-inside-reaper.md`.
+
+For an Ardour session (Ardour 3 to 9), `hypnomix scan "Song/"` and `hypnomix project "Song/"` read it the same way, and
+`fix` writes approved fades, gain, dips and fader, pan and mute moves into one new `.ardour` snapshot beside it. That
+snapshot is written and re-read by hypnomix and has not yet been opened in Ardour, so open it and look first. Whatever
+else belongs in the session comes back as a checklist: `hypnomix handoff "<scan folder>"`.
 
 ---
 

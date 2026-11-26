@@ -23,7 +23,7 @@ performance to a grid.**
 | | Live's grid following the take | `tempomap --follow` |
 | | the best loops in it | `loops` |
 | a finished song on a rigid click | it to breathe between sections | `breathe` |
-| loops that repeat for minutes | variety | `variations`, `borrow`, `motion` |
+| loops that repeat for minutes | variety | `variations`, `colour`, `borrow`, `motion` |
 
 ## Fix only what sticks out: timing
 
@@ -102,7 +102,7 @@ ones, a glide between (at most -2% to +2.5%). Hear it on your bounce first.
 
 ## Keep long loops alive
 
-Eight bars repeating for two minutes feel static. Three sources of variety, all offered **switched off** or as
+Eight bars repeating for two minutes feel static. Four sources of variety, all offered **switched off** or as
 review items. Nothing plays until you turn it on.
 
 ### variations: takes you never used
@@ -126,8 +126,13 @@ Measures every part section by section (tone in six bands, notes per bar) and fi
 sounds like an earlier section. There it proposes a colour (`--family width|grit|space|movement|octave`, or the one
 the measurements suggest) as a chain of Live's own devices on a switched-off copy of the part, holding only those bars,
 with a four-bar before / after clip. `--max`, `--per-part`, `--amount` and `--static` (how close counts as "the same",
-2 dB) are yours to set. Nothing is added unless you pick a number: `--apply "Song (colour).als" --ids colour-1`. Live sets
-only for now; the clip "after" is a model of the chain, so listen in Live.
+2 dB) are yours to set. Nothing is added unless you pick a number: `--apply "Song (colour).als" --ids colour-1` (close the
+set in Live first). Live sets only for now. The clip "after" is a model of the chain, so listen in Live: the written set
+passes hypnomix's structural check and has not yet been opened in Live, and `colour` has not yet been run on a real song.
+
+If you saved the list of plug-ins you have (`hypnomix plugins --save`, see `docs/PLUGINS.md`), a proposal also names the
+installed free plug-ins that suit its kind of colour, as things to try by hand. hypnomix never writes a third-party
+plug-in into a set: the chain it writes is always Live's own devices.
 
 ### borrow: from the song's original project
 

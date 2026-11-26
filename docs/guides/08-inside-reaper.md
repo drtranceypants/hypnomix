@@ -11,7 +11,10 @@ what it finds, and writes what you approve into a **new** project next to the or
 the whole time. Nothing is installed into REAPER, and none of its settings are changed.
 
 Everything here was checked against REAPER 7.86 itself: hypnomix built test projects inside REAPER, had REAPER
-render them, and compared the result sample by sample with its own.
+render them, and compared the result sample by sample with its own. Three things were added since and have **not yet
+been opened in REAPER**: the frequency-fight cut written as a ReaEQ band (section 4), the hand-off project with markers
+(section 12) and the demo project (section 0). They are written and read back by hypnomix, and pass its own checks on
+synthetic data; open them in REAPER and listen before you trust them. The list under "Not yet in REAPER" repeats this.
 
 <!--toc-->
 
@@ -24,6 +27,20 @@ render them, and compared the result sample by sample with its own.
 
 Only REAPER's own plug-ins (ReaEQ, ReaComp, ReaLimit, the JS effects) are used when hypnomix builds anything.
 Your own plug-ins are read and listed, never needed.
+
+## 0. Try it on a demo project
+
+```bash
+hypnomix demo --kind reaper       # → hypnomix-out/demo/Hypnomix Demo Song/Hypnomix Demo Song.rpp, the stems, DEMO.md
+hypnomix scan "hypnomix-out/demo/Hypnomix Demo Song/Hypnomix Demo Song.rpp" --key "A minor"
+```
+
+A 40-second synthetic song (nothing downloaded, nothing recorded) with six problems put in on purpose: a click where
+two take items meet, a level jump at a comp cut, hiss, clipped peaks, a harmony that drifts sharp and drums that fall
+behind. `DEMO.md` lists each with its time. The comps are separate items on separate takes, so the scan sees all six.
+Then run the loop of sections 3 and 4 on it: `ab` plays the de-hiss, and for a project the other fixes are applied into a
+new `.rpp` and heard there (or use `abset`, section 8). The project is written and read back by hypnomix; it has not
+yet been opened in REAPER, and REAPER does not need to be open to scan it.
 
 ## 1. Look inside a project
 
@@ -59,7 +76,7 @@ Nothing is changed. For a REAPER project it checks:
 | timing | instrument hits out of time with the band: the bass checked against the drums first, melodic parts only gently; each player's own push or lay-back is kept |
 | vocals | the pitch of every vocal track, doubles that drift from the lead, how the harmonies sit together |
 | effects | plug-ins that are switched off or offline, two limiters in a row; every sidechained ReaComp simulated hit by hit: how deep it ducks, whether it is back before the next hit, how even it is, whether its release bends the bass |
-| recordings | every file the project plays: clipping, levels, hiss, DC offset, harsh "s" sounds, breaths |
+| recordings | every file the project plays: clipping, levels, hiss, DC offset, harsh "s" sounds, breaths (`hypnomix preflight "Song.rpp"` checks the files themselves first: mixed rates, duplicates, lossy sources, missing files) |
 | noise | items turned up so far that their hiss comes up with them |
 | intent | things that look deliberate (automation, hard pans, muted tracks, big item volumes, flipped polarity): listed as questions, never changed |
 | mix | with `--mix`: loudness, true peak, release checks, how it translates |
@@ -98,6 +115,7 @@ Everything you approved goes into **one new project** next to the original:
 | track order | the tracks reordered; folders keep their tracks, and every send still comes from the same track |
 | vocal stack | where the parts swap tracks, each item moved to the track for its pitch (lowest part on the lowest track), its volume changed by the fader difference so it plays at the same level; items on lane tracks, under automation, or that would overlap another item are listed for you instead |
 | out-of-time hit | stretch markers on the item: one on the hit, moved part of the way to where the band (or the drums) plays it, one on the hit either side holding it, so only that short stretch is stretched; drag or delete the markers in REAPER to change or undo one |
+| frequency fight (from `--deep`) | one bell band on the ReaEQ of the part that should give way: a free band of a ReaEQ already on the track, else a new ReaEQ at the end of its chain, five bands at most per ReaEQ. Gentle by default (2 dB for a fight that happens less than half the time, 3 dB for more); approve at a smaller amount to make it smaller. Nothing else on the track changes. **Not yet opened in REAPER** |
 | sidechain | the ReaComp set to the suggested threshold, ratio, attack, release, knee and detector (clarity for a kick trigger: 2-4 dB, back before the next hit; vocal-duck for a vocal feeding a reverb or delay); only those settings change, the routing is left alone |
 | vocal tuning | each take file pitch-corrected into a new file in `Tuned/`, added to its items as a **new take** and made active |
 
@@ -112,7 +130,8 @@ tracks and folders, the same items in the same places, sends from the same track
 log says which approved problems are gone and which are only smaller.
 
 Open the new project in REAPER (File → Open, or drag it in). To hear each fix against what you have *before*
-approving it, see section 8.
+approving it, see section 8. What fix could not do (a fix that needs your hands or ears) is listed under "Not applied"
+at the end of the run; section 12 turns that list into a checklist with markers.
 
 ## 5. Master in REAPER, with REAPER's own plug-ins
 
@@ -320,6 +339,20 @@ REAPER's stretch engine plays the words that moved about 4 ms later than planned
 takes** avoids that, at the cost of markers you can drag. If the panel is not the window in front, click its title
 bar first: the first click only brings it forward.
 
+## 12. The by-hand list, as markers in a new project
+
+```bash
+hypnomix handoff "hypnomix-out/scan/Song"
+```
+
+`fix` lists what it cannot do itself. `handoff` collects those approved findings, and any you skipped or changed with a
+note of your own, and writes into `handoff/` in the scan folder: `HANDOFF.md`, a checklist in song order with the track,
+the bar.beat and m:ss, what to do in REAPER's own words and what to listen for there, plus, when at least one item has a position, `markers.csv` and `markers.mid`.
+For a REAPER scan with such an item it also writes a **new** project, `Song (handoff).rpp`, next to yours with one marker at each spot
+(read back and compared with your project; yours is never touched). Jump from marker to marker in REAPER and tick the
+list. An item with no position (a whole part) is listed at the end, without a marker. This new project has not yet been
+opened in REAPER.
+
 ## Measured in REAPER
 
 | what | result |
@@ -336,6 +369,10 @@ bar first: the first click only brings it forward.
 
 ## Not yet in REAPER
 
+- Written and read back by hypnomix, but **not yet opened in REAPER**: the ReaEQ band written for an approved
+  frequency-fight cut (section 4), the `Song (handoff).rpp` with markers (section 12) and the demo project made by
+  `hypnomix demo --kind reaper` (section 0). They pass hypnomix's own checks on synthetic data. They have not been run on a
+  real song either.
 - Sidechain checks on compressors other than ReaComp (listed, not measured).
 - Where a stretch marker squeezes or stretches a segment, hypnomix's own render reads it at a slightly different
   pitch than REAPER plays it (REAPER keeps the pitch). The timing is exact.

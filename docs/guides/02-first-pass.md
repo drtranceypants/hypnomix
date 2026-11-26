@@ -37,6 +37,8 @@ In the app: **Songs → choose a set → Start the first pass**. In the terminal
 
 ```bash
 hypnomix scan "Song.als" --mix "Song mix.wav" --ref "Song instrumental.wav" --key "F# major"
+hypnomix scan "Song.rpp"            # a REAPER project: the same loop (guide 8)
+hypnomix scan "Song.ardour"         # an Ardour session (or its folder)
 hypnomix scan "raw takes/"          # recordings or stems from any DAW: no Live set needed
 ```
 
@@ -65,6 +67,13 @@ kind of fix once, near the top ("Why these fixes"); each item holds only what is
 run, the review lists it under **Checks that did NOT run**: no findings from a check that didn't run means
 nothing.
 
+**Scanning again.** Scan the same song into the same folder after you have changed it, and the decisions you made
+follow their findings by what they are (same tool, track, kind and place), never by their number. "smooth-1 =
+approve" cannot end up on a different clip because the list got shorter. Decisions that no longer match anything
+are counted ("3 earlier decisions no longer match a finding and were set aside"), kept in
+`decisions-orphaned.json` and never applied. Two songs with the same name ("Song.als" and an Ardour session also
+called "Song") get separate folders, "Song" and "Song (2)".
+
 ## 1b. Hear it first
 
 The app builds the before / after clips for you. In the terminal:
@@ -78,12 +87,16 @@ Previews cover clip fixes, vocal tuning, repaired recordings, timing nudges (the
 markers, pitch kept), frequency-fight cuts, and changes to Live's Compressor, Glue Compressor, Gate, EQ Eight,
 Utility and Limiter. A device preview is **a model of the device, not Live itself**, and says so on the page. What
 can't be previewed offline (a Saturator or Reverb change, a plug-in, a return track, a MIDI note moved by a nudge)
-says why next to the item: apply that one fix into a new set and listen in Live.
+says why next to the item: apply that one fix into a new set and listen in Live. `ab` plays Live sets and folders
+of recordings. On a REAPER project it plays repaired recordings and says, for each other fix, why it has no clip; `abset` builds
+a project with each fix switched off next to yours (guide 8), or apply one fix at a time and listen.
 
 When `--deep` finds two parts fighting over a band, the fix is a bell cut on the part that should give way (2-3 dB
 by default, adjustable per decision with the amount, e.g. approve at 50%). Approved, it is written as one band on
 the track's own EQ in a new file: an EQ Eight in Live, a ReaEQ in REAPER. An EQ that is already there and has a
-free band is reused; nothing else on the track changes.
+free band is reused; nothing else on the track changes. `fix` runs hypnomix's structure check on these new sets and
+projects, but they have not yet been opened in Live or REAPER: open one and listen before you keep it. On a folder of
+stems there is no set to write into, so the cut stays on the by-hand list (section 5).
 
 ## 2. Review: one item at a time
 
@@ -114,6 +127,9 @@ hypnomix fix "hypnomix-out/scan/Song" --list --undecided --top 15     # the next
 hypnomix fix "hypnomix-out/scan/Song" --show smooth-14                 # one finding in full
 ```
 
+`--list` also takes `--severity high|medium|low|info`, `--tool NAME` and `--offset N` (to page). `--decide` and
+`--approve` can be repeated, and each takes a comma list.
+
 > Tip: high-severity items, protected tracks and anything about taste are always asked one at a time.
 
 ## 3. Fix: only what you approved
@@ -124,9 +140,9 @@ Close the set in Live first. In the app: **Apply**. In the terminal:
 hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).als"
 ```
 
-Before it writes anything, fix prints every file it is about to create and which clean-ups are only there because
-they are on by default (track order, retiring switched-off tracks); skip them first, or add `--no-defaults`, to opt
-out. At the end it prints "Not applied": what you decided as "change", what has to be done by hand, and what was no
+Before it writes anything, fix prints every file it is about to create, and an "Also applied because they are on by
+default" block: the clean-ups that run with `--approved` unless you skipped them (track order, retiring switched-off
+tracks). Skip them first, or add `--no-defaults`, to apply only what you approved by name. At the end it prints "Not applied": what you decided as "change", what has to be done by hand, and what was no
 longer found, each with what to do next.
 
 The order inside the new set: distortion settings → sidechain settings → clip fades and volume eases →
@@ -146,6 +162,12 @@ What fix checks, and stops on:
 | after writing: what changed | every change in plain words in `fix-log.md` (`hypnomix diff OLD NEW`) |
 | after writing: result | measured again: "N of M approved problems no longer measured" |
 
+Ardour: the same command with `--out "Song (fixed).ardour"` writes the approved region fades (with their curve),
+region gain, gain dips over spikes and the eased level at a comp cut into **one new snapshot**, saved next to your
+session file inside the same session folder (where Ardour keeps its own snapshots, so the new file finds the same
+recordings). Track names and order, vocal stacks, timing, sidechain and tuning stay by hand. The new file is read
+back and checked by hypnomix, and has not yet been opened in Ardour.
+
 ## 4. Listen, then teach it
 
 The numbers say a problem is gone; only your ears say it sounds right. Open the new set and A/B the changed
@@ -157,24 +179,53 @@ hypnomix prefs learn "hypnomix-out/scan/Song"
 
 Next time, the review shows what you usually do ("in past reviews you skipped 9 of 10 like this").
 
+## 5. What is left for your hands: handoff
+
+`fix` writes what it can and lists the rest under "Not applied" or as "by hand". `handoff` turns that list into a
+job you can walk down in your own DAW:
+
+```bash
+hypnomix handoff "hypnomix-out/scan/Song"
+hypnomix handoff "hypnomix-out/scan/Song" --bpm 96 --daw reaper     # stems folder: give the tempo for bar.beat
+```
+
+It collects every approved finding that `fix` cannot make itself, and every one you skipped or changed with a note
+(your words are kept on the line; `--undecided` adds the by-hand findings you have not answered). It writes, into
+`handoff/` in the scan folder and never over anything:
+
+- `HANDOFF.md`: a checklist in song order. Each line has the track, the bar.beat and m:ss, what to do in your DAW's
+  own words (Live, REAPER, Ardour or plain wording: `--daw`, or your `tools.daw` preference) and what to listen for.
+- when at least one item has a position, a marker at every such spot: a new `Song (handoff).als` with a locator at each
+  (Live scan), a new `Song (handoff).rpp` with a marker at each (REAPER scan), and `markers.mid` and `markers.csv` for
+  DAWs that import them. If no item has a position, only `HANDOFF.md` is written. `--no-markers` writes the checklist
+  only.
+
+An item with no position (a whole part) is listed at the end, without a marker. The new Live set is checked with
+`hypnomix check` and the new REAPER project is read back and compared with yours; neither has yet been opened in its
+DAW. `handoff` itself is new: it passes unit tests and hypnomix's own checks on synthetic data and has not yet been run on a
+real song. The checklist is measured, not heard: your ears decide each line.
+
 ## Plans: tools that make many moves
 
-`prep`, `automix` and `master` can also work as a review instead of doing everything at once:
+`prep`, `automix`, `master` and `balance` can also work as a review instead of doing everything at once:
 
 ```bash
 hypnomix prep "raw takes/" --plan
 hypnomix automix "stems/" --plan
 hypnomix master "Song mix.wav" --plan
+hypnomix balance "stems/" --plan        # one fader move per part, faders only
 ```
 
 Each move becomes a finding, reviewed like any other; `fix --approved` then runs the tool with only the
-approved moves.
+approved moves. `preflight`, `album` and `colour` take `--plan` too: the same review, for file problems (guide 1),
+for the songs of a record (guide 6) and for new colours (guide 5).
 
 ## Other DAWs
 
 Export every track as a full-length file from the same start, processing off, then
-`hypnomix scan "that folder/"`. Repaired audio comes back as new files; anything that has to happen in the
-DAW (an EQ cut, a fader move) is listed as a to-do.
+`hypnomix preflight "that folder/"` (are the files fit to work on?) and `hypnomix scan "that folder/"`. Repaired
+audio comes back as new files; anything that has to happen in the DAW (an EQ cut, a fader move) is listed as a
+to-do, and `handoff` turns that list into a checklist with markers.
 
 ## What the checks deliberately leave alone
 

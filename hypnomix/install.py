@@ -169,7 +169,7 @@ def doctor(argv):
             __import__(mod); have = True
         except Exception:
             have = False
-        rows.append(("✓" if have else "·", f"extra [{extra}] ({mod})", "installed" if have else f"not installed (pip install 'hypnomix[{extra}]')"))
+        rows.append(("✓" if have else "·", f"extra [{extra}] ({mod})", "installed" if have else f"not installed (in the app: Setup, then Extras; from source, in the hypnomix folder: uv pip install -e \".[{extra}]\")"))
     w = max(len(r[1]) for r in rows)
     for mark, name, d in rows:
         print(f" {mark} {name:<{w}}  {d}")

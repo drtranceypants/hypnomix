@@ -17,7 +17,7 @@ it, every approved change lands in **new files** next to the originals, and the 
              │            sidechain,     sidechain ducking, device-chain audit
              │            audit)
              └─ mix      (measure, qc,   loudness and true peak vs your target, release
-                          translate)     checks (needs --mix)
+                          translate)     checks, and the mix vs your own profile (needs --mix)
 
  a folder ───┬─ recordings               clipping, levels, noise floor, DC, clicks (per file)
  of audio    └─ stems    (masking)       which parts fight over which frequencies
@@ -67,16 +67,33 @@ command is saved unless every answer in it is good; the app's Preferences tab us
   reviewer. Nothing is ever applied because of it.
 
 `hypnomix profile build song1.wav song2.wav …` is the other half: your sound as measured ranges, from finished
-songs you like.
+songs you like. A scan with `--mix` compares the mix with those ranges
+(three songs or more; five or more give steadier ranges).
 
 ## 1. Scan (read-only)
 
 ```bash
 hypnomix scan "Song.als" --mix "Song mix.wav" --ref "Song instrumental.wav" --key "F# major"
+hypnomix scan "Song.rpp"            # a REAPER project
+hypnomix scan "Song.ardour"         # an Ardour session (or its session folder)
 hypnomix scan "raw takes/"          # recordings or exported stems from any DAW: no Live set needed
 ```
 
+Two things come before it, when you want them. `hypnomix preflight SOURCE` (a folder, a set, a project or an Ardour
+session) checks the files themselves and writes `PREFLIGHT.md`: sample rates and bit depths that differ, stems of different
+length or that start apart, exact duplicates, stereo that is really mono, silent or clipped files, lossy sources,
+missing files, names other systems refuse. It changes nothing; `--plan` puts every finding into a scan folder for the
+normal review (the three that `prep` repairs are planned as `prep` steps). `hypnomix demo` writes a 40-second synthetic
+song with six planted problems (`--kind folder` for plain stems, `--kind reaper` for a project that plays them) to
+learn the whole loop on; `DEMO.md` in its folder lists each problem and the command that finds it.
+
 - `--mix`: a bounce of the whole song (loudness, true peak, release checks, and a fallback for `--ref`).
+  If you have a profile (`hypnomix profile build`), the mix is also compared with your own ranges: one finding for
+  each measure (loudness, dynamics, tone by band, width) that sits outside the lowest and highest of your finished
+  songs, in plain words with the numbers and what to listen for. These are things to hear and decide, never
+  changes made for you, and they are marked low or medium by how far outside the mix is. The comparison reads the
+  measurements the mix group already makes, so the audio is not measured a second time. With no profile the scan says so in one line.
+  `--no-profile` skips it for one scan; `hypnomix prefs set taste.profile=off` skips it for every scan.
 - `--ref`: the mix or an instrumental. The vocal check measures the song's real tuning from it (songs are often
   not at A=440; one test song sat at A=435.4 Hz) and its key. `hypnomix separate mix.wav` makes an instrumental.
 - `--key`: the key, confirmed by the person. Vocal tuning is not applied without it.
@@ -90,6 +107,15 @@ hypnomix scan "raw takes/"          # recordings or exported stems from any DAW:
   / `--lead-track` when it's unsure.
 - Groups run in parallel (`--jobs 4`). To spread them over several agents, run one group each with
   `--only GROUP --out SAME_DIR`, then `hypnomix scan --merge SAME_DIR`.
+
+Live versions: hypnomix's list of tested versions is Live 11 and Live 12 (the checks on real sets so far were in
+Live 12). A set saved by a newer major version of Live is still read and scanned, with one warning line. The tools
+that write a new set through hypnomix's common save (`smooth`, `timing`, `voices`, `masking`, `distortion`, `handoff`,
+the `automation` commands and the Live probe) refuse to write from such a set, because the format may have changed,
+unless you set `HYPNOMIX_FORCE_LIVE_VERSION=1` (or pass `--force-live-version` to a command that has that flag). The
+tools that write their own set (`unroll`, `tidy`, `order`, `edges`, `cliplevel`, `duck`, `devices`, `sidechain`,
+`motion`, `borrow`, `vocallevel`, `abset`, and the renaming in `name`) do not check yet, so with a set from a newer
+Live they write without a warning: open the result in Live and look before you trust it.
 
 Output in `hypnomix-out/scan/<song>/`: `REVIEW.md`, `findings.json`, `scan.json` (what was scanned, and when the
 set was last saved), one `<group>.json` per group, and `raw/` (each tool's own report, renders of the vocals).
@@ -105,7 +131,11 @@ that did not run means nothing.
 - **intent**: "is this deliberate?" Every automated control, hard-panned track and switched-off track with
   clips, as questions. Confirm them once and save them: `hypnomix prefs set protect.notes="…"`.
 - **stems** (`--deep`): renders every track and reports each frequency fight between two tracks and the phase
-  and polarity between mics on one source ("Kick In" / "Kick Out", "Snare Top" / "Snare Bottom").
+  and polarity between mics on one source ("Kick In" / "Kick Out", "Snare Top" / "Snare Bottom"). An approved fight is
+  written by `fix` as one gentle bell band on the part that should give way, on its own EQ, in a new file: an EQ Eight
+  in a Live set, a ReaEQ in a REAPER project (the amount scales it: `--decide mask-1=approve@50`). These written bands
+  have not yet been opened in Live or REAPER. For a folder of stems there is no set to write into, so the cut stays on
+  the by-hand list (see `handoff`).
 - `--like REF.wav` with `--mix`: tone by band, dynamics, width and loudness against a song you love, as proposals.
   With `--mix`, sections of the song are found from the set's tempo and compared ("the 2nd chorus is 2 LU quieter").
 
@@ -137,10 +167,10 @@ in) and a trial mix into `DIR/fixed/balance/`. Measured, not heard: move the fad
 `fix` lists what it cannot do itself under "by hand". `hypnomix handoff "SCAN_DIR"` turns that list (the approved
 by-hand items, plus any item you skipped or changed with a note) into `handoff/HANDOFF.md`: a checklist in song
 order, each line with track, bar.beat and m:ss, what to do in your DAW's words (Live, REAPER, Ardour or plain
-wording; `--daw`, or your `tools.daw` preference), and what to listen for. A Live scan also gets a NEW set
+wording; `--daw`, or your `tools.daw` preference), and what to listen for. When at least one item has a position, a Live scan also gets a NEW set
 "Song (handoff).als" with a locator at each spot (checked like any written set), a REAPER scan a new
-"Song (handoff).rpp" with a marker at each spot, and every scan gets `markers.mid` (a MIDI file with a marker per
-spot) and `markers.csv` for DAWs that import those. For a folder of stems give `--bpm` for bar.beat. Nothing is
+"Song (handoff).rpp" with a marker at each spot, and the scan gets `markers.mid` (a MIDI file with a marker per
+spot) and `markers.csv` for DAWs that import those. If no item has a position, only `HANDOFF.md` is written. For a folder of stems give `--bpm` for bar.beat. Nothing is
 changed in place.
 
 ## 1b. Hear it first
@@ -157,6 +187,8 @@ EQ Eight, Utility or Limiter. Device pairs are labelled "a model of the device, 
 the track through its own model of the device. It cannot preview a device it has no model of (Saturator, Reverb,
 racks, plug-ins), a MIDI note moved by a nudge, or a return track: `ab.json` and the review page say why, and for
 those you apply that one fix into a new set and listen in Live. Clip previews are the track alone, without effects.
+`ab` plays Live sets and folders of recordings; on a REAPER project it plays repaired recordings and says, for each other fix, why it has no clip, and `abset`
+builds a project with each fix switched off next to yours (guide 8).
 
 The page shows every finding with its players and saves each click to `decisions.json` (with `--serve`, on this
 computer only). Without `--serve` it is a static `REVIEW.html`: download your decisions from it, then
@@ -293,8 +325,8 @@ Every decision records `by` (`--as NAME`, else `prefs review.name`) and `at`. On
 name and adds notes at a bar (`33.2`) or a time (`1:23.5`) to any finding.
 
 ```bash
-hypnomix review DIR --export "review (Sam).json"     # decisions + notes, portable (findings matched by what they are)
-hypnomix review DIR --merge "review (Sam).json"      # fills in what you haven't decided; lists every conflict
+hypnomix review DIR --export "review (Reviewer).json"     # decisions + notes, portable (findings matched by what they are)
+hypnomix review DIR --merge "review (Reviewer).json"      # fills in what you haven't decided; lists every conflict
 hypnomix review DIR --settle smooth-3=mine            # or =theirs
 ```
 
@@ -404,16 +436,31 @@ hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).rpp"
 hypnomix reaper start && hypnomix chain master "Song mix.wav" --reaper --verify
 ```
 
-`fix` writes fades, volume rides, word-edge fixes, track names and order into one new `.rpp`, and tuned vocals as
-new takes on the person's own items. Vocal stacks: where harmony parts swap tracks, each item moves to the track for its pitch (same level in the
+`fix` writes fades, volume rides, word-edge fixes, track names and order into one new `.rpp`, an approved
+frequency-fight cut as one ReaEQ band on the part that gives way, and tuned vocals as new takes on the person's own items. Vocal stacks: where harmony parts swap tracks, each item moves to the track for its pitch (same level in the
 mix). Timing: out-of-time hits are nudged with stretch markers on the items. Sidechained ReaComps are measured and retuned in the new .rpp.
-Details: `docs/guides/08-inside-reaper.md`.
+`handoff` writes a new `Song (handoff).rpp` with a marker at each by-hand spot. The ReaEQ band, the handoff project and
+`hypnomix demo --kind reaper` have not yet been opened in REAPER. Details: `docs/guides/08-inside-reaper.md`.
+
+## Ardour
+
+```bash
+hypnomix scan "Song.ardour"          # or the session folder
+hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).ardour"
+```
+
+The scan runs the same groups as for a REAPER project. `fix` writes the approved region fades (with their curve), region
+gain, gain dips over spikes and the eased level at a comp cut into **one new `.ardour` snapshot**, saved next to the
+original inside the same session folder (where Ardour keeps its snapshots and finds the session's audio; nothing is
+copied or moved). The original is never touched. Track names and order, vocal stacks, timing, sidechain and tuning
+stay by hand. The new file is written and read back by hypnomix and has not yet been opened in Ardour.
 
 ## Other DAWs
 
 Export every track as a full-length file from the same start point, with processing off, then
 `hypnomix scan "that folder/"`. The review works the same way; repaired audio comes back as new files, and
-anything that has to happen in the DAW (an EQ cut, a fader move) is listed as a to-do. `prep`, `automix`,
+anything that has to happen in the DAW (an EQ cut, a fader move) is listed as a to-do (and `handoff` turns that list
+into a checklist with markers or a marker file). `preflight` checks the exported files first. `prep`, `automix`,
 `masking`, `tune`, `vocalign`, `master`, `translate` and `qc` all work on files from any DAW.
 
 ## With an AI agent

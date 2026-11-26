@@ -62,7 +62,9 @@ set they write, and can be previewed without opening Live. Nothing here snaps a 
 - `timing` (first-pass check) fixes only the hits that disagree with the band, on the song's detected grid.
   `tighten` is the whole-take version for when you want a part tighter overall.
 - `borrow` offers clips from the song's original project; `motion` offers effect moves for the same
-  repetitive stretches. Like `variations`, both arrive switched off or as review items.
+  repetitive stretches; `colour` offers a new timbre (width, grit, space, movement, an octave copy) where a part and the
+  mix repeat themselves. Like `variations`, all three arrive switched off or as review items. `colour` has not yet been
+  opened in Live (see guide 5).
 
 ## Limits
 

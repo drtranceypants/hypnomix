@@ -8,15 +8,15 @@ teaser: One command turns a finished master into the folder you upload: 24-bit a
       <p>You have a finished master. Before it goes to a distributor you still have to make the 16-bit copy, the MP3 and AAC versions, put the title, artist and cover into them, check the cover is the right shape, and make sure nothing clips once it is lossy. <code>release</code> does all of that, in a new folder, and tells you in plain words what it found. It never changes your master.</p>
     </div>
     <h3 class="sub-h">1 · Look first: --check</h3>
-    <div class="term" data-label="check"><pre><span class="p">$</span> hypnomix release "Song master.wav" --title "Hello World" --artist "The Band" \
-      --album "First Album" --track 3 --year 2026 --genre Rock --isrc US-RC1-76-07839 \
+    <div class="term" data-label="check"><pre><span class="p">$</span> hypnomix release "Song master.wav" --title "Song Title" --artist "Artist Name" \
+      --album "Album Name" --track 3 --year 2026 --genre Rock --isrc US-RC1-76-07839 \
       --art cover.jpg --check</pre></div>
     <p class="lead">Read-only. It runs the release checks on the master (the same as <code>qc</code>), checks the cover (square, at least 3000 px, JPEG or PNG), checks the ISRC is shaped like one (2 letters, 3 letters or digits, 2 digits, 5 digits), and prints exactly which files it would write. It exits 1 when something would stop the release, so a script can use it. Nothing is written, not even the folder.</p>
     <h3 class="sub-h">2 · Then write the folder</h3>
-    <div class="term" data-label="release"><pre><span class="p">$</span> hypnomix release "Song master.wav" --title "Hello World" --artist "The Band" \
-      --album "First Album" --track 3 --year 2026 --genre Rock --isrc US-RC1-76-07839 --art cover.jpg
+    <div class="term" data-label="release"><pre><span class="p">$</span> hypnomix release "Song master.wav" --title "Song Title" --artist "Artist Name" \
+      --album "Album Name" --track 3 --year 2026 --genre Rock --isrc US-RC1-76-07839 --art cover.jpg
 <span class="p">$</span> hypnomix release "Song master.wav" --meta release.json --formats wav24,wav16,mp3,aac,flac --out ~/Releases</pre></div>
-    <p>It makes a new folder <b>The Band - Hello World/</b> (and refuses if that folder exists):</p>
+    <p>It makes a new folder <b>Artist Name - Song Title/</b> (and refuses if that folder exists):</p>
     <ul>
       <li><b>24-bit WAV</b>: your master, byte for byte when it is already a 24-bit WAV. Never re-processed.</li>
       <li><b>16-bit WAV</b>: made from the unrounded master with the same dither <code>master</code> uses (resampled to 44.1 kHz first if the master is not), so the rounding happens once. <code>--dither tpdf|shaped|off</code> picks it.</li>

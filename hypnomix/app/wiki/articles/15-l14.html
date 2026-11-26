@@ -8,5 +8,6 @@ group: Training
 <span class="p">$</span> hypnomix scan "Song.als" --since "hypnomix-out/scan/Song"   <span class="c"># only the tracks you changed</span>
 <span class="p">$</span> hypnomix watch "Song.als"                        <span class="c"># every time you save in Live, a quick check of what changed</span></pre></div>
     <div class="prose paper">
-      <p>Rendered clips are cached by their source file and settings, so a second scan of the same song re-renders nothing it has already rendered. The library scan, the names and the pitch analysis are cached the same way.</p>
+      <p>Rendered clips are cached by their source file and settings, so a second scan of the same song re-renders nothing it has already rendered. The library scan, the names, the pitch analysis and the sound classifier are cached the same way.</p>
+      <p>A re-scan into the same folder keeps each decision you made on the finding it was made for, matched by what the finding is (tool, track, kind and place), never by its number. A decision whose finding is gone is counted, set aside in a file and never applied.</p>
     </div>

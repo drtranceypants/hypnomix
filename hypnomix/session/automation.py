@@ -33,6 +33,8 @@ def save(tree, src, out):
     out = Path(out)
     if out.resolve() == Path(src).resolve():
         sys.exit("refusing to overwrite the source set — give a new file name")
+    from hypnomix.session import liveversion as LV
+    LV.guard_write(tree.getroot())               # refuses a set saved by a Live newer than the newest tested
     data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(tree.getroot(), encoding="utf-8")
     with gzip.open(out, "wb") as f:
         f.write(data)
@@ -220,15 +222,16 @@ def cmd_dip(a):
 
 
 def main():
+    from hypnomix.session import liveversion as LV
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     s = ap.add_subparsers(dest="cmd", required=True)
     p = s.add_parser("list"); p.add_argument("set"); p.add_argument("--track"); p.set_defaults(f=cmd_list)
     p = s.add_parser("show"); p.add_argument("set"); p.add_argument("track"); p.add_argument("target"); p.set_defaults(f=cmd_show)
     p = s.add_parser("offset"); p.add_argument("set"); p.add_argument("out"); p.add_argument("track"); p.add_argument("target")
-    p.add_argument("db", type=float); p.add_argument("--from", dest="frm", type=float); p.add_argument("--to", type=float); p.set_defaults(f=cmd_offset)
+    p.add_argument("db", type=float); p.add_argument("--from", dest="frm", type=float); p.add_argument("--to", type=float); p.set_defaults(f=cmd_offset); LV.add_force_flag(p)
     p = s.add_parser("dip"); p.add_argument("set"); p.add_argument("out"); p.add_argument("track"); p.add_argument("target")
     p.add_argument("db", type=float); p.add_argument("bar1", type=float); p.add_argument("bar2", type=float)
-    p.add_argument("--ramp", type=float, default=1.0, help="ramp length in beats (default 1)"); p.set_defaults(f=cmd_dip)
+    p.add_argument("--ramp", type=float, default=1.0, help="ramp length in beats (default 1)"); p.set_defaults(f=cmd_dip); LV.add_force_flag(p)
     a = ap.parse_args(); a.f(a)
 
 

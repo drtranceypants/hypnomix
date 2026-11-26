@@ -1,7 +1,7 @@
 # REAPER: how hypnomix reads, writes and drives it
 
 For people and agents changing hypnomix's REAPER code. The user guide is `docs/guides/08-inside-reaper.md`.
-Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER" at the end).
+Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER" at the end), except the three rows marked "not yet opened in REAPER" (`handoff` `write_rpp`, `demo --kind reaper` and the ReaEQ masking band): hypnomix wrote and read those back on synthetic data only. They are listed again under "Not yet opened in REAPER" at the end.
 
 ## Where the code is
 
@@ -17,6 +17,9 @@ Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER"
 | `hypnomix/workflow/sidechain_project.py` | sidechained ReaComps: found by their detector channel and the sends landing there, simulated with Live's `sidechain` model, suggestions written as ReaComp floats |
 | `hypnomix/reaper/jsfx/`, `reaper/probes.py` | Hypnomix Probe / Main as JSFX: 20 values per 100 ms into gmem `hypnomix`; the bridge assigns slots and keeps blocks (`probe_blocks`); `probes.feed` relays them into the app's `probe.Hub`; `insert` and `read_cards` for `.rpp` |
 | Record and review (`bridge.lua` `rec_*`, `probes.handle`, `server.reaper_record`) | Main's `@gfx` button adds 1 to gmem[8]; the bridge plays from the cursor, keeps start and furthest position, and queues start/stop events for `probe_blocks rec=1` (only a relay that asks gets them, and only it counts as "an app is there"); state back to Main in gmem[9] (0 idle, 1 recording, 2 rendering, 3 no app, 4 reviewing, 5 under a second played: no event sent, 6 the app's review failed), seconds in gmem[10]. Main reads the mouse each `@gfx` frame (about 30 a second) and counts a press on RELEASE over the button: REAPER does not start playing while the mouse is still held in an FX window, so acting on mouse-down left a normal (held) click with no playback. The bridge also waits up to 3 s for playback to start before it calls a take finished. A synthetic click shorter than a frame can still be missed. On stop the app closes the probe capture FIRST (a render runs every JSFX again and would add its blocks), renders `render_master(start, end)` and runs the same review steps as Live's `master_record`. `hypnomix reaper record` = a press |
+| `hypnomix/workflow/handoff.py` (`write_rpp`) | `handoff` on an `.rpp` scan: a NEW `Song (handoff).rpp` with one `MARKER` line per by-hand spot (position in seconds, a name, a new GUID), read back and compared with the original; nothing else in the project changes. Written and read back only: **not yet opened in REAPER** |
+| `hypnomix/studio/demo.py` | `demo --kind reaper`: a short synthetic song as stems plus a project that plays them (the comps as separate items on separate takes), so every planted problem is visible to `scan`. Round-trips through `rpp.load`; **not yet opened in REAPER** |
+| `hypnomix/engineer/masking.py` (`write_project`), `rpp_edit.add_reaeq_cut` | `masking --apply NEW.rpp` and `fix` on an approved frequency-fight finding: a bell cut as one ReaEQ band on the track that should give way (see "ReaEQ in a saved project" below). **Not yet opened in REAPER** |
 | `hypnomix/workflow/edges_project.py` | Live's word-edge detectors on the model; the REAPER edge fixes |
 | `hypnomix/workflow/fix_project.py` | `fix` for an `.rpp`: one pass into one new file, structure check, re-measure |
 | `hypnomix/reaper/bridge.lua`, `client.py`, `cli.py` | the bridge into the open REAPER, and `hypnomix reaper` |
@@ -161,3 +164,14 @@ compare REAPER's saved file with what the reader reads, and REAPER's render with
 (each sample's value is its own position in the file) shows exactly which source position REAPER plays at
 every moment, through stretches, loops and playrate. The tests in `tests/test_rpp.py` and
 `tests/test_chain_reaper.py` hold the measured values.
+
+## Not yet opened in REAPER
+
+Written and read back by hypnomix, checked by hypnomix's own structure checks on synthetic data, and **not yet opened in
+REAPER**:
+
+- the ReaEQ band written for an approved frequency-fight cut (`masking --apply NEW.rpp`, and `fix`);
+- the `Song (handoff).rpp` with markers (`handoff`);
+- the demo project made by `hypnomix demo --kind reaper`.
+
+None has been run on a real song. Open each in REAPER before you rely on it, and add what you measure to this file.

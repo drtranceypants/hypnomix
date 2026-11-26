@@ -178,11 +178,14 @@ the same level as everything else, with less punch.
 
 ## From master to release: `release`, `versions`, `compare`
 
-Three commands take over between a finished master and the upload. All of them write only new files, in new folders,
-and say what they measured, not what they heard.
+Three commands take over between a finished master and the upload (`album` below does the same job for a whole
+record). All of them write only new files, in new folders, and say what they measured, not what they heard. Guide 6
+(`docs/guides/06-mixing-mastering.md`, "From master to release") walks them in order: `qc` and `translate`, `compare`
+against the last bounce, `album` for several songs, `versions`, then `release --check` and `release`.
 
 **`hypnomix release MASTER.wav --title T --artist A [--album --track --year --genre --isrc --art cover.jpg]`**
-makes the folder a distributor asks for: your master as 24-bit WAV (a byte-for-byte copy when it already is one;
+makes the folder a distributor asks for (`hypnomix-out/release/<Artist> - <Title>/`, or inside `--out`; it refuses if that
+folder exists; the files are named "<Artist> - <Title> (24-bit).wav" and so on): your master as 24-bit WAV (a byte-for-byte copy when it already is one;
 never re-processed), a 16-bit / 44.1 kHz WAV made from the unrounded master with the same dither `master` uses,
 MP3 320 and AAC 256 (`.m4a`) with the tags and the cover embedded, FLAC if you add it to `--formats`, a copy of the
 cover, `release.json` (the details; `--meta release.json` reads them back) and `RELEASE.md`. Run it with `--check`
@@ -206,8 +209,9 @@ you give `--bpm` (the bar grid is only found to within about 30 ms, so an edge w
 up (and says the offset if one starts later), then writes `COMPARE.md`: one line first ("new is 1.2 dB louder, 1.5 dB
 brighter above 8 kHz, a little narrower in the lows; the 2nd chorus-like section changed most"), then loudness,
 peaks, dynamics, tone and stereo width in 8 bands, each section's loudness, and the three spots where the two differ
-most as level-matched A / B clips in `ab/`, which `hypnomix review` can play. It refuses politely when the two are
-not the same song, or the sample rates differ (`--resample`).
+most as level-matched A / B clips in `ab/` (written when they differ by more than level), which `hypnomix review` can play. It refuses politely when the two are
+not the same song (`--force` compares anyway), or the sample rates differ (`--resample`). The report goes to
+`hypnomix-out/compare/<old> vs <new>/`; an existing report is never overwritten.
 
 **When.** `compare` after every round of changes; `versions` once the master is final; `release` last.
 

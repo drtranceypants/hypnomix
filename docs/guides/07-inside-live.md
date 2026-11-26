@@ -104,6 +104,12 @@ Close the original, open the A/B set, put the Hypnomix device on any track. For 
 Moving to another finding puts the last one back to A. The A/B set is for listening; approving happens in the
 review and Apply writes the real new set from the original.
 
+You do not need Live to hear most fixes first: `hypnomix ab` writes level-matched before / after clips for clip fixes,
+tuning, timing nudges, frequency-fight cuts and changes to a Compressor, Glue Compressor, Gate, EQ Eight, Utility or
+Limiter. For a device those clips are hypnomix's **model of the device, not Live itself**, and say so. The A/B set above
+plays the real devices, so use it for anything `ab` could not preview (a Saturator or Reverb change, a plug-in, a return
+track) and to confirm the rest.
+
 ## 5. The mastering chain on HypnomixMain
 
 HypnomixMain has a **Mastering chain** column. It builds the chain out of Live's own devices, in an Audio Effect
@@ -151,6 +157,9 @@ Live's own Export makes the final file: no device can start an export in Live.
   your own default presets when hypnomix adds a device or a rack: Build empties the rack first, and sets the values
   listed above on top of your default device presets (anything it does not list keeps your preset's value). Any
   control it cannot find is named in the device after Build, so you can set it by hand.
+- Written by hypnomix (and structure-checked by `fix`, `handoff` and `colour --apply`), but **not yet opened in Live**: the EQ Eight band that an approved
+  frequency-fight cut adds (`masking`, `fix`), the `Song (handoff).als` with locators (`handoff`), and the sets that
+  `colour --apply` writes. Open each in Live and listen before you keep it.
 - The probe's loudness is measured on 100 ms blocks with the BS.1770 gate; short sections read slightly
   differently from a full-file meter. Peaks are sample peaks: use `measure` on a bounce for true peak.
 - Record and review writes a 32-bit float WAV with Max's `sfrecord~` into `~/Documents/Hypnomix/bounces/`.
@@ -185,8 +194,8 @@ evidence for each point.
 
 ```bash
 hypnomix review DIR --export "Song review.json"     # send it
-hypnomix review DIR --as Sam --serve                 # they review as Sam, with notes at a bar or a time
-hypnomix review DIR --merge "Song review (Sam).json" # conflicts are shown; yours is never overwritten
+hypnomix review DIR --as Reviewer --serve                 # they review as Reviewer, with notes at a bar or a time
+hypnomix review DIR --merge "Song review (Reviewer).json" # conflicts are shown; yours is never overwritten
 hypnomix review DIR --settle smooth-4=theirs
 ```
 

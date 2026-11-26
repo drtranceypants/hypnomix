@@ -15,10 +15,18 @@ from. Claude Code specifics:
   person a page to listen and click on (start it with the preview tool or in their terminal, not a blocking shell).
 - Use the question tool for approve / skip / change, with your recommendation first, and record each answer
   with `hypnomix fix DIR --decide` as it is given.
+- After the fixes, `hypnomix handoff DIR` turns what `fix` could not do into a checklist in the person's DAW's words,
+  with markers (a new set with locators, a new REAPER project with markers, or a MIDI file and CSV).
+- For a newcomer, point at the app's **Teacher** tab (`hypnomix app`): free courses in their own DAW (Live, REAPER or
+  Ardour), the complete course A to Z, a 101 crash course and a tour. It needs no AI, and it is theirs to use, not
+  something to drive.
+- Say what has been checked where, never more: the Live devices and fix paths were tested in Live 12 and REAPER
+  support in REAPER 7.86; everything newer (including the Ardour snapshots) passes unit tests and structure checks on
+  synthetic data only, and has not been opened in its DAW or run on real songs (AGENTS.md has the list).
 - `.mcp.json` connects the Ableton MCP (telemetry off) for creating tracks and loading devices. It drives the
   open Live set: the same rules as the Live tools apply (ask first, one driver at a time).
-- Ask before taste calls, before any change to a set, before `hypnomix install`, and before opening, saving or
-  quitting anything in Live.
+- Ask before taste calls, before any change to a set, before `hypnomix install` (and `device`, `aligndevice`,
+  `probe device`, which also write into Live's User Library), and before opening, saving or quitting anything in Live.
 
 - Every change that alters what a person sees or does updates its wiki article in the same commit (AGENTS.md,
   "Keep the wiki current"); pushing to main updates the app's Wiki and the website on its own.
