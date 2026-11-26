@@ -83,10 +83,13 @@ The assistant runs hypnomix for you and explains each finding.
   in Ollama (no key at all). **List models** shows what your key can use.
 - **Your key and your audio stay with you:** the key is kept in `~/.hypnomix/ai.json` (readable by you only) and
   sent only to the provider you chose. The assistant reads hypnomix's text reports, not the audio.
-- **Listening (optional, off by default):** switch it on and a cloud model can *hear* a bounce and give notes by
-  ear with timestamps (arrangement, energy, balance, vocal clarity, low-end feel), checked against hypnomix's own
-  measurements. Use a Google Gemini key (free tier at aistudio.google.com) or an OpenRouter key; your chat model
-  can stay whatever you like. Each listen shows the song, its length and rough cost, and waits for **Send it**.
+- **A Listener (optional, off by default):** a second model, with its own key, that can *hear* a bounce and give
+  notes by ear with timestamps (arrangement, energy, balance, vocal clarity, low-end feel), checked against
+  hypnomix's own measurements. The chat model stays whatever you like (say Claude); the listener is a Google model,
+  with a Google Gemini key (aistudio.google.com/apikey, free tier available) or an OpenRouter key. Click **Set up a
+  listener** under the chat settings. **List models** shows the models your key can send audio to; the default,
+  `gemini-4-carbon`, had the best ear in our test (tempo, lyric timing and arrangement all right on a known song),
+  with `gemini-4-hydrogen` and `gemini-3.5-flash` as faster, cheaper picks. Each listen shows the song, its length and rough cost, and waits for **Send it**.
   Only a reduced mono copy goes out (Gemini hears 16 kHz mono anyway), at about 25 tokens a second: a 4-minute
   song is around a cent. It can't judge stereo width, air or exact loudness by ear; those stay hypnomix's numbers.
 - **Nothing changes without your click:** reading, scanning and measuring run straight away. Anything that

@@ -23,13 +23,22 @@ warnings.filterwarnings("ignore")
 
 CONF = Path("~/.hypnomix/ai.json").expanduser()
 TOKENS_PER_SECOND = 25                       # Gemini's audio rate
+# Defaults from a listening test (2026-11): the same 7½-minute song with known answers (tempo, when a line is first
+# sung, when the guitars fade). Gemini 4 Carbon got all three; Neon, Hydrogen and 3.5 Flash got the tempo and the
+# line but missed the guitars; 3.8 Flash, Argon and Pro (latest) got the tempo wrong. All undercounted a big vocal stack.
+PICKS = [("gemini-4-carbon", "best ear in our test; slowest (a few minutes a song), about 5 cents"),
+         ("gemini-4-hydrogen", "nearly as good, faster, about 3 cents"),
+         ("gemini-3.5-flash", "quick (under a minute) and cheapest, about a cent")]
 LISTENERS = {
     # id: label, address, default model, env var
-    "openrouter": dict(label="OpenRouter", base_url="https://openrouter.ai/api/v1", model="google/gemini-3.8-flash",
-                       env="OPENROUTER_API_KEY", keys_at="openrouter.ai"),
     "gemini": dict(label="Google Gemini", base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                   model="gemini-flash-latest", env="GEMINI_API_KEY", keys_at="aistudio.google.com"),
+                   model=PICKS[0][0], env="GEMINI_API_KEY", keys_at="aistudio.google.com/apikey",
+                   picks=PICKS),
+    "openrouter": dict(label="OpenRouter", base_url="https://openrouter.ai/api/v1", model="google/" + PICKS[0][0],
+                       env="OPENROUTER_API_KEY", keys_at="openrouter.ai/keys",
+                       picks=[("google/" + m, n) for m, n in PICKS]),
 }
+SKIP = ("tts", "image", "banana", "robotics", "computer-use", "transcribe", "embedding", "customtools", "live")
 
 PROMPT = """You are an experienced mix engineer and music producer giving a second opinion on a song by an independent
 artist who records real instruments and voices. Listen to the whole track. Be specific and give timestamps (mm:ss).
@@ -95,6 +104,28 @@ def openrouter_price(model):
     except Exception:
         return None
     return None
+
+
+def audio_models(provider, key=None):
+    """The models this key can send audio to, best-known first: Google's list for the key, or OpenRouter's public one."""
+    picks = [m for m, _ in LISTENERS[provider]["picks"]]
+    if provider == "gemini":
+        key = key or listener("gemini")[3]
+        if not key:
+            raise ValueError("save a Google Gemini key first")
+        req = urllib.request.Request("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",
+                                     headers={"x-goog-api-key": key})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            names = [m["name"].split("/", 1)[-1] for m in json.load(r).get("models", [])
+                     if "generateContent" in m.get("supportedGenerationMethods", [])]
+        found = [n for n in names if n.startswith("gemini") and not any(s in n for s in SKIP)]
+    else:
+        with urllib.request.urlopen("https://openrouter.ai/api/v1/models", timeout=15) as r:
+            found = [m["id"] for m in json.load(r)["data"]
+                     if "audio" in (m.get("architecture") or {}).get("input_modalities", []) and ":" not in m["id"]
+                     and not any(s in m["id"] for s in SKIP)]
+    rest = sorted((n for n in found if n not in picks), key=lambda n: (not n.startswith(("gemini", "google/")), n))
+    return [p for p in picks if p in found] + rest
 
 
 def estimate(path, provider, model):

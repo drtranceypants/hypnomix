@@ -107,9 +107,15 @@ def settings_view():
     from hypnomix.ears import critique as L
     ls = c.get("listen") or {}
     lp = ls.get("provider") if ls.get("provider") in L.LISTENERS else ""
-    listen = dict(provider=lp, options=[dict(id=k, label=d["label"], model=(ls.get("models") or {}).get(k) or d["model"],
-                                             has_key=bool(L.listener(k)[3]))
-                                        for k, d in L.LISTENERS.items()])
+    opts = []
+    for k, d in L.LISTENERS.items():
+        saved = (c.get("keys") or {}).get(k) or ""
+        env = bool(os.environ.get(d["env"]))
+        opts.append(dict(id=k, label=d["label"], model=(ls.get("models") or {}).get(k) or d["model"], keys_at=d["keys_at"],
+                         has_key=bool(saved or env), picks=[dict(id=m, note=n) for m, n in d["picks"]],
+                         key_hint=("…" + saved[-4:]) if len(saved) >= 8 else ("saved" if saved else
+                                                                            f"from {d['env']}" if env else "")))
+    listen = dict(provider=lp, options=opts)
     return dict(provider=p, providers=out, listen=listen)
 
 
@@ -134,6 +140,10 @@ def update_settings(body):
         c.setdefault("listen", {})["provider"] = lp
         if lp and body.get("listen_model") is not None:
             c["listen"].setdefault("models", {})[lp] = str(body["listen_model"]).strip()
+        if lp and body.get("listen_key"):            # the listener's own key: separate from the chat model's
+            c.setdefault("keys", {})[lp] = str(body["listen_key"]).strip()
+        if lp and body.get("listen_forget"):
+            c.setdefault("keys", {}).pop(lp, None)
     save_conf(c)
     return settings_view()
 
@@ -328,8 +338,8 @@ def listen_tool(inp):
     c = load_conf()
     lp = (c.get("listen") or {}).get("provider") or ""
     if lp not in L.LISTENERS:
-        return ("Listening is off. Tell the person they can switch it on in the Assistant settings (Listening: Google "
-                "Gemini or OpenRouter, with that service's key); until then, work from hypnomix's measurements.")
+        return ("Listening is off. Tell the person they can set up a Listener in the Assistant tab (Set up a listener: "
+                "Google Gemini or OpenRouter, with that service's key); until then, work from hypnomix's measurements.")
     f = Path(str(inp.get("audio") or "")).expanduser()
     if not f.is_file() or f.suffix.lower() not in (".wav", ".mp3", ".aif", ".aiff", ".flac", ".m4a", ".ogg"):
         return "that is not an audio file on this computer: ask the person to attach the bounce (Attach audio…)"
@@ -626,6 +636,17 @@ def handle_post(path, body):
             return 200, {"models": list_models()}
         except Exception as e:
             return 400, {"error": _friendly(e, active()[1]["label"]) if not isinstance(e, ValueError) else str(e)}
+    if path == "/api/chat/listen-models":
+        from hypnomix.ears import critique as L
+        try:
+            lp = (load_conf().get("listen") or {}).get("provider") or ""
+            if lp not in L.LISTENERS:
+                raise ValueError("choose Google Gemini or OpenRouter as the listener first")
+            return 200, {"models": L.audio_models(lp)}
+        except ValueError as e:
+            return 400, {"error": str(e)}
+        except Exception as e:
+            return 400, {"error": f"couldn't list the models: {getattr(e, 'reason', None) or e}"}
     if path == "/api/chat/send":
         send(str(body.get("text", "")).strip() or "(empty)")
         return 200, {"ok": True}

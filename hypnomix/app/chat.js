@@ -1,5 +1,6 @@
 // The Assistant tab (served at /chat.js; uses the page's own helpers: $, esc, get, post, S, render).
-const C = {items: [], total: 0, busy: false, pending: null, settings: null, open: false, models: [], draft: '', usage: null};
+const C = {items: [], total: 0, busy: false, pending: null, settings: null, open: false, models: [], draft: '', usage: null,
+  lopen: false, lmodels: []};
 
 (function () {   // the tab's own look, on top of the page's styles
   const st = document.createElement('style');
@@ -9,7 +10,7 @@ const C = {items: [], total: 0, busy: false, pending: null, settings: null, open
   .msg.ai{align-self:flex-start;border:1px solid var(--line)}.msg.err{border:1px solid var(--hi);color:var(--hi)}
   .msg pre,.ask pre{white-space:pre-wrap;overflow-x:auto}.act{color:var(--mute);font-size:.9em}
   #ctext{width:100%;box-sizing:border-box;font:inherit}
-  #ckey{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);flex:1;min-width:200px}`;
+  #ckey,#clkey{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);flex:1;min-width:200px}`;
   document.head.appendChild(st);
 })();
 
@@ -59,22 +60,33 @@ function chatSettings() {
     ${needsBase ? `<div class="row"><label for="cbase">Address</label><input type="text" id="cbase" value="${esc(p.base_url)}" placeholder="https://…/v1"></div>` : ''}
     <div class="row"><label for="cmodel">Model</label><input type="text" id="cmodel" list="cmodels" value="${esc(p.model)}" placeholder="choose with List models">
       <datalist id="cmodels">${C.models.map(m => `<option value="${esc(m)}">`).join('')}</datalist><button id="clist">List models</button></div>
-    ${chatListen()}
     <div class="row"><button class="primary" id="csave">Save</button> <span class="note" id="csaved"></span></div></div>`;
 }
 
-// Listening: a cloud model hears a bounce for notes by ear. Off until chosen; each listen still asks first.
+// The Listener: a second model, with its own key, that hears a bounce for notes by ear. The chat model above can be
+// anything; the listener is a Google model (directly, or through OpenRouter). Off until chosen; each listen asks first.
 function chatListen() {
   const L = C.settings && C.settings.listen; if (!L) return '';
   const cur = L.options.find(o => o.id === L.provider);
+  if (!C.lopen && (!cur || cur.has_key)) return `<p class="note">Listener: ${cur ? esc(cur.label) + ' · ' + esc(cur.model)
+    : 'off (your audio stays on this computer)'} <button id="clopen">${cur ? 'Listener settings' : 'Set up a listener'}</button></p>`;
   const opts = [`<option value="" ${cur ? '' : 'selected'}>Off (audio stays on this computer)</option>`]
     .concat(L.options.map(o => `<option value="${o.id}" ${cur && cur.id === o.id ? 'selected' : ''}>${esc(o.label)}</option>`)).join('');
-  return `<div class="row"><label for="clisten">Listening</label><select id="clisten">${opts}</select>
-    ${cur ? `<input type="text" id="clmodel" value="${esc(cur.model)}" aria-label="Listening model">` : ''}</div>
-    <div class="row note">${cur ? (cur.has_key
-      ? `The assistant can ask to send one song, as a reduced mono copy, to ${esc(cur.label)} for notes by ear. Each listen waits for your click and shows the rough cost (about 25 tokens a second: a 4-minute song is around a cent).`
-      : `No ${esc(cur.label)} key yet: choose ${esc(cur.label)} as the AI provider above, paste its key and Save, then switch back.`)
-      : 'Switch on to let a cloud model (Gemini) hear your bounces: the assistant\'s chat model can stay whatever you chose above.'}</div>`;
+  const models = cur ? [...cur.picks.map(x => x.id), ...C.lmodels.filter(m => !cur.picks.some(x => x.id === m))] : [];
+  return `<div class="card"><h3 style="margin-top:0">Listener: a Google model that hears your songs</h3>
+    <p class="note">The assistant above talks and runs hypnomix; the listener only listens. Use the model that is best at each.</p>
+    <div class="row"><label for="clisten">Service</label><select id="clisten">${opts}</select></div>
+    ${cur ? `<div class="row"><label for="clkey">${esc(cur.label)} key</label><input type="password" id="clkey" autocomplete="off"
+        placeholder="${cur.key_hint ? (cur.key_hint.startsWith('from ') ? esc(cur.key_hint) + ': paste to save one here' : 'saved (' + esc(cur.key_hint) + '): paste to replace') : 'paste your key'}">
+        ${cur.key_hint && !cur.key_hint.startsWith('from ') ? '<button id="clforget">Forget key</button>' : ''}</div>
+      <div class="row note">Get one at ${esc(cur.keys_at)}${cur.id === 'gemini' ? ' (free tier available; on the free tier Google may use what you send to improve its models, the paid tier does not)' : ''}.
+        Kept on this computer only, and sent only to ${esc(cur.label)}.</div>
+      <div class="row"><label for="clmodel">Model</label><input type="text" id="clmodel" list="clmodels" value="${esc(cur.model)}">
+        <datalist id="clmodels">${models.map(m => `<option value="${esc(m)}">`).join('')}</datalist><button id="cllist">List models</button></div>
+      <ul class="note" style="margin:4px 0 8px;padding-left:18px">${cur.picks.map(x => `<li><b>${esc(x.id)}</b>: ${esc(x.note)}</li>`).join('')}
+        ${C.lmodels.length ? `<li>${C.lmodels.length} models on this key take audio: pick any in the Model box.</li>` : ''}</ul>
+      <div class="row note">The assistant asks before each listen and shows the song, its length and rough cost. Only a reduced mono copy is sent.</div>` : ''}
+    <div class="row"><button class="primary" id="clsave">Save</button> <span class="note" id="clsaved"></span></div></div>`;
 }
 
 function chatCost() {
@@ -95,6 +107,7 @@ function chatView() {
   <p class="sub">Talk about your song and let an AI run hypnomix for you. Bring a key from the AI service you like.
   It reads hypnomix's reports${st && st.listen && st.listen.provider ? ', listens to a song only when you click Send it,' : ', never your audio,'} and anything that changes a set waits for your click.</p>
   ${!ready || C.open ? chatSettings() : `<p class="note">${esc(p.label)} · ${esc(p.model)} <button id="copen">Settings</button> <button id="creset">New conversation</button></p>`}
+  ${chatListen()}
   ${chatCost()}
   <div id="chatlog" aria-live="polite">${C.items.map(chatItem).join('') ||
     '<p class="note">Try: "Do a first pass on my song" (attach the set below), "What does the review say about the vocals?", or "Apply what I approved".</p>'}
@@ -114,12 +127,18 @@ function chatDraw() {
   if (focus && $('#' + focus)) $('#' + focus).focus();
 }
 
+async function chatSaveListener() {
+  const body = {listen_provider: $('#clisten').value};
+  if ($('#clmodel')) body.listen_model = $('#clmodel').value;
+  if ($('#clkey') && $('#clkey').value) body.listen_key = $('#clkey').value;
+  C.settings = await post('/api/chat/settings', body);
+}
+
 async function chatSaveSettings() {
   const body = {provider: $('#cprov').value};
   if ($('#cmodel')) body.model = $('#cmodel').value;
   if ($('#cbase')) body.base_url = $('#cbase').value;
   if ($('#ckey') && $('#ckey').value) body.key = $('#ckey').value;
-  if ($('#clisten')) { body.listen_provider = $('#clisten').value; if ($('#clmodel')) body.listen_model = $('#clmodel').value; }
   C.settings = await post('/api/chat/settings', body);
 }
 
@@ -127,7 +146,12 @@ document.addEventListener('click', async e => {
   if (S.view !== 'chat') return;
   const b = e.target.closest('button'); if (!b) return;
   try {
-    if (b.id === 'csave') { await chatSaveSettings(); C.open = false; chatDraw(); }
+    if (b.id === 'clsave' || b.id === 'cllist') { await chatSaveListener();
+      if (b.id === 'clsave') { C.lopen = false; chatDraw(); }
+      else { const r = await post('/api/chat/listen-models', {}); C.lmodels = r.models || []; chatDraw(); } }
+    else if (b.id === 'clopen') { C.lopen = true; chatDraw(); }
+    else if (b.id === 'clforget') { C.settings = await post('/api/chat/settings', {listen_provider: $('#clisten').value, listen_forget: true}); chatDraw(); }
+    else if (b.id === 'csave') { await chatSaveSettings(); C.open = false; chatDraw(); }
     else if (b.id === 'copen') { C.open = true; chatDraw(); }
     else if (b.id === 'cforget') { C.settings = await post('/api/chat/settings', {provider: $('#cprov').value, forget: true}); chatDraw(); }
     else if (b.id === 'clist') { await chatSaveSettings(); const r = await post('/api/chat/models', {}); C.models = r.models || []; chatDraw();
@@ -143,7 +167,7 @@ document.addEventListener('click', async e => {
   } catch (err) { alert(err.message); }
 });
 document.addEventListener('change', e => { if (S.view === 'chat' && e.target.id === 'clisten') {
-  post('/api/chat/settings', {listen_provider: e.target.value}).then(s => { C.settings = s; C.open = true; chatDraw(); }); } });
+  post('/api/chat/settings', {listen_provider: e.target.value}).then(s => { C.settings = s; C.lmodels = []; C.lopen = true; chatDraw(); }); } });
 document.addEventListener('change', e => { if (S.view === 'chat' && e.target.id === 'cprov') {
   post('/api/chat/settings', {provider: e.target.value}).then(s => { C.settings = s; C.models = []; C.open = true; chatDraw(); }); } });
 document.addEventListener('keydown', e => { if (S.view === 'chat' && e.target.id === 'ctext' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {

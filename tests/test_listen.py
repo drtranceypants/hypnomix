@@ -29,11 +29,11 @@ class Listener(unittest.TestCase):
         self.assertEqual(L.listener()[3], "")
         with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "g-env"}):
             p, base, model, key = L.listener()
-            self.assertEqual((p, model, key), ("gemini", "gemini-flash-latest", "g-env"))
+            self.assertEqual((p, model, key), ("gemini", "gemini-4-carbon", "g-env"))
         CH.update_settings({"provider": "openrouter", "key": "sk-or-12345678"})
         CH.update_settings({"listen_provider": "openrouter", "listen_model": "google/gemini-3.5-flash-lite"})
         self.assertEqual(L.listener()[2:], ("google/gemini-3.5-flash-lite", "sk-or-12345678"))
-        self.assertEqual(L.listener("gemini")[2], "gemini-flash-latest")
+        self.assertEqual(L.listener("gemini")[2], "gemini-4-carbon")
 
     def test_settings_show_listening_without_keys(self):
         CH.update_settings({"provider": "gemini", "key": "AIza-secret-98765432"})
@@ -82,9 +82,39 @@ class Listener(unittest.TestCase):
         self.assertIn("vocal level?", ask[0]["text"])
 
     def test_estimate(self):
-        e = L.estimate(self._song(), "gemini", "gemini-flash-latest")
+        e = L.estimate(self._song(), "gemini", "gemini-4-carbon")
         self.assertAlmostEqual(e["seconds"], 4.0, delta=0.1)
         self.assertEqual(e["tokens"], 4 * 25 + 1500)
+
+    def test_listener_has_its_own_key(self):
+        """The chat can be Claude while the listener is Google, each with its own key; keys never show in full."""
+        CH.update_settings({"provider": "anthropic", "key": "sk-ant-chat-11112222"})
+        CH.update_settings({"listen_provider": "gemini", "listen_key": "AIza-listen-33334444",
+                            "listen_model": "gemini-4-hydrogen"})
+        c = json.loads(self.conf.read_text())
+        self.assertEqual((c["provider"], c["keys"]["anthropic"], c["keys"]["gemini"]),
+                         ("anthropic", "sk-ant-chat-11112222", "AIza-listen-33334444"))
+        self.assertEqual(L.listener()[2:], ("gemini-4-hydrogen", "AIza-listen-33334444"))
+        v = json.dumps(CH.settings_view(), ensure_ascii=False)
+        self.assertNotIn("listen-3333", v)
+        self.assertIn("…4444", v)
+        CH.update_settings({"listen_provider": "gemini", "listen_forget": True})
+        self.assertNotIn("gemini", json.loads(self.conf.read_text())["keys"])
+        self.assertEqual(json.loads(self.conf.read_text())["keys"]["anthropic"], "sk-ant-chat-11112222")
+
+    def test_audio_models_best_first_and_no_tts(self):
+        names = ["gemini-3.5-flash", "gemini-3.8-flash-tts", "gemini-4-carbon", "gemini-2.5-flash-image",
+                 "gemini-4-hydrogen", "gemini-3.5-transcribe", "gemma-3", "gemini-4-neon"]
+        body = json.dumps({"models": [{"name": "models/" + n, "supportedGenerationMethods": ["generateContent"]}
+                                      for n in names]}).encode()
+
+        class R:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, *a): return body
+        with mock.patch.object(L.urllib.request, "urlopen", return_value=R()):
+            got = L.audio_models("gemini", key="k")
+        self.assertEqual(got, ["gemini-4-carbon", "gemini-4-hydrogen", "gemini-3.5-flash", "gemini-4-neon"])
 
     def test_gemini_thought_signature_goes_back(self):
         """Gemini refuses the call after a tool use unless each tool call's extra_content comes back as it was."""
