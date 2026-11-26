@@ -13,17 +13,29 @@ What can be previewed without Live:
                           fix (clip gain, fades and the track's volume automation; no devices)
   vocal tuning (tune)     the rendered vocal against the tuned one, around the first flagged note
   repaired recordings     de-hiss, clean-up, de-ess, breaths, prep steps: the file against the repaired copy
-What cannot (said in ab.json and on the review page):
-  timing nudges           several warp markers in one clip are not rendered exactly offline
-  device changes          distortion and sidechain fixes change effects, which only Live can play
-For those, apply the one fix into a new set (`hypnomix fix ... --approve ID`) and listen in Live.
+  timing nudges           the clip rendered along its warp markers (the markers the nudge writes, one on every onset
+                          it holds and one on the hit it moves), stretched with Rubber Band so the pitch stays, the
+                          same way before and after, around the nudge. Needs Rubber Band (brew install rubberband).
+                          Not Live's own warp engine: the timing is exact, the stretched stretch can sound a little
+                          different. A nudge of a MIDI note is refused (the instrument is not rendered offline).
+  device changes          a change to a Compressor, Glue Compressor, Gate, EQ Eight, Utility or Limiter setting
+                          (devices, sidechain, distortion fixes): the track played through hypnomix's MODEL of the
+                          device, in the set as it is and with only that fix applied. The pair is labelled "a model
+                          of the device, not Live itself" in ab.json and on the review page.
+  masking cuts            the two parts that fight, summed, with and without the cut (a model of an EQ Eight band)
+What cannot (said in ab.json and on the review page, with the reason):
+  a device with no model  Saturator, Reverb, Delay, racks, Max for Live devices, real plug-ins (without --plugins),
+                          EQ Eight in L/R or M/S mode, a Gate listening to a sidechain: apply that one fix into a new
+                          set (`hypnomix fix ... --approve ID`) and listen in Live.
+  return tracks, sends    fixes whose effect is on a return track or a send are not rendered.
+  REAPER projects         `ab` plays Live sets; for a project apply the one fix into a new .rpp and listen there.
 
-  --plugins   device changes too (devices, duck, sidechain, distortion), when pedalboard is installed: the
-              track is rendered through its real plug-ins and hypnomix's models of Live's devices, in the set as
-              it is and with only that fix applied (see `hypnomix plugrender`; no sends, so return tracks can't
-              be previewed). Without pedalboard, or without --plugins, nothing changes.
+  --plugins   also play the REAL plug-ins in the chain (VST3 / Audio Units), when pedalboard is installed (see
+              `hypnomix plugrender`; no sends, so return tracks can't be previewed). Without it, plug-ins are left
+              out of the chain and the pair says so.
 
-The preview is the track on its own, without effects: it shows what the fix does, not the final sound.
+Clip, tuning and timing previews are the track on its own, without effects; device previews are the track
+through its chain, without sends. Either way a pair shows what the fix does, not the final sound.
 """
 from hypnomix.extras import hint as extra_hint
 import argparse, json, re, shutil, subprocess, sys, tempfile
@@ -108,7 +120,7 @@ def rms_db(x):
     return 10 * np.log10(float(np.mean(np.square(x))) + 1e-12)
 
 
-def write_pair(od, fid, a, b, sr, note=""):
+def write_pair(od, fid, a, b, sr, note="", model=False):
     """Level-match B to A (at most 3 dB, so a fix that IS a level change still sounds like one)."""
     g = float(np.clip(rms_db(a) - rms_db(b), -3, 3)) if len(a) and len(b) else 0.0
     b = b * 10 ** (g / 20)
@@ -120,6 +132,8 @@ def write_pair(od, fid, a, b, sr, note=""):
     sf.write(str(fb), b, sr, subtype="PCM_24")
     changed = float(np.max(np.abs(a[: len(b)] - b[: len(a)]))) if len(a) and len(b) else 0.0
     row = dict(a=fa.name, b=fb.name, matched_db=round(g, 1), seconds=round(len(a) / sr, 1), note=note)
+    if model:
+        row["model"] = True                  # played through hypnomix's model of the device: the review page says so
     if changed < 1e-4:
         row["note"] = (note + " " if note else "") + "the two files measure the same here: the fix may fall outside this window"
     return row
@@ -135,6 +149,121 @@ def loud_start(y, sr):
     db = 10 * np.log10((m[: n * blk] ** 2).reshape(n, blk).mean(1) + 1e-12)
     on = np.flatnonzero(db > db.max() - 30)
     return float(on[0] * 0.05) if len(on) else 0.0
+
+
+def stale(scan, orig):
+    """True when the set was saved again after the scan: ids from the scan may point at something else now."""
+    was = scan.get("set_mtime")
+    return bool(was and orig is not None and orig.exists() and abs(orig.stat().st_mtime - was) > 1)
+
+
+def timing_args(sd, orig, tmp, ids, unroll):
+    """The `timing` command that writes only these nudges into tmp, with the options the scan used."""
+    tj = sd / "raw" / "timing.json"
+    d = json.loads(tj.read_text()) if tj.exists() else {}
+    args = ["timing", orig, "--apply", tmp, "--ids", ",".join(ids), "--list", "0"]
+    for t in d.get("tracks", []):
+        args += ["--track", t]
+    for flag, key in (("--melodic", "melodic"), ("--bass", "bass"), ("--drums", "drums")):
+        for t in d.get(key, []):
+            args += [flag, t]
+    if unroll:
+        args += ["--unroll-loops"]
+    return args
+
+
+def preview_timing(tm, orig, scan, sd, pre, post, manifest, sr):
+    """Pairs for timing nudges: the clip rendered along its warp markers with and without the nudges. Every nudge
+    is applied in ONE temporary set (they sit far apart; when two fall into one window the note says so)."""
+    from hypnomix.session import render as R
+    todo = []
+    for f in tm:
+        if "MIDI note" in (f.get("problem") or ""):
+            manifest[f["id"]] = dict(note="no offline preview: this moves a MIDI note, and the instrument that plays it "
+                                          "is not rendered offline. Apply this one fix into a new set (fix --approve) "
+                                          "and listen in Live.")
+        else:
+            todo.append(f)
+    if not todo:
+        return
+    why = None
+    if not shutil.which("rubberband"):
+        why = ("no offline preview: nudges are heard by stretching the clip along its warp markers with Rubber Band, "
+               "which is not installed (brew install rubberband)")
+    elif stale(scan, orig):
+        why = "no preview: the set was saved again after the scan, so its ids may point at something else: re-scan"
+    if why:
+        for f in todo:
+            manifest[f["id"]] = dict(note=why)
+        return
+    tmp = orig.parent / f"{orig.stem} (ab preview timing, delete me).als"
+    try:
+        code, txt = hx(*timing_args(sd, orig, tmp, [f["id"] for f in todo], any(f.get("unroll") for f in todo)))
+        if code != 0 or not tmp.exists():
+            for f in todo:
+                manifest[f["id"]] = dict(note="preview failed: the nudges could not be built (" + txt.strip()[-120:] + ")")
+            return
+        names = sorted({f["track"] for f in todo})
+        print(f"rendering {len(names)} track(s) along their warp markers with and without {len(todo)} nudge(s) …")
+        R.WARP_TIMEMAP[0] = True
+        try:
+            before, spb, bpb = render_tracks(orig, names, sr)
+            after, _, _ = render_tracks(tmp, names, sr)
+        finally:
+            R.WARP_TIMEMAP[0] = False
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    for f in todo:
+        b = beats_of(f.get("where"), bpb)
+        y0, y1 = before.get(f["track"]), after.get(f["track"])
+        if b is None or y0 is None or y1 is None:
+            manifest[f["id"]] = dict(note="no preview: the spot or the track could not be rendered")
+            continue
+        if not np.any(y0):
+            manifest[f["id"]] = dict(note="no preview: the track's audio file could not be read (moved or missing?)")
+            continue
+        t = b * spb
+        near = [g["id"] for g in todo if g is not f and g["track"] == f["track"]
+                and abs((beats_of(g.get("where"), bpb) or -1e9) * spb - t) < pre + post]
+        note = ("the track alone, no effects; the clip is stretched along its warp markers with Rubber Band (pitch kept), "
+                "the same way in A and B: the timing is exact, Live's own warp engine may sound a little different")
+        if near:
+            note += f"; the nudge(s) {', '.join(near)} on this track also fall in this window and are in B too"
+        manifest[f["id"]] = write_pair(od_of(sd), f["id"], cut(y0, sr, t, pre, post), cut(y1, sr, t, pre, post), sr, note)
+
+
+def od_of(sd):
+    return Path(sd) / "ab"
+
+
+def preview_masking(mk, orig, scan, pre, post, manifest, sd, sr):
+    """Pairs for masking cuts: the part that gives way and the part that keeps the band, summed, with and without
+    the cut (a bell on the giving part, from hypnomix's model of an EQ Eight band)."""
+    from scipy.signal import lfilter
+    from hypnomix.session import devmodel, plugrender as PR
+    if stale(scan, orig):
+        for f in mk:
+            manifest[f["id"]] = dict(note="no preview: the set was saved again after the scan: re-scan")
+        return
+    names = sorted({n for f in mk for n in (f["track"], f["eq"].get("keep")) if n})
+    print(f"rendering {len(names)} track(s) with and without {len(mk)} cut(s) …")
+    y, spb, bpb = render_tracks(orig, names, sr)
+    for f in mk:
+        e = f["eq"]
+        g, k = y.get(f["track"]), y.get(e.get("keep"))
+        if g is None or k is None:
+            manifest[f["id"]] = dict(note="no preview: one of the two parts could not be rendered")
+            continue
+        n = min(len(g), len(k))
+        b_, a_ = devmodel._biquad(3, sr, e["freq"], e["gain_db"], e["q"])
+        before = g[:n] + k[:n]
+        after = lfilter(b_, a_, g[:n]) + k[:n]
+        t = PR.loudest_at(np.minimum(np.abs(g[:n]), np.abs(k[:n])), sr, pre + post)   # where both play
+        manifest[f["id"]] = write_pair(od_of(sd), f["id"], cut(before, sr, t, pre, post), cut(after, sr, t, pre, post), sr,
+                                       f"'{f['track']}' and '{e.get('keep')}' together, without effects: a model of an EQ "
+                                       f"Eight band ({e['gain_db']:+.1f} dB at {e['freq']:.0f} Hz, Q {e['q']:g}) on "
+                                       f"'{f['track']}', not Live itself; centred where both play", model=True)
 
 
 def main():
@@ -155,6 +284,7 @@ def main():
     od = sd / "ab"
     od.mkdir(exist_ok=True)
     mp = od / "ab.json"
+    from hypnomix.session import plugrender as PR
     manifest = json.loads(mp.read_text()) if mp.exists() else {}
     folder = scan.get("mode") == "folder"
     orig = Path(data["set"]) if data.get("set") and not folder else None
@@ -188,24 +318,41 @@ def main():
             if tmp.exists():
                 tmp.unlink()
 
-    # ---- device changes through the track's real chain (--plugins, needs pedalboard): hypnomix plugrender
+    # ---- device changes: the track through hypnomix's MODELS of Live's devices (and, with --plugins, real plug-ins)
     done = set()
-    if a.plugins and orig and orig.exists():
-        from hypnomix.session import plugrender as PR
-        if not PR.have_pedalboard():
-            print(f"--plugins: pedalboard is not installed ({extra_hint('plugins')}): device changes are not previewed")
-        else:
-            cache = {}
-            for f in [f for f in findings if f["tool"] in PR.DEVICE_TOOLS and f.get("applies") == "set"]:
-                print(f"rendering {f.get('host') or f.get('track')} through its chain for {f['id']} …")
-                before, after, note = PR.device_preview(f, orig, scan, sd, sr, hx, cache)
-                if before is None:
-                    manifest[f["id"]] = dict(note=note)
-                else:
-                    t = PR.loudest_at(before, sr, a.pre + a.post)
-                    manifest[f["id"]] = write_pair(od, f["id"], cut(before, sr, t, a.pre, a.post),
-                                                   cut(after, sr, t, a.pre, a.post), sr, note)
+    live_set = bool(orig and orig.exists() and orig.suffix.lower() == ".als")
+    dev = [f for f in findings if f["tool"] in PR.DEVICE_TOOLS and f.get("applies") == "set"]
+    if dev and live_set and a.plugins and not PR.have_pedalboard():
+        print(f"--plugins: pedalboard is not installed ({extra_hint('plugins')}): real plug-ins are left out of the chain")
+    if dev and live_set:
+        cache = {}
+        for f in dev:
+            if stale(scan, orig):
+                manifest[f["id"]] = dict(note="no preview: the set was saved again after the scan, so its ids may point "
+                                              "at something else: re-scan")
                 done.add(f["id"])
+                continue
+            print(f"rendering {f.get('host') or f.get('track')} through its chain for {f['id']} …")
+            r = PR.device_preview(f, orig, scan, sd, sr, hx, cache, plugins=a.plugins)
+            if r.get("before") is None:
+                manifest[f["id"]] = dict(note=r["note"])
+            else:
+                t = PR.loudest_at(r["before"], sr, a.pre + a.post)
+                manifest[f["id"]] = write_pair(od, f["id"], cut(r["before"], sr, t, a.pre, a.post),
+                                               cut(r["after"], sr, t, a.pre, a.post), sr, r["note"], model=r["model"])
+            done.add(f["id"])
+
+    # ---- timing nudges: the clip rendered along its warp markers, with and without the nudges
+    tm = [f for f in findings if f["tool"] == "timing" and f.get("applies") == "set"]
+    if tm and live_set:
+        preview_timing(tm, orig, scan, sd, a.pre, a.post, manifest, sr)
+        done |= {f["id"] for f in tm}
+
+    # ---- masking cuts: the two parts together, with and without the cut
+    mk = [f for f in findings if f["tool"] == "masking" and f.get("eq") and f.get("applies") == "set"]
+    if mk and live_set:
+        preview_masking(mk, orig, scan, a.pre, a.post, manifest, sd, sr)
+        done |= {f["id"] for f in mk}
 
     # ---- everything else
     for f in findings:
@@ -255,12 +402,12 @@ def main():
                 note = "" if scan.get("key") else f"uses the estimated key ({key}): confirm it before approving"
                 manifest[fid] = write_pair(od, fid, cut(ya.mean(1), sra, t, 3, 7), cut(yb.mean(1), srb, t, 3, 7), sra, note)
             continue
-        if f["tool"] == "timing":
-            manifest[fid] = dict(note="no offline preview: warp nudges are not rendered exactly outside Live. Apply this "
-                                      "one fix into a new set (fix --approve) and listen there.")
+        if orig is not None and orig.suffix.lower() == ".rpp":
+            manifest[fid] = dict(note="no offline preview: `ab` plays Live sets. Apply this one fix into a new project "
+                                      "(fix --approve) and listen there.")
         elif fid not in manifest:
-            manifest[fid] = dict(note="no offline preview: this changes an effect, which only Live can play. Apply this "
-                                      "one fix into a new set (fix --approve) and listen there.")
+            manifest[fid] = dict(note="no offline preview: this kind of fix has no model here. Apply this one fix into "
+                                      "a new set (fix --approve) and listen there.")
     mp.write_text(json.dumps(manifest, indent=1))
     pairs = sum(1 for v in manifest.values() if v.get("a"))
     print(f"{pairs} before/after pair(s) in {od}; {len(manifest) - pairs} finding(s) without a preview (see ab.json)")

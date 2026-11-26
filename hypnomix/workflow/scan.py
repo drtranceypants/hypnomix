@@ -769,20 +769,31 @@ def phase_findings(stems, sr, paths=None):
     return out
 
 
-def stem_findings(stems, sr, paths=None, top=8):
-    """Masking as one finding per fight, plus phase between same-source files."""
+def stem_findings(stems, sr, paths=None, top=8, writable=None):
+    """Masking as one finding per fight, plus phase between same-source files. With `writable` (a dict of real
+    track names by rendered-file name, from a set or project the fix can write) each fight carries its cut as `eq`
+    and is a `set` finding: the person approves it and `fix` writes the band on the DAW's own EQ in a new file."""
     from hypnomix.engineer import masking as M
     collisions, role_of = M.analyse(stems, sr)
     same = lambda c: pair_base(c["a"]) is not None and pair_base(c["a"]) == pair_base(c["b"])
     collisions = [c for c in collisions if not same(c)]      # two mics on one source share every band by design
     out = []
     for k, c in enumerate(collisions[:top], 1):
-        out.append(dict(id=f"mask-{k}", tool="masking", kind="masking", severity="medium" if c["frac"] >= 0.5 else "low",
-                        track=c["give"], where="",
-                        problem=f"fights with '{c['keep']}' in {c['band_name']}: similar level there "
-                                f"{int(c['frac'] * 100)}% of the time both play ({c['seconds']:.0f} s)",
-                        fix=M.advice(c).replace("**", "") + ". Listen for the part that should lead getting clearer, "
-                            "not for the cut itself.", applies="manual"))
+        f = dict(id=f"mask-{k}", tool="masking", kind="masking", severity="medium" if c["frac"] >= 0.5 else "low",
+                 track=c["give"], where="",
+                 problem=f"fights with '{c['keep']}' in {c['band_name']}: similar level there "
+                         f"{int(c['frac'] * 100)}% of the time both play ({c['seconds']:.0f} s)",
+                 fix=M.advice(c).replace("**", "") + ". Listen for the part that should lead getting clearer, "
+                     "not for the cut itself.", applies="manual")
+        if writable is not None:
+            eq = M.proposal(c)
+            eq["keep"] = writable.get(c["keep"], c["keep"])
+            f.update(track=writable.get(c["give"], c["give"]), where=f"{eq['freq']:.0f} Hz", eq=eq, applies="set",
+                     fix=f"cut '{writable.get(c['give'], c['give'])}' {-eq['gain_db']:g} dB at {eq['freq']:.0f} Hz (bell, Q {eq['q']:g}) "
+                         f"on the DAW's own EQ so '{eq['keep']}' owns {c['band_name']}: written as one band into a NEW file when "
+                         "you approve it; the amount can be set smaller. Listen for the part that should lead getting "
+                         "clearer, not for the cut itself.")
+        out.append(f)
     notes = [f"stems: {len(stems)} parts compared; roles by name then sound: "
              + ", ".join(f"{n}={r}" for n, r in list(role_of.items())[:12])]
     if len(collisions) > top:
@@ -816,7 +827,8 @@ def g_stems_set(als, od, a):
     stems = [(n, y) for n, y in stems if n in on]
     if len(stems) < 2:
         return [], ["stems: fewer than two switched-on audio tracks with clips"]
-    f, notes = stem_findings(stems, sr)
+    real = {re.sub(r'[\\/:*?"<>|]', "-", n): n for n in sorted(tracks_on(als))}      # rendered file name -> track name
+    f, notes = stem_findings(stems, sr, writable=real)
     notes.append("stems: tracks were rendered without their effects, so EQ already on a track is not counted")
     return f, notes
 

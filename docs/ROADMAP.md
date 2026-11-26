@@ -10,9 +10,19 @@ Items marked *(to verify)* rest on research that has not been tested here yet.
 the review page (`review`), the wider scan (noise under clip gain, harmony timing, mic phase, masking as
 findings, the "is this deliberate?" inventory, sections, `--like`), `--plan` for `prep` / `automix` / `master`,
 `deess`, `breaths`, `sections`, `match`, and a first test suite. Still open from those sections:
-`listen`, the profile comparison in scan, masking fixes written into a set as stock EQ
-bands, and previews for timing nudges and device changes. `deess`, `breaths`, `sections` and `match` need real
+`listen` and the profile comparison in scan. `deess`, `breaths`, `sections` and `match` need real
 songs before they are trusted.
+
+
+**Masking cuts and more previews (built, see `docs/WORKFLOW.md`):** a `--deep` frequency fight is a finding that carries
+its cut; approved, `fix` writes it as one bell band on a stock EQ in a new file (EQ Eight in Live: a free band of an
+EQ Eight already on the track, else a new one at the end of the chain; ReaEQ in REAPER, five bands at most), the amount
+adjustable per decision. `ab` now builds pairs for timing nudges (the clip stretched along its warp markers with Rubber
+Band, pitch kept), for masking cuts, and for changes to a Compressor, Glue Compressor, Gate, EQ Eight, Utility or
+Limiter, played through hypnomix's own model of the device and labelled as such; a device with no model, a MIDI note, a
+return track are refused with the reason in `ab.json`. Open: the new ReaEQ chunk and the new EQ Eight opened in REAPER
+and Live (they pass the structure checks, and the ReaEQ layout was read from a chunk REAPER saved); `ab` for REAPER
+projects (it plays Live sets today); models for Saturator, Reverb and Delay; EQ Eight in L/R or M/S mode.
 
 **`balance` and `handoff` (built, see `docs/WORKFLOW.md`):** `balance` proposes one fader move per part for a folder of
 stems (role, loudness while playing, vocal against the band, your own fader range; faders only; `--plan` and `fix`
@@ -75,7 +85,7 @@ Checks that exist as tools but are not in the first pass yet, and a few new ones
 | 5 | noise | Per track: noise floor of the rendered track, and a warning where large clip gain sits on a noisy take. Fix: `dehiss` on the source, as an `audio` item. |
 | 6 | doubles | Timing of doubles and harmonies against the lead (`vocalign` in report mode). Vocals currently get pitch only. |
 | 7 | phase | Multi-mic sources (kick in/out, DI + amp): offset and polarity (`align`). |
-| 8 | masking | Render the groups, run `masking`, and turn each fight into a finding with a concrete cut. In Live the fix is a stock EQ band (`set`); for a folder it is a rendered copy (`audio`) plus the to-do. |
+| 8 | masking | Render the groups, run `masking`, and turn each fight into a finding with a concrete cut. In Live the fix is a stock EQ band (`set`, built: EQ Eight, ReaEQ in REAPER); for a folder it is a rendered copy (`audio`) plus the to-do. |
 | 9 | intent | An inventory of what is automated and what is unusual (very long tails, hard-panned parts, big boosts), listed as "is this deliberate?" questions at the first scan and saved to preferences. |
 | 10 | sections | Find verse / chorus / bridge, then report loudness and vocal-to-band balance per section: "the second chorus is 2 dB quieter than the first". |
 | 11 | profile | Compare the mix with the person's own profile ranges (`profile build`), not only fixed targets. |

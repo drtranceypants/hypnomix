@@ -140,8 +140,12 @@ hypnomix review "hypnomix-out/scan/Song" --serve    # a page: play A, play B, ap
 ```
 
 `ab` builds the "after" in a temporary copy that is deleted again. It can preview clip fixes (clicks, cuts,
-spikes), vocal tuning and repaired recordings. It cannot preview timing nudges or device changes: for those,
-apply that one fix into a new set and listen in Live. Previews are the track alone, without effects.
+spikes), vocal tuning, repaired recordings, timing nudges (the clip stretched along the markers the nudge
+writes, with Rubber Band, so the pitch stays), masking cuts and changes to a Compressor, Glue Compressor, Gate,
+EQ Eight, Utility or Limiter. Device pairs are labelled "a model of the device, not Live itself": hypnomix plays
+the track through its own model of the device. It cannot preview a device it has no model of (Saturator, Reverb,
+racks, plug-ins), a MIDI note moved by a nudge, or a return track: `ab.json` and the review page say why, and for
+those you apply that one fix into a new set and listen in Live. Clip previews are the track alone, without effects.
 
 The page shows every finding with its players and saves each click to `decisions.json` (with `--serve`, on this
 computer only). Without `--serve` it is a static `REVIEW.html`: download your decisions from it, then

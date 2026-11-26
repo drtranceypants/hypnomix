@@ -57,6 +57,7 @@ TRACK = f"""
       </PluginDevice>
       <StereoGain Id="8"><On><Manual Value="true" /></On><Gain><Manual Value="0.5" /></Gain></StereoGain>
       <Eq8 Id="9"><On><Manual Value="true" /></On></Eq8>
+      <Saturator Id="12"><On><Manual Value="true" /></On></Saturator>
       <MxDeviceAudioEffect Id="10"><On><Manual Value="true" /></On><UserName Value="Tool" /></MxDeviceAudioEffect>
       <AudioEffectGroupDevice Id="11"><On><Manual Value="true" /></On></AudioEffectGroupDevice>
     </Devices></DeviceChain>
@@ -119,7 +120,7 @@ class Chains(unittest.TestCase):
 
     def test_kinds_and_states(self):
         kinds = [d["kind"] for d in self.chain]
-        self.assertEqual(kinds, ["vst3", "au", "vst2", "stock", "live", "m4l", "rack"])
+        self.assertEqual(kinds, ["vst3", "au", "vst2", "stock", "stock", "live", "m4l", "rack"])
         v3, au, v2 = self.chain[:3]
         self.assertEqual((v3["name"], v3["label"], v3["on"]), ("Some EQ", "My EQ", True))
         self.assertEqual((v3["processor"], v3["controller"]), (PROC, CTRL))
@@ -136,7 +137,8 @@ class Chains(unittest.TestCase):
         self.assertEqual(lines["Some Reverb"], "off: skipped")
         self.assertEqual(lines["Old Clipper"], "VST2: not supported")
         self.assertEqual(lines["Utility (gain)"], "Live device: hypnomix model")
-        self.assertIn("no model", lines["Eq8"])
+        self.assertEqual(lines["EQ Eight"], "Live device: hypnomix model")
+        self.assertIn("no model", lines["Saturator"])
 
     def test_vst2_is_refused_with_a_reason(self):
         plan = P.prepare(self.chain[2], do_probe=False)
@@ -162,7 +164,8 @@ class WithoutPedalboard(unittest.TestCase):
         st = {d["device"]: d["status"] for d in r.report["Lead"]["devices"]}
         self.assertIn("pedalboard is not installed", st["Some EQ"])
         self.assertEqual(st["Some Reverb"], "skipped: switched off")
-        self.assertIn("no hypnomix model", st["Eq8"])
+        self.assertTrue(st["EQ Eight"].startswith("rendered"))
+        self.assertIn("no hypnomix model", st["Saturator"])
         self.assertIn("Max for Live", st["Tool"])
         self.assertTrue(st["Utility (gain)"].startswith("rendered"))
 

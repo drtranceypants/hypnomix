@@ -222,8 +222,8 @@ function itemHTML(f) {
   const d = dec[f.id] && dec[f.id].decision, ab = DATA.ab[f.id] || {};
   const fix = String(f.fix || '');
   const players = ab.a ? `<div class="ab"><div><label>A · now</label><audio controls preload="none" src="ab/${encodeURIComponent(ab.a)}"></audio></div>
-    <div><label>B · with the fix${ab.matched_db ? ' (level-matched ' + (ab.matched_db > 0 ? '+' : '') + ab.matched_db + ' dB)' : ''}</label><audio controls preload="none" src="ab/${encodeURIComponent(ab.b)}"></audio></div></div>` : '';
-  const note = ab.note ? `<p class="note">${esc(ab.note)}</p>` : ((f.applies === 'set' || f.applies === 'audio') && !ab.a ? '<p class="note">No preview yet: run <code>hypnomix ab</code>.</p>' : '');
+    <div><label>B · with the fix${ab.model ? ' · a model of the device, not Live itself' : ''}${ab.matched_db ? ' (level-matched ' + (ab.matched_db > 0 ? '+' : '') + ab.matched_db + ' dB)' : ''}</label><audio controls preload="none" src="ab/${encodeURIComponent(ab.b)}"></audio></div></div>` : '';
+  const note = ab.note ? `<p class="note">${esc(ab.note)}</p>` : ((f.applies === 'set' || f.applies === 'audio') && !ab.a ? '<p class="note">No preview yet: run <code>hypnomix ab</code>. It builds a before / after pair for clip fixes, tuning, timing nudges and the device changes it can model; for anything it cannot play offline it says why here, and then the way to hear it is to apply that one fix into a new set and listen.</p>' : '');
   const act = f.applies === 'answer' ? `<p class="note">A question, not a fix: tell your assistant the answer (recorded with <code>hypnomix fix DIR --answer NOTE</code>).</p>` : f.applies === 'info' ? '' : `<div class="act">
     ${['approve','skip','change'].map(x => `<button class="${x}${d === x ? ' on' : ''}" data-id="${esc(f.id)}" data-d="${x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join('')}
     <input placeholder="note (what to change, or why)" data-note="${esc(f.id)}" value="${esc(dec[f.id] && dec[f.id].note)}"></div>`;

@@ -36,6 +36,7 @@ SCALING = {
     "smooth": ("flags", lambda p: ["--amount", f"{max(0.01, 0.5 * p):.4f}", "--fade-ms", f"{max(1.0, 5.0 * p):.2f}"]),
     "timing": ("flags", lambda p: ["--strength", f"{p:.4f}"]),
     "duck": ("flags", lambda p: ["--depth", f"{max(0.1, 3.0 * p):.3f}"]),
+    "masking": ("flags", lambda p: ["--scale", f"{max(0.01, p):.4f}"]),
     "tune": ("flags", lambda p: ["--amount", f"{0.35 * p:.4f}"]),
     "distortion": ("blend", "each parameter moves this share of the way toward the proposed value"),
     "devices": ("blend", "each setting moves this share of the way toward the proposed value"),

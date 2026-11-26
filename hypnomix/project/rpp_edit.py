@@ -10,11 +10,15 @@ Every edit changes only the lines it names; everything else is written back exac
   add_take(clip, path, name, offset=0, rate=1)  ... or from `offset` in `path` at `rate` (a file rendered for the item)
   set_stretch(clip, marks)                   the active take's stretch markers [(take time, source seconds)], replaced
   rename(track, name)
+  add_reaeq_cut(track, freq, gain_db, q)     one ReaEQ bell band: a free band of a ReaEQ already on the track, else a
+                                             new ReaEQ at the end of its chain (see the section at the end)
 
 Volume envelopes: REAPER saves amplitudes (1.0 = 0 dB) and MULTIPLIES the envelope with the fader (checked in
 REAPER 7.86), so a new envelope starts at 1.0 and leaves the fader alone. Points are kept within +6 dB.
 """
+import base64
 import math
+import struct
 import uuid
 from pathlib import Path
 
@@ -466,3 +470,180 @@ def check(src, out, trims=False, moved=()):
     if opens != closes:
         errs.append(f"unbalanced chunks ({opens} open, {closes} close)")
     return errs
+
+
+# ---------------------------------------------------------------- ReaEQ: a bell cut on a track
+# What a ReaEQ looks like in a .rpp (read from a chunk REAPER 7.86 saved, three base64 parts):
+#   header   "reeq", 0xfeed5eee, 2 input pins, 2 output pins (each: a channel mask and a zero), then the state's
+#            byte count, 1 and 0x00100000
+#   state    record size (33), band count, then per band: type, enabled, frequency Hz, gain (amplitude, 1 = 0 dB) and
+#            bandwidth in octaves (three doubles), one flag byte; then a 32-byte trailer the plug-in keeps
+#   tail     00 00 10 00 00 00
+# Band types are the same numbers as REAPER's named config (docs/REAPER.md): 0 low shelf, 1 high shelf, 3 low pass,
+# 4 high pass, 5 all pass, 6 notch, 8 band (bell). ReaEQ takes five bands there; a sixth goes on a second ReaEQ.
+REAEQ_NAME = "ReaEQ (Cockos)"
+REAEQ_BANDS_MAX = 5
+REAEQ_BELL = 8
+REAEQ_HEAD = bytes.fromhex("71656572ee5eedfe" "02000000" "0100000000000000" "0200000000000000"
+                           "02000000" "0100000000000000" "0200000000000000")     # up to the state's byte count
+REAEQ_TRAILER = bytes.fromhex("0100000001000000000000000000f03f00000000000000000000000002000100")
+REAEQ_TAIL = bytes.fromhex("000010000000")
+REAEQ_CLASS = "1919247729<56535472656571726561657100000000>"       # the plug-in's id as REAPER writes it
+REAEQ_NAME_IN_PROJECT = "Masking cut (hypnomix)"
+_REC = 33
+
+
+def _q_to_octaves(q):
+    from hypnomix.engineer.chain_reaper import q_to_octaves
+    return q_to_octaves(q)
+
+
+class ReaEQ:
+    """The state of one ReaEQ chunk: bands as dicts, written back as the same three base64 parts."""
+
+    def __init__(self, vst):
+        self.vst = vst
+        lines = [c for c in vst.children if isinstance(c, rpp.Line)]
+        if len(lines) < 3:
+            raise ValueError("a ReaEQ with no saved state")
+        blob = b"".join(base64.b64decode(l.raw.strip()) for l in lines)
+        if blob[:8] != REAEQ_HEAD[:8]:
+            raise ValueError("not a ReaEQ state this reader knows")
+        n_in = struct.unpack_from("<i", blob, 8)[0]
+        off = 12 + 8 * n_in
+        n_out = struct.unpack_from("<i", blob, off)[0]
+        off += 4 + 8 * n_out
+        size, self.a, self.b = struct.unpack_from("<3i", blob, off)
+        self.head = blob[:off]
+        state = blob[off + 12:off + 12 + size]
+        self.tail = blob[off + 12 + size:]
+        rec, n = struct.unpack_from("<2i", state, 0)
+        if rec != _REC or 8 + n * rec + 32 != len(state):
+            raise ValueError("a ReaEQ state with a layout this reader does not know")
+        self.bands = []
+        for i in range(n):
+            o = 8 + rec * i
+            t, e = struct.unpack_from("<2i", state, o)
+            f, g, w = struct.unpack_from("<3d", state, o + 8)
+            self.bands.append(dict(type=t, on=bool(e), freq=f, gain=g, bw=w, flag=state[o + 32]))
+        self.trailer = state[8 + n * rec:]
+        self.indent = lines[0].indent
+        self.lines = lines
+
+    def gain_db(self, band):
+        return 20 * math.log10(band["gain"]) if band["gain"] > 0 else -120.0
+
+    def blob(self):
+        state = struct.pack("<2i", _REC, len(self.bands))
+        for b in self.bands:
+            state += struct.pack("<2i3d", b["type"], int(b["on"]), b["freq"], b["gain"], b["bw"]) + bytes([b["flag"]])
+        state += self.trailer
+        head = self.head + struct.pack("<3i", len(state), self.a, self.b)
+        return head, state, self.tail
+
+    def write(self):
+        """Replace the chunk's base64 lines: header, state (96 bytes a line), tail."""
+        head, state, tail = self.blob()
+        parts = [base64.b64encode(head).decode()]
+        parts += [base64.b64encode(state[k:k + 96]).decode() for k in range(0, len(state), 96)]
+        parts.append(base64.b64encode(tail).decode())
+        first = self.vst.children.index(self.lines[0])
+        for ln in self.lines:
+            self.vst.children.remove(ln)
+        for k, text in enumerate(parts):
+            self.vst.children.insert(first + k, rpp.Line([text], raw=self.indent + text, indent=self.indent))
+
+
+def _fresh_reaeq():
+    st = ReaEQ.__new__(ReaEQ)
+    st.head, st.a, st.b = REAEQ_HEAD, 1, 0x00100000
+    st.tail, st.bands, st.trailer = REAEQ_TAIL, [], REAEQ_TRAILER
+    return st
+
+
+def _is_reaeq(chunk):
+    return chunk.name == "VST" and len(chunk.tokens) > 1 and "reaeq" in str(chunk.tokens[1]).lower()
+
+
+def _cut_band(freq, gain_db, q):
+    return dict(type=REAEQ_BELL, on=True, freq=float(freq), gain=lin(gain_db), bw=round(_q_to_octaves(q), 3), flag=1)
+
+
+def reaeq_cut_state(chain, freq, gain_db):
+    """('there', band number) when a ReaEQ in the chain already makes about this cut, else None."""
+    for c in chain.chunks("VST"):
+        if not _is_reaeq(c):
+            continue
+        try:
+            st = ReaEQ(c)
+        except ValueError:
+            continue
+        for i, b in enumerate(st.bands):
+            if b["on"] and b["type"] in (2, 8) and b["freq"] > 0 and abs(math.log2(b["freq"] / freq)) <= 1 / 6 \
+                    and st.gain_db(b) <= 0.75 * gain_db:
+                return "there", i + 1
+    return None
+
+
+def add_reaeq_cut(track, freq, gain_db, q):
+    """A bell cut on the track's ReaEQ. Returns (message, None) or (None, why not).
+
+    A ReaEQ already in the track's chain is reused when it is on, not bypassed and has a free band: one that is
+    switched off, or a bell at 0 dB, or room for another band (five at most). Everything else in it stays exactly as
+    it was saved. Otherwise a new ReaEQ with just this band goes at the END of the chain."""
+    tr = track.native
+    if tr.get("FX", cast=int, default=1) == 0:
+        return None, f"'{track.name}' has its FX chain switched off in REAPER: switch it on, or add the cut by hand"
+    chain = tr.chunk("FXCHAIN")
+    band = _cut_band(freq, gain_db, q)
+    if chain is not None:
+        hit = reaeq_cut_state(chain, freq, gain_db)
+        if hit:
+            return None, f"already there: band {hit[1]} of the ReaEQ on '{track.name}' cuts about this"
+        bypass = None
+        for c in chain.children:
+            if isinstance(c, rpp.Line) and c.key == "BYPASS":
+                bypass = c
+                continue
+            if isinstance(c, rpp.Chunk) and _is_reaeq(c):
+                off = bypass is not None and len(bypass.tokens) > 1 and any(t == "1" for t in bypass.tokens[1:3])
+                bypass = None
+                if off:
+                    continue
+                try:
+                    st = ReaEQ(c)
+                except ValueError:
+                    continue
+                free = next((i for i, b in enumerate(st.bands) if not b["on"]), None)
+                if free is None:
+                    free = next((i for i, b in enumerate(st.bands) if b["type"] in (2, 8) and abs(st.gain_db(b)) < 0.05), None)
+                if free is not None:
+                    st.bands[free] = band
+                elif len(st.bands) < REAEQ_BANDS_MAX:
+                    st.bands.append(band)
+                    free = len(st.bands) - 1
+                else:
+                    continue
+                st.write()
+                return (f"{track.name}: ReaEQ band {free + 1}: {gain_db:+.1f} dB at {freq:.0f} Hz (Q {q:g}), "
+                        "an existing ReaEQ"), None
+    st = _fresh_reaeq()
+    st.bands = [band]
+    head, state, tail = st.blob()
+    ind = (chain.indent + "  ") if chain is not None else (tr.indent + "    ")
+    lines = [base64.b64encode(head).decode()] + [base64.b64encode(state[k:k + 96]).decode() for k in range(0, len(state), 96)] \
+        + [base64.b64encode(tail).decode()]
+    text = [f'{ind}BYPASS 0 0 0',
+            f'{ind}<VST "VST: {REAEQ_NAME}" reaeq.vst.dylib 0 "{REAEQ_NAME_IN_PROJECT}" {REAEQ_CLASS} ""']
+    text += [f"{ind}  {l}" for l in lines]
+    text += [f"{ind}>", f"{ind}FLOATPOS 0 0 0 0", f"{ind}FXID {guid()}", f"{ind}WAK 0 0"]
+    if chain is None:
+        body = "\n".join([f"{tr.indent}  <FXCHAIN", f"{ind}SHOW 0", f"{ind}LASTSEL 0", f"{ind}DOCKED 0"] + text + [f"{tr.indent}  >"])
+        new = rpp.parse(f"<X\n{body}\n>").children[0]
+        first_item = next((k for k, c in enumerate(tr.children) if isinstance(c, rpp.Chunk) and c.name == "ITEM"), None)
+        tr.add(new, at=first_item)
+        new.parent = tr
+    else:
+        for part in rpp.parse("<X\n" + "\n".join(text) + "\n>").children:
+            chain.add(part)
+    return f"{track.name}: new ReaEQ at the end of the chain: {gain_db:+.1f} dB at {freq:.0f} Hz (Q {q:g})", None

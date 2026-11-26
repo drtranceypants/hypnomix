@@ -55,7 +55,7 @@ HOME = Path.home()
 VST3_DIRS = [HOME / "Library/Audio/Plug-Ins/VST3", Path("/Library/Audio/Plug-Ins/VST3")]
 AU_DIRS = [HOME / "Library/Audio/Plug-Ins/Components", Path("/Library/Audio/Plug-Ins/Components")]
 STOCK = {"StereoGain": "Utility (gain)", "Compressor2": "Compressor", "GlueCompressor": "Glue Compressor",
-         "Limiter": "Limiter"}
+         "Limiter": "Limiter", "Eq8": "EQ Eight", "Gate": "Gate"}          # the Live devices hypnomix has a model of
 RACKS = {"AudioEffectGroupDevice", "InstrumentGroupDevice", "MidiEffectGroupDevice", "DrumGroupDevice"}
 JUCE_XML_MAGIC = 0x21324356          # JUCE AudioProcessor::copyXmlToBinary ("VC2!" little-endian)
 UNSET = 0.1234567687                 # the value Live writes for plug-in parameters it has no value for
@@ -489,7 +489,13 @@ def run_stock(info, y, sr, sidechain_audio):
         g = _comp_gain(det, sr, c) * 10 ** (outgain / 20)
         wet = float(c.get("dry_wet", 1.0) or 1.0)
         return y * (wet * g + (1 - wet))[:, None], note
-    return y, "no model"
+    if d.tag == "Eq8":
+        from hypnomix.session import devmodel
+        return devmodel.eq8(y, sr, d)
+    if d.tag == "Gate":
+        from hypnomix.session import devmodel
+        return devmodel.gate(y, sr, d)
+    return y, "no model: this device is not modelled"
 
 
 # ---------------------------------------------------------------- the set
@@ -497,11 +503,14 @@ class SetRenderer:
     """Renders tracks of one set through their chains, caching each track at each tap (pre FX, post FX, post
     mixer) so sidechain sources and group members are only rendered once."""
 
-    def __init__(self, als, sr=44100, no_stock=False, do_probe=True, log=None):
+    plugins = True
+
+    def __init__(self, als, sr=44100, no_stock=False, do_probe=True, log=None, plugins=True):
         from hypnomix.session import automation as aa
         from hypnomix.session import render as R
         self.R, self.aa = R, aa
         self.als, self.sr, self.no_stock, self.do_probe = str(als), sr, no_stock, do_probe
+        self.plugins = plugins                         # False: real plug-ins are left out, only hypnomix's models play
         self.root = aa.load(als).getroot()
         self.spb = 60.0 / float(R.v(self.root, ".//Tempo/Manual"))
         self.tracks = [t for t in self.root.find(".//Tracks")]
@@ -595,7 +604,7 @@ class SetRenderer:
         rows = self.report.setdefault(name, dict(type=t.tag, devices=[]))["devices"]
         rows.clear()
         for info in chain_of(t):
-            row = dict(device=info["name"], label=info["label"], kind=info["kind"])
+            row = dict(device=info["name"], label=info["label"], kind=info["kind"], id=info["el"].get("Id"), tag=info["tag"])
             rows.append(row)
             if not info["on"]:
                 row["status"] = "skipped: switched off"
@@ -612,9 +621,13 @@ class SetRenderer:
                         sc = self.tap(c["source_target"])
                         row["sidechain"] = c.get("source_name") or c["source_target"]
                 y, note = run_stock(info, y, self.sr, sc)
-                row["status"] = "rendered (hypnomix model)" + (f": {note}" if note else "")
+                row["status"] = ("skipped: " + note if note and note.startswith("no model") else
+                                 "rendered (hypnomix model)" + (f": {note}" if note else ""))
                 continue
             if info["kind"] in ("vst3", "au", "vst2"):
+                if not self.plugins:
+                    row["status"] = "skipped: real plug-ins are only played with --plugins"
+                    continue
                 if not have_pedalboard():
                     row["status"] = "skipped: pedalboard is not installed (" + extra_hint("plugins") + ")"
                     continue
@@ -711,18 +724,30 @@ def describe(info):
 DEVICE_TOOLS = ("devices", "duck", "sidechain", "distortion")
 
 
-def device_preview(f, orig, scan, sd, sr, hx, before_cache):
-    """(before, after, note) stereo arrays for one device-change finding, rendered through the track's chain
-    in the set as it is and in a temporary copy with only this fix applied; or (None, None, why)."""
-    if not have_pedalboard():
-        return None, None, "pedalboard is not installed"
+def devices_of(t):
+    d = t.find("./DeviceChain/DeviceChain/Devices")
+    return list(d) if d is not None else []
+
+
+def changed_devices(before_t, after_t):
+    """The devices of one track's chain (elements of the AFTER version) that a fix changed or added, by device Id."""
+    old = {d.get("Id"): ET.tostring(d) for d in devices_of(before_t)}
+    return [d for d in devices_of(after_t) if old.get(d.get("Id")) != ET.tostring(d)]
+
+
+def device_preview(f, orig, scan, sd, sr, hx, before_cache, plugins=False):
+    """A before / after pair for one device-change finding, from hypnomix's own models of Live's devices (and, with
+    `plugins`, real plug-ins through pedalboard): the track rendered through its chain in the set as it is and in a
+    temporary copy with only this fix applied. Returns dict(before, after, note, model) stereo arrays, or
+    dict(note=why) when it cannot be previewed honestly: the changed device has no model, is a plug-in that is not
+    played, is in a rack, or the fix changes something outside the track's own chain (a send, another track)."""
     track = f.get("host") if f["tool"] == "sidechain" else f.get("track")
-    sr_ = SetRenderer(orig, sr)
+    sr_ = SetRenderer(orig, sr, plugins=plugins)
     t = sr_.find(track or "")
     if t is None or t.tag not in ("AudioTrack", "GroupTrack"):
         kind = {"ReturnTrack": "a return track (fed by sends, which are not rendered)",
                 "MidiTrack": "a MIDI track (instruments are not rendered)"}.get(getattr(t, "tag", ""), "not an audio or group track")
-        return None, None, f"no preview: '{track}' is {kind}"
+        return dict(note=f"no preview: '{track}' is {kind}")
     tmp = orig.parent / f"{orig.stem} (ab preview {re.sub(r'[^A-Za-z0-9-]', '', f['id'])}, delete me).als"
     try:
         if f["tool"] == "sidechain":
@@ -735,22 +760,54 @@ def device_preview(f, orig, scan, sd, sr, hx, before_cache):
                 args += ["--mix", scan["mix"]]
         code, txt = hx(*args)
         if code != 0 or not tmp.exists():
-            return None, None, "preview failed: the fix could not be built (" + txt.strip()[-120:] + ")"
+            return dict(note="preview failed: the fix could not be built (" + txt.strip()[-120:] + ")")
+        after_r = SetRenderer(tmp, sr, plugins=plugins)
+        ta = after_r.find(track)
+        changed = changed_devices(t, ta) if ta is not None else []
+        if not changed:
+            return dict(note="no preview: this fix changes something outside the track's own device chain "
+                             "(a send, a return or another track), which is not rendered here")
+        infos = [device_info(d) for d in changed]
+        blocked = []
+        for i in infos:
+            if i["kind"] == "stock":
+                continue
+            if i["kind"] in ("vst3", "au") and plugins and have_pedalboard():
+                continue
+            why = {"vst3": "a plug-in: previews play real plug-ins only with --plugins (and pedalboard)",
+                   "au": "a plug-in: previews play real plug-ins only with --plugins (and pedalboard)",
+                   "vst2": "a VST2 plug-in, which is not supported", "m4l": "a Max for Live device, which is not rendered",
+                   "rack": "a rack, whose inside is not rendered",
+                   "live": "a Live device hypnomix has no model of"}.get(i["kind"], "not modelled")
+            blocked.append(f"'{i['name']}' is {why}")
+        if blocked:
+            return dict(note="no offline preview: " + "; ".join(blocked) + ". Apply this one fix into a new set "
+                                                                         "(fix --approve) and listen in Live.")
         if track not in before_cache:
             y = sr_.post_mixer(t)
             before_cache[track] = (y, [r["device"] for r in sr_.report.get(track, {}).get("devices", [])
                                        if r["status"].startswith("skipped") and not r["status"].endswith("switched off")])
-        after_r = SetRenderer(tmp, sr)
-        (a, skipped), b = before_cache[track], after_r.post_mixer(after_r.find(track))
+        b = after_r.post_mixer(ta)
+        for r in after_r.report.get(track, {}).get("devices", []):       # a changed device that was left out of the render
+            if r.get("id") in {d.get("Id") for d in changed} and r["status"].startswith("skipped"):
+                return dict(note=f"no offline preview: '{r['device']}' {r['status'].replace('skipped: ', 'was left out: ')}")
     finally:
         if tmp.exists():
             tmp.unlink()
+    a, skipped = before_cache[track]
     if a is None or b is None:
-        return None, None, "no preview: the track has no audio to render"
-    note = "the track through its plug-ins and modelled Live devices (no sends)"
-    if skipped:
-        note += "; not rendered: " + ", ".join(skipped[:4])
-    return a, b, note
+        return dict(note="no preview: the track has no audio to render")
+    names = sorted({STOCK[i["tag"]] for i in infos if i["kind"] == "stock"})
+    parts = []
+    if names:
+        parts.append("a MODEL of Live's " + ", ".join(names) + ", not Live itself")
+    if any(i["kind"] != "stock" for i in infos):
+        parts.append("the real plug-in played through pedalboard")
+    note = "the track through its chain (no sends): " + "; ".join(parts)
+    others = [x for x in skipped if x not in {i["name"] for i in infos}]
+    if others:
+        note += "; not rendered: " + ", ".join(others[:4])
+    return dict(before=a, after=b, note=note, model=bool(names))
 
 
 def loudest_at(y, sr, span):

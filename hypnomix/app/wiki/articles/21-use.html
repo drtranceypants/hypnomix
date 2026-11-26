@@ -23,7 +23,7 @@ teaser: Ten recipes that cover most sessions: mixing a folder of stems, masterin
 <span class="p">$</span> hypnomix scan "Song.rpp"                                          <span class="c"># or a REAPER project</span>
 <span class="p">$</span> hypnomix scan "Song/"                                             <span class="c"># or an Ardour session folder</span>
 <span class="p">$</span> hypnomix scan "raw takes/"                                        <span class="c"># or a folder from any DAW</span>
-<span class="p">$</span> hypnomix ab "hypnomix-out/scan/Song"                              <span class="c"># before/after clips, level-matched</span>
+<span class="p">$</span> hypnomix ab "hypnomix-out/scan/Song"                              <span class="c"># before/after clips, level-matched (clips, tuning, timing, device changes it can model)</span>
 <span class="p">$</span> hypnomix review "hypnomix-out/scan/Song" --serve                  <span class="c"># a page: play A, play B, click</span>
 <span class="p">$</span> hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).als"</pre></div>
     <p class="lead">Every check runs at once, nothing changes until you approve it, and approved changes land in <b>one new set</b> next to the original, which <code>fix</code> then checks and measures again to confirm each problem is gone. Close the set in Live before <code>fix</code>.</p>

@@ -73,8 +73,16 @@ hypnomix ab "hypnomix-out/scan/Song"               # level-matched before / afte
 hypnomix review "hypnomix-out/scan/Song" --serve   # a page with players and buttons
 ```
 
-Previews cover clip fixes, vocal tuning and repaired recordings. Timing nudges and device changes can't be
-previewed offline: apply that one fix into a new set and listen in Live.
+Previews cover clip fixes, vocal tuning, repaired recordings, timing nudges (the clip stretched along its warp
+markers, pitch kept), frequency-fight cuts, and changes to Live's Compressor, Glue Compressor, Gate, EQ Eight,
+Utility and Limiter. A device preview is **a model of the device, not Live itself**, and says so on the page. What
+can't be previewed offline (a Saturator or Reverb change, a plug-in, a return track, a MIDI note moved by a nudge)
+says why next to the item: apply that one fix into a new set and listen in Live.
+
+When `--deep` finds two parts fighting over a band, the fix is a bell cut on the part that should give way (2-3 dB
+by default, adjustable per decision with the amount, e.g. approve at 50%). Approved, it is written as one band on
+the track's own EQ in a new file: an EQ Eight in Live, a ReaEQ in REAPER. An EQ that is already there and has a
+free band is reused; nothing else on the track changes.
 
 ## 2. Review: one item at a time
 

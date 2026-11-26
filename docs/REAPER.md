@@ -88,6 +88,14 @@ New tools that should work in every DAW belong on the model (`project.load(path)
 - **ReaEQ**: 5 bands, no more (a second ReaEQ beyond that). Named config `BANDTYPEk`: 0 low shelf, 1 high shelf,
   3 low pass, 4 high pass, 5 all pass, 8 band (bell); `BANDENABLEDk`. Parameters by index `3k` freq, `3k+1` gain,
   `3k+2` bandwidth in OCTAVES (`Q → octaves = 2/ln2 · asinh(1/(2Q))`). Measured against the plan: within 0.04 dB.
+- **ReaEQ in a saved project** (read from a chunk REAPER 7.86 saved; `rpp_edit.ReaEQ`): three base64 parts. Header: the
+  plug-in id, two input and two output pins, then the state's byte count, 1 and 0x00100000. State: a record size (33),
+  the band count, then per band the type, enabled, frequency (Hz), gain (as an amplitude, 1 = 0 dB) and bandwidth (in
+  octaves) as doubles and one flag byte; then a 32-byte trailer. Tail: `00 00 10 00 00 00`. The band types are the
+  named-config numbers above. `masking` / `fix` write a cut as a bell (8) into a free band (switched off, or a bell at
+  0 dB) of a ReaEQ already on the track, else a new ReaEQ at the end of the chain with that one band; a ReaEQ stays
+  within five bands and the rest of its state is written back byte for byte. Checked by reading a REAPER-saved chunk
+  back and writing it again unchanged; the new chunk has not yet been opened in REAPER.
 - **ReaComp**: Threshold, Ratio (shows "inf" at the top), Attack, Release, RMS size, Knee.
 - **ReaLimit**: Threshold, Ceiling, Release. The level goes up by `ceiling - threshold`. It limits SAMPLE peaks: the
   true peak can be over the ceiling, so `--verify` checks the whole song and lowers the ceiling.

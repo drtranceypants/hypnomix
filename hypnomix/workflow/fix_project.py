@@ -59,6 +59,21 @@ def apply_edits(p, items, dec, log, failed, skipped):
             except ValueError as e:
                 skipped.append((f, str(e)))
             continue
+        if ed["op"] == "masking":            # a bell cut on the track that gives way: a ReaEQ band, the amount scales the dB
+            from hypnomix.workflow import oversight as O
+            share = max(O.amount_of(dec.get(f["id"])), 1) / 100.0
+            tr = next((t for t in p.tracks if t.name == f["track"]), None)
+            if tr is None or tr.kind != "audio":
+                skipped.append((f, f"no audio track called '{f['track']}' in this project (renamed since the scan?)"))
+                continue
+            eq = f["eq"]
+            msg, why = E.add_reaeq_cut(tr, eq["freq"], eq["gain_db"] * share, eq["q"])
+            if msg:
+                log.append(f"- {f['id']}: {msg}" + (f" ({share * 100:.0f}% of the proposed cut)" if share < 1 else ""))
+                done.append(f["id"])
+            else:
+                skipped.append((f, why))
+            continue
         if ed["op"] == "stack":
             n_ok = 0
             for m in ed["moves"]:
