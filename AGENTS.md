@@ -211,7 +211,10 @@ which spots to compare between the old and new set. When the review is finished,
     (length, intro and fade loudness, true peak). Lossy encodes overshoot: `translate` and `qc` check that.
 13. **Their audio stays on their machine.** `critique` (and the app's Listening) uploads a reduced mono copy
     of the mix to a cloud model: ask first, every time (`critique --estimate` says what would be sent and its
-    rough cost). Nothing else leaves the computer. Its notes are an opinion by ear: measurements win on numbers.
+    rough cost). `critique` asks y/N itself in a terminal and refuses elsewhere: never pass `--yes` until the person
+    has said yes to what `--estimate` printed (for a song over 12 minutes it prints a warning: pass `--minutes 12`
+    unless the person chose the whole file). Nothing else leaves the computer. Its notes are an opinion by ear:
+    measurements win on numbers.
 14. **Free tools only.** Code and docs here use free, open-source or the DAW's stock devices. Don't add or name
     paid plug-ins anywhere in this repo, and only propose plug-ins the person said they have.
 15. **Small steps.** One kind of change per pass, then listen. Stop and check in after a review round; don't

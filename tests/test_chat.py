@@ -1,5 +1,5 @@
 """The Assistant tab: both provider loops (with stand-in clients), the click-to-run gate, and the key's safety."""
-import json, os, stat, tempfile, time, types, unittest
+import copy, json, os, re, stat, subprocess, sys, tempfile, threading, time, types, unittest
 from pathlib import Path
 from unittest import mock
 
@@ -116,14 +116,15 @@ class Chat(unittest.TestCase):
                 self.beta = types.SimpleNamespace(messages=Msgs())
 
         CH.update_settings({"provider": "anthropic", "key": "sk-test-0000"})
+        CH.CHAT["usage"] = CH.new_usage()
         with mock.patch("anthropic.Anthropic", Fake):
             CH.send("what songs do I have?")
             wait_idle()
         self.assertEqual([i["text"] for i in CH.state()["items"] if i["kind"] == "assistant"], ["Checking.", "No songs yet."])
         u = CH.state()["usage"]
         self.assertEqual((u["calls"], u["input"], u["cache_write"], u["cache_read"], u["output"]), (2, 8050, 1000, 8000, 300))
-        # Opus 5.5: $4 in, $20 out, $0.20 cache read, 1 h cache write at 2x input
-        self.assertAlmostEqual(u["cost"], (8050 * 4 + 1000 * 8 + 8000 * 0.2 + 300 * 20) / 1e6)
+        # the default model, Sonnet 5.5: $2 in, $10 out, $0.10 cache read, 1 h cache write at 2x input
+        self.assertAlmostEqual(u["cost"], (8050 * 2 + 1000 * 4 + 8000 * 0.1 + 300 * 10) / 1e6)
 
     def test_review_comes_in_pages_never_cut_off(self):
         fs = [dict(id=f"edges-{i}", tool="edges" if i % 2 else "smooth", track="Vox", problem="p" * 900, fix="f")
@@ -396,6 +397,465 @@ class Gate(unittest.TestCase):
             ask.assert_not_called()
             run.assert_not_called()
             self.assertIn("no such command", CH.tool("run_hypnomix", {"command": "app", "args": []}))
+
+
+REPO = Path(CH.__file__).resolve().parents[2]
+
+
+class Prices(unittest.TestCase):
+    """One price table; the default model; the guide says what the table says."""
+
+    def setUp(self):
+        self.d = tempfile.TemporaryDirectory()
+        self.p = [mock.patch.object(CH, "CONF", Path(self.d.name) / "ai.json"),
+                  mock.patch.dict(os.environ, {"HYPNOMIX_APP_HOME": self.d.name})]
+        for p in self.p:
+            p.start()
+        CH.CHAT.update(usage=CH.new_usage(), items=[])
+
+    def tearDown(self):
+        for p in self.p:
+            p.stop()
+        self.d.cleanup()
+
+    def test_sonnet_is_the_default_everywhere_and_a_saved_model_is_kept(self):
+        from hypnomix.app import setup as SU
+        self.assertEqual(CH.PROVIDERS["anthropic"]["model"], "claude-sonnet-5-5")
+        self.assertEqual(SU.PROVIDER_GUIDES["anthropic"]["model"], CH.PROVIDERS["anthropic"]["model"])
+        self.assertEqual(CH.active()[2], "claude-sonnet-5-5")
+        view = {p["id"]: p for p in CH.settings_view()["providers"]}["anthropic"]
+        self.assertEqual((view["model"], view["default_model"]), ("claude-sonnet-5-5", "claude-sonnet-5-5"))
+        CH.update_settings({"provider": "anthropic", "model": "claude-opus-5-5"})      # saved: stays, whatever the default
+        self.assertEqual(CH.active()[2], "claude-opus-5-5")
+        view = {p["id"]: p for p in CH.settings_view()["providers"]}["anthropic"]
+        self.assertEqual((view["model"], view["default_model"]), ("claude-opus-5-5", "claude-sonnet-5-5"))
+        CH.update_settings({"provider": "anthropic", "model": "claude-some-typed-id"})  # any typed id works too
+        self.assertEqual(CH.active()[2], "claude-some-typed-id")
+        js = (REPO / "hypnomix/app/chat.js").read_text()
+        self.assertIn("(default)", js)                                    # the picker marks it
+        self.assertIn("claude-sonnet-5-5", (REPO / "docs/guides/09-setup-and-ai.md").read_text())
+
+    def test_the_prices_are_the_published_ones(self):
+        from hypnomix.core import prices as P
+        self.assertEqual(P.CLAUDE["claude-fable-5-2"], (8.0, 40.0, 0.20))
+        self.assertEqual(P.CLAUDE["claude-opus-5-5"], (4.0, 20.0, 0.20))
+        self.assertEqual(P.CLAUDE["claude-sonnet-5-5"], (2.0, 10.0, 0.10))
+        self.assertEqual(P.claude_price("claude-haiku-5-5", 100_000), (0.10, 0.50, 0.01))     # up to 100,000 tokens
+        self.assertEqual(P.claude_price("claude-haiku-5-5", 100_001), (0.50, 2.50, 0.05))     # beyond
+        self.assertIs(CH.CLAUDE_PRICES, P.CLAUDE)                                            # chat.py reads the same table
+        from hypnomix.app import setup as SU
+        for m in ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"):               # and so does Setup
+            self.assertEqual((SU.PRICES[m]["inp"], SU.PRICES[m]["out"], SU.PRICES[m]["cached"]), P.CLAUDE[m])
+        self.assertEqual((SU.PRICES["gemini-flash"]["inp"], SU.PRICES["gemini-flash"]["out"]), (P.GEMINI["inp"], P.GEMINI["out"]))
+
+    def test_the_cost_counter_knows_haikus_higher_tier(self):
+        CH.count("claude-haiku-5-5", "anthropic", 50_000, 1_000)                   # a 50k prompt: the ordinary price
+        self.assertAlmostEqual(CH.CHAT["usage"]["cost"], (50_000 * 0.10 + 1_000 * 0.50) / 1e6)
+        CH.CHAT["usage"] = CH.new_usage()
+        CH.count("claude-haiku-5-5", "anthropic", 10_000, 1_000, 0, 100_000)       # 110k in all: the higher one
+        self.assertAlmostEqual(CH.CHAT["usage"]["cost"], (10_000 * 0.50 + 100_000 * 0.05 + 1_000 * 2.50) / 1e6)
+        CH.CHAT["usage"] = CH.new_usage()
+        CH.count("claude-sonnet-5-5", "anthropic", 10_000, 1_000, 0, 200_000)      # other models have one price
+        self.assertAlmostEqual(CH.CHAT["usage"]["cost"], (10_000 * 2 + 200_000 * 0.10 + 1_000 * 10) / 1e6)
+
+    def test_gemini_shows_an_estimate_and_others_still_only_tokens(self):
+        CH.count("gemini-flash-latest", "gemini", 100_000, 2_000)
+        u = CH.CHAT["usage"]
+        self.assertTrue(u["priced"] and u["estimated"])
+        self.assertAlmostEqual(u["cost"], (100_000 * 0.75 + 2_000 * 3.75) / 1e6)
+        js = (REPO / "hypnomix/app/chat.js").read_text()
+        self.assertIn("an estimate", js)
+        CH.CHAT["usage"] = CH.new_usage()
+        CH.count("gpt-x", "openai", 1_000, 10)
+        self.assertFalse(CH.CHAT["usage"]["priced"])
+        CH.CHAT["usage"] = CH.new_usage()
+        CH.count("m", "ollama", 1_000, 10)
+        self.assertEqual(CH.CHAT["usage"]["cost"], 0.0)
+
+    def test_the_guide_says_what_the_table_says(self):
+        from hypnomix.core import prices as P
+        from hypnomix.app import setup as SU
+        guide = (REPO / "docs/guides/09-setup-and-ai.md").read_text()
+        self.assertIn(f"checked {P.CHECKED}", guide.replace("checked\n", "checked "))
+        for m, name in (("claude-haiku-5-5", "Haiku"), ("claude-sonnet-5-5", "Sonnet"), ("claude-opus-5-5", "Opus")):
+            i, o, _ = P.CLAUDE[m]
+            row = re.search(r"\| Claude %s 5\.5 \| (\$[\d.]+) / (\$[\d.]+) \| about (\$[\d.]+) \|" % name, guide)
+            self.assertIsNotNone(row, name)
+            self.assertEqual(row.groups(), (P.money(i), P.money(o), P.money(SU.song_cost(m)).replace("about ", "")), name)
+        g = re.search(r"\| Google Gemini Flash, paid tier \| (\$[\d.]+) / (\$[\d.]+) ", guide)
+        self.assertEqual(g.groups(), (P.money(P.GEMINI["inp"]), P.money(P.GEMINI["out"])))
+        # Haiku's higher tier, in one sentence, with the figure for a long song
+        hi = P.TIERS["claude-haiku-5-5"]
+        self.assertIn(f"{P.money(hi[1][0])} / {P.money(hi[1][1])}", guide)
+        self.assertIn(f"{hi[0]:,} tokens", guide)
+        self.assertIn(SU.money(SU.song_cost("claude-haiku-5-5", long=True)), guide)
+        self.assertGreater(SU.song_cost("claude-haiku-5-5", long=True), 4 * SU.song_cost("claude-haiku-5-5"))
+        self.assertEqual(SU.song_cost("claude-sonnet-5-5", long=True), SU.song_cost("claude-sonnet-5-5"))
+
+
+class Savings(unittest.TestCase):
+    """What a long conversation costs: old results cleared, a budget for each message, no going round in circles, a
+    smaller prompt, and tools that say when they have cut something."""
+
+    def setUp(self):
+        self.d = tempfile.TemporaryDirectory()
+        self.p = [mock.patch.object(CH, "CONF", Path(self.d.name) / "ai.json"),
+                  mock.patch.dict(os.environ, {"HYPNOMIX_APP_HOME": self.d.name})]
+        for p in self.p:
+            p.start()
+        CH.CHAT.update(items=[], history=[], provider=None, busy=False, pending=None, stop=False, usage=CH.new_usage(),
+                       msg={}, elided_at=0)
+
+    def tearDown(self):
+        for p in self.p:
+            p.stop()
+        self.d.cleanup()
+
+    # ------------------------------------------------------------ tools that say when they cut
+    def test_read_file_says_where_it_cut_and_offset_reads_on(self):
+        f = Path(self.d.name) / "REVIEW.md"
+        text = "".join(f"finding {i:05d} " + "x" * 90 + "\n" for i in range(1070))          # about 107,000 characters
+        f.write_text(text)
+        n = len(text)
+        first = CH.tool("read_file", {"path": str(f)})
+        self.assertIn(f"[cut at 30,000 of {n:,} characters: use read_review to page through findings, or read_file with offset=30000]", first)
+        self.assertIn("finding 00000", first)
+        rest, got, off = [], first, 0
+        while "[cut at" in got:                                             # reading on with the offsets it names
+            body = got.split("<file-data>\n", 1)[1].rsplit("\n</file-data>", 1)[0]
+            rest.append(body)
+            off = int(re.search(r"offset=(\d+)\]$", got).group(1))
+            got = CH.tool("read_file", {"path": str(f), "offset": off})
+        rest.append(got.split("<file-data>\n", 1)[1].rsplit("\n</file-data>", 1)[0])
+        self.assertEqual("".join(rest), text)                                 # nothing lost, nothing repeated
+        self.assertNotIn("[cut at", got)
+        self.assertIn("past the end", CH.tool("read_file", {"path": str(f), "offset": n + 5}))
+        self.assertEqual(CH.tool("read_file", {"path": str(f), "offset": -3}).split("\n", 1)[0], "<file-data>")
+        g = Path(self.d.name) / "notes.txt"                                     # another file: its own wording
+        g.write_text("y" * 31_000)
+        self.assertIn("[cut at 30,000 of 31,000 characters: call read_file again with offset=30000]", CH.tool("read_file", {"path": str(g)}))
+        self.assertIn("offset", [p for t in CH.TOOLS if t["name"] == "read_file" for p in t["params"]])
+
+    def test_list_songs_drops_whole_rows_never_half_an_object(self):
+        rows = [dict(dir=f"/s/scan/Song {i}", name=f"Song {i}", source="/m/" + "p" * 300, findings=i, decided=0, approved=0,
+                     when="2026-11-26 10:00", applied=False) for i in range(80)]
+        with mock.patch("hypnomix.app.server.scans", return_value=rows):
+            out = CH.tool("list_songs", {})
+        body, tail = out.split("\n</file-data>", 1)
+        shown = json.loads(body.split("<file-data>\n", 1)[1])                 # whole JSON, newest first
+        self.assertLessEqual(len(shown), CH.SONG_ROWS)
+        self.assertEqual([r["name"] for r in shown], [f"Song {i}" for i in range(len(shown))])
+        self.assertIn(f"…and {80 - len(shown)} more", tail)
+        with mock.patch("hypnomix.app.server.scans", return_value=rows[:3]):
+            self.assertNotIn("more", CH.tool("list_songs", {}))
+        with mock.patch("hypnomix.app.server.scans", return_value=[]):
+            self.assertEqual(CH.tool("list_songs", {}), CH.data("[]"))
+
+    # ------------------------------------------------------------ a smaller prompt
+    def test_the_prompt_leaves_out_the_code_sections_and_keeps_the_rules(self):
+        sp = CH.system_prompt()
+        for gone in ("## Changing the code", "## Keep the wiki current", "Never edit the website's wiki pages by hand"):
+            self.assertNotIn(gone, sp)
+        for kept in ("## The loop", "## Rules (they protect the person's work)", "Their audio stays on their machine",
+                     "Report honestly", "Free tools only", "## Commands by job"):
+            self.assertIn(kept, sp)
+        md = "# T\nintro\n## Keep\na\n## Changing the code\nb\n### sub\nc\n## Rules\nd\n## Keep the wiki current (every change)\ne\n"
+        self.assertEqual(CH.assistant_guide(md), "# T\nintro\n## Keep\na\n## Rules\nd\n")
+        full = (REPO / "AGENTS.md").read_text()
+        self.assertGreater(len(full) - len(CH.assistant_guide(full)), 3_500)      # about 1,100 tokens saved
+
+    def test_a_scan_is_told_to_go_where_the_app_looks(self):
+        d = next(t for t in CH.TOOLS if t["name"] == "run_hypnomix")["description"]
+        self.assertIn("--out <songs folder>/scan/<Song>", d)
+        self.assertIn(str(Path(self.d.name) / "scan") + "/<Song>", CH.system_prompt())
+        self.assertIn("run scan with --out", CH.tool("read_review", {"dir": str(Path(self.d.name) / "hypnomix-out" / "scan" / "X")}))
+
+    # ------------------------------------------------------------ eliding old results
+    @staticmethod
+    def claude_history(steps, size=12_000, with_thinking=True):
+        """A conversation of `steps` read_review rounds, as Claude's API wants it (thinking blocks and signatures too)."""
+        h = [{"role": "user", "content": "do a first pass on Song"}]
+        for i in range(steps):
+            blocks = []
+            if with_thinking:
+                blocks.append({"type": "thinking", "thinking": f"thought {i}", "signature": f"SIG{i}=="})
+            blocks += [{"type": "text", "text": f"Reading page {i + 1}."},
+                       {"type": "tool_use", "id": f"toolu_{i}", "name": "read_review",
+                        "input": {"dir": "/s/scan/Song", "page": i + 1, "tool": ""}}]
+            h.append({"role": "assistant", "content": blocks})
+            body = json.dumps(dict(dir="/s/scan/Song", total=400, shown=f"all: page {i + 1} of 10",
+                                   findings=[dict(id=f"edges-{i}-{k}", problem="p" * 280) for k in range(size // 300)]))
+            h.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": f"toolu_{i}", "content": CH.data(body)}]})
+        return h
+
+    def test_the_listen_stub_does_not_promise_free_for_a_different_question(self):
+        s = CH._stub("listen", {"audio": "/x/Song.wav"}, "notes")
+        self.assertIn("with the same question the saved notes come back free", s)
+
+    def test_old_results_become_one_line_stubs_and_the_newest_stay(self):
+        h = self.claude_history(30)
+        before = copy.deepcopy(h)
+        n = CH.elide_results(h)
+        self.assertEqual(n, 24)                                                    # 30 results, the newest 6 kept
+        results = [b for m in h if m["role"] == "user" and isinstance(m["content"], list) for b in m["content"]]
+        old, new = results[:-6], results[-6:]
+        self.assertTrue(all(b["content"].startswith(CH.STUB) and len(b["content"]) < 260 and "\n" not in b["content"] for b in old))
+        self.assertEqual(new, [b for m in before if m["role"] == "user" and isinstance(m["content"], list) for b in m["content"]][-6:])
+        self.assertIn("read_review page 2 of Song: 40 findings shown earlier; call read_review again if needed", old[1]["content"])
+        # everything else is exactly as it was: the person's words, the model's text, thinking blocks with their
+        # signatures, and its tool calls
+        for a, b in zip(before, h):
+            self.assertEqual(a["role"], b["role"])
+            if a["role"] == "assistant" or isinstance(a["content"], str):
+                self.assertEqual(a, b)
+            else:
+                self.assertEqual([x["tool_use_id"] for x in a["content"]], [x["tool_use_id"] for x in b["content"]])
+        self.assertEqual(CH.elide_results(h), 0)                                    # nothing is stubbed twice
+        # short results are not worth a stub
+        small = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": [{"type": "tool_use", "id": "a", "name": "list_songs", "input": {}}]},
+                 {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "a", "content": "[]"}]}] + self.claude_history(8)[1:]
+        self.assertEqual(CH.elide_results(small), 2)
+
+    def test_the_openai_format_is_elided_too(self):
+        h = [{"role": "user", "content": "hi"}]
+        for i in range(10):
+            h.append({"role": "assistant", "content": "", "tool_calls": [{"id": f"c{i}", "type": "function", "extra_content": {"google": {"thought_signature": f"S{i}"}},
+                                                                          "function": {"name": "read_file", "arguments": json.dumps({"path": f"/s/REVIEW {i}.md"})}}]})
+            h.append({"role": "tool", "tool_call_id": f"c{i}", "content": CH.data("z" * 20_000)})
+        before = copy.deepcopy(h)
+        self.assertEqual(CH.elide_results(h), 4)
+        self.assertIn("read_file REVIEW 0.md, 20,025 characters, shown earlier; call read_file again if needed", h[2]["content"])
+        for a, b in zip(before, h):
+            if a["role"] == "assistant":
+                self.assertEqual(a, b)                                              # thought signatures untouched
+        self.assertEqual(h[-1], before[-1])
+
+    def test_it_waits_for_the_threshold_and_then_clears_in_batches(self):
+        small = self.claude_history(3)
+        CH.CHAT["history"] = small
+        self.assertEqual(CH.tidy("claude-sonnet-5-5", "anthropic"), 0)            # small: nothing to do
+        self.assertEqual(CH.elide_threshold("claude-sonnet-5-5", "anthropic"), 50_000)
+        self.assertEqual(CH.elide_threshold("gemini-4-carbon", "gemini"), 60_000)
+        self.assertEqual(CH.elide_threshold("gpt-oss:20b", "ollama"), 8_000)       # a local model: a low default
+        self.assertLess(CH.elide_threshold("some-hosted", "openai"), 50_000)
+        # grown for real, one round at a time: only a few batches in 60 rounds, and never more than the newest six kept
+        CH.CHAT.update(history=[{"role": "user", "content": "go"}], elided_at=0, items=[])
+        full = self.claude_history(60)
+        batches = 0
+        for k in range(1, 61):
+            CH.CHAT["history"].extend(full[2 * k - 1:2 * k + 1])
+            batches += 1 if CH.tidy("claude-sonnet-5-5", "anthropic") else 0
+        self.assertTrue(2 <= batches <= 8, batches)
+        kept = [b for m in CH.CHAT["history"] if m["role"] == "user" and isinstance(m["content"], list) for b in m["content"]]
+        self.assertTrue(all(not b["content"].startswith(CH.STUB) for b in kept[-6:]))
+
+    def _claude_session(self, steps, *, tidy_on=True, result_chars=12_000):
+        """A scripted Claude conversation of `steps` read_review rounds; returns (what each request carried, the thinking
+        blocks the model sent)."""
+        seen, sent = [], []
+        use = lambda: types.SimpleNamespace(input_tokens=1000, cache_creation_input_tokens=0, cache_read_input_tokens=0, output_tokens=50)
+
+        class Msgs:
+            def create(self, **p):
+                seen.append(copy.deepcopy(p["messages"]))
+                i = len(seen) - 1
+                if i < steps:
+                    th = Blk(type="thinking", thinking=f"thought {i}", signature=f"SIG{i}==")
+                    sent.append(dict(th))
+                    return types.SimpleNamespace(stop_reason="tool_use", usage=use(), content=[
+                        th, Blk(type="text", text=f"page {i + 1}"),
+                        Blk(type="tool_use", id=f"toolu_{i}", name="read_review", input={"dir": "/s/scan/Song", "page": i + 1, "tool": ""})])
+                return types.SimpleNamespace(stop_reason="end_turn", usage=use(), content=[Blk(type="text", text="That is all.")])
+
+        class Fake:
+            def __init__(self, **k):
+                self.messages = Msgs()
+                self.beta = types.SimpleNamespace(messages=Msgs())
+
+        big = lambda name, inp: CH.data(json.dumps(dict(findings=[dict(id=f"e-{inp['page']}-{k}", problem="q" * 280)
+                                                                  for k in range(result_chars // 300)])))
+        CH.update_settings({"provider": "anthropic", "key": "sk-test-0000"})
+        with mock.patch("anthropic.Anthropic", Fake), mock.patch.object(CH, "tool", big), \
+                mock.patch.object(CH, "tidy", CH.tidy if tidy_on else (lambda *a: 0)):
+            CH.send("review the whole song")
+            wait_idle(20)
+        return seen, sent
+
+    def test_a_thirty_step_session_is_much_smaller_and_thinking_passes_through(self):
+        seen, sent = self._claude_session(30)
+        self.assertEqual(len(seen), 31)
+        chars = lambda msgs: sum(len(json.dumps(m)) for m in msgs)
+        with_elide = sum(chars(m) for m in seen)
+        last_before = chars(seen[-1])
+        # the thinking blocks the model sent are in the history exactly as they came, signatures included
+        hist_thinking = [b for m in CH.CHAT["history"] if m["role"] == "assistant" for b in m["content"] if b["type"] == "thinking"]
+        self.assertEqual(hist_thinking, sent)
+        for m in seen[-1]:                                                          # and in what was sent last
+            if m["role"] == "assistant":
+                self.assertEqual(m["content"][0]["signature"], hist_thinking[seen[-1].index(m) // 2]["signature"])
+        stubs = sum(1 for m in seen[-1] if m["role"] == "user" and isinstance(m["content"], list)
+                    for b in m["content"] if b["content"].startswith(CH.STUB))
+        self.assertGreaterEqual(stubs, 10)
+        tidied = [i for i in CH.CHAT["items"] if i["text"].startswith("Tidied")]
+        self.assertTrue(1 <= len(tidied) <= 3, len(tidied))                          # in batches, not every step
+        CH.CHAT.update(items=[], history=[], usage=CH.new_usage(), msg={}, elided_at=0)
+        seen2, _ = self._claude_session(30, tidy_on=False)
+        without = sum(chars(m) for m in seen2)
+        self.assertLess(with_elide, 0.75 * without)
+        self.assertLess(last_before, 0.5 * chars(seen2[-1]))
+        Savings.example = dict(requests=len(seen), last_without=chars(seen2[-1]) // 4, last_with=last_before // 4,
+                               total_without=without // 4, total_with=with_elide // 4, stubs=stubs, batches=len(tidied))
+
+    # ------------------------------------------------------------ a budget for each message, and going round in circles
+    def _openai_fake(self, replies):
+        n = {"i": 0}
+        call = lambda i, name, a: types.SimpleNamespace(id=i, function=types.SimpleNamespace(name=name, arguments=json.dumps(a)))
+
+        class Fake:
+            def __init__(self, **k):
+                self.chat = types.SimpleNamespace(completions=self)
+
+            def create(self, model, tools, messages):
+                n["i"] += 1
+                kind, arg, tokens = replies(n["i"])
+                m = (types.SimpleNamespace(content="done.", tool_calls=None) if kind == "end"
+                     else types.SimpleNamespace(content=None, tool_calls=[call(f"c{n['i']}", kind, arg)]))
+                return types.SimpleNamespace(choices=[types.SimpleNamespace(message=m)], usage=types.SimpleNamespace(
+                    prompt_tokens=tokens, completion_tokens=100, prompt_tokens_details=None))
+        return Fake, n
+
+    def _answer(self, yes_list):
+        def run():
+            for yes in yes_list:
+                for _ in range(300):
+                    p = CH.CHAT.get("pending")
+                    if p:
+                        CH.answer(p["id"], yes)
+                        break
+                    time.sleep(0.02)
+        t = threading.Thread(target=run)
+        t.start()
+        return t
+
+    def test_a_message_that_uses_too_much_stops_and_asks(self):
+        Fake, n = self._openai_fake(lambda i: ("read_review", {"dir": "/x", "page": i, "tool": ""}, 30_000) if i < 6 else ("end", None, 100))
+        CH.update_settings({"provider": "ollama", "model": "m", "budget_tokens": 50_000})
+        self.assertEqual(CH.settings_view()["budget_tokens"], 50_000)
+        t = self._answer([False])
+        with mock.patch("openai.OpenAI", Fake), mock.patch.object(CH, "tool", return_value="[]"):
+            CH.send("go")
+            wait_idle()
+        t.join()
+        self.assertEqual(n["i"], 2)                                                  # two requests, then the question
+        ask = [i for i in CH.CHAT["items"] if i.get("kind") == "ask"][0]
+        self.assertEqual(ask["what"], "budget")
+        self.assertIn("This has used about 60,000 tokens", ask["text"])
+        self.assertIn("keep going?", ask["text"])
+        self.assertEqual(ask["answer"], "declined")
+        self.assertIn("Stopped after about 60,000 tokens", CH.CHAT["items"][-1]["text"])
+        # a yes gives it another allowance and it carries on to its end
+        CH.CHAT.update(items=[], history=[], usage=CH.new_usage())
+        Fake, n = self._openai_fake(lambda i: ("read_review", {"dir": "/x", "page": i, "tool": ""}, 30_000) if i < 3 else ("end", None, 100))
+        t = self._answer([True])
+        with mock.patch("openai.OpenAI", Fake), mock.patch.object(CH, "tool", return_value="[]"):
+            CH.send("go again")
+            wait_idle()
+        t.join()
+        self.assertEqual(n["i"], 3)
+        self.assertEqual(CH.CHAT["items"][-1]["text"], "done.")
+        self.assertEqual([i["answer"] for i in CH.CHAT["items"] if i.get("kind") == "ask"], ["ran"])
+
+    def test_the_budget_is_a_setting_with_sane_limits(self):
+        self.assertEqual(CH.budget_limit({}), 400_000)
+        self.assertEqual(CH.budget_limit({"budget_tokens": 1}), CH.BUDGET_MIN)
+        CH.update_settings({"provider": "ollama", "budget_tokens": 120_000})
+        self.assertEqual(CH.budget_limit(), 120_000)
+        with self.assertRaises(ValueError):
+            CH.update_settings({"provider": "ollama", "budget_tokens": 5})
+        CH.update_settings({"provider": "ollama", "budget_tokens": ""})            # empty: back to the default
+        self.assertEqual(CH.budget_limit(), 400_000)
+
+    def test_the_same_call_three_times_in_a_row_stops(self):
+        Fake, n = self._openai_fake(lambda i: ("read_review", {"dir": "/x", "page": 1, "tool": ""}, 1_000) if i < 9 else ("end", None, 10))
+        CH.update_settings({"provider": "ollama", "model": "m"})
+        ran = []
+        with mock.patch("openai.OpenAI", Fake), mock.patch.object(CH, "tool", lambda name, inp: ran.append(name) or "[]"):
+            CH.send("go")
+            wait_idle()
+        self.assertEqual((n["i"], len(ran)), (3, 2))                               # the third is not run
+        self.assertIn("same arguments 3 times in a row", CH.CHAT["items"][-1]["text"])
+        calls = [tc["id"] for m in CH.CHAT["history"] if m.get("tool_calls") for tc in m["tool_calls"]]
+        answered = [m["tool_call_id"] for m in CH.CHAT["history"] if m["role"] == "tool"]
+        self.assertEqual(calls, answered)                                          # every call still has its answer
+        self.assertTrue(CH.CHAT["history"][-1]["content"].startswith("not run"))
+        # different arguments, or something in between, are not a loop
+        r = CH.Repeats()
+        self.assertEqual([r.again("a", {"x": 1}), r.again("a", {"x": 2}), r.again("a", {"x": 1}), r.again("a", {"x": 1}), r.again("b", {"x": 1})],
+                         [False] * 5)
+        self.assertEqual([r.again("b", {"x": 1}), r.again("b", {"x": 1})], [False, True])
+
+    def test_the_same_call_three_times_in_a_row_stops_with_claude_too(self):
+        n = {"i": 0}
+        use = types.SimpleNamespace(input_tokens=100, cache_creation_input_tokens=0, cache_read_input_tokens=0, output_tokens=5)
+
+        class Msgs:
+            def create(self, **p):
+                n["i"] += 1
+                return types.SimpleNamespace(stop_reason="tool_use", usage=use, content=[
+                    Blk(type="tool_use", id=f"t{n['i']}", name="list_songs", input={})])
+
+        class Fake:
+            def __init__(self, **k):
+                self.messages = Msgs()
+                self.beta = types.SimpleNamespace(messages=Msgs())
+        CH.update_settings({"provider": "anthropic", "key": "sk-test-0000"})
+        with mock.patch("anthropic.Anthropic", Fake), mock.patch.object(CH, "tool", return_value="[]"):
+            CH.send("go")
+            wait_idle()
+        self.assertEqual(n["i"], 3)
+        self.assertIn("same arguments", CH.CHAT["items"][-1]["text"])
+        last = CH.CHAT["history"][-1]["content"][0]
+        self.assertEqual((last["type"], last["tool_use_id"]), ("tool_result", "t3"))
+        self.assertTrue(last["content"].startswith("not run"))
+
+
+class StateFolder(unittest.TestCase):
+    """setup.json and update.json follow HYPNOMIX_HOME, like the rest of hypnomix (a test instance once overwrote a real file)."""
+
+    def _paths(self, **env):
+        e = {k: v for k, v in os.environ.items() if k != "HYPNOMIX_HOME"}
+        e.update({k: v for k, v in env.items() if v is not None})
+        code = ("from hypnomix.app import setup, update\n"
+                "from hypnomix.app import chat\nfrom hypnomix.ears import critique\n"
+                "print(setup.STATE); print(update.STATE); print(update.DIR); print(chat.CONF); print(critique.CONF)")
+        r = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=e, capture_output=True, text=True, check=True)
+        return [Path(x) for x in r.stdout.split("\n") if x]
+
+    def test_hypnomix_home_moves_the_setup_and_update_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d).resolve() / "my home"
+            got = self._paths(HYPNOMIX_HOME=str(home))
+            self.assertEqual(got, [home / "setup.json", home / "update.json", home / "updates",
+                                   home / "ai.json", home / "ai.json"])
+            fake = Path(d).resolve() / "fakehome"
+            got = self._paths(HOME=str(fake), HYPNOMIX_HOME=None)                    # not set: the default, under HOME
+            self.assertEqual(got, [fake / ".hypnomix" / "setup.json", fake / ".hypnomix" / "update.json",
+                                   fake / ".hypnomix" / "updates",
+                                   fake / ".hypnomix" / "ai.json", fake / ".hypnomix" / "ai.json"])
+
+    def test_the_saved_keys_file_is_unreadable_wherever_it_lives(self):
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d).resolve() / "h"
+            work = Path(d).resolve() / "w"
+            home.mkdir(); work.mkdir()
+            (home / "ai.json").write_text('{"keys": {"anthropic": "sk-ant-secret"}}')
+            code = ("from hypnomix.app import chat\n"
+                    f"print(chat.tool('read_file', {{'path': {str(home / 'ai.json')!r}}}))")
+            e = {k: v for k, v in os.environ.items()}
+            e.update(HYPNOMIX_HOME=str(home), HOME=str(Path(d) / "fk"), HYPNOMIX_APP_HOME=str(work))
+            r = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=e, capture_output=True, text=True)
+            self.assertIn("saved API keys", r.stdout + r.stderr)
+            self.assertNotIn("sk-ant-secret", r.stdout)
 
 
 if __name__ == "__main__":

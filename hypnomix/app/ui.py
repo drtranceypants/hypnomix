@@ -4,10 +4,10 @@ PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>hypnomix</title>
 <style>
-:root{--bg:#f6f4ef;--card:#fff;--ink:#1d1b18;--mute:#6b665e;--line:#e2ddd2;--hi:#b3261e;--med:#a8640a;--low:#3d6b4f;
---info:#5a6472;--ok:#2f6f4f;--skip:#7a756c;--chg:#8a5a00;--accent:#8e3f3f;--accent-ink:#fff}
+:root{--bg:#f6f4ef;--card:#fff;--ink:#1d1b18;--mute:#6b665e;--line:#e2ddd2;--hi:#b3261e;--med:#955808;--low:#3d6b4f;
+--info:#5a6472;--ok:#2f6f4f;--skip:#6e695f;--chg:#8a5a00;--accent:#8e3f3f;--accent-ink:#fff;--focus:#1a56c4}
 @media (prefers-color-scheme:dark){:root{--bg:#161513;--card:#201f1c;--ink:#ece8df;--mute:#a09a8e;--line:#34322d;
---hi:#ff8a80;--med:#f0b455;--low:#8fc7a4;--info:#9aa6b6;--ok:#7fd0a4;--skip:#a09a8e;--chg:#f0b455;--accent:#e9b4b0;--accent-ink:#1d1b18}}
+--hi:#ff8a80;--med:#f0b455;--low:#8fc7a4;--info:#9aa6b6;--ok:#7fd0a4;--skip:#a09a8e;--chg:#f0b455;--accent:#e9b4b0;--accent-ink:#1d1b18;--focus:#8ab4ff}}
 *{box-sizing:border-box}html,body{margin:0}body{background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}
 header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);display:flex;gap:4px;
 align-items:center;padding:8px 16px;flex-wrap:wrap}
@@ -20,9 +20,9 @@ button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);col
 padding:7px 13px;cursor:pointer}button:hover{border-color:var(--mute)}button:disabled{opacity:.5;cursor:default}
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
 button.tab{border-color:transparent;background:none}button.tab.on{border-color:var(--line);background:var(--card);font-weight:600}
-button.on.approve{background:var(--ok);color:#fff;border-color:var(--ok)}
-button.on.skip{background:var(--skip);color:#fff;border-color:var(--skip)}
-button.on.change{background:var(--chg);color:#fff;border-color:var(--chg)}
+button.on.approve{background:var(--ok);color:var(--accent-ink);border-color:var(--ok)}
+button.on.skip{background:var(--skip);color:var(--accent-ink);border-color:var(--skip)}
+button.on.change{background:var(--chg);color:var(--accent-ink);border-color:var(--chg)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
 .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}.row label{min-width:150px;color:var(--mute)}
 input[type=text],select,textarea{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;
@@ -30,9 +30,10 @@ background:var(--bg);color:var(--ink);flex:1;min-width:200px}
 .path{flex:1;min-width:200px;color:var(--mute);overflow-wrap:anywhere;font-size:.92rem}
 .note{font-size:.88rem;color:var(--mute);margin:6px 0 0}.warn{border-left:3px solid var(--hi);padding:4px 12px;margin:0 0 14px}
 .prefs{border-left:3px solid var(--accent);padding:4px 12px;margin:0 0 14px;color:var(--mute)}
-.bar{position:sticky;top:49px;background:var(--bg);padding:10px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;
+.bar{position:sticky;top:var(--hh,49px);background:var(--bg);padding:10px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;
 flex-wrap:wrap;align-items:center;z-index:2}.bar .count{margin-right:auto;font-variant-numeric:tabular-nums}
-.item.done{opacity:.72}.head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.item{scroll-margin-top:calc(var(--hh,49px) + 110px);scroll-margin-bottom:24px}.item.st-approve,.item.st-dflt{border-left:5px solid var(--ok)}.item.st-skip{border-left:5px solid var(--skip)}.item.st-change{border-left:5px solid var(--chg)}
+.item.cur{box-shadow:0 0 0 2px var(--accent)}.head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}h4.title{margin:0;font-size:1rem}
 .sev{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
 .sev.high{color:var(--hi)}.sev.medium{color:var(--med)}.sev.low{color:var(--low)}.sev.info{color:var(--info)}
 .tag{font-size:.75rem;border:1px solid var(--line);border-radius:99px;padding:1px 8px;color:var(--mute)}
@@ -43,7 +44,7 @@ overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;margin
 pre.fix{max-height:220px;background:var(--bg)}
 .ab{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0 0}.ab label{font-size:.8rem;color:var(--mute);display:block}
 .ab audio{width:100%}.act{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 0}.act input{flex:1;min-width:160px}
-.song{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.song .name{font-weight:600;margin-right:auto}
+.song{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.song .name{font-weight:600;margin-right:auto}.song .btns{white-space:nowrap}
 .meter{display:inline-block;height:8px;background:var(--line);width:120px;border-radius:4px;overflow:hidden;vertical-align:middle}
 .meter i{display:block;height:100%;background:var(--ok,#5a9)}.bands{display:inline-flex;gap:2px;align-items:flex-end;height:22px;vertical-align:middle}
 .bands i{display:block;width:7px;background:var(--mute)}.num{font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -53,14 +54,43 @@ td code{font:13px ui-monospace,monospace}tr.cmd{cursor:pointer}tr.cmd:hover td{b
 .grp td{font-weight:700;border-top:2px solid var(--line);padding-top:14px}
 .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;
 animation:sp 1s linear infinite;vertical-align:-1px;margin-right:6px}@keyframes sp{to{transform:rotate(360deg)}}
-@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.tag.dflt{border-color:var(--ok);color:var(--ok)}.tag.off{border-style:dashed}
+button.on.dflt{background:var(--ok);color:var(--accent-ink);border-color:var(--ok)}
+.banner{border-left:4px solid var(--med);background:var(--card);border-radius:6px;padding:8px 14px;margin:12px 0}
+.banner.bad{border-left-color:var(--hi)}.banner h2{margin:4px 0 6px}.banner p{margin:6px 0}
+.bad{color:var(--hi)}.ok{color:var(--ok)}.res h2{margin:22px 0 6px}.res .card b{display:block;margin-bottom:4px}
+ul.plain{margin:6px 0;padding-left:20px}ul.plain li{margin:3px 0}.fileline{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:6px 0}
+.fileline .nm{font-weight:600;overflow-wrap:anywhere}.fileline .note{margin:0}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:4px}
+.item:focus{outline:none}.item:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+::placeholder{color:var(--mute);opacity:1}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.skiplink{position:absolute;left:8px;top:-60px;background:var(--card);border:2px solid var(--focus);padding:6px 12px;border-radius:8px;z-index:20;color:var(--ink)}.skiplink:focus{top:8px}
+#msg{position:sticky;top:var(--hh,49px);z-index:6;margin:0 auto;max-width:900px;padding:0 16px}#msg .banner{display:flex;gap:12px;align-items:baseline;margin:8px 0;background:var(--card);box-shadow:0 2px 8px rgba(0,0,0,.15)}#msg .banner span{flex:1;overflow-wrap:anywhere}
+kbd{font:12px ui-monospace,monospace;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 5px;background:var(--card)}
+table.keys td{border-top:0;padding:2px 10px 2px 0}.helpbox{margin:8px 0}
+.filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0}.chip{border-radius:99px;padding:3px 12px}.chip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.filters select{flex:0 0 auto;min-width:0;padding:3px 8px}
+h2 .cnt,h3 .cnt{font-size:.8rem;font-weight:400}h3.sevhead{font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;margin:18px 0 4px}
+h3.sevhead.high{color:var(--hi)}h3.sevhead.medium{color:var(--med)}h3.sevhead.low{color:var(--low)}h3.sevhead.info{color:var(--info)}
+details.byhand{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 16px;margin:22px 0}details.byhand summary{cursor:pointer;font-weight:600}
+.tag.warnp{border-color:var(--med);color:var(--med)}.tag.heard{border-color:var(--ok);color:var(--ok)}
+.ab1{margin:12px 0 0}.abtop{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 6px}.ab1 audio{width:100%}
+.abbtn.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.rvmodal{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:30;display:flex;align-items:center;justify-content:center;padding:16px}
+.rvbox{max-width:760px;width:100%;max-height:85vh;display:flex;flex-direction:column;margin:0}.rvbox h2{margin:0 0 8px}.rvbody{overflow:auto;flex:1;min-height:0}
+.tbl{overflow:auto;max-height:42vh;border:1px solid var(--line);border-radius:8px;margin:8px 0}.tbl th{text-align:left;font-size:.8rem;padding:4px 8px;position:sticky;top:0;background:var(--card)}.tbl td{font-size:.88rem}
+.jprog{margin:6px 0 14px}.jprog .big{font-weight:600}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}*{scroll-behavior:auto!important;transition:none!important}}
 @media (max-width:560px){.ab{grid-template-columns:1fr}.row label{min-width:100%}}
 </style></head><body>
+<a class="skiplink" href="#main">Skip to the page</a>
 <header><span class="brand">hypnomix</span>
-<nav><button class="tab" data-view="teach" title="Teacher: make a song from scratch, step by step, in your DAW">Teacher</button><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
+<nav aria-label="Main"><button class="tab" data-view="teach" title="Teacher: make a song from scratch, step by step, in your DAW">Teacher</button><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
 <button class="tab" data-view="chat">Assistant</button><button class="tab" data-view="wiki">Wiki</button><button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button><button class="tab" data-setup title="How you work with hypnomix: AI provider, keys, your DAW, teacher mode">Setup</button></nav>
-<span class="live" id="live"></span></header>
-<main id="main"></main>
+<span class="live" id="live" role="status"></span></header>
+<div id="msg" role="alert"></div><div id="sr" class="sr" role="status" aria-live="polite"></div>
+<main id="main" tabindex="-1"></main>
 <script>
 const TOKEN = "__TOKEN__";
 const $ = s => document.querySelector(s);
@@ -68,31 +98,68 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;
 const get = (u) => fetch(u).then(r => r.json());
 const post = (u, body) => fetch(u, {method:'POST', headers:{'Content-Type':'application/json','X-Hypnomix':TOKEN},
   body: JSON.stringify(body || {})}).then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
-let S = {view:'home', state:null, form:{source:'', mix:'', key:'', like:'', deep:false, devices:true}, review:null, logAt:0, logLines:[], tool:null};
+// What the browser remembers for this person (it can come back empty, or refuse: nothing depends on it).
+const LS = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private window or blocked storage */ } },
+};
+const FORM0 = {source:'', mix:'', key:'', like:'', deep:false, devices:true};
+const saved = LS.get('hx.form', {});
+let S = {view:'home', state:null, form:Object.assign({}, FORM0, ['source', 'mix', 'key', 'like'].reduce((o, k) => (typeof saved[k] === 'string' ? Object.assign(o, {[k]: saved[k]}) : o), {}),
+    {deep: !!saved.deep, devices: saved.devices !== false}), review:null, logAt:0, logLines:[], tool:null,
+  outName:{}, histOpen:false, hist:null, result:null, jobInfo:null, commands:[], cmdRev:''};
+const saveForm = () => LS.set('hx.form', S.form);
+// An error or a notice is shown in the page, where a screen reader reads it too: never in a pop-up that takes the page away.
+function showMsg(text, kind) {
+  const m = document.getElementById('msg'); if (!m) return;
+  m.innerHTML = text ? `<div class="banner${kind === 'ok' ? '' : ' bad'}"><span>${esc(text)}</span><button type="button" id="msgx" aria-label="Dismiss this message">Dismiss</button></div>` : '';
+  if (text && kind === 'ok') setTimeout(() => { if (m.textContent.includes(text)) m.innerHTML = ''; }, 6000);
+}
+window.alert = t => showMsg(t);
+document.addEventListener('click', e => { if (e.target.closest('#msgx')) showMsg(''); });
 
 __OVJS__
-function go(view, extra) { Object.assign(S, extra || {}); S.view = view; render(); window.scrollTo(0, 0); }
+function go(view, extra) { Object.assign(S, extra || {}); S.view = view; saveNav(); render(); window.scrollTo(0, 0); }
+// Where the person was, so a refresh reopens the same tab and the same review (a job or a result is not reopened).
+function saveNav() { LS.set('hx.nav', {view: ['job', 'result'].includes(S.view) ? 'home' : S.view, dir: S.view === 'review' && S.review ? S.review.dir : ''}); }
 document.addEventListener('click', e => { const t = e.target.closest('button[data-view]'); if (t) go(t.dataset.view); });
 
 async function refresh() {
   try { S.state = await get('/api/state'); } catch (e) { return; }
-  $('#live').innerHTML = S.state.live ? '<b>●</b> Live device connected' : 'Live device not connected';
+  if (S.state.commands_rev !== S.cmdRev) {                      // the command list is sent once, and again only if it changed
+    S.cmdRev = S.state.commands_rev;
+    get('/api/commands').then(r => { S.commands = r.commands || []; if (S.view === 'tools') render(); }).catch(() => { S.cmdRev = ''; });
+  }
+  const lv = $('#live'), lt = S.state.live ? '<b aria-hidden="true">●</b> Live device connected' : 'Live device not connected';
+  if (lv.dataset.t !== lt) { lv.dataset.t = lt; lv.innerHTML = lt; }            // only when it changes: a screen reader is not told every second
   $('#jobtab').hidden = S.state.job.status === 'idle';
   document.querySelectorAll('button.tab').forEach(b => b.classList.toggle('on', b.dataset.view === S.view || (S.view === 'review' && b.dataset.view === 'home')));
 }
 
 // ---------------------------------------------------------------- home
+const KIND_WORD = {als:'Live set', rpp:'REAPER project', ardour:'Ardour session', folder:'folder of recordings'};
+function songCard(s) {
+  const tags = [];
+  if (s.damaged) tags.push(`<span class="tag prot">${s.damaged === 'decisions.json' ? "this song's decisions file is damaged" : "this scan's results file is damaged"}</span>`);
+  if (s.incomplete) tags.push(`<span class="tag">${s.running ? 'scanning now…' : 'the scan did not finish'}</span>`);
+  if (s.stale) tags.push('<span class="tag prot">saved after the scan</span>');
+  if (s.source_missing) tags.push('<span class="tag prot">original not found</span>');
+  const counts = s.incomplete ? '' : `${s.findings} to review · ${s.decided} decided · ${s.approved} approved${s.on_default ? ' · ' + s.on_default + ' on by default' : ''}${s.applied ? ' · applied' : ''} · `;
+  return `<div class="card song"><div class="name">${esc(s.name)} ${tags.join(' ')}
+    <div class="note">${esc(KIND_WORD[s.kind] || '')}${s.same_name && s.parent ? ' in ' + esc(s.parent) : ''}</div></div>
+    <span class="note">${counts}${esc(s.when)}</span>
+    <span class="btns">${s.incomplete ? '' : `<button data-open="${esc(s.dir)}">Open review</button>`}${s.can_rescan && !s.running ? ` <button data-rescan="${esc(s.dir)}" data-kind="${esc(s.kind)}" title="Run the scan again on the song as it is now">Re-scan</button>` : ''}</span></div>`;
+}
 function homeView() {
   const st = S.state, f = S.form;
-  const songs = st.scans.map(s => `<div class="card song"><span class="name">${esc(s.name)}</span>
-    <span class="note">${s.findings} to review · ${s.decided} decided · ${s.approved} approved${s.applied ? ' · applied' : ''} · ${esc(s.when)}</span>
-    <button data-open="${esc(s.dir)}">Open review</button></div>`).join('') || '<p class="note">No songs yet.</p>';
+  const songs = st.scans.map(songCard).join('') || `<p class="note">No songs yet.</p>${st.demo ? '<p><button data-demo="1">Try it on a demo song</button> <span class="note">makes a short song with problems planted in it, then scans it: nothing of yours is touched</span></p>' : ''}`;
   return `<h1>First pass on a song</h1>
   <p class="sub">Every check runs at once. Nothing is changed. You then hear each proposed fix and decide.</p>
   ${st.unanswered ? `<div class="prefs">${st.unanswered} preference question(s) not answered yet. <button data-view="prefs">Answer them</button> so the review starts from how you work.</div>` : ''}
   <div class="card">
-    <div class="row"><label>Song</label><span class="path">${esc(f.source) || 'a Live set, or a folder of recordings or stems from any DAW'}</span>
-      <button data-pick="source:set">Choose set…</button><button data-pick="source:folder">Choose folder…</button></div>
+    <div class="row"><label>Song</label><span class="path">${esc(f.source) || 'a Live set (.als), REAPER project (.rpp), Ardour session (.ardour), or a folder of recordings or stems from any DAW'}</span>
+      <button data-pick="source:song">Choose project…</button><button data-pick="source:folder">Choose folder…</button></div>
+    <div class="row"><label for="src">Path</label><input type="text" id="src" placeholder="or paste the path here" value="${esc(f.source)}"></div>
     <div class="row"><label>Bounce of the mix <span class="note">(optional)</span></label><span class="path">${esc(f.mix) || 'adds loudness, release checks and the key'}</span>
       <button data-pick="mix:audio">Choose…</button>${f.mix ? '<button data-clear="mix">Clear</button>' : ''}</div>
     <div class="row"><label>A song you love <span class="note">(optional)</span></label><span class="path">${esc(f.like) || 'compare tone, dynamics and width with it'}</span>
@@ -100,103 +167,101 @@ function homeView() {
     <div class="row"><label for="key">Key <span class="note">(optional)</span></label><input type="text" id="key" placeholder='e.g. F# major: needed before any vocal tuning is applied' value="${esc(f.key)}"></div>
     <div class="row"><label for="deep">Deep scan</label><input type="checkbox" id="deep" ${f.deep ? 'checked' : ''}> <span class="note">also render every track: frequency fights and mic phase (slower)</span></div>
     ${/\.als$/i.test(f.source || '') ? `<div class="row"><label for="devices">Live devices</label><input type="checkbox" id="devices" ${f.devices ? 'checked' : ''}> <span class="note">also write a copy of the set with the hypnomix devices on every track (probes, the review device, HypnomixMain on Main), next to yours</span></div>` : ''}
-    ${!st.mac ? `<div class="row"><label for="src">Path</label><input type="text" id="src" placeholder="paste the path of a set or folder" value="${esc(f.source)}"></div>` : ''}
-    <div class="row"><button class="primary" id="scan" ${f.source ? '' : 'disabled'}>Start the first pass</button>
-      <span class="note">Read-only. Close nothing: your set is not touched${/\.als$/i.test(f.source || '') && f.devices ? ' (the devices go into a new copy)' : ''}.</span></div>
+    <div class="row"><button class="primary" id="scan">Start the first pass</button>
+      <span class="note">Read-only. Close nothing: your project is not touched${/\.als$/i.test(f.source || '') && f.devices ? ' (the devices go into a new copy)' : ''}. A song you scanned before is scanned again in its own folder.</span></div>
   </div>
   <h2>Your songs</h2>${songs}
   <p class="note">Kept in ${esc(st.home)}</p>`;
 }
 
 // ---------------------------------------------------------------- activity
+function fileLines(files) {
+  return (files || []).map(f => `<div class="fileline"><span class="nm">${esc(f.name)}</span><span class="note">in ${esc(f.folder)}${f.what ? ' · ' + esc(f.what) : ''}</span><button data-reveal="${esc(f.path)}">Show in folder</button></div>`).join('');
+}
+function secWords(n) { if (n < 1) return 'under a second'; n = Math.max(0, Math.round(n)); return n < 90 ? n + ' s' : Math.floor(n / 60) + ' min' + (n % 60 ? ' ' + (n % 60) + ' s' : ''); }
+// How far a running job has got, in the command's own counts: never a percentage, and an estimate only from a past run's times.
+function progressHTML(p) {
+  if (!p) return '';
+  const left = (p.eta != null && !p.over) ? ` · about ${secWords(p.eta)} left (last time it took ${secWords(p.last_total)})`
+    : (p.eta != null && p.over) ? ` · taking longer than last time (${secWords(p.last_total)})` : '';
+  if (p.kind === 'scan') {
+    const names = (p.pending || []).map(g => esc(g) + (p.last && p.last[g] != null ? ` (last time ${secWords(p.last[g])})` : ''));
+    const first = p.eta == null && p.total ? ' · no estimate: there is no earlier scan of this song to compare with' : '';
+    return `<div class="big">${p.total != null ? `${p.done} of ${p.total} checks done` : 'Starting the checks'} · ${secWords(p.elapsed)} so far${left}${first}</div>
+      ${names.length ? `<div class="note">Still running: ${names.join(', ')}</div>` : ''}`;
+  }
+  if (p.kind === 'ab') return `<div class="big">Building the before / after clips: ${p.done} step${p.done === 1 ? '' : 's'} so far · ${secWords(p.elapsed)} so far${left}</div>`;
+  if (p.kind === 'fix') return `<div class="big">${p.total && p.done <= p.total ? `${p.done} of ${p.total} tools done` : `${p.done} step${p.done === 1 ? '' : 's'} done`} · ${secWords(p.elapsed)} so far</div>`;
+  return `<div class="big">${secWords(p.since_start)} so far</div>`;
+}
 function jobView() {
-  const j = S.state.job;
+  const j = S.state.job, info = S.jobInfo && S.jobInfo.id === j.id ? S.jobInfo : {};
   const running = j.status === 'running';
+  const sub = running ? `<span class="spin" aria-hidden="true"></span>${esc(j.step)}…` : j.status === 'done' ? 'Finished.' : j.status === 'failed' ? (info.stopped ? 'Stopped: you pressed Stop.' : 'Stopped with an error.') : '';
+  const why = !running && j.status === 'failed' && info.reason && !info.stopped ? `<div class="banner bad"><b>Why it stopped:</b> ${esc(info.reason)}<br><span class="note">The last lines of the log are below.</span></div>` : '';
+  const files = !running && info.files && info.files.length ? `<h2>Files made</h2>${fileLines(info.files)}` : '';
+  const text = !running && info.text ? `<h2>The handoff list</h2><pre>${esc(info.text)}</pre>` : '';
+  const back = !running && j.dir ? `<button class="primary" data-open="${esc(j.dir)}">${['fix', 'undo', 'handoff'].includes(j.kind) ? 'Back to the review' : 'Open the review'}</button>` : '';
   return `<h1>${esc(j.title || 'Activity')}</h1>
-  <p class="sub">${running ? `<span class="spin"></span>${esc(j.step)}…` : j.status === 'done' ? 'Finished.' : j.status === 'failed' ? 'Stopped with an error: the last lines say why.' : ''}</p>
-  <div class="row">${running ? '<button id="stop">Stop</button>' : ''}
-    ${!running && j.dir ? `<button class="primary" data-open="${esc(j.dir)}">${j.kind === 'fix' ? 'Back to the review' : 'Open the review'}</button>` : ''}</div>
-  <pre id="log" aria-live="polite">${esc(S.logLines.join('\n'))}</pre>`;
+  <p class="sub" id="jobsub" role="status" aria-live="polite">${sub}</p><div class="jprog" id="jobprog" role="status" aria-live="polite">${running ? progressHTML(S.progress) : ''}</div>${why}
+  <div class="row">${running ? '<button id="stop">Stop</button>' : ''}${back}</div>${files}${text}
+  <pre id="log" role="log" aria-label="What the command printed" aria-live="off" tabindex="0">${esc(S.logLines.join('\n'))}</pre>`;
 }
 async function pollJob() {
   if (!S.state || S.state.job.status === 'idle') return;
   const j = await get('/api/job?since=' + S.logAt);
   if (j.id !== S.jobId) { S.jobId = j.id; S.logLines = []; S.logAt = 0; return; }
+  S.progress = j.progress;
+  const pe = $('#jobprog'); if (pe && j.status === 'running') { const h = progressHTML(j.progress); if (pe.dataset.h !== h) { pe.dataset.h = h; pe.innerHTML = h; } }
   if (j.log.length) { S.logLines.push(...j.log); S.logAt = j.total; const el = $('#log'); if (el) { el.textContent = S.logLines.join('\n'); el.scrollTop = el.scrollHeight; } }
+  if (j.status !== 'running' && (!S.jobInfo || S.jobInfo.id !== j.id) && S.lastStatus !== 'running') {   // a job that ended before this page looked: take its reason from the app
+    S.jobInfo = j; if (S.view === 'job') render();
+  }
   if (S.lastStatus === 'running' && j.status !== 'running') {
+    S.jobInfo = j;
     await refresh();
-    if (S.view === 'job') { if (j.status === 'done' && j.dir && j.kind !== 'tool') openReview(j.dir); else render(); }
+    if (S.view === 'job') {
+      if (j.kind === 'fix' && j.dir) await showResult(j.dir);
+      else if (j.status === 'done' && j.dir && !['tool', 'handoff', 'undo'].includes(j.kind)) openReview(j.dir).catch(e => { showMsg(e.message); render(); });
+      else render();
+    }
   }
   S.lastStatus = j.status;
 }
+function startJob() { S.logLines = []; S.logAt = 0; S.lastStatus = 'running'; S.jobInfo = null; return refresh().then(() => go('job')); }
 
-// ---------------------------------------------------------------- review
-async function openReview(dir) { S.review = await get('/api/review?dir=' + encodeURIComponent(dir)); go('review'); }
-function reviewView() {
-  const R = S.review, dec = R.decisions;
-  const actionable = R.findings.filter(f => f.applies !== 'info' && f.applies !== 'answer');
-  const n = {approve:0, skip:0, change:0};
-  actionable.forEach(f => { const d = dec[f.id] && dec[f.id].decision; if (d) n[d]++; });
-  const left = actionable.length - n.approve - n.skip - n.change;
-  const top = (R.broken.length ? '<div class="warn"><b>Checks that did NOT run</b> (no findings there means nothing):<br>' + R.broken.map(esc).join('<br>') + '</div>' : '')
-    + (R.prefs.length ? '<div class="prefs">' + R.prefs.map(esc).join('<br>') + '</div>' : '');
-  const ovc = R.oversight && !R.oversight.error ? {ov: R.oversight, dec, notes: R.oversight.notes || {}, esc, findings: R.findings} : null;
-  const inBatch = new Set(ovc && ovc.ov.budget ? ovc.ov.budget.batch : []);
-  const card = f => {
-    const d = dec[f.id] && dec[f.id].decision, ab = R.ab[f.id] || {}, fix = String(f.fix || '');
-    const src = x => '/audio?dir=' + encodeURIComponent(R.dir) + '&f=' + encodeURIComponent(x);
-    const players = ab.a ? `<div class="ab"><div><label>A · now</label><audio controls preload="none" src="${src(ab.a)}"></audio></div>
-      <div><label>B · with the fix${ab.model ? ' · a model of the device, not Live itself' : ''}${ab.matched_db ? ' (level-matched ' + (ab.matched_db > 0 ? '+' : '') + ab.matched_db + ' dB)' : ''}</label><audio controls preload="none" src="${src(ab.b)}"></audio></div></div>` : '';
-    const note = ab.note ? `<p class="note">${esc(ab.note)}</p>` : ((f.applies === 'set' || f.applies === 'audio') && !ab.a ? '<p class="note">No before / after clip yet: run <code>hypnomix ab</code> (clip fixes, tuning, timing nudges and device changes it can model). Where it cannot play a fix offline it says why here: then apply that one fix into a new set and listen.</p>' : '');
-    const jump = f.jump ? `<button data-jump="${esc(f.id)}" title="Needs the hypnomix device in your Live set">Show in Live</button>` : '';
-    const act = f.applies === 'answer' ? '<p class="note">A question, not a fix: put your answer in the box when you apply.</p>'
-      : f.applies === 'info' ? (jump ? `<div class="act">${jump}</div>` : '') : `<div class="act">
-      ${['approve','skip','change'].map(x => `<button class="${x}${d === x ? ' on' : ''}" data-id="${esc(f.id)}" data-d="${x}" aria-pressed="${d === x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join('')}
-      ${jump}<input type="text" aria-label="note for ${esc(f.id)}" placeholder="note (what to change, or why)" data-note="${esc(f.id)}" value="${esc(dec[f.id] && dec[f.id].note)}"></div>`;
-    return `<div class="card item${d ? ' done' : ''}" id="f-${esc(f.id)}"><div class="head"><span class="sev ${esc(f.severity)}">${esc(f.severity)}</span>
-      <span class="title">${esc(f.track || f.tool)}</span><span class="where">${esc(f.where || '')}</span>
-      <span class="tag">${esc(f.tool)} · ${esc(f.applies)}</span><span class="tag">${esc(f.id)}</span>
-      ${f.protected ? '<span class="tag prot">protected: ask again</span>' : ''}
-      ${R.ab_live && R.ab_live.items[f.id] && R.ab_live.items[f.id].parts.length ? '<span class="tag">A/B in Live</span>' : ''}</div>
-      <div>${esc(f.problem)}</div>
-      ${fix.includes('\n') ? `<pre class="fix">${esc(fix)}</pre>` : `<p class="fix">Proposed: ${esc(fix)}</p>`}
-      ${f.history ? `<p class="note">${esc(f.history)}</p>` : ''}${players}${note}${blindNote(R, f.id)}${act}
-      ${ovc ? ovItemHTML(f, ovc) : ''}</div>`;
-  };
-  const items = R.findings.filter(f => !inBatch.has(f.id)).map(card).join('') + (ovc ? ovBatchHTML(ovc, card) : '');
-  const prot = actionable.some(f => f.protected && dec[f.id] && dec[f.id].decision === 'approve');
-  const tune = actionable.some(f => f.tool === 'tune' && dec[f.id] && dec[f.id].decision === 'approve');
-  const apply = `<h2>Apply</h2><div class="card">
-    <p style="margin-top:0">${n.approve} approved fix(es) will be written ${R.is_set ? 'into <b>one new set</b> next to the original. The original is not changed. <b>Close the set in Live first.</b>' : 'as repaired copies in this scan\'s "fixed" folder. Your files are not changed.'}</p>
-    ${R.is_set ? `<div class="row"><label for="out">New set name</label><input type="text" id="out" value="${esc(R.suggested_out)}"></div>` : ''}
-    ${tune ? `<div class="row"><label for="fkey">Confirmed key</label><input type="text" id="fkey" placeholder='needed for vocal tuning, e.g. F# major (or "sections")' value="${esc(S.form.key)}"></div>` : ''}
-    ${prot ? '<div class="row"><label for="prot">Protected tracks</label><input type="checkbox" id="prot"> <span class="note">yes, change the protected tracks I approved</span></div>' : ''}
-    <div class="row"><button class="primary" id="apply" ${n.approve ? '' : 'disabled'}>Apply ${n.approve} approved</button>
-      <button data-reveal="${esc(R.dir)}">Show files</button><span class="note">${left ? left + ' still undecided (they are left alone).' : ''}</span></div>
-    ${R.fix_log ? `<h2>Last time it was applied</h2><pre>${esc(R.fix_log)}</pre>` : ''}</div>`;
-  return `<h1>Review: ${esc(R.name)}</h1>
-  <p class="sub">Nothing has been changed. Listen, decide each item, then apply only what you approved.</p>${top}${abLiveCard(R)}
-  <div class="bar"><span class="count">${n.approve} approved · ${n.skip} skipped · ${n.change} to change · ${left} undecided</span>
-    <button id="alllow" title="Low-severity items that are not protected">Approve all low</button></div>
-  ${items || '<p class="note">No findings.</p>'}${apply}`;
+// ---------------------------------------------------------------- what an apply did
+async function showResult(dir) { S.result = await get('/api/fix/result?dir=' + encodeURIComponent(dir)); go('result'); }
+function logHTML(run) {
+  if (!run) return '<p class="note">Nothing has been applied for this song yet.</p>';
+  const by = g => run.sections.filter(x => x.group === g);
+  const block = (h, secs, cls) => secs.length ? `<h2 class="${cls || ''}">${h}</h2>` + secs.map(x => `<div class="card"><b>${esc(x.title)}</b><pre class="fix">${x.lines.map(l => l.bad ? `<span class="bad">${esc(l.t)}</span>` : esc(l.t)).join('\n')}</pre></div>`).join('') : '';
+  return (run.intro.length ? `<p class="note">${esc(run.intro.join(' · '))}</p>` : '') + block('What was applied', by('applied'))
+    + block('Also applied because they are on by default', by('default')) + block('What was NOT applied, and why', by('not_applied'))
+    + block('FAILED', by('failed'), 'bad') + (run.history ? `<p class="note">${esc(run.history)}</p>` : '');
 }
-function blindNote(R, id) {
-  const rows = (R.blind || []).filter(r => r.id === id);
-  if (!rows.length) return '';
-  const b = rows.filter(r => r.chose === 'B').length;
-  return `<p class="note">Blind test in Live: you chose the fix ${b} of ${rows.length} time(s)${b * 2 > rows.length ? ', so approving it matches your ears' : b * 2 < rows.length ? ': you preferred what you have' : ''}.</p>`;
+function resultView() {
+  const r = S.result, bad = r.status === 'failed', u = r.wrote_nothing ? null : r.undo;
+  const head = bad ? `<h1>Apply stopped: ${esc(r.name)}</h1>` : r.wrote_nothing ? `<h1>Nothing applied: ${esc(r.name)}</h1>` : `<h1>Applied: ${esc(r.name)}</h1>`;
+  const why = bad ? `<div class="banner bad"><h2>${r.stopped ? 'You stopped it' : 'It could not finish'}</h2>${r.reason ? `<p>${esc(r.reason)}</p>` : ''}
+    ${r.tail && r.tail.length ? `<details><summary class="note">The last lines it printed</summary><pre class="fix">${esc(r.tail.join('\n'))}</pre></details>` : ''}<p class="note">Your original was not changed.</p></div>` : '';
+  const nothing = r.wrote_nothing ? `<div class="banner"><b>Nothing was written.</b> ${r.note ? esc(r.note) + '.' : 'None of the approved fixes could be applied.'} Your original was not changed. The log below says what happened to each item.</div>` : '';
+  const files = r.wrote_nothing ? '' : r.files.length ? `<h2>${r.files.length === 1 ? 'The new file' : 'The new files'}</h2>${fileLines(r.files)}`
+    : (!bad ? `<h2>New files</h2><p class="note">${r.kind === 'folder' ? 'Repaired copies are in this scan\'s "fixed" folder.' : 'No new project file was written.'}</p>${r.kind === 'folder' ? `<button data-reveal="${esc(r.dir)}/fixed">Show the fixed folder</button>` : ''}` : '');
+  const listen = r.listen.length ? `<h2>Listen at these spots</h2><p class="note">hypnomix re-checked what it changed; only you can hear it. Open the new project and A/B each spot against the original.</p>
+    <ul class="plain">${r.listen.map(x => `<li><b>${esc(x.track)}</b>${x.where ? ' at <span class="where">' + esc(x.where) + '</span>' : ''}${x.what ? ': ' + esc(x.what) : ''}</li>`).join('')}</ul>` : '';
+  const undo = u && u.can_undo ? `<button data-undo="${u.n}" data-undoname="${esc(u.undo_name)}">Undo this</button>`
+    : (u ? `<p class="note">${esc(u.why_not)}</p>` : '');
+  return `<div class="res">${head}${why}${nothing}${files}${r.default_ids.length ? `<p class="note">These steps were on by default in this run: ${esc(r.default_ids.join(', '))}.</p>` : ''}
+  <div class="row"><button class="primary" data-open="${esc(r.dir)}">Open the review again</button>${u && u.can_undo ? undo : ''}<button data-handoff="${esc(r.dir)}">Make the handoff list</button></div>
+  ${u && !u.can_undo ? undo : ''}${listen}${logHTML(r.run)}</div>`;
 }
-function abLiveCard(R) {
-  if (!R.is_set) return '';
-  const ready = R.ab_live ? `<p style="margin-top:0"><b>Ready:</b> ${esc(R.ab_live.set.split('/').pop())}. Close the original in Live, open this set, put the hypnomix device on any track, then use <b>A · now</b>, <b>B · fix</b> and <b>Blind</b> on each finding. Every plug-in plays; nothing is rendered.</p>` : '';
-  return `<div class="card">${ready || '<p style="margin-top:0">Hear every fix inside Live, with all your plug-ins, by switching A and B instantly.</p>'}
-    <div class="row"><button id="abbuild">${R.ab_live ? 'Build it again' : 'Build A/B set for Live'}</button><span class="note">Writes one new set next to the original; the original is not changed.</span></div></div>`;
-}
-async function decide(id, d, note) {
-  const R = S.review;
-  R.decisions[id] = {decision: d, note: note || (R.decisions[id] && R.decisions[id].note) || ''};
-  try { await post('/api/decide', {dir: R.dir, id, decision: d, note: R.decisions[id].note}); } catch (e) { alert('Could not save: ' + e.message); }
-}
+
+// ---------------------------------------------------------------- review (the screen itself is review.js)
+async function openReview(dir) {
+  const r = await get('/api/review?dir=' + encodeURIComponent(dir));
+  if (!r || r.error) throw new Error((r && r.error) || 'that review could not be opened');      // a scan that is gone (the browser remembered it) is not a review
+  S.review = r; S.histOpen = false; S.hist = null; S.rvScroll = true; go('review'); }
 
 // ---------------------------------------------------------------- preferences
 async function prefsView() {
@@ -243,7 +308,7 @@ async function pollProbe() {
 function toolsView() {
   const st = S.state;
   if (S.tool) {
-    const c = st.commands.find(x => x.name === S.tool);
+    const c = S.commands.find(x => x.name === S.tool) || {name: S.tool, about: ''};
     return `<p><button id="backtools">← All tools</button></p><h1>hypnomix ${esc(c.name)}</h1><p class="sub">${esc(c.about)}</p>
     <div class="card"><div class="row"><label for="args">Options</label><input type="text" id="args" placeholder='what you would type after "hypnomix ${esc(c.name)}"' value="${esc(S.toolArgs || '')}"></div>
     <div class="row"><button data-toolpick="set">Add a set…</button><button data-toolpick="audio">Add an audio file…</button><button data-toolpick="folder">Add a folder…</button>
@@ -252,7 +317,7 @@ function toolsView() {
     <pre>${esc(S.toolHelp || 'loading…')}</pre>`;
   }
   let last = '';
-  const rows = st.commands.map(c => (c.group !== last ? (last = c.group, `<tr class="grp"><td colspan="2">${esc(c.group)}</td></tr>`) : '')
+  const rows = S.commands.map(c => (c.group !== last ? (last = c.group, `<tr class="grp"><td colspan="2">${esc(c.group)}</td></tr>`) : '')
     + `<tr class="cmd" data-tool="${esc(c.name)}" tabindex="0"><td><code>${esc(c.name)}</code></td><td>${esc(c.about)}</td></tr>`).join('');
   return `<h1>Tools</h1><p class="sub">Every hypnomix command. Choose one to see its options and run it.</p><table>${rows}</table>`;
 }
@@ -263,7 +328,8 @@ async function render() {
   const m = $('#main');
   if (S.view === 'home') m.innerHTML = homeView();
   else if (S.view === 'job') m.innerHTML = jobView();
-  else if (S.view === 'review') m.innerHTML = reviewView();
+  else if (S.view === 'review') { m.innerHTML = reviewView(); rvMounted(); }
+  else if (S.view === 'result') m.innerHTML = resultView();
   else if (S.view === 'prefs') m.innerHTML = await prefsView();
   else if (S.view === 'tools') m.innerHTML = toolsView();
   else if (S.view === 'chat') { m.innerHTML = chatView(); chatPoll(true).catch(() => {}); }
@@ -276,30 +342,43 @@ document.addEventListener('click', async e => {
   const b = e.target.closest('button, tr.cmd'); if (!b || b.closest('.wa')) return;   // an article's own markup never drives the app's buttons
   const ds = b.dataset;
   try {
-    if (ds.pick) { const [field, kind] = ds.pick.split(':'); const r = await post('/api/pick', {kind}); if (r.path) { S.form[field] = r.path; render(); } }
-    else if (ds.clear) { S.form[ds.clear] = ''; render(); }
+    if (ds.pick) { const [field, kind] = ds.pick.split(':'); const r = await post('/api/pick', {kind}); if (r.path) { S.form[field] = r.path; saveForm(); render(); } }
+    else if (ds.rescan) {
+      if (ds.kind !== 'als' && !confirm('This kind of project cannot carry your decisions into a new scan. They are kept in a file next to the scan, and you decide again. Re-scan now?')) return;
+      await post('/api/rescan', {dir: ds.rescan}); await startJob();
+    }
+    else if (ds.handoff) { await post('/api/handoff', {dir: ds.handoff}); await startJob(); }
+    else if (ds.demo) { await post('/api/demo'); await startJob(); }
+    else if (ds.restore) { await post('/api/restore-decisions', {dir: ds.restore, fresh: !!ds.fresh}); await openReview(ds.restore); }
+    else if (ds.hist) {
+      S.histOpen = !S.histOpen; S.hist = null; rvToggleHistory();
+      if (S.histOpen) { const dir = S.review.dir, h = await get('/api/history?dir=' + encodeURIComponent(dir)); S.hist = Object.assign(h, {dir}); if (S.view === 'review') rvToggleHistory(); }
+    }
+    else if (ds.undo) {
+      const dir = S.view === 'result' ? S.result.dir : S.review.dir;
+      if (!confirm(`This writes a new set named "${ds.undoname}" next to your original, equal to what version ${ds.undo} started from. Nothing is overwritten. Go on?`)) return;
+      await post('/api/undo', {dir, n: +ds.undo}); await startJob();
+    }
+    else if (ds.clear) { S.form[ds.clear] = ''; saveForm(); render(); }
     else if (b.id === 'scan') {
-      const src = $('#src'); if (src && src.value) S.form.source = src.value;
-      S.form.key = $('#key').value; S.form.deep = $('#deep').checked; if ($('#devices')) S.form.devices = $('#devices').checked;
-      await post('/api/scan', S.form); S.logLines = []; S.logAt = 0; S.lastStatus = 'running'; await refresh(); go('job');
+      const src = $('#src'); if (src && src.value) S.form.source = src.value.trim();
+      if (!S.form.source) { showMsg('Choose a song first, or paste the path of one.'); return; }
+      S.form.key = $('#key').value; S.form.deep = $('#deep').checked; if ($('#devices')) S.form.devices = $('#devices').checked; saveForm();
+      await post('/api/scan', S.form); await startJob();
     }
     else if (ds.open) await openReview(ds.open);
-    else if (ds.id) { const note = document.querySelector(`input[data-note="${CSS.escape(ds.id)}"]`); await decide(ds.id, ds.d, note ? note.value : ''); const y = window.scrollY; $('#main').innerHTML = reviewView(); window.scrollTo(0, y); }
-    else if (ds.jump) { const r = await post('/api/live/jump', {dir: S.review.dir, id: ds.jump}); if (!r.device) alert('Sent, but the hypnomix device is not connected. Load it on any track in your Live set (run "hypnomix device" to make it).'); }
-    else if (b.id === 'alllow') {
-      const ids = S.review.findings.filter(f => f.severity === 'low' && !f.protected && f.applies !== 'info' && f.applies !== 'answer' && !S.review.decisions[f.id]).map(f => f.id);
-      if (ids.length && confirm(`Approve ${ids.length} low-severity item(s) without listening to each?`)) { for (const id of ids) await decide(id, 'approve', 'batch: all low'); render(); }
-    }
+    else if (ds.jump) { const r = await post('/api/live/jump', {dir: S.review.dir, id: ds.jump}); if (!r.device) showMsg('Sent, but the hypnomix device is not connected. Load it on any track in your Live set (run "hypnomix device" to make it).'); }
     else if (b.id === 'apply') {
       const body = {dir: S.review.dir, out: $('#out') ? $('#out').value : '', key: $('#fkey') ? $('#fkey').value : '', allow_protected: $('#prot') ? $('#prot').checked : false};
-      if (S.review.is_set && !confirm('Is the set closed in Live? A new set will be written next to the original.')) return;
-      await post('/api/fix', body); S.logLines = []; S.logAt = 0; S.lastStatus = 'running'; await refresh(); go('job');
+      const made = [b.dataset.writes ? (withSuffix(body.out, S.review.suffix) || S.review.suggested_out) : '', b.dataset.archive].filter(x => x).join(' and ');
+      if (!confirm(`Apply now? ${made ? 'This writes ' + made + ' next to your original.' : 'This writes repaired copies in this scan\'s fixed folder.'} Your original is not changed.${S.review.kind === 'als' ? ' Is the set closed in Live?' : ''}`)) return;
+      await post('/api/fix', body); await startJob();
     }
-    else if (ds.reveal) await post('/api/reveal', {path: ds.reveal});
+    else if (ds.reveal) { const r = await post('/api/reveal', {path: ds.reveal}); if (!r.shown) showMsg(r.message || 'Could not open the folder.'); }
     else if (b.id === 'probestart') { await post('/api/probe/start', {label: ''}); await pollProbe(); render(); }
     else if (b.id === 'probestop') { const r = await post('/api/probe/stop', {song: ''}); const j = await post('/api/probe/report', {capture: r.capture});
       S.logLines = []; S.logAt = 0; S.lastStatus = 'running'; await refresh(); go('job'); }
-    else if (b.id === 'abbuild') { await post('/api/ab/build', {dir: S.review.dir, key: S.form.key}); S.logLines = []; S.logAt = 0; S.lastStatus = 'running'; await refresh(); go('job'); }
+    else if (b.id === 'abbuild') { await post('/api/ab/build', {dir: S.review.dir, key: S.form.key}); await startJob(); }
     else if (b.id === 'stop') await post('/api/stop');
     else if (b.id === 'saveprefs') {
       const body = {}; document.querySelectorAll('[data-pref]').forEach(el => { if (el.value !== '' || el.tagName === 'INPUT') body[el.dataset.pref] = el.value; });
@@ -309,25 +388,41 @@ document.addEventListener('click', async e => {
     else if (b.id === 'backtools') { S.tool = null; render(); }
     else if (ds.toolpick) { const r = await post('/api/pick', {kind: ds.toolpick}); if (r.path) { S.toolArgs = (($('#args').value || '') + ' "' + r.path + '"').trim(); render(); } }
     else if (b.id === 'runtool') { S.toolArgs = $('#args').value; await post('/api/tool', {cmd: S.tool, args: S.toolArgs}); S.logLines = []; S.logAt = 0; S.lastStatus = 'running'; await refresh(); go('job'); }
-  } catch (err) { alert(err.message); }
-});
-async function reloadReview() { const y = window.scrollY; S.review = await get('/api/review?dir=' + encodeURIComponent(S.review.dir)); $('#main').innerHTML = reviewView(); window.scrollTo(0, y); }
-ovBind({
-  amount: async (id, v) => { const d = (S.review.decisions[id] || {}).decision || 'approve';
-    await post('/api/decide', {dir: S.review.dir, id, decision: d, amount: v, note: (S.review.decisions[id] || {}).note || ''}); reloadReview(); },
-  decideLike: async (id, d) => { const r = await post('/api/decide-like', {dir: S.review.dir, id, decision: d}); reloadReview(); },
-  batch: async (ids, d, note) => { for (const id of ids) await post('/api/decide', {dir: S.review.dir, id, decision: d, note}); reloadReview(); },
-  note: async (id, text, at) => { await post('/api/note', {dir: S.review.dir, id, text, at}); reloadReview(); },
+  } catch (err) { showMsg(err.message); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('tr.cmd')) e.target.click(); });
+const withSuffix = (v, suf) => { v = String(v || '').trim().replace(/\.(als|rpp|ardour)$/i, ''); return v ? v + suf : ''; };
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.id === 'src') { S.form.source = t.value.trim(); saveForm(); }
+  else if (t.id === 'key') { S.form.key = t.value; saveForm(); }
+  else if (t.id === 'out' && S.review) { S.outName[S.review.dir] = t.value; const sh = $('#outshow'); if (sh) sh.textContent = t.value; }
+});
 document.addEventListener('change', e => {
-  const i = e.target.closest('input[data-note]');
-  if (i && S.review && S.review.decisions[i.dataset.note]) decide(i.dataset.note, S.review.decisions[i.dataset.note].decision, i.value);
+  const t = e.target;
+  if (t.id === 'src') { S.form.source = t.value.trim(); saveForm(); render(); return; }
+  if (t.id === 'deep' || t.id === 'devices') { S.form[t.id] = t.checked; saveForm(); return; }
+  if (t.id === 'out' && S.review) {
+    const v = withSuffix(t.value, S.review.suffix) || S.review.suggested_out;
+    t.value = v; S.outName[S.review.dir] = v; const sh = $('#outshow'); if (sh) sh.textContent = v;
+    return;
+  }
 });
 document.addEventListener('play', e => { document.querySelectorAll('audio').forEach(a => { if (a !== e.target) a.pause(); }); }, true);
-render();
-setInterval(() => { refresh(); pollJob(); pollProbe(); }, 1000);
-</script><script src="/chat.js"></script><script src="/wiki.js"></script><script src="/teacher.js"></script><script src="/setup.js"></script><script src="/update.js"></script><script src="/diskcare.js"></script></body></html>
+// Start on the tab and the review the person was on (after every script on the page has loaded).
+function headerHeight() { const h = document.querySelector('header'); if (h) document.documentElement.style.setProperty('--hh', h.offsetHeight + 'px'); }
+window.addEventListener('resize', headerHeight);
+if (window.ResizeObserver) new ResizeObserver(headerHeight).observe(document.querySelector('header'));      // the disk and update notices make it taller later
+function start() {
+  headerHeight();
+  const nav = LS.get('hx.nav', {});
+  if (nav.view === 'review' && typeof nav.dir === 'string' && nav.dir) { openReview(nav.dir).catch(() => go('home')); return; }
+  if (['home', 'prefs', 'tools', 'chat', 'wiki', 'live', 'teach'].includes(nav.view)) S.view = nav.view;
+  render();
+}
+document.addEventListener('DOMContentLoaded', start);
+setInterval(() => { refresh(); pollJob().catch(() => {}); pollProbe(); }, 1000);
+</script><script src="/review.js"></script><script src="/chat.js"></script><script src="/wiki.js"></script><script src="/teacher.js"></script><script src="/setup.js"></script><script src="/update.js"></script><script src="/diskcare.js"></script></body></html>
 """
 
 from hypnomix.workflow.review import OVERSIGHT_CSS as _OC, OVERSIGHT_JS as _OJ   # noqa: E402
