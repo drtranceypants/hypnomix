@@ -453,6 +453,54 @@ class Reaper(unittest.TestCase):
         self.assertEqual(done, [])
         self.assertIn("cross", skipped[0][1])
 
+    def test_crlf_project_roundtrips_byte_for_byte(self):
+        """REAPER writes CRLF line ends, on macOS too: a load + save must not change a single byte."""
+        crlf = RPP.replace("\n", "\r\n").encode()
+        src = self.dir / "Crlf.rpp"
+        src.write_bytes(crlf)
+        out = rpp.save(rpp.load(src), self.dir / "Crlf (copy).rpp")
+        self.assertEqual(out.read_bytes(), crlf)
+
+    def test_reacomp_sidechain_read_and_write(self):
+        """A REAPER 7.86 ReaComp, saved by REAPER: detector on channels 3/4, fed by a send from the kick."""
+        from hypnomix.workflow import sidechain_project as SCP
+        hdr = "bWNlcu9e7f4EAAAAAQAAAAAAAAACAAAAAAAAAAQAAAAAAAAACAAAAAAAAAACAAAAAQAAAAAAAAACAAAAAAAAAFwAAAAAAAAAAAAQAA=="
+        state = ("776t3g3wrd7NzEw9zczMPW8SAzvNzEw+AAAAAAAAAAAAAIA/AAAAAIzU8ToAAAAAnNEHMwAAgD8AAAAAzcxMPQAAAAAAAAAAAAAAAAAAgD4"
+                 "AAAAAAAAAAAAAAAA=")
+        txt = ('<REAPER_PROJECT 0.1 "7.86/macOS-arm64" 1\n  TEMPO 120 4 4\n'
+               '  <TRACK {A}\n    NAME Kick\n    ISBUS 0 0\n  >\n'
+               '  <TRACK {B}\n    NAME Bass\n    NCHAN 4\n    ISBUS 0 0\n    AUXRECV 0 0 1 0 0 0 0 0 2 -1:U 0 -1 \'\'\n'
+               '    <FXCHAIN\n      BYPASS 0 0 0\n      <VST "VST: ReaComp (Cockos)" reacomp.vst.dylib 0 "" 1919247213<5653547265636D726561636F6D700000> ""\n'
+               f'        {hdr}\n        {state}\n        AAAQAAAA\n      >\n    >\n  >\n>\n')
+        path = self.dir / "Sc.rpp"
+        path.write_text(txt)
+        p = project.load(path)
+        found = SCP.find(p)
+        self.assertEqual(len(found), 1)
+        sc = found[0]
+        self.assertEqual([t.name for t, _, _ in sc["sources"]], ["Kick"])
+        c = sc["c"]
+        self.assertEqual(c["channel"], 2)                                   # channels 3/4
+        self.assertAlmostEqual(c["threshold_db"], -26.0, places=1)
+        self.assertAlmostEqual(c["ratio"], 10.9, places=2)
+        self.assertAlmostEqual(c["attack"], 1.0, places=2)
+        self.assertAlmostEqual(c["release"], 1000.0, places=1)
+        self.assertAlmostEqual(c["rms_ms"], 5.0, places=2)
+        new = dict(c, threshold_db=-5.7, ratio=6.0, release=103.0, knee=6.0, model=0)
+        vals = SCP.to_vals(sc["state"].vals, new)
+        ed = dict(op="sidechain", track="Bass", index=1, fx=0, vals=vals)
+        SCP.apply(p, dict(id="sidechain-1"), ed)
+        from hypnomix.project import rpp_edit as E
+        out = self.dir / "Sc (fixed).rpp"
+        E.save(p, out)
+        before, after = path.read_text().splitlines(), out.read_text().splitlines()
+        self.assertEqual([k for k, (a, b) in enumerate(zip(before, after)) if a != b], [after.index(next(l for l in after if l.strip().startswith("776t3g3w")))])
+        back = SCP.settings(SCP.find(project.load(out))[0]["state"].vals)
+        self.assertAlmostEqual(back["threshold_db"], -5.7, places=2)
+        self.assertAlmostEqual(back["release"], 103.0, places=2)
+        self.assertEqual(back["model"], 0)
+        self.assertEqual(back["channel"], 2)                                # the routing is left alone
+
     def test_unsupported_suffix(self):
         with self.assertRaises(SystemExit):
             project.load(self.dir / "x.ptx")

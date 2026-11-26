@@ -261,6 +261,13 @@ def render_audio(tracks, als, root):
 
 # ---------------------------------------------------------------- compressor model
 def sc_filter(x, c):
+    if c.get("hp_hz") or c.get("lp_hz"):              # REAPER's ReaComp: a high-pass and a low-pass on the detector
+        if c.get("hp_hz"):
+            x = dsp.filt(x, dsp.highpass(min(c["hp_hz"], SR * 0.45), SR, order=2))
+        if c.get("lp_hz") and c["lp_hz"] < SR * 0.45:
+            x = dsp.filt(x, dsp.lowpass(c["lp_hz"], SR, order=2))
+        if not c.get("eq_on"):
+            return x
     if not c.get("eq_on"):
         return x
     f, q, g, mode = c["eq_freq"], max(c["eq_q"], 0.1), c["eq_gain"], c["eq_mode"]
@@ -284,11 +291,12 @@ def detector(trig, c):
     x = sc_filter(trig, c) * dsp.undb(c.get("sc_gain_db", 0.0))
     if c["model"] == 1:
         from scipy.ndimage import uniform_filter1d
-        p = uniform_filter1d(x ** 2, max(1, int(0.01 * SR)))
+        p = uniform_filter1d(x ** 2, max(1, int(c.get("rms_ms", 10.0) / 1000 * SR)))   # Live: 10 ms
         lvl = 10 * np.log10(np.maximum(p, 0) + 1e-20)
     else:
         lvl = 20 * np.log10(np.abs(x) + 1e-10)
-    la = int(LOOKAHEAD_MS[min(max(c["lookahead"], 0), 2)] / 1000 * SR)
+    la_ms = c["lookahead_ms"] if c.get("lookahead_ms") is not None else LOOKAHEAD_MS[min(max(c["lookahead"], 0), 2)]
+    la = int(la_ms / 1000 * SR)
     if la:
         lvl = np.concatenate([lvl[la:], np.full(la, lvl[-1])])
     return lvl

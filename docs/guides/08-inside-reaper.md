@@ -59,7 +59,7 @@ Nothing is changed. For a REAPER project it checks:
 | clips | clicks at item edges, level jumps where comp takes meet, short spikes (a pop, a bump), and item edges or fades that cut off the first sound of a word |
 | timing | instrument hits out of time with the band: the bass checked against the drums first, melodic parts only gently; each player's own push or lay-back is kept |
 | vocals | the pitch of every vocal track, doubles that drift from the lead, how the harmonies sit together |
-| effects | plug-ins that are switched off or offline, two limiters in a row |
+| effects | plug-ins that are switched off or offline, two limiters in a row; every sidechained ReaComp simulated hit by hit: how deep it ducks, whether it is back before the next hit, how even it is, whether its release bends the bass |
 | recordings | every file the project plays: clipping, levels, hiss, DC offset, harsh "s" sounds, breaths |
 | noise | items turned up so far that their hiss comes up with them |
 | intent | things that look deliberate (automation, hard pans, muted tracks, big item volumes, flipped polarity): listed as questions, never changed |
@@ -99,6 +99,7 @@ Everything you approved goes into **one new project** next to the original:
 | track order | the tracks reordered; folders keep their tracks, and every send still comes from the same track |
 | vocal stack | where the parts swap tracks, each item moved to the track for its pitch (lowest part on the lowest track), its volume changed by the fader difference so it plays at the same level; items on lane tracks, under automation, or that would overlap another item are listed for you instead |
 | out-of-time hit | stretch markers on the item: one on the hit, moved part of the way to where the band (or the drums) plays it, one on the hit either side holding it, so only that short stretch is stretched; drag or delete the markers in REAPER to change or undo one |
+| sidechain | the ReaComp set to the suggested threshold, ratio, attack, release, knee and detector (clarity for a kick trigger: 2-4 dB, back before the next hit; vocal-duck for a vocal feeding a reverb or delay); only those settings change, the routing is left alone |
 | vocal tuning | each take file pitch-corrected into a new file in `Tuned/`, added to its items as a **new take** and made active |
 
 Your comp is never replaced by a rendered copy. A tuned vocal is a second take on each of your own items, so
@@ -174,6 +175,6 @@ plug-in by name or number).
 
 ## Not yet in REAPER
 
-- Sidechain and ducking checks on plug-ins, and the probe devices (Live only).
+- Sidechain checks on compressors other than ReaComp (listed, not measured), and the probe devices (Live only).
 - Where a stretch marker squeezes or stretches a segment, hypnomix's own render reads it at a slightly different
   pitch than REAPER plays it (REAPER keeps the pitch). The timing is exact.

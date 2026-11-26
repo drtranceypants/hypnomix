@@ -14,6 +14,7 @@ Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER"
 | `hypnomix/workflow/scan_project.py` | `scan` on an `.rpp` (and Ardour) |
 | `hypnomix/workflow/scan_project.py` `stack_moves` | vocal stacks: Live's `order.assign_stack` on the model; `rpp_edit.move_item` moves the ITEM chunk (takes and take envelopes go with it); `check(moved=IGUIDs)` |
 | `hypnomix/workflow/timing_project.py` | Live's timing judgement (`session/timing.judge`) on hits read from items; nudges written as stretch markers (`SM`), anchored on every onset either side |
+| `hypnomix/workflow/sidechain_project.py` | sidechained ReaComps: found by their detector channel and the sends landing there, simulated with Live's `sidechain` model, suggestions written as ReaComp floats |
 | `hypnomix/workflow/edges_project.py` | Live's word-edge detectors on the model; the REAPER edge fixes |
 | `hypnomix/workflow/fix_project.py` | `fix` for an `.rpp`: one pass into one new file, structure check, re-measure |
 | `hypnomix/reaper/bridge.lua`, `client.py`, `cli.py` | the bridge into the open REAPER, and `hypnomix reaper` |
@@ -55,6 +56,17 @@ New tools that should work in every DAW belong on the model (`project.load(path)
   REAPER's own render: the hit moves by the planned amount (-34.9 for -35 ms, +15.0 for +15), its neighbours by 0.0.
   An attack refinement was tried and dropped: on synthetic pure tones the detector read bass and guitar ~45 ms
   early, but on real songs its lean is a few ms and the refinement only swapped early flags for late ones.
+- REAPER saves projects with CRLF line ends, on macOS too: `rpp.load`/`save` read and write bytes, so a load + save
+  is byte-identical and new lines use the file's own line ends.
+- **ReaComp** state in the `.rpp`: a header (plug-in id, pin counts and masks, then the state size), the state (8-byte
+  marker `efbeadde0df0adde`, then every parameter's raw value as a 32-bit float, in parameter order), a short tail.
+  Raw → units: threshold = amplitude; ratio = 1 + 99·raw (1 = ∞); attack = 500·raw ms; release = 5000·raw ms;
+  pre-comp = 250·raw ms; detector low-pass / high-pass = 20000·raw Hz (1 / 0 = off); RMS size = 100·raw ms
+  (0 = peak); knee = 24·raw dB; detector input ("SignIn") = first channel (0-based) = 1084·raw: 0 is the track,
+  2 is channels 3/4. A send's `AUXRECV` field 9 is the channel pair it lands on (2 = 3/4).
+- A sidechain retune checked in REAPER's render: the bad setting (release 1000 ms on hits 500 ms apart) ducked
+  21.0 dB (model 20.7), the suggested one 4.0 dB (model 3.0) and was fully back by the next kick (model 99%).
+  ReaComp's release recovers more slowly than Live's model at long settings (6% back vs 36% modelled).
 - Rendering with the project's sample rate following the device (`SAMPLERATE x 0`) resamples: set
   `PROJECT_SRATE` and `PROJECT_SRATE_USE` when comparing sample for sample.
 

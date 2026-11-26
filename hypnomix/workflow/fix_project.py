@@ -44,13 +44,21 @@ def apply_edits(p, items, dec, log, failed, skipped):
             if f["id"] in ok:
                 log.append(f"- {f['id']}: {f['track']} @ {f['where']}: nudged {ed['move'] * 1000:+.0f} ms (stretch markers)")
         items = [f for f in items if (f.get("edit") or {}).get("op") != "timing"]
-    rank = {"edges": 0, "fade": 0, "cut": 1, "dip": 1, "stack": 2, "order": 3, "rename": 4}
+    rank = {"sidechain": 0, "edges": 0, "fade": 0, "cut": 1, "dip": 1, "stack": 2, "order": 3, "rename": 4}
     for f in sorted(items, key=lambda f: (rank.get(f.get("edit", {}).get("op"), 1), f["id"])):
         ed = f.get("edit")
         if not ed:
             skipped.append((f, "no project edit recorded for this finding (manual)"))
             continue
         kv = _kv(dec, f)
+        if ed["op"] == "sidechain":
+            from hypnomix.workflow import sidechain_project as SCP
+            try:
+                log.append(SCP.apply(p, f, ed))
+                done.append(f["id"])
+            except ValueError as e:
+                skipped.append((f, str(e)))
+            continue
         if ed["op"] == "stack":
             n_ok = 0
             for m in ed["moves"]:

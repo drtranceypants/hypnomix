@@ -618,7 +618,18 @@ def g_effects(p, R, od, a):
                           problem=f"{len(lim)} limiters in a row ({', '.join(lim)}): each one flattens what the "
                                   "last left, and the second rarely adds anything but distortion",
                           fix="keep one limiter at the end of the chain; set its ceiling there"))
-    return out, [f"effects: {sum(len(t.devices) for t in p.tracks)} plug-ins on {sum(1 for t in p.tracks if t.devices)} tracks"]
+    notes = [f"effects: {sum(len(t.devices) for t in p.tracks)} plug-ins on {sum(1 for t in p.tracks if t.devices)} tracks"]
+    # sidechain compression (ReaComp listening to a send): Live's `sidechain` simulation on the model
+    try:
+        from hypnomix.workflow import sidechain_project as SCP
+        res = SCP.analyse(p)
+        out += SCP.findings(p, res, W)
+        if res:
+            notes.append(f"sidechain: {len(res)} sidechained ReaComp(s) measured hit by hit; suggestions are written "
+                         "into the ReaComp by `fix` (other compressors: only listed)")
+    except Exception as e:
+        notes.append(f"sidechain: failed ({type(e).__name__}: {e})")
+    return out, notes
 
 
 def g_recordings(p, R, od, a):

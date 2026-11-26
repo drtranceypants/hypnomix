@@ -196,7 +196,8 @@ def parse(text):
 
 
 def load(path):
-    root = parse(Path(path).read_text(encoding="utf-8", errors="surrogateescape"))
+    # bytes, not read_text: text reading turns REAPER's CRLF line ends into LF, and the file would change everywhere
+    root = parse(Path(path).read_bytes().decode("utf-8", errors="surrogateescape"))
     root.path = Path(path)
     return root
 
@@ -211,5 +212,5 @@ def save(root, out):
     src = getattr(root, "path", None)
     if src is not None and out.resolve() == Path(src).resolve():
         raise SystemExit("refusing to overwrite the original project: give a new file name")
-    out.write_text(dumps(root), encoding="utf-8", errors="surrogateescape")
+    out.write_bytes(dumps(root).encode("utf-8", errors="surrogateescape"))
     return out
