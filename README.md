@@ -32,7 +32,7 @@ leaves your time for playing, dialling in sounds and listening.
 | Hunting clicks, pops and level jumps | finds them at clip edges, loop seams and comp cuts; eases each with a short fade or dip | `smooth`, `clicks` |
 | Finding the hit that's late | detects the song's own grid, locks the bass to the drums first, compares each hit with the band, nudges only clear outliers, part of the way, drums first, then bass, then the rest (audio and MIDI; one pass of a loop can be nudged on its own) | `timing`, `tighten`, `unroll` |
 | Tuning a vocal note by note | measures the song's real tuning and key by section; moves only each note's centre; checks the chord under every note and asks when the target clashes with it or the key is unsure | `tune`, `key` |
-| Lining up doubles and harmonies | word by word: only the words clearly out of time move; presets, protected areas and sync points; optional pitch matching (harmonies keep their interval, chord checked) and formant for width; in a Live set, warp markers on your own clips, or from the Hypnomix Align device | `vocalign`, `alignset`, `aligndevice` |
+| Lining up doubles and harmonies | word by word: only the words clearly out of time move; presets, protected areas and sync points; optional pitch matching (harmonies keep their interval, chord checked) and formant for width; in a Live set, warp markers on your own clips, or from the Hypnomix Align device; in REAPER, stretch markers or new takes on your own items, or from the Hypnomix Align panel | `vocalign`, `alignset`, `aligndevice`, `reaper align` |
 | Balancing a harmony stack | lists the parts, asks which one leads, turns down only what overshadows it, by your own spacing, judged as heard after each track's effects and written as volume automation | `voices`, `cliplevel` |
 | Chasing hiss, hum, breaths, "s" sounds | de-hiss, de-hum, breaths down (not off), de-ess with a list of every "s", clipped peaks rebuilt | `prep`, `dehiss`, `deess`, `breaths` |
 | Finding what's distorting | clipped takes, hot drive, hard limiting, too-fast bass compression, each with a setting to try | `distortion` |
@@ -65,6 +65,7 @@ hypnomix probe device # optional: HypnomixProbe (every track) and HypnomixMain (
                       #   Live's own devices (Build, Match target, Save), record and review before export
 hypnomix abset DIR    # optional: every fix as a switch in Live: A / B / Blind on the device (docs/LIVE.md)
 hypnomix aligndevice  # optional: Hypnomix Align, a Max for Live device to align a vocal stack (docs/ALIGN.md)
+hypnomix reaper align # optional: the same in REAPER, as the Hypnomix Align panel (a new .rpp; yours untouched)
 macapp/build.sh     # optional: build your own Hypnomix.app (a Dock icon around the same web app)
 ```
 
