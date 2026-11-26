@@ -8,6 +8,7 @@
   hypnomix probe status                which tracks are sending, with their loudness right now
   hypnomix probe listen [--secs 60]    record what the probes measure while you play (or --bars 33-48 --play)
   hypnomix probe report CAPTURE.json   turn a capture into a review: findings.json + REVIEW.md
+  hypnomix probe chains [show NAME]    the mastering chain templates HypnomixMain builds on Main (masterchain.py)
 
 Telling hypnomix what things are. Each track's probe has three menus: what it is (lead vocal, harmony, kick, bass,
 guitar …, or "auto" to let the scan work it out by sound), its priority (focus: others give way to it; background:
@@ -15,6 +16,11 @@ it gives way) and Protect (ask before any change). HypnomixMain, on Main, is the
 (the tuning and harmony tools use it instead of guessing; a mode becomes the major key with the same notes),
 chords (typed; kept by the app), loudness target, true-peak ceiling, limiter character and amount. The menus are
 Live parameters, so they are saved in the set, and `scan` reads them from the .als; the app also sees them live.
+
+Mastering chain (HypnomixMain). Build chain puts Live's own devices (EQ Eight, Glue Compressor, Multiband Dynamics,
+Saturator, Utility, Limiter) in a "Hypnomix Master" rack just before HypnomixMain; edit it like any rack. Match target
+turns the Limiter's Gain until Main lands on the card's Target LUFS; Save keeps your edited chain (or a rack of your
+own) as a template. See hypnomix/app/masterchain.py.
 
 Record and review before export (HypnomixMain). Press it and Live plays; the device records Main exactly as you
 hear it (a real-time bounce, 32-bit float) while every probe listens. When Live stops, the app reviews it:
@@ -61,7 +67,7 @@ BANDS = [("sub", 20, 60), ("bass", 60, 120), ("upper bass", 120, 250), ("low-mid
          ("mid", 500, 2000), ("upper-mid", 2000, 4000), ("presence", 4000, 8000), ("air", 8000, 20000)]
 SPLITS = [60, 120, 250, 500, 2000, 4000, 8000]
 JW, H = 300, 169                          # the drawn part of the device; controls sit to its right
-W = {"track": 470, "main": 640}
+W = {"track": 470, "main": 826}           # Main: the song card, then the mastering chain column (masterchain.py)
 WIN = 4800
 ROLES = ["auto", "lead vocal", "harmony", "double", "backing vocals", "kick", "snare", "drums", "percussion", "bass",
          "guitar", "acoustic guitar", "piano", "keys", "synth", "strings", "pad", "brass", "fx", "other"]
@@ -508,13 +514,18 @@ def build_patch(patch, mode="track"):
         P.wire(pin, 0, rec, 0)
         P.wire(pin, 1, rec, 1)
         P.wire(route, 4, rec, 0)
+        # the mastering chain column: Build chain / Match target / Save (hypnomix/app/masterchain.py)
+        from hypnomix.app import masterchain as MC
+        by_text = {b["box"].get("text"): b["box"]["id"] for b in P.boxes if b["box"].get("text")}
+        MC.add_to_patch(P, thisdev, [by_text["prepend val 0"], by_text["prepend val 1"]], dl,
+                        [by_text[f"prepend param hm_{n}"] for n in ("target", "ceiling", "mode")])
 
     p["boxes"] = keep + P.boxes
     p["lines"] = P.lines                   # plugin~ → gain → plugout~ replaces the direct wires
     p["openinpresentation"] = 1
     p["devicewidth"] = float(W[mode])
-    p["description"] = ("hypnomix main: the song card (genre, key, chords, loudness) and record-and-review before export; "
-                        "audio passes through" if mode == "main" else
+    p["description"] = ("hypnomix main: the song card (genre, key, chords, loudness), a mastering chain of Live's own devices "
+                        "(built, saved and loudness-matched from here) and record-and-review before export; audio passes through" if mode == "main" else
                         "hypnomix probe: measures this track (after its devices) and says what it is; audio passes through")
     return patch
 
@@ -532,6 +543,8 @@ def build(out, tpl=None):
     write_amxd(out / "HypnomixProbe.amxd", head, build_patch(_copy.deepcopy(patch), "track"))
     write_amxd(out / "HypnomixMain.amxd", head, build_patch(_copy.deepcopy(patch), "main"))
     (out / "hypnomix_probe.js").write_text(script())
+    from hypnomix.app import masterchain as MC
+    (out / "hypnomix_master.js").write_text(MC.script(PORT_APP))
     return out
 
 
@@ -1151,7 +1164,13 @@ def main():
     r.add_argument("--mix", help="the master recorded by HypnomixMain (Record and review)")
     c = sub.add_parser("cards", help="what was told in Live (roles, song card), read from a saved set")
     c.add_argument("set")
+    ch = sub.add_parser("chains", help="the mastering chain templates HypnomixMain can build (list | show NAME | delete NAME)")
+    ch.add_argument("rest", nargs=argparse.REMAINDER)
     a = ap.parse_args()
+    if a.cmd == "chains":
+        from hypnomix.app import masterchain as MC
+        MC.main(a.rest)
+        return
     if a.cmd == "cards":
         print(json.dumps(read_cards(a.set), indent=1))
         return
@@ -1165,7 +1184,8 @@ def main():
             od = build(out, a.template)
         except FileNotFoundError as e:
             sys.exit(str(e))
-        print(f"wrote {od / 'HypnomixProbe.amxd'}\n      {od / 'hypnomix_probe.js'}   (keep the two together)")
+        print(f"wrote {od / 'HypnomixProbe.amxd'}\n      {od / 'HypnomixMain.amxd'}\n      {od / 'hypnomix_probe.js'}\n"
+              f"      {od / 'hypnomix_master.js'}   (keep them together)")
         print("In Live: drag HypnomixProbe onto the LAST slot of a track (and one onto Main), or put it on one track, "
               "save, and run `hypnomix probe insert SET.als` for every track.")
         return
