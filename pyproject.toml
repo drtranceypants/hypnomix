@@ -42,6 +42,7 @@ packages = ["hypnomix"]
 # the PDF guides' Markdown is also the app's wiki (hypnomix/app/wiki.py reads it from here when installed)
 [tool.hatch.build.targets.wheel.force-include]
 "docs/guides" = "hypnomix/app/wiki/guides"
+"skills" = "hypnomix/app/wiki/skills"
 # and so are the documents in docs/ (listed one by one: docs/launch/ holds drafts that must not ship)
 "README.md" = "hypnomix/app/wiki/docs/README.md"
 "GUIDE.md" = "hypnomix/app/wiki/docs/GUIDE.md"

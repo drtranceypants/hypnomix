@@ -175,6 +175,7 @@ def commit_time(root):
     if d is not None:
         paths.append(str(d / "[A-Z]*.md"))
     paths += [str(f) for f in W.doc_files(root) if f.name in ROOT]
+    paths += [str(f) for f in W.skill_files(root)]
     cli = Path(root).resolve().parents[1] / "cli.py"             # the command reference is built from it
     if cli.exists():
         paths.append(str(cli))

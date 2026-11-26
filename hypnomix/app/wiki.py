@@ -111,6 +111,15 @@ def doc_files(root=None):
     return first + rest
 
 
+def skill_files(root=None):
+    """The Claude Code skills: skills/*/SKILL.md in a checkout, or the copy bundled with an installed hypnomix."""
+    root = Path(root) if root else HERE
+    for d in (root.resolve().parents[2] / "skills", root / "skills"):
+        if d.is_dir():
+            return sorted(d.glob("*/SKILL.md"))
+    return []
+
+
 def guide_files(root=None):
     d = guides_dir(root)
     return sorted(f for f in d.glob("[0-9][0-9]-*.md") if not f.name.startswith("99")) if d else []
@@ -122,8 +131,10 @@ def local(root=None):
     files = sorted((root / "articles").glob("*.html"))
     guides = guide_files(root)
     docs = doc_files(root)
+    skills = skill_files(root)
     cli = Path(__file__).resolve().parents[1] / "cli.py"
-    key = (str(root), tuple((f.name, f.stat().st_mtime) for f in files + guides + docs + ([cli] if cli.exists() else [])))
+    key = (str(root), tuple((str(f), f.stat().st_mtime) for f in files + guides + docs + skills
+                            + ([cli] if cli.exists() else [])))
     if _CACHE.get("key") != key:
         from hypnomix.app import wiki_md
         arts = [parse(f) for f in files]
@@ -135,8 +146,13 @@ def local(root=None):
             d = wiki_md.doc_article(f, taken)
             taken.add(d["id"])
             ds.append(d)
+        sk = []
+        for f in skills:
+            k = wiki_md.skill_article(f, taken)
+            taken.add(k["id"])
+            sk.append(k)
         at = next((i for i, a in enumerate(arts) if a["group"] in ("Reference", "FAQ")), len(arts))
-        arts = arts[:at] + gs + ds + arts[at:]
+        arts = arts[:at] + gs + ds + sk + arts[at:]
         if "commands" not in {a["id"] for a in arts}:            # the command reference, from the code itself
             try:
                 cmd = wiki_md.commands_article()
@@ -167,6 +183,8 @@ def sources(top):
         out.append(str(d.resolve().relative_to(Path(top).resolve())) + "/[A-Z]*.md")
         from hypnomix.app.wiki_md import ROOT_FILES
         out += [n for n in ROOT_FILES if (Path(top) / n).exists()]
+    if (Path(top) / "skills").is_dir():
+        out.append("skills/*/SKILL.md")
     return out
 
 

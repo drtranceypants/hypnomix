@@ -145,10 +145,13 @@ REPO = "https://github.com/drtranceypants/hypnomix/blob/main/"
 
 
 def src_of(path):
-    """The file's path in the repo: README.md, docs/LIVE.md, docs/guides/08-inside-reaper.md."""
+    """The file's path in the repo: README.md, docs/LIVE.md, docs/guides/08-inside-reaper.md,
+    skills/first-pass/SKILL.md."""
     p = Path(path)
     if p.name in ROOT_FILES:
         return p.name
+    if p.name == "SKILL.md":
+        return f"skills/{p.parent.name}/SKILL.md"
     if p.parent.name == "guides":
         return f"docs/guides/{p.name}"
     return f"docs/{p.name}"
@@ -170,6 +173,20 @@ def doc_article(path, taken=()):
     return {"id": aid, "group": DOCS_GROUP, "title": re.sub(r"`([^`]+)`", r"\1", title), "sub": meta.get("subtitle", ""),
             "no": src_of(path), "teaser": meta.get("teaser", ""), "html": body, "text": plain,
             "url": f"{SITE}/wiki/#{aid}", "file": str(Path(path).resolve()), "src": src_of(path)}
+
+
+SKILLS_GROUP = "Skills"
+
+
+def skill_article(path, taken=()):
+    """A Claude Code skill (skills/<name>/SKILL.md) -> an article: when to use it, then what it does."""
+    meta, _ = front(Path(path).read_text())
+    a = doc_article(path, taken)
+    name = meta.get("name") or Path(path).parent.name
+    aid = f"skill-{name}"
+    a.update(id=aid, group=SKILLS_GROUP, sub=meta.get("description", ""), url=a["url"].rsplit("#", 1)[0] + "#" + aid,
+             teaser=meta.get("teaser", "") or meta.get("description", ""))
+    return a
 
 
 def link_files(arts):

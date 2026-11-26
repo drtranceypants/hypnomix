@@ -219,6 +219,19 @@ class WikiTest(unittest.TestCase):
         self.assertIn('<a href="#" data-jump="s-1-the-workflow-at-a-glance">The workflow, at a glance</a>', h)
         self.assertIn('<h3 class="sub-h" id="s-1-the-workflow-at-a-glance">1. The workflow, at a glance</h3>', h)
 
+    def test_skills_are_articles(self):
+        sk = self.src / "skills" / "mix-engineer"
+        sk.mkdir(parents=True)
+        (sk / "SKILL.md").write_text("---\nname: mix-engineer\ndescription: Turn stems into a song. Use when someone hands over stems.\n---\n\n# Mix engineer\n\nSteps. Read `docs/LIVE.md`.\n")
+        wiki._CACHE.clear()
+        k = next(a for a in wiki.local() if a["id"] == "skill-mix-engineer")
+        self.assertEqual((k["group"], k["title"], k["no"], k["src"]),
+                         ("Skills", "Mix engineer", "skills/mix-engineer/SKILL.md", "skills/mix-engineer/SKILL.md"))
+        self.assertEqual(k["sub"], "Turn stems into a song. Use when someone hands over stems.")
+        self.assertEqual(k["teaser"], k["sub"])
+        self.assertEqual(k["url"], wiki.SITE + "/wiki/#skill-mix-engineer")
+        self.assertIn("<p class=\"lead\">Steps.", k["html"])
+
     def test_links_between_files(self):
         arts = [{"id": "app-doc", "src": "docs/APP.md", "html": ""},
                 {"id": "readme", "src": "README.md",
@@ -234,6 +247,7 @@ class WikiTest(unittest.TestCase):
         """Each docs/*.md is listed in pyproject.toml, so an installed hypnomix has the same wiki."""
         root = Path(wiki.__file__).resolve().parents[2]
         toml = (root / "pyproject.toml").read_text()
+        self.assertIn('"skills" = "hypnomix/app/wiki/skills"', toml)
         for n in wiki_md.ROOT_FILES:
             self.assertIn(f'"{n}" = "hypnomix/app/wiki/docs/{n}"', toml)
         for f in sorted((root / "docs").glob("[A-Z]*.md")):
