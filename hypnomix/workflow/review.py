@@ -23,8 +23,10 @@ this" (the same decision for the undecided findings of the same kind and size), 
 `review.teach=on` (default) a few words on why the technique exists. With `review.max_questions=N` the first N
 questions are shown and the rest sit in a collapsed "low priority: batch" section with suggested grouped decisions.
 
-High-severity and protected items are marked: decide those one at a time. "Approve all low" only touches
-low-severity items that are not protected.
+High-severity and protected items are marked: decide those one at a time. "Approve all low..." only offers
+low-severity fixes that are not taste calls (tuning, harmony balance, motion, colour, borrowed moves, variations),
+not tidy steps (reordering, removing or merging tracks), not on protected tracks and not by-hand items; it shows
+the list first and records nothing until you confirm it. The rule is oversight.bulk_low, shared with the app.
 """
 import argparse, html, json, sys
 from pathlib import Path
@@ -157,8 +159,9 @@ __OVCSS__
 <div id="top"></div>
 <div class="bar"><span class="count" id="count"></span>
 <span class="who"><label for="who">Reviewer</label><input id="who" placeholder="your name"></span>
-<button id="alllow" title="Low-severity items that are not protected">Approve all low</button>
+<button id="alllow" title="Low-severity fixes that are not taste calls, tidy steps or protected tracks: you see the list first">Approve all low&hellip;</button>
 <button id="dl">Download decisions</button></div>
+<div id="bulk"></div>
 <div id="list"></div>
 <div id="batch"></div>
 <div id="info"></div>
@@ -274,9 +277,22 @@ document.addEventListener('change', e => {
 document.addEventListener('play', e => {  // one player at a time, so A and B are compared, not mixed
   document.querySelectorAll('audio').forEach(a => { if (a !== e.target) a.pause(); });
 }, true);
+const LEFT_OUT = {taste: 'taste calls (tuning, harmony balance, motion, colour, borrowed moves, variations)', tidy: 'tidy steps (reordering, removing or merging tracks)', protected: 'on protected tracks', by_hand: 'by-hand items'};
+function bulkClose() { document.getElementById('bulk').innerHTML = ''; }
 document.getElementById('alllow').onclick = () => {
-  const ids = DATA.findings.filter(f => f.severity === 'low' && !f.protected && f.applies !== 'info' && f.applies !== 'answer' && !dec[f.id]).map(f => f.id);
-  if (ids.length && confirm(`Approve ${ids.length} low-severity item(s) without listening to each?`)) ids.forEach(id => setDecision(id, 'approve', 'batch: all low'));
+  const byId = Object.fromEntries(DATA.findings.map(f => [f.id, f]));
+  const open = id => !(dec[id] && dec[id].decision);
+  const ids = DATA.bulk.ok.filter(open);
+  const left = Object.keys(LEFT_OUT).map(k => [k, (DATA.bulk[k] || []).filter(open).length]).filter(x => x[1]).map(x => `${x[1]} ${LEFT_OUT[x[0]]}`);
+  const out = left.length ? `<p class="note">Left out, and still for you to decide one at a time: ${esc(left.join('; '))}.</p>` : '';
+  const rows = ids.map(id => { const f = byId[id]; return `<li><b>${esc(f.track || f.tool)}</b> <span class="where">${esc(f.where || '')}</span> ${esc(String(f.problem || '').split('\n')[0].slice(0, 160))}</li>`; }).join('');
+  document.getElementById('bulk').innerHTML = ids.length
+    ? `<div class="item"><b>Approve these ${ids.length} low-severity fix${ids.length === 1 ? '' : 'es'}?</b> Nothing is recorded until you confirm, and nothing is applied by this.${out}<ul>${rows}</ul>
+       <div class="act"><button id="bulk-ok">Approve these ${ids.length}</button><button id="bulk-no">Cancel</button></div></div>`
+    : `<div class="item"><b>Nothing to approve in bulk.</b> No undecided low-severity fix is safe to approve without a look.${out}<div class="act"><button id="bulk-no">Close</button></div></div>`;
+  const ok = document.getElementById('bulk-ok');
+  if (ok) ok.onclick = () => { ids.filter(open).forEach(id => setDecision(id, 'approve', 'batch: all low (the list was shown first)')); bulkClose(); };
+  document.getElementById('bulk-no').onclick = bulkClose;
 };
 document.getElementById('dl').onclick = () => {
   const a = document.createElement('a');
@@ -332,7 +348,7 @@ def oversight_payload(sd, findings=None, prefs=None):
     sd = Path(sd)
     prefs = P.load() if prefs is None else prefs
     if findings is None:
-        findings = json.loads((sd / "findings.json").read_text())["findings"]
+        findings = O.load_findings_doc(sd)["findings"]
     role_of = O.roles(sd)
     teach = O.teach_on(prefs)
     extras = {f["id"]: O.extras(f, prefs, role_of, teach_on=teach) for f in findings}
@@ -347,13 +363,24 @@ def oversight_payload(sd, findings=None, prefs=None):
                 fingerprints={f["id"]: O.fingerprint(f) for f in findings})
 
 
+def bulk_payload(findings):
+    """For "Approve all low": the ids a bulk approve may take ("ok") and, per reason, the ids it leaves out. Whether one is
+    decided already is looked at on the page, when the button is pressed."""
+    out = dict(ok=[], taste=[], tidy=[], protected=[], by_hand=[])
+    for f in findings:
+        c = O.bulk_class(f)
+        if c:
+            out[c].append(f["id"])
+    return out
+
+
 def build(sd):
     from hypnomix.workflow import prefs as P
     data, dec, ab = load(sd)
     notes = data.get("notes", [])
     payload = dict(set=data.get("set", ""), dir=str(sd), findings=data["findings"], decisions=dec, ab=ab,
                    prefs=P.summary(P.load()), broken=[n for n in notes if "failed" in n or n.startswith("WARNING")],
-                   ov=oversight_payload(sd, data["findings"]))
+                   ov=oversight_payload(sd, data["findings"]), bulk=bulk_payload(data["findings"]))
     blob = json.dumps(payload, default=str).replace("</", "<\\/")
     title = html.escape(Path(data.get("set") or sd.name).stem)
     page = (PAGE.replace("__OVCSS__", OVERSIGHT_CSS).replace("__OVJS__", OVERSIGHT_JS)

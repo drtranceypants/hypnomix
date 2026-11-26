@@ -5,6 +5,7 @@ Usage: hypnomix mine project.als [...] [--out DIR]
 """
 from hypnomix.core.paths import out_at
 import argparse, gzip, json, math, re, sys
+from hypnomix.core.gz import read_gz
 from collections import Counter, defaultdict
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -107,7 +108,7 @@ def key_from_hist(h):
 
 
 def mine(path):
-    root = ET.fromstring(gzip.open(path).read())
+    root = ET.fromstring(read_gz(path))
     ls = root.find("LiveSet")
     main = ls.find("MainTrack") or ls.find("MasterTrack")
     tsig = val(main, "DeviceChain/Mixer/TimeSignature/TimeSignatures/RemoteableTimeSignature/Numerator", "4")

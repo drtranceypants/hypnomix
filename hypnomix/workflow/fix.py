@@ -406,6 +406,7 @@ def not_applied(sd, findings, dec, manual_items, skipped, zero, default_ids=()):
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix fix", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("scan_dir")
     ap.add_argument("--approve", action="append", default=[], metavar="ID[,ID...]",
                     help="finding ids (or item numbers) to apply; repeatable, each may be a comma list")
@@ -743,7 +744,8 @@ def main():
                                 any_ids, n_skip = gcur != cur, n_skip + len(gitems)
                                 continue
                         if code != 0 or not made.exists():
-                            failed += [f"{f['id']}: {tool} --apply failed" for f in gitems]
+                            why_ = next((l.strip() for l in t_.splitlines() if l.startswith("this set was saved by Live")), "")
+                            failed += [f"{f['id']}: {tool} --apply failed" + (f": {why_}" if why_ else "") for f in gitems]
                             continue
                         if mode == "blend":
                             ns, nk = O.blend(gcur, made, gnxt, amt / 100.0)
@@ -1032,10 +1034,18 @@ def main():
         # (positions, edges, fades, warp, gain); no rendered copy of the track is made or swapped in
         by_section = "--scales" in [str(x) for x in tune_key]    # the key map is in song time: laid out per take below
         import gzip as _gz, xml.etree.ElementTree as _ET
+        from hypnomix.core.gz import read_gz
         from hypnomix.session import sources as SRC, check as C
         target = name_out
         base = target if Path(target).exists() else src
-        root_t = _ET.fromstring(_gz.open(base).read())
+        root_t = _ET.fromstring(read_gz(base))
+        from hypnomix.session import liveversion as LV
+        try:
+            LV.check_write(root_t)                # refuse before any take is tuned: no files are left behind
+        except LV.NewerLive as e:
+            failed.append(f"{f['id']}: not tuned: {e}")
+            print(f"tune       REFUSED  {f['track']}: this set was saved by a newer Live than hypnomix has been tested with")
+            continue
         tname = f["track"]
         if SRC.find_track(root_t, tname) is None:            # renamed earlier in this run
             tname = next((n_ for o_, n_ in (locals().get("done_n") or []) if o_ == tname), tname)
@@ -1099,6 +1109,13 @@ def main():
                 print(f"tune       ok  {f['track']}: take {take.name} → {dest.name} ({len(clips)} comp clip(s))")
             else:
                 failed.append(f"{f['id']}: tune failed on take {take.name}")
+        if done_files:
+            from hypnomix.session import liveversion as LV
+            try:
+                LV.check_write(root_t)            # a set from a newer Live than the newest tested is not written
+            except LV.NewerLive as e:
+                failed.append(f"tune: the tuned takes were not put into the set: {e}")
+                done_files = 0
         if done_files:
             tmp = Path(target).with_name(Path(target).stem + " (tune step).als")
             with _gz.open(tmp, "wb") as fh:

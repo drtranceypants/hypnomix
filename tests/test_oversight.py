@@ -257,11 +257,18 @@ class Teach(unittest.TestCase):
         tools = ["smooth", "edges", "timing", "tune", "key", "vocalign", "cliplevel", "duck", "voices", "distortion",
                  "sidechain", "audit", "measure", "qc", "translate", "sections", "match", "dehiss", "intent", "refs",
                  "name", "order", "tidy", "devices", "masking", "align", "recording", "cleanup", "deess", "breaths",
-                 "prep", "automix", "master", "motion", "borrow", "structure"]
+                 "prep", "automix", "master", "motion", "borrow", "structure", "profile"]
         for t in tools:
             self.assertNotEqual(T.why(dict(tool=t, kind="x")), T.FALLBACK[0], t)
         self.assertIn("click", T.why(dict(tool="smooth", kind="click")))
         self.assertTrue(T.practice(dict(tool="measure", kind="true-peak")).startswith("-1 dBTP"))
+
+    def test_profile_findings_have_their_own_words_and_confidence(self):
+        from hypnomix.workflow import oversight as O, teach as T
+        f = dict(tool="profile", kind="own-range")
+        self.assertIn("Your own finished songs", T.why(f))
+        self.assertNotEqual(T.practice(f), T.FALLBACK[1])
+        self.assertEqual(O.confidence(f), (0.45, "default for this kind"))
 
 
 class Collaborators(unittest.TestCase):

@@ -29,6 +29,7 @@ Usage:
   hypnomix devices SET.als --apply NEW.als --ids devices-2,devices-5
 """
 import argparse, gzip, json, math, re, subprocess, sys, tempfile
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -247,7 +248,7 @@ def review_track(name, role, t, x, tempo, root_tag="AudioTrack"):
 
 def propose(set_path, names_json=None, stems=None, tracks=None):
     set_path = Path(set_path)
-    root = ET.fromstring(gzip.open(set_path).read())
+    root = ET.fromstring(read_gz(set_path))
     tempo = float(v(root, ".//Tempo/Manual"))
     labels = {}
     if names_json and Path(names_json).exists():
@@ -339,6 +340,7 @@ def apply_settings(root, items, fs, want):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix devices", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als"); ap.add_argument("--names"); ap.add_argument("--stems"); ap.add_argument("--track", action="append")
     ap.add_argument("--json"); ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
     a = ap.parse_args()
@@ -365,6 +367,8 @@ def main():
             sys.exit("say which: --ids devices-2,… (nothing is changed by default)")
         done = apply_settings(root, items, fs, want)
         data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
+        from hypnomix.session import liveversion as LV
+        LV.guard_write(root)                # refuses a set saved by a Live newer than the newest tested
         with gzip.open(a.apply, "wb") as fh:
             fh.write(data)
         print(f"wrote {a.apply}: {done} device(s) changed")

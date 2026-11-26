@@ -81,7 +81,7 @@ scratch (nothing is downloaded, nothing is a recording; a second run makes "Hypn
 time and the command that finds it: a click, a level jump, hiss, clipped peaks, a harmony that drifts off pitch and
 drums that fall behind. Then follow `DEMO.md`: scan it, hear each fix, approve two, apply them. With `--kind reaper`
 a REAPER project plays the stems, so the scan sees all six; the plain folder shows the hiss and the clipping. That
-project has not yet been opened in REAPER; REAPER does not need to be open to scan it. There is no Live set kind, because a set
+project was opened in REAPER 7.86 and read back (no offline media, matching what hypnomix wrote); REAPER does not need to be open to scan it. There is no Live set kind, because a set
 written from scratch has not been opened in Live.
 
 ### 0b. Check the files before any work (optional, any song)

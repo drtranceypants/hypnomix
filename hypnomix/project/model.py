@@ -4,10 +4,13 @@ Readers fill it from a Live set (`als.py`) or a REAPER project (`reaper.py`); to
 what is in the song (and to render it) work from this, whatever DAW made it. Each object keeps `native`, the
 element or chunk it was read from, so a DAW-specific writer can change exactly that and nothing else.
 """
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 import math
+import os
 import re
+import threading
 
 import numpy as np
 
@@ -178,16 +181,31 @@ class Project:
 
 
 # ---------------------------------------------------------------- generic renderer (seconds-based clips)
-_SRC = {}
+_SRC = OrderedDict()                   # (path, sr, mtime_ns, size) -> mono samples; least recently used first
+_SRC_MAX_ITEMS = 48                    # a long-lived process (the app, the REAPER panel) must not grow without limit
+_SRC_MAX_BYTES = 1 << 30
+_SRC_LOCK = threading.Lock()
 
 
 def _source(path, sr):
-    key = (str(path), sr)
-    if key not in _SRC:
-        from hypnomix.core import dsp
-        y, _ = dsp.load(path, sr)
-        _SRC[key] = y.mean(1).astype(np.float64)
-    return _SRC[key]
+    """The file's mono samples at `sr`. The cache key holds the file's modified time and size, so a file that changed
+    on disk is read again, and the cache keeps at most _SRC_MAX_ITEMS files / _SRC_MAX_BYTES of samples."""
+    st = os.stat(path)                                       # a missing file raises here, as reading it would
+    key = (str(path), sr, st.st_mtime_ns, st.st_size)
+    with _SRC_LOCK:
+        if key in _SRC:
+            _SRC.move_to_end(key)
+            return _SRC[key]
+    from hypnomix.core import dsp
+    y, _ = dsp.load(path, sr)
+    y = y.mean(1).astype(np.float64)
+    with _SRC_LOCK:
+        for k in [k for k in _SRC if k[:2] == key[:2]]:      # an older version of the same file
+            del _SRC[k]
+        _SRC[key] = y
+        while len(_SRC) > 1 and (len(_SRC) > _SRC_MAX_ITEMS or sum(v.nbytes for v in _SRC.values()) > _SRC_MAX_BYTES):
+            _SRC.popitem(last=False)
+    return y
 
 
 def _stretched(path, rate, sr):

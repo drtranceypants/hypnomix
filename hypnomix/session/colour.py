@@ -53,6 +53,7 @@ itself is Live's. A new instrument doubling a line (from `midi`) is not built ye
 Close the set in Live before --apply. `hypnomix check` runs on the result, and the set is not opened in Live here.
 """
 import argparse, copy, gzip, json, os, re, sys, warnings
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -340,7 +341,7 @@ def load_preset(lib, rel):
     f = Path(lib) / (rel + ".adv") if lib else None
     if not f or not f.exists():
         return None
-    return ET.fromstring(gzip.open(f).read())[0]
+    return ET.fromstring(read_gz(f))[0]
 
 
 def template_for(step, lib, root):
@@ -614,6 +615,7 @@ def main():
     ap.add_argument("--ids")
     ap.add_argument("--tweak", action="append", default=[], help='"colour-2:amount=0.3" (repeatable)')
     ap.add_argument("--prefs-file", help=argparse.SUPPRESS)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args()
     if not 0 <= a.amount <= 1:
         sys.exit("--amount is between 0 and 1")

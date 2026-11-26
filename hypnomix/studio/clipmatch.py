@@ -16,6 +16,7 @@ smoothed to half-octaves and capped (±4 dB), which covers proximity effect and 
 """
 from hypnomix.core.paths import out_at
 import argparse, gzip, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -101,7 +102,7 @@ def warp_map(clip):
 
 
 def als_clips(als, track_name):
-    root = ET.fromstring(gzip.open(als).read())
+    root = ET.fromstring(read_gz(als))
     tempo = float(root.find(".//Tempo/Manual").get("Value"))
     tracks = [t for t in root.find(".//Tracks") if t.tag == "AudioTrack"]
     pick = [t for t in tracks if t.find("./Name/EffectiveName").get("Value").lower() == track_name.lower()] or \

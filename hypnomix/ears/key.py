@@ -17,6 +17,7 @@ mapped to the right bars. Real songs that move between closely related scales co
 disputed note named (e.g. "F or F#?"): that is the question to ask the person before tuning.
 """
 import argparse, gzip, json, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 import numpy as np
 
@@ -44,7 +45,7 @@ def kname(i): return f"{NAMES[i % 12]} {'major' if i < 12 else 'minor'}"
 
 def midi_evidence(als):
     """Pitch-class histogram (duration-weighted) and bass histogram from arrangement MIDI clips."""
-    r = ET.fromstring(gzip.open(als).read())
+    r = ET.fromstring(read_gz(als))
     v = lambda n, p: (n.find(p).get("Value") if n.find(p) is not None else None)
     pc, bass, n = np.zeros(12), np.zeros(12), 0
     for t in r.find(".//Tracks"):
@@ -161,7 +162,7 @@ def compatible_keys(root, kind):
 
 def midi_notes(als):
     """[(start_beat, end_beat, midi_key, weight)] for arrangement MIDI notes on non-drum, unmuted tracks."""
-    r = ET.fromstring(gzip.open(als).read())
+    r = ET.fromstring(read_gz(als))
     v = lambda n, p: (n.find(p).get("Value") if n.find(p) is not None else None)
     tempo = float(v(r, ".//Tempo/Manual")); out = []
     for t in r.find(".//Tracks"):

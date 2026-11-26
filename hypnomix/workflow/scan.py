@@ -372,7 +372,7 @@ def g_vocals(als, od, a, role):
         lead = pick_lead([(t, dsp.load(p, 22050)[0]) for t, p in files.items()], 22050)
         how = "picked by sound: the vocal whose vowels move most (sings the words), then singing time"
     if lead:
-        info = json.loads((od / "scan.json").read_text()) if (od / "scan.json").exists() else {}
+        info = AT.load_json(od / "scan.json", {}) or {}
         info["lead"] = lead
         AT.write_json(od / "scan.json", info)
     findings, notes = [], []
@@ -521,8 +521,9 @@ def key_map(als, od, a):
 def faders_db(als, names):
     """Each track's fader (dB) from the set: renders are raw clips, so levels compare as heard only with these."""
     import gzip, math, xml.etree.ElementTree as ET
+    from hypnomix.core.gz import read_gz
     out = {}
-    for t in ET.fromstring(gzip.open(als).read()).find(".//Tracks"):
+    for t in ET.fromstring(read_gz(als)).find(".//Tracks"):
         nm = t.find("./Name/EffectiveName").get("Value")
         vol = t.find("./DeviceChain/Mixer/Volume/Manual")
         if nm in names and vol is not None and float(vol.get("Value")) > 0:
@@ -1294,6 +1295,9 @@ def _position(where):
     times = re.findall(r"(\d+):(\d+(?:\.\d+)?)", text)
     if times:
         return "s", [int(m) * 60 + float(sec) for m, sec in times]
+    secs = re.findall(r"\((\d+(?:\.\d+)?)\s*s\)", text)       # REAPER and Ardour: "5.2.01 (9.60 s)": the seconds are the position
+    if secs:
+        return "s", [float(x) for x in secs]
     if re.search(r"\bbars?\b", text, re.I):
         return "bar", [int(b) + ((int(beat) - 1) / 4 if beat else 0.0)
                        for b, beat in re.findall(r"(\d+)(?:\.(\d+))?", text)]
@@ -1311,8 +1315,11 @@ def _near(old_where, new_where):
     return d if d <= (WHERE_TOL_S if ua == "s" else WHERE_TOL_BARS) else None
 
 
-def _identity(f):
+def identity(f):
     return (f.get("tool"), f.get("track") or "", f.get("kind") or "", f.get("device") or "")
+
+
+_identity = identity                       # the old name
 
 
 def _pair(olds, news):
@@ -1357,10 +1364,10 @@ def remap_decisions(old_findings, new_findings, dec):
     neighbour, is dropped, never carried over by its number. Returns (kept by new id, dropped by old id)."""
     news = {}
     for f in new_findings:
-        news.setdefault(_identity(f), []).append(f)
+        news.setdefault(identity(f), []).append(f)
     olds = {}
     for f in old_findings or []:
-        olds.setdefault(_identity(f), []).append(f)
+        olds.setdefault(identity(f), []).append(f)
     mapping = {}
     for key, group in olds.items():
         mapping.update(_pair(group, news.get(key, [])))
@@ -1436,6 +1443,12 @@ def merge(od, remap=True):
             findings += d["findings"]
             notes += d.get("notes", [])
             meta[g] = d.get("seconds")
+    secs = {g: round(float(v), 1) for g, v in meta.items() if isinstance(v, (int, float))}
+    if secs and sjp.exists():                  # what the app reads for its progress estimate
+        info = AT.load_json(sjp, {}) or {}
+        if info.get("group_seconds") != secs:
+            info["group_seconds"] = secs
+            AT.write_json(sjp, info)
     findings.sort(key=lambda f: (SEV.get(f.get("severity"), 9), ALL_GROUPS.index(f["group"]), f.get("track", "")))
     for n, f in enumerate(findings, 1):
         f["n"] = n
@@ -1668,13 +1681,14 @@ def write_review(od, setp, findings, notes, meta, pref_lines=(), prefs=None):
               "open; open the new file when it is written."]
         AT.write_text(od / "REVIEW.md", "\n".join(L) + "\n", backup=False)
         return
-    if rpp_:
-        name, ext, swap = {"reaper": ("REAPER", ".rpp", "as new takes"),
-                           "ardour": ("Ardour", ".ardour", "as new regions")}[daw]
-        L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision', "```",
-              f"{name} project: *manual* items say what to change in {name}; *audio* items (tune, dehiss, deess, "
-              f"breaths) become new files with `hypnomix fix` as for any project, and you swap them in {swap}. "
-              f"Writing approved project changes into a new {ext} comes with a later hypnomix release."]
+    if rpp_:                                  # an Ardour session (REAPER returned above)
+        L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision',
+              f'hypnomix fix "{od}" --approved --out "<Session> (fixed).ardour"   # apply only what was approved', "```",
+              "Ardour session: `fix` writes approved fades, cuts, dips and mixer moves into ONE new .ardour snapshot "
+              "next to the original, inside the same session folder. It is written and re-read by hypnomix; not yet "
+              "opened in Ardour. *Manual* items say what to change in Ardour; *audio* items (dehiss, deess, "
+              "breaths) become new files with `hypnomix fix`, and you swap them in as new regions. Tuning and the other "
+              "kinds are done by hand."]
         AT.write_text(od / "REVIEW.md", "\n".join(L) + "\n", backup=False)
         return
     L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision',
@@ -1696,7 +1710,7 @@ def incremental_plan(als, od, prev, groups, a):
         sys.exit(f"--since: no scan in {prev}")
     snap = prev / "raw" / Q.SNAPSHOT
     old_groups = {g: json.loads((prev / f"{g}.json").read_text()) for g in ALL_GROUPS if (prev / f"{g}.json").exists()}
-    old_findings = json.loads((prev / "findings.json").read_text())["findings"]
+    old_findings = (AT.load_json(prev / "findings.json", {}) or {}).get("findings") or []
     old_dec = AT.load_json(prev / "decisions.json", {}) or {}
     if not snap.exists():
         print(f"--since: {prev} kept no copy of the set it scanned (an older scan): every group runs again")
@@ -1714,7 +1728,7 @@ def incremental_plan(als, od, prev, groups, a):
                 rerun.append(g)
                 why[g] = "not in the previous scan"
         if a.mix and "mix" in groups and "mix" not in rerun:
-            old_scan = json.loads((prev / "scan.json").read_text()) if (prev / "scan.json").exists() else {}
+            old_scan = AT.load_json(prev / "scan.json", {}) or {}
             if old_scan.get("mix") != a.mix or Path(a.mix).stat().st_mtime > (prev / "findings.json").stat().st_mtime:
                 rerun.append("mix")
                 why["mix"] = "a new or re-bounced mix"
@@ -1775,9 +1789,17 @@ def incremental_decisions(od, since):
 
 
 # ---------------------------------------------------------------- main
+def _source_path(p):
+    """A project path in one form: an Ardour session folder and the .ardour file inside it are the same source."""
+    from hypnomix import project as PJ
+    q = Path(str(p)).expanduser().resolve()
+    inner = PJ.ardour_session(q)
+    return inner.resolve() if inner is not None else q
+
+
 def same_source(recorded, als):
     try:
-        return Path(str(recorded)).expanduser().resolve() == Path(als).resolve()
+        return _source_path(recorded) == _source_path(als)
     except OSError:
         return str(recorded) == str(als)
 
@@ -1845,6 +1867,9 @@ def main():
     from hypnomix import project as PJ
     daw = PJ.daw_of(als)
     reaper = daw in ("reaper", "ardour")      # a project read through the shared model (an Ardour folder too)
+    if a.since and reaper:
+        sys.exit(f"--since is for a Live set (.als): a {PJ.NAMES[daw]} project is scanned in full each time, so leave it out "
+                 "(your decisions are kept by what each finding is about).")
     folder = als.is_dir() and not reaper
     if folder and not audio_files(als):
         sys.exit(f"no audio files (wav, aif, flac) in {als}")
@@ -1880,6 +1905,8 @@ def main():
         old = AT.load_json(sj, {}) or {}
         if old.get("set") == info["set"]:
             info = {k: (v if v is not None else old.get(k)) for k, v in info.items()}
+            if old.get("group_seconds"):        # the last scan's times stay until this one's replace them
+                info["group_seconds"] = old["group_seconds"]
     since = None
     if a.since and not folder:
         since = incremental_plan(als, od, Path(a.since).expanduser(), groups, a)

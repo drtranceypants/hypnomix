@@ -73,7 +73,7 @@ When `masking` finds a fight you agree with, the cut can be written for you: app
 that should give way, as one bell band on its own EQ in a new file: an EQ Eight in a Live set, a ReaEQ in a REAPER project.
 It is gentle (2 dB for a fight that happens less than half the time, 3 dB for more), `--scale` or the approval's amount
 makes it smaller, and nothing else on the track changes. When `fix` writes it, the new file gets hypnomix's structure
-check; it has not yet been opened in Live or REAPER. For a folder of stems there is no set to write into, so the cut stays on the by-hand list.
+check; the ReaEQ band was opened in REAPER 7.86 and read back as written, and the EQ Eight band has not yet been opened in Live. For a folder of stems there is no set to write into, so the cut stays on the by-hand list.
 
 `devices` plays each track through its own chain and judges every stock device by what it actually does:
 barely working, squashing, releasing faster than the bass notes, clamping drum transients. It suggests
@@ -258,6 +258,8 @@ Good defaults are someone else's taste. Teach it yours:
 hypnomix profile build "song1.wav" "song2.wav" "song3.wav"     # your sound as measured ranges
 hypnomix taste "Finished 1.als" "Finished 2.als"                # levels, pans, sends, chains you use
 ```
+
+A scan with `--mix` then also compares the mix with those ranges, as things to listen for (`--no-profile` skips it).
 
 What you do the same way every time becomes a standard the tools keep to; what varies becomes a question they
 ask. All of it is plain files in `~/.hypnomix/`.

@@ -5,6 +5,7 @@ assumes for Live). Rendering is delegated to `hypnomix.session.render.render_tra
 tool already uses, so a track renders identically through the model and through `hypnomix render`.
 """
 import gzip
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -34,7 +35,7 @@ def read(path):
     from hypnomix.session.render import render_track
 
     path = Path(path).expanduser().resolve()
-    root = ET.fromstring(gzip.open(path).read())
+    root = ET.fromstring(read_gz(path))
     from hypnomix.session import liveversion as LV
     LV.warn_read(root)                           # a set from a newer Live: one warning line, never a refusal
     tempo = _v(root, ".//Tempo/Manual", float, 120.0)

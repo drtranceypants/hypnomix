@@ -101,6 +101,7 @@ def main():
     ap.add_argument("--keep-within", type=float, default=8.0); ap.add_argument("--max-ms", type=float, default=45.0)
     ap.add_argument("--keep-lag", action="store_true")
     ap.add_argument("--preview", metavar="DIR"); ap.add_argument("--apply", metavar="NEW.als")
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args()
     if not 0.1 <= a.strength <= 0.9:
         sys.exit("--strength must be between 0.1 and 0.9: a full snap to the grid takes the life out of a take")

@@ -29,7 +29,7 @@ group: Start here
     <h3 class="sub-h">The Live device, stepping through findings</h3>
     <div class="devdemo">
       <figure><div class="frame-paper"><video class="devloop" muted loop playsinline controls preload="none" poster="/wiki/assets/loop-device.jpg" src="https://hypnomix.bradfieldenterprises.org/assets/app/loop-device.mp4" data-src="https://hypnomix.bradfieldenterprises.org/assets/app/loop-device.mp4" aria-label="Ableton Live jumping to five findings in turn while the floating hypnomix panel describes each one"></video></div>
-        <figcaption class="demo-cap">Real captures from Live 12 on &ldquo;Ashes to Dust&rdquo;: each step selects the track, moves the playhead and loop brace to the spot and opens the clip, while the floating panel says what was found and what is proposed. Captured a few frames a second, so it looks steppier than Live does.</figcaption></figure>
+        <figcaption class="demo-cap">Real captures from Live 12 on a real song: each step selects the track, moves the playhead and loop brace to the spot and opens the clip, while the floating panel says what was found and what is proposed. Captured a few frames a second, so it looks steppier than Live does.</figcaption></figure>
       <figure class="devpanel"><img src="/wiki/assets/device-panel.png" alt="The hypnomix panel: a plosive thump finding on a vocal track, the proposed fix, and Prev, Next, Next open, Approve, Skip, Brace and App buttons" width="430" height="188" loading="lazy">
         <figcaption class="demo-cap">The panel itself: Prev / Next / Next open, Approve or Skip, Brace, and App to open the full review. Nothing is applied from here.</figcaption></figure>
     </div>
@@ -50,8 +50,9 @@ group: Start here
     </div>
     <div class="term" data-label="the web app"><pre><span class="p">$</span> hypnomix app          <span class="c"># opens http://127.0.0.1:8791 in your browser</span>
 <span class="p">$</span> hypnomix device       <span class="c"># optional: puts the Max for Live device in your Live User Library</span>
-<span class="p">$</span> pip install "hypnomix[assistant]"   <span class="c"># optional: the Assistant tab (chat with your own AI key)</span>
-<span class="p">$</span> pip install "hypnomix[critique]"    <span class="c"># optional: the Listener (a Google model hears a bounce)</span></pre></div>
+<span class="p">$</span> uv pip install -e ".[assistant]"   <span class="c"># from source, in the hypnomix folder: the Assistant tab (chat with your own AI key)</span>
+<span class="p">$</span> uv pip install -e ".[critique]"    <span class="c"># from source, in the hypnomix folder: the Listener (a Google model hears a bounce)</span></pre></div>
+    <p class="note">In the installed app (Mac or Windows) both are already included. hypnomix is not on PyPI, so <code>pip install hypnomix[...]</code> does not work.</p>
     <h3 class="sub-h">The Mac and Windows app</h3>
     <div class="prose paper">
       <p><b>The easiest way to get it:</b> the installer for Mac or Windows from <a target="_blank" rel="noopener" href="https://hypnomix.bradfieldenterprises.org/download/">the download page</a>. On a Mac it's <b>Hypnomix.app</b>, a window of its own; on Windows the Start menu opens it in your browser. The first time it opens, a guided setup asks how you'd like to work (on your own, with an AI key, with a free model on your computer, or with Claude Code), which DAW you use and whether you'd like teacher mode, and shows the costs and the pros and cons of each: <a data-wiki="setup-ai" href="#">Setting Up, and Choosing an AI</a>.</p>

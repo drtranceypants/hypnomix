@@ -29,6 +29,7 @@ Usage:
   hypnomix tidy SET.als --apply NEW.als [--ids retire-1,merge-2] [--mode remove|bottom] [--tweak "retire-1:keep: A, B"]
 """
 import argparse, copy, gzip, json, math, re, shutil, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -431,6 +432,7 @@ def labels_from(names_json):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix tidy", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als"); ap.add_argument("--names", help="names.json from `hypnomix name` (what each track is)")
     ap.add_argument("--json"); ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
     ap.add_argument("--mode", choices=["remove", "bottom"], default="remove", help="retired tracks: removed, or moved to the bottom")
@@ -445,7 +447,7 @@ def main():
         sys.exit("refusing to overwrite the set; give a new file name")
     if a.apply and Path(a.apply).resolve().parent != src.resolve().parent:
         sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent})")
-    root = ET.fromstring(gzip.open(src).read())
+    root = ET.fromstring(read_gz(src))
     rplan = [] if a.no_retire else retire_plan(root, tweaks(a.tweak))
     tempo = float(v(root, ".//Tempo/Manual") or 120)
     mplan = [] if a.no_merge else merge_plan(root, labels_from(a.names), silence_probe(src, tempo, a.silence_db))
@@ -458,6 +460,8 @@ def main():
         Path(a.json).write_text(json.dumps({"tool": "tidy", "set": str(src), "findings": fs}, indent=1))
     if a.apply:
         want = {x.strip() for x in (a.ids or "").split(",") if x.strip()} or {f["id"] for f in fs if f.get("default") == "approve"}
+        from hypnomix.session import liveversion as LV
+        LV.guard_write(root)                # refuses a set saved by a Live newer than the newest tested
         moved = 0
         merged = []
         for f, m in zip([f for f in fs if f["kind"] == "consolidate"], mplan):

@@ -14,6 +14,7 @@ marker, or delete it to undo one fix. Not moved (listed instead): items that alr
 that loop past the end of their file, MIDI items, and moves the neighbouring hits leave too little room for.
 """
 import re
+from pathlib import Path
 
 import numpy as np
 
@@ -84,7 +85,7 @@ def analyse(p, tracks, to_grid=False, melodic=(), bass=(), drums=()):
     """tracks: names of audio tracks to check. Returns (tracks with hits, issues, notes) like Live's `timing`."""
     spb = 60.0 / p.tempo
     notes = {"unfixable": {}, "missing": set(), "off": [], "bass": sorted(bass), "drums": sorted(drums),
-             "all_onsets": {}}                     # every onset per item, quiet ones too: the anchors of a nudge
+             "all_onsets": {}, "skipped_missing": 0}   # all_onsets: every onset per item, quiet ones too (the anchors of a nudge)
     out = []
     for name in tracks:
         t = next((x for x in p.tracks if x.name == name), None)
@@ -93,6 +94,10 @@ def analyse(p, tracks, to_grid=False, melodic=(), bass=(), drums=()):
         hits = []
         for c in t.clips:
             if c.muted or c.kind != "audio" or c.path is None:
+                continue
+            if not Path(c.path).exists():              # the files group reports it; one lost file must not sink the check
+                notes["missing"].add(str(c.path))
+                notes["skipped_missing"] += 1
                 continue
             found = item_onsets(c)
             notes["all_onsets"][id(c)] = sorted(h["src"] for h in found)

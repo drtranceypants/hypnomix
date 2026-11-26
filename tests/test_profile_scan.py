@@ -307,7 +307,7 @@ class InTheMixGroup(Tmp):
         from hypnomix.workflow import teach
         if ("profile", None) in teach.TEXT:           # words for this kind in teach.py (a change in a file this group does not own)
             self.assertNotIn("A measured problem with a proposed fix", review)   # not the generic fix explanation
-            self.assertIn("your own finished songs", review)
+            self.assertIn("your own finished songs", review.lower())
 
 
 class RealMeasure(unittest.TestCase):

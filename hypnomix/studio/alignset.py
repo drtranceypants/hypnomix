@@ -168,6 +168,7 @@ def main():
                     help="REAPER: the timing goes onto the items as new takes too (playing the checked preview exactly) "
                          "instead of stretch markers")
     ap.add_argument("--json")
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     defaults = {k: ap.get_default(k) for k in vars(ap.parse_args(["x", "--guide", "g", "--parts", "p"]))}
     a = ap.parse_args()
     if a.list_presets:

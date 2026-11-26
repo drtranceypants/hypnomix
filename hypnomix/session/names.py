@@ -18,6 +18,7 @@ Usage:
 Options: --all (also rename tracks you named yourself), --names JSON (fix any guesses, e.g. '{"7-Group":"Synths"}')
 """
 import argparse, gzip, json, os, re, sys, xml.etree.ElementTree as ET
+from hypnomix.core.gz import read_gz
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -30,7 +31,7 @@ SR = 44100
 
 
 def set_info(als):
-    r = ET.fromstring(gzip.open(als).read())
+    r = ET.fromstring(read_gz(als))
     tempo = float(v(r, ".//Tempo/Manual"))
     from hypnomix.session.render import song_end
     end, strays = song_end(r)                       # not a stray clip far past the song
@@ -208,7 +209,7 @@ def rename_set(src, out, mapping, inplace=False):
     import shutil
     if Path(out).resolve() == Path(src).resolve() and not inplace:   # inplace: only for a set a tool just wrote
         raise SystemExit("refusing to overwrite the set; give a new file name")
-    tree = ET.ElementTree(ET.fromstring(gzip.open(src).read()))
+    tree = ET.ElementTree(ET.fromstring(read_gz(src)))
     tracks = list(tree.getroot().find(".//Tracks"))
     by = defaultdict(list)
     for t in tracks:
@@ -227,6 +228,8 @@ def rename_set(src, out, mapping, inplace=False):
         nm.find("./EffectiveName").set("Value", new)
         taken.add(new)
         done.append((old, new))
+    from hypnomix.session import liveversion as LV
+    LV.guard_write(tree.getroot())                # refuses a set saved by a Live newer than the newest tested
     tmp = Path(str(out) + ".tmp")
     data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(tree.getroot(), encoding="utf-8")
     with gzip.open(tmp, "wb") as f:   # same serialisation as every other tool that writes sets
@@ -374,6 +377,7 @@ def propose(rows, parent, fix=None, rename_all=False):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix name", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("set"); ap.add_argument("--out")
     ap.add_argument("--apply", action="store_true"); ap.add_argument("--undo", action="store_true")
     ap.add_argument("--all", action="store_true"); ap.add_argument("--names")

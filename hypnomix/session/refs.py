@@ -5,12 +5,13 @@ Path first, then RelativePath against the set's folder). Reports missing files p
 Usage: hypnomix refs SET.als [...]   (exit code 1 if anything is missing)
 """
 import gzip, sys, os, xml.etree.ElementTree as ET
+from hypnomix.core.gz import read_gz
 from pathlib import Path
 
 
 def check(als):
     als = Path(als)
-    r = ET.fromstring(gzip.open(als).read())
+    r = ET.fromstring(read_gz(als))
     seen, missing, outside = 0, {}, set()
     for t in list(r.find(".//Tracks")) + [x for x in (r.find(".//MainTrack"), r.find(".//MasterTrack")) if x is not None]:
         name = t.find("./Name/EffectiveName").get("Value") if t.find("./Name/EffectiveName") is not None else "Main"

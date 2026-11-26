@@ -12,6 +12,7 @@ Note: once unrolled, editing "the loop" in Live no longer changes every pass: ea
 Usage:  hypnomix unroll SET.als --track NAME [--track …] --apply NEW.als [--at BAR]   (only the clip playing at BAR)
 """
 import argparse, copy, gzip, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -84,6 +85,7 @@ def looped_clips(t):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix unroll", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als"); ap.add_argument("--track", action="append", required=True)
     ap.add_argument("--at", type=float, help="only the clip playing at this bar"); ap.add_argument("--apply", required=True)
     a = ap.parse_args()
@@ -92,7 +94,7 @@ def main():
         sys.exit("refusing to overwrite the set; give a new file name")
     if Path(a.apply).resolve().parent != src.resolve().parent:
         sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent})")
-    root = ET.fromstring(gzip.open(src).read())
+    root = ET.fromstring(read_gz(src))
     tempo = float(v(root, ".//Tempo/Manual"))
     n = 0
     for t in root.find(".//Tracks"):
@@ -108,6 +110,8 @@ def main():
             print(f"{v(t, './Name/EffectiveName')}: a looped clip at bar {float(v(c, './CurrentStart')) / 4 + 1:g} -> {k} copies")
             n += 1
     data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
+    from hypnomix.session import liveversion as LV
+    LV.guard_write(root)                # refuses a set saved by a Live newer than the newest tested
     with gzip.open(a.apply, "wb") as fh:
         fh.write(data)
     print(f"wrote {a.apply}: {n} clip(s) unrolled (editing the loop in Live no longer changes every pass)")

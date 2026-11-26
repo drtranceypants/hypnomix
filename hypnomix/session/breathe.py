@@ -117,6 +117,7 @@ def main():
     ap.add_argument("--ritard", type=float, default=0.0)
     ap.add_argument("--preview", metavar="OUT.wav"); ap.add_argument("--warp-clips", action="store_true")
     ap.add_argument("--replace-tempo", action="store_true"); ap.add_argument("--apply", metavar="NEW.als")
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args()
     from hypnomix.session import automation as aa
     src = Path(a.als)

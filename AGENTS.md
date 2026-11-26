@@ -73,7 +73,7 @@ The answers are: their DAW, where the music is going, loudness and true-peak tar
 (one at a time or batched), how much explanation they want, tuning and timing taste, **tracks that are
 protected**, **things that are deliberate** (a long reverb tail, a fade, loud delays), and which free plug-ins
 they have. `hypnomix profile build song1.wav song2.wav …` adds their sound as measured ranges from finished songs
-they like; offer it, don't require it.
+they like; offer it, don't require it. Once built, `scan --mix` also compares the mix with those ranges, as things to listen for (`--no-profile` skips it).
 
 Preferences shape proposals. They never replace asking: taste calls are always asked.
 
@@ -281,14 +281,19 @@ guesswork: the tools say so and refuse to write from it.
 needs the tempo (`--bpm`; a set scan passes it): without it the bar lines, and so the sections, can be wrong.
 Present their output as "measured, please check by ear", and prefer `--report` before writing a file.
 
-**The newest release: tested on synthetic data only** (say exactly this, never more): the Live devices and the Live
+**The newest release: checked on synthetic data, and its REAPER files in REAPER 7.86** (say exactly this, never more): the Live devices and the Live
 fix paths were tested in Live 12, and REAPER support in REAPER 7.86. Everything newer passes unit tests and hypnomix's
-own structure checks on synthetic data only: `balance`, `handoff`, `plugins`, `colour`, `release`, `compare`,
+own structure checks on synthetic data: `balance`, `handoff`, `plugins`, `colour`, `release`, `compare`,
 `versions`, `album`, `preflight`, `demo`; masking cuts written as an EQ Eight or ReaEQ band; `ab` previews of timing
 nudges and device changes (models of the devices, not Live); and `fix` on an Ardour scan (the snapshot is written and
-re-read by hypnomix and has NOT been opened in Ardour). The new Live sets, REAPER projects and Ardour snapshots have
-not been opened in their DAWs, and the new tools have not been run on real songs. Tell the person to keep their
-original and listen.
+re-read by hypnomix and has NOT been opened in Ardour). On 2026-11-26 the REAPER files this code writes were opened in
+REAPER 7.86 and read back through its API: the demo project (`demo --kind reaper`), a project written by `fix` (an item
+fade and a volume-envelope dip), masking cuts as ReaEQ bands (frequency, gain and bandwidth read back exactly; REAPER's
+own renders with the effect on and bypassed show the cut), the handoff project's marker (position and name) and the
+A/B project (`abset`): all opened with no offline media and matched what hypnomix wrote. Still unchecked, and to be
+said: the new Live sets (handoff locators, the EQ Eight band, colour chains) have not been opened in Live, the Ardour
+snapshots have not been opened in Ardour, none of the new tools has been run on real songs, and nothing new has been
+judged by ear. Tell the person to keep their original and listen.
 
 **Which tool for which job** (several overlap on purpose):
 
@@ -359,7 +364,7 @@ don't drive those apps. The plan for deeper support (later) is in `docs/ROADMAP.
 - Facts about the `.als` format that the code relies on (checked in Live 12.4): arrangement clips live in
   `DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events`; take lanes are separate; clip fade lengths
   are in **beats**; mixer volume is linear gain (1.0 = 0 dB, max 1.995 = +6 dB); a track is off when
-  `Mixer/Speaker/Manual` is `false`. Never touch plug-in state blobs; address parameters by name, not index.
+  `Mixer/Speaker/Manual` is `false`. hypnomix's list of tested versions is Live 11 and Live 12 (the checks on real sets so far were in Live 12): a set saved by a newer major version is read with one warning, and the tools that write a new set refuse it unless forced (`HYPNOMIX_FORCE_LIVE_VERSION=1`; `session/liveversion.py`). Never touch plug-in state blobs; address parameters by name, not index.
 - New checks plug into `scan` (`hypnomix/workflow/scan.py`): add a group function returning normalised findings
   `{id, tool, kind, severity, track, where, problem, fix, applies}` and, if it writes a set, a step in
   `hypnomix/workflow/fix.py`. `fix` re-finds each approved finding by `(tool, track, kind, where, device)`, so

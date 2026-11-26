@@ -267,6 +267,175 @@ class ReviewAndAb(unittest.TestCase):
             self.assertTrue((Path(td) / row["a"]).exists())
 
 
+class FinalRoundScan(unittest.TestCase):
+    """Small exact fixes of the last round: scan, review, handoff and the files around them."""
+
+    def test_a_failing_qc_on_the_mix_is_a_finding_without_like(self):
+        import argparse
+        from unittest import mock
+        from hypnomix.workflow import scan
+        with tempfile.TemporaryDirectory() as td:
+            od = Path(td)
+            (od / "raw").mkdir()
+            a = argparse.Namespace(mix="m.wav", like=None, no_profile=True, profile=None)
+            fake = lambda tool, *args, **kw: (1 if tool == "qc" else 0, f"{tool} said this")
+            with mock.patch.object(scan, "hx", fake), mock.patch.object(scan, "profile_wanted", lambda a: False):
+                found, _ = scan.g_mix("x.als", od, a, tempo=None)
+        by = {f["id"]: f for f in found}
+        self.assertEqual({"mix-1", "mix-2", "mix-3"} - set(by), set())
+        self.assertEqual(by["mix-2"]["severity"], "high")
+        self.assertIn("FAILED release checks", by["mix-2"]["problem"])
+        self.assertEqual(by["mix-1"]["severity"], "info")
+
+    def test_group_seconds_are_written_into_scan_json(self):
+        from unittest import mock
+        from hypnomix.workflow import scan
+        with tempfile.TemporaryDirectory() as td:
+            od = Path(td)
+            (od / "scan.json").write_text(json.dumps({"set": "x.als"}))
+            (od / "names.json").write_text(json.dumps({"group": "names", "set": "x.als", "seconds": 3.24, "findings": [], "notes": []}))
+            (od / "mix.json").write_text(json.dumps({"group": "mix", "set": "x.als", "seconds": 12.0, "findings": [], "notes": []}))
+            with mock.patch("hypnomix.workflow.prefs.load", return_value={}):
+                scan.merge(od)
+            info = json.loads((od / "scan.json").read_text())
+        self.assertEqual(info["group_seconds"], {"names": 3.2, "mix": 12.0})
+        self.assertEqual(info["set"], "x.als")
+
+    def test_since_is_refused_for_a_reaper_or_ardour_project_before_any_work(self):
+        from unittest import mock
+        from hypnomix.workflow import scan
+        with tempfile.TemporaryDirectory() as td:
+            for name in ("Song.rpp", "Song.ardour"):
+                proj = Path(td) / name
+                proj.write_text("x")
+                out = Path(td) / ("out-" + name)
+                argv = ["scan", str(proj), "--since", str(Path(td) / "old"), "--out", str(out)]
+                with mock.patch("sys.argv", argv), self.assertRaises(SystemExit) as cm:
+                    scan.main()
+                self.assertIn("--since is for a Live set", str(cm.exception))
+                self.assertFalse(out.exists())
+
+    def test_an_ardour_folder_and_the_file_inside_it_are_one_source(self):
+        from hypnomix.workflow import scan
+        with tempfile.TemporaryDirectory() as td:
+            folder = Path(td) / "Song"
+            folder.mkdir()
+            (folder / "Song.ardour").write_text("<Session/>")
+            self.assertTrue(scan.same_source(str(folder), folder / "Song.ardour"))
+            self.assertTrue(scan.same_source(str(folder / "Song.ardour"), folder))
+            other = Path(td) / "Other.als"
+            other.write_text("x")
+            self.assertFalse(scan.same_source(str(folder), other))
+
+    def test_a_nudge_of_a_hundredth_of_a_second_is_still_the_same_spot(self):
+        from hypnomix.workflow import scan
+        self.assertEqual(scan._position("5.2.01 (9.60 s)"), ("s", [9.6]))
+        self.assertEqual(scan._near("5.2.01 (9.60 s)", "5.2.01 (9.61 s)") <= 0.011, True)
+        self.assertIsNone(scan._near("5.2.01 (9.60 s)", "9.1.01 (30.00 s)"))
+        self.assertEqual(scan._position("1:23.4"), ("s", [83.4]))                  # the old forms are as before
+        self.assertEqual(scan._position("bar 17.2"), ("bar", [17.25]))
+        self.assertIs(scan.identity, scan._identity)
+
+    def test_the_ardour_review_says_what_fix_writes(self):
+        from hypnomix.workflow import scan
+        with tempfile.TemporaryDirectory() as td:
+            od = Path(td)
+            scan.write_review(od, str(od / "Song.ardour"), [], [], {})
+            text = (od / "REVIEW.md").read_text()
+        self.assertNotIn("later hypnomix release", text)
+        self.assertIn('--approved --out "<Session> (fixed).ardour"', text)
+        self.assertIn("not yet opened in Ardour", text)
+
+    def test_readers_of_the_scan_files_fall_back_to_the_backup(self):
+        from hypnomix.workflow import handoff, oversight as O
+        good = {"set": "/x/Song.als", "findings": [{"id": "smooth-1", "tool": "smooth", "applies": "manual"}]}
+        with tempfile.TemporaryDirectory() as td:
+            sd = Path(td)
+            (sd / "findings.json").write_text('{"set": "/x/Song.als", "find')                    # cut off by a crash
+            (sd / "findings.json.bak").write_text(json.dumps(good))
+            (sd / "decisions.json").write_text('{"smooth-1": {"deci')
+            (sd / "decisions.json.bak").write_text(json.dumps({"smooth-1": {"decision": "approve", "note": "by hand"}}))
+            (sd / "scan.json").write_text("{")
+            (sd / "scan.json.bak").write_text(json.dumps({"set": "/x/Song.als", "mode": "folder"}))
+            self.assertEqual(O.load_findings_doc(sd)["findings"][0]["id"], "smooth-1")
+            items, data = handoff.collect(sd)
+            self.assertEqual([i["f"]["id"] for i in items], ["smooth-1"])
+            self.assertEqual(items[0]["note"], "by hand")
+            self.assertEqual(handoff.context(sd, data)[0], None)               # scan.json read from its backup: a folder, no set
+            with self.assertRaises(FileNotFoundError):
+                O.load_findings_doc(sd / "nowhere")
+
+    def test_bulk_approve_takes_only_plain_low_fixes_and_the_page_shows_the_list_first(self):
+        from hypnomix.workflow import oversight as O, review as RV
+        fs = [dict(id="a", tool="smooth", kind="click", severity="low", applies="set"),
+              dict(id="b", tool="tune", kind="note", severity="low", applies="audio"),                 # a taste call
+              dict(id="c", tool="order", kind="track-order", severity="low", applies="set"),           # a tidy step
+              dict(id="d", tool="smooth", kind="click", severity="low", applies="set", default="approve"),   # on by default
+              dict(id="e", tool="smooth", kind="click", severity="low", applies="set", protected=True),
+              dict(id="f", tool="name", kind="x", severity="low", applies="manual"),                   # by hand
+              dict(id="g", tool="smooth", kind="click", severity="medium", applies="set"),
+              dict(id="h", tool="smooth", kind="click", severity="low", applies="set"),                # decided already
+              dict(id="i", tool="smooth", kind="spike", severity="low", applies="info"),
+              dict(id="j", tool="smooth", kind="click", severity="low", applies="set", taste=True),
+              dict(id="k", tool="smooth", kind="click", severity="low", applies="set"),
+              dict(id="l", tool="tidy", kind="retire-off", severity="low", applies="set")]
+        ok, left = O.bulk_low(fs, {"h": {"decision": "skip"}})
+        self.assertEqual([f["id"] for f in ok], ["a", "k"])
+        self.assertEqual(left, dict(taste=2, tidy=3, protected=1, by_hand=1))
+        payload = RV.bulk_payload(fs)
+        self.assertEqual(payload["ok"], ["a", "h", "k"])                      # decisions are looked at on the page
+        self.assertEqual(sorted(payload["taste"]), ["b", "j"])
+        self.assertEqual(sorted(payload["tidy"]), ["c", "d", "l"])
+        page = RV.PAGE
+        self.assertNotIn("DATA.findings.filter(f => f.severity === 'low'", page)      # the old rule is gone
+        self.assertIn("Nothing is recorded until you confirm", page)
+
+    def test_one_missing_audio_file_does_not_fail_the_timing_check(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        from hypnomix.project.model import Clip, Take
+        from hypnomix.workflow import timing_project as TP
+        with tempfile.TemporaryDirectory() as td:
+            here = Path(td) / "here.wav"
+            sf.write(str(here), np.zeros(SR // 2), SR)
+            clips = [Clip(name="a", start=0.0, length=8.0, takes=[Take(name="a", path=here)]),
+                     Clip(name="gone", start=8.0, length=8.0, takes=[Take(name="gone", path=Path(td) / "lost.wav")]),
+                     Clip(name="gone2", start=16.0, length=8.0, takes=[Take(name="gone2", path=Path(td) / "lost2.wav")])]
+            track = SimpleNamespace(name="Kick", on=True, clips=clips)
+            p = SimpleNamespace(tempo=120.0, tracks=[track])
+            beats = [i * 0.5 for i in range(16)]
+            fake = lambda c, *a, **k: [dict(t=b * 0.5, src=b * 0.5, strength=1.0) for b in range(16)]
+            with mock.patch.object(TP, "item_onsets", fake):
+                out, issues, notes = TP.analyse(p, ["Kick"])
+        self.assertEqual(notes["skipped_missing"], 2)
+        self.assertEqual(len(notes["missing"]), 2)
+        self.assertEqual(len(out), 1)                               # the track with the good file is still measured
+
+    def test_the_audio_cache_follows_the_file_and_is_bounded(self):
+        from unittest import mock
+        from hypnomix.project import model
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "x.wav"
+            sf.write(str(f), np.full(SR, 0.25), SR)
+            model._SRC.clear()
+            a = model._source(f, SR)
+            self.assertIs(model._source(f, SR), a)                   # unchanged: from the cache
+            sf.write(str(f), np.full(SR * 2, 0.5), SR)               # the file changed on disk
+            b = model._source(f, SR)
+            self.assertEqual((len(a), len(b)), (SR, SR * 2))
+            self.assertAlmostEqual(float(b[0]), 0.5, places=3)
+            self.assertEqual(len(model._SRC), 1)                     # the old version is dropped, not kept beside it
+            with mock.patch.object(model, "_SRC_MAX_ITEMS", 3):
+                for i in range(6):
+                    g = Path(td) / f"g{i}.wav"
+                    sf.write(str(g), np.zeros(100), SR)
+                    model._source(g, SR)
+            self.assertLessEqual(len(model._SRC), 3)
+            with self.assertRaises(OSError):
+                model._source(Path(td) / "nope.wav", SR)
+            model._SRC.clear()
+
+
 if __name__ == "__main__":
     unittest.main()
 

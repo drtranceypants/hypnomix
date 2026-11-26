@@ -374,6 +374,7 @@ def main():
     ap.add_argument("--takes", action="append", default=[], metavar="DIR", help="another folder of spare takes to search (repeatable)")
     ap.add_argument("--out"); ap.add_argument("--no-clips", action="store_true", help="skip the audition files")
     ap.add_argument("--apply", metavar="NEW.als")
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args()
     from hypnomix.session import automation as aa
     from hypnomix.core.paths import out_at

@@ -151,7 +151,8 @@ Live's own Export makes the final file: no device can start an export in Live.
 
 ## Limits (to verify on your machine)
 
-- Tested in Live 12 Suite on a real set (2026-11-25): the probe and HypnomixMain measuring playback, the menus and song card reaching the app and `scan`, A / B / Blind and loudness matching on an A/B set, and Record and review before export. Not yet tested: the track-copy switch for clip fixes by ear, and other Live versions.
+- hypnomix's list of tested versions is Live 11 and Live 12 (the checks on real sets so far were in Live 12). A set saved by a newer major version of Live is read with one warning line, and the tools that write a new set refuse it unless forced (`HYPNOMIX_FORCE_LIVE_VERSION=1`, or `--force-live-version` on a command that has it).
+- Tested in Live 12 Suite on a real set (2026-11-25): the probe and HypnomixMain measuring playback, the menus and song card reaching the app and `scan`, A / B / Blind and loudness matching on an A/B set, and Record and review before export. Not yet tested: the track-copy switch for clip fixes by ear, and Live 11 on a real set.
 - The mastering chain was tested in Live 12.4 (2026-11-25): Build, the song card's ceiling and character, Match
   target (it settled at -9.9 LUFS for a -10 target), Save, and building again from the saved template. Live loads
   your own default presets when hypnomix adds a device or a rack: Build empties the rack first, and sets the values

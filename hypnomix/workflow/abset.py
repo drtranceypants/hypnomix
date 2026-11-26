@@ -25,6 +25,7 @@ Not previewable this way (said in ab_live.json): changes to Main other than its 
 return track other than its devices (a copy of a return would not get the sends).
 """
 import argparse, copy, difflib, gzip, json, os, shutil, subprocess, sys, tempfile, time
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -33,10 +34,12 @@ TRACK_TAGS = ("AudioTrack", "MidiTrack", "GroupTrack", "ReturnTrack")
 
 
 def load(p):
-    return ET.ElementTree(ET.fromstring(gzip.open(p).read()))
+    return ET.ElementTree(ET.fromstring(read_gz(p)))
 
 
 def save(tree, out):
+    from hypnomix.session import liveversion as LV
+    LV.guard_write(tree.getroot())                # refuses a set saved by a Live newer than the newest tested
     data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(tree.getroot(), encoding="utf-8")
     with gzip.open(out, "wb") as f:
         f.write(data)
@@ -282,7 +285,8 @@ def fixed_copy(sd, fid, orig, extra=()):
 
 def build(sd, ids=None, out=None, extra=()):
     sd = Path(sd)
-    data = json.loads((sd / "findings.json").read_text())
+    from hypnomix.workflow import oversight as O
+    data = O.load_findings_doc(sd)
     orig = Path(data.get("set") or "")
     if orig.suffix.lower() == ".rpp":            # a REAPER project: workflow/abset_project.py
         from hypnomix.workflow import abset_project as AP
@@ -322,6 +326,7 @@ def build(sd, ids=None, out=None, extra=()):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix abset", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("scan_dir")
     ap.add_argument("--ids", default="", help="only these findings (ids or numbers); default: every audible set change")
     ap.add_argument("--out", help='the A/B set to write (default "<Song> (A-B).als", next to the original)')

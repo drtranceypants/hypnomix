@@ -20,8 +20,11 @@ that is switched on runs in order:
   VST3 and AU plug-ins     loaded from /Library/Audio/Plug-Ins and ~/Library/Audio/Plug-Ins, found by name
                            (AUs by their component codes), with the settings Live saved in the set
   Live's own devices       only those hypnomix models: Utility gain, Compressor and Glue Compressor (also
-                           with a sidechain from another track), Limiter. Every other Live device (EQ Eight,
-                           Saturator, reverbs, racks…) is skipped, and the report says so
+                           with a sidechain from another track), Limiter (a hard ceiling), Gate and EQ Eight
+                           (hypnomix's own models in session/devmodel.py: plain stereo EQ Eight only, and a
+                           Gate that is not in flip mode and has no sidechain; a device in a mode the model
+                           does not cover is left out and the report says so). Every other Live device
+                           (Saturator, reverbs, racks…) is skipped, and the report says so
 Then the fader (or its volume automation) and pan. A group track is its playing tracks summed, then its own
 chain and fader.
 
@@ -44,6 +47,7 @@ Limits, honestly:
 """
 from hypnomix.extras import hint as extra_hint
 import argparse, gzip, json, math, os, plistlib, re, struct, subprocess, sys, tempfile
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -843,7 +847,7 @@ def main():
     ap.add_argument("--check", action="store_true", help="load every plug-in and restore its state; no render")
     a = ap.parse_args()
 
-    root = ET.fromstring(gzip.open(a.als).read())
+    root = ET.fromstring(read_gz(a.als))
     pick = pick_tracks(root, a.tracks, a.group)
     if not pick:
         sys.exit("no tracks match")

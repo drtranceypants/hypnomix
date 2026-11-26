@@ -174,7 +174,7 @@ function extras() {
     ${e.log && (e.running || e.ok === false) ? `<pre style="max-height:160px;overflow:auto">${esc(e.log.split('\n').slice(-14).join('\n'))}</pre>` : ''}
     ${e.ok === false && !e.running ? '<div class="msg bad" style="margin:4px 0">It did not install: the last lines are above. Nothing in the app changed.</div>' : ''}</div>`).join('')}
   ${!X.pip ? (X.bundled ? '<div class="msg bad">This copy of the app can\'t install extras. Download the newest installer from the hypnomix site and install it over this one.</div>'
-    : '<div class="msg bad">This Python has no pip, and uv isn\'t on the PATH. In a terminal: <code>uv pip install \'hypnomix[reference,plugins,ml]\'</code> (or only the ones you want).</div>') : ''}
+    : '<div class="msg bad">This Python has no pip, and uv isn\'t on the PATH. From source, in a terminal in the hypnomix folder: <code>uv pip install -e ".[reference,plugins,ml]"</code> (or only the ones you want).</div>') : ''}
   ${msgHtml()}
   <p class="small">The GPL-3.0 extras are separate projects, so hypnomix itself stays MIT: you download them from their authors, and using them is fine for any music, commercial too. Stem separation may not install on Intel Macs (PyTorch has stopped building for them). Already included: ${inc.map(e => esc(e.title)).join(', ')}.</p>`;
 }

@@ -92,8 +92,69 @@ DEFAULT = ("other", (),
            "whether the change helps the song when you listen to it in context, not only on its own")
 
 
+# Recording problems are in the file itself, so a fader or a clip-level move is not the answer. Looked up by kind, for
+# the findings the recording and noise checks make (tool recording, noise, dehiss, deess or breaths).
+RECORDING_TOOLS = ("recording", "noise", "dehiss", "deess", "breaths")
+_PEAKS = ("peaks", ("clipped", "hot"),
+          dict(live="Double-click {t}'s clip to open it in Clip view and look at the waveform for flat tops. Flattened peaks "
+                    "cannot be repaired by turning them down: use a cleaner take, or re-record with the input level lower.",
+               reaper="Zoom in on {t}'s item and look at the waveform for flat tops. Flattened peaks cannot be repaired by "
+                      "turning them down: use a cleaner take, or re-record with the input level lower.",
+               ardour="Zoom in on {t}'s region and look at the waveform for flat tops. Flattened peaks cannot be repaired by "
+                      "turning them down: use a cleaner take, or re-record with the input level lower.",
+               generic="Zoom in on {t}'s audio and look at the waveform for flat tops. Flattened peaks cannot be repaired by "
+                       "turning them down: use a cleaner take, or re-record with the input level lower."),
+          "flattened, crackly peaks on the loudest notes; a take recorded lower sounds rounder, even when it is quieter")
+_QUIET = ("quiet", ("quiet",),
+          dict(live="Raise {t}'s clip gain in Clip view (not the fader), then play the gaps between phrases: turning a quiet "
+                    "take up also turns its noise up.",
+               reaper="Raise {t}'s item volume (not the track fader), then play the gaps between phrases: turning a quiet take "
+                      "up also turns its noise up.",
+               ardour="Raise {t}'s region gain (not the strip fader), then play the gaps between phrases: turning a quiet take "
+                      "up also turns its noise up.",
+               generic="Raise {t}'s clip or item gain (not the fader), then play the gaps between phrases: turning a quiet take "
+                       "up also turns its noise up."),
+          "the noise in the gaps staying out of the way once the part is at a normal level")
+_NOISE = ("noise", ("noise", "boosted-noise"),
+          dict(live="Play the gaps between phrases on {t}. If it is hiss, swap in the cleaned copy for that clip (or record the "
+                    "part hotter); turning the clip down hides the part as well as the noise.",
+               reaper="Play the gaps between phrases on {t}. If it is hiss, swap in the cleaned copy on that item (or record the "
+                      "part hotter); turning the item down hides the part as well as the noise.",
+               ardour="Play the gaps between phrases on {t}. If it is hiss, swap in the cleaned copy for that region (or record "
+                      "the part hotter); turning the region down hides the part as well as the noise.",
+               generic="Play the gaps between phrases on {t}. If it is hiss, swap in the cleaned copy (or record the part "
+                       "hotter); turning it down hides the part as well as the noise."),
+          "the gaps going quiet without the part turning dull or watery; compare the cleaned copy with the original at the same level")
+_DC = ("dc", ("dc",),
+       dict(live="Put a Utility on {t} and switch its DC filter on, or use the cleaned copy.",
+            reaper="Put a high-pass at about 20 Hz in ReaEQ on {t}'s FX chain, or use the cleaned copy.",
+            ardour="Put a high-pass filter plug-in at about 20 Hz on {t} (Ardour's own high/low-pass filter), or use the cleaned copy.",
+            generic="Put a very low high-pass (about 20 Hz) on {t}, or use the cleaned copy."),
+       "no click where the clip starts or stops, and the low end sounding the same")
+_UNREADABLE = ("unreadable", ("unreadable",),
+               dict(live="Export {t}'s audio again as a WAV file and put that in the set.",
+                    reaper="Export {t}'s audio again as a WAV file and put that on the item.",
+                    ardour="Export {t}'s audio again as a WAV file and import that.",
+                    generic="Export {t}'s audio again as a WAV file."),
+               "the new file playing from start to end, the same length as before")
+_SILENT = ("silent", ("silent",),
+           dict(live="Play {t}'s clip in Live. If it is silent, the wrong track or range was exported: export it again, or put "
+                     "the right file in the set.",
+                reaper="Play {t}'s item in REAPER. If it is silent, the wrong track or range was exported: export it again, or "
+                       "put the right file on the item.",
+                ardour="Play {t}'s region in Ardour. If it is silent, the wrong track or range was exported: export it again, "
+                       "or import the right file.",
+                generic="Play {t}'s audio. If it is silent, the wrong track or range was exported: export it again, or use the "
+                        "right file."),
+           "the part playing at its normal level from start to end once the right file is in place")
+RECORDING_JOBS = {k: j for j in (_PEAKS, _QUIET, _NOISE, _DC, _UNREADABLE, _SILENT) for k in j[1]}
+
+
 def job_for(f):
-    """The kind of job: judged by the finding's tool and kind first, then by the words of its problem and fix."""
+    """The kind of job: recording problems first (by their kind), then the finding's tool and kind, then the words of
+    its problem and fix."""
+    if f.get("tool") in RECORDING_TOOLS and f.get("kind") in RECORDING_JOBS:
+        return RECORDING_JOBS[f["kind"]]
     for fields in (("tool", "kind"), ("problem", "fix")):
         text = " ".join(str(f.get(k) or "") for k in fields).lower()
         for job in JOBS:
@@ -150,8 +211,9 @@ def barbeat(t, tempo, bpb):
 # ---------------------------------------------------------------- collecting
 def collect(sd, undecided=False):
     """The items for the checklist: [dict(finding, why, note)]."""
-    data = json.loads((sd / "findings.json").read_text())
-    dec = json.loads((sd / "decisions.json").read_text()) if (sd / "decisions.json").exists() else {}
+    from hypnomix.workflow import oversight as O
+    data = O.load_findings_doc(sd)
+    dec = O.load_decisions(sd) or {}
     items = []
     for f in data["findings"]:
         d = dec.get(f["id"])
@@ -168,7 +230,8 @@ def collect(sd, undecided=False):
 
 def context(sd, data, bpm=None, bpb=None):
     """(set path or None, daw kind or None, tempo, beats per bar)."""
-    sj = json.loads((sd / "scan.json").read_text()) if (sd / "scan.json").exists() else {}
+    from hypnomix.core import atomic
+    sj = atomic.load_json(sd / "scan.json", {}) or {}
     src = sj.get("set") or data.get("set")
     path = Path(src) if src and sj.get("mode") not in ("folder", "file") and Path(src).exists() else None
     tempo, bar_len, kind = bpm, bpb or 4, None
@@ -389,6 +452,7 @@ def handoff(sd, daw=None, bpm=None, bpb=None, undecided=False, markers=True, out
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="hypnomix handoff", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("scan_dir")
     ap.add_argument("--daw", choices=DAWS, help="wording for this DAW (default: your tools.daw preference, else the scanned project's)")
     ap.add_argument("--bpm", type=float, help="tempo for bar.beat when the scan has none (a folder of stems)")

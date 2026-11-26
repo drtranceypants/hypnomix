@@ -594,6 +594,10 @@ def g_timing(p, R, od, a, role):
         notes.append(f"timing: melodic parts ({', '.join(melodic)}) only get optional, partial nudges")
     if p.daw == "reaper":
         notes.append("timing: approved nudges are written as stretch markers on the items (drag or delete them in REAPER)")
+    if notes_.get("skipped_missing"):
+        n_ = notes_["skipped_missing"]
+        notes.append(f"timing: {n_} item{'s' if n_ != 1 else ''} skipped because the audio file is missing "
+                     "(the files group lists them); the other items were checked")
     return fs, notes
 
 

@@ -29,7 +29,7 @@ changed in the last hour, and anything while a job is running.
   python -m hypnomix.app.diskcare            what it would remove now (changes nothing)
   python -m hypnomix.app.diskcare --run      clean now
 """
-import gzip, json, os, re, shutil, subprocess, sys, threading, time
+import json, os, re, shutil, subprocess, sys, threading, time
 from datetime import datetime
 from pathlib import Path
 
@@ -296,8 +296,15 @@ def project_refs(blocked):
                     refs = hit[1]
                 else:
                     try:
-                        with (gzip.open(p) if ext == ".als" else open(p, "rb")) as fh:
-                            data = fh.read()
+                        if ext == ".als":
+                            from hypnomix.core.gz import read_gz       # capped: a small crafted file can unpack to gigabytes
+                            data = read_gz(p)
+                        else:
+                            with open(p, "rb") as fh:
+                                data = fh.read()
+                    except ValueError:                                 # unpacks past the cap: not read, and listed as not readable
+                        blocked.add(p)
+                        continue
                     except Exception:
                         continue
                     refs = sorted({os.path.basename(m.group(1).decode("utf-8", "replace").replace("\\", "/")).lower()
@@ -567,7 +574,8 @@ def main():
     if a.run:
         print(f"freed {r['last']['freed'] / GB:.2f} GB")
     elif r.get("blocked"):
-        print("not readable (give the app access to these folders):", ", ".join(r["blocked"]))
+        print("not read (the app has no access to them, or a project file is too big to open: "
+              "give access to the folders if that is it):", ", ".join(r["blocked"]))
 
 
 if __name__ == "__main__":

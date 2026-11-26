@@ -14,6 +14,7 @@ Times are in bars (1 = start). Mixer volume is shown/edited in dB; other params 
 TARGET: "Volume", "Pan", "Send A", "Send B", or "<Device>/<Param>" (e.g. "Reverb/DecayTime").
 """
 import argparse, gzip, math, re, sys, copy
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -22,7 +23,7 @@ BPB = 4  # beats per bar; set from the set's time signature when loaded
 
 def load(p):
     global BPB
-    t = ET.ElementTree(ET.fromstring(gzip.open(p).read()))
+    t = ET.ElementTree(ET.fromstring(read_gz(p)))
     n = t.getroot().find(".//TimeSignatures/RemoteableTimeSignature/Numerator")
     if n is not None:
         BPB = int(n.get("Value"))

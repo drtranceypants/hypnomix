@@ -160,7 +160,8 @@ def build(sd, ids=None, out=None, extra=()):
     from hypnomix import project as PJ
     from hypnomix.project import rpp_edit as E
     sd = Path(sd)
-    data = json.loads((sd / "findings.json").read_text())
+    from hypnomix.workflow import oversight as O
+    data = O.load_findings_doc(sd)
     orig = Path(data.get("set") or "")
     if orig.suffix.lower() != ".rpp" or not orig.exists():
         raise RuntimeError("this scan has no REAPER project to build an A/B project from")

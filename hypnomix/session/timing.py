@@ -648,6 +648,7 @@ def apply_in_passes(root, src, a, approved, tracks, tempo, notes):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix timing", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als")
     ap.add_argument("--track", action="append", default=[], help="instrument tracks to compare (repeatable)")
     ap.add_argument("--to-grid", action="store_true", help="compare every hit with the grid, not the band")

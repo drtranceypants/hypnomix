@@ -41,6 +41,7 @@ ratio, Range, a soft knee; its Auto release is modelled as a fixed 300 ms). Chec
 --apply; the new set is written next to the original so its samples stay linked.
 """
 import argparse, gzip, math, re, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -665,7 +666,7 @@ def find_template():
         glob.glob(f"C:/ProgramData/Ableton/Live*/Resources/{COMP_TEMPLATE}")
     if not hits:
         sys.exit("couldn't find Live's 'Basic Peak Compressor' preset to build a Compressor from")
-    return ET.fromstring(gzip.open(sorted(hits)[-1]).read()).find(".//Compressor2")
+    return ET.fromstring(read_gz(sorted(hits)[-1])).find(".//Compressor2")
 
 
 def as_compressor(g):
@@ -781,6 +782,7 @@ def fmt_m(m, style):
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix sidechain", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als", nargs="?")
     ap.add_argument("--stems", help="folder of exported tracks (for MIDI triggers and targets)")
     ap.add_argument("--style", default="auto", choices=["auto", *STYLES])
@@ -820,7 +822,7 @@ def main():
     if a.apply and Path(a.apply).resolve().parent != src.resolve().parent:
         sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent}): "
                  "samples linked by relative path go offline elsewhere")
-    tree = ET.ElementTree(ET.fromstring(gzip.open(src).read()))
+    tree = ET.ElementTree(ET.fromstring(read_gz(src)))
     root = tree.getroot()
     tempo = float(v(root, ".//Tempo/Manual"))
     beat_ms = 60000 / tempo
@@ -928,6 +930,8 @@ def main():
         out = Path(a.apply)
         if out.resolve() == src.resolve():
             sys.exit("refusing to overwrite the source set")
+        from hypnomix.session import liveversion as LV
+        LV.guard_write(root)                # refuses a set saved by a Live newer than the newest tested
         with gzip.open(out, "wb") as f:
             f.write(data)
         print(f"wrote {out} ({changed} compressor(s) changed). Close the original in Live, then open this one.")

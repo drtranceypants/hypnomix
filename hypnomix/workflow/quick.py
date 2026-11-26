@@ -24,6 +24,7 @@ DEFAULT_NAME = re.compile(r"^\d+-(Audio|MIDI|Group|Return)( \d+)?$|^(Audio|MIDI)
 def g_structure(als, od, a):
     """From the XML only: structure errors, default names (when no names group ran), level extremes, butt joins."""
     import gzip, xml.etree.ElementTree as ET
+    from hypnomix.core.gz import read_gz
     from hypnomix.session import check as C
     from hypnomix.session import automation as aa
     out, notes = [], []
@@ -40,7 +41,7 @@ def g_structure(als, od, a):
             "save it again, and re-scan")
     for w in warns[:10]:
         add("set-warning", "info", "", f"the set's structure: {w}", "", applies="info")
-    root = ET.fromstring(gzip.open(als).read())
+    root = ET.fromstring(read_gz(als))
     tempo_el = root.find(".//Tempo/Manual")
     tempo = float(tempo_el.get("Value")) if tempo_el is not None else 120.0
     bpb = 4

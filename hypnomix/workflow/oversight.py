@@ -19,6 +19,7 @@ review-notes.json: {id: [{"by", "at", "text", "bar" | "sec"}]}: timestamped note
 the decisions so a note never counts as a decision.
 """
 import gzip, json, math, re, time
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -171,9 +172,11 @@ def blend_trees(old_root, new_root, p):
 
 def blend(old_als, new_als, out_als, p):
     """Write out_als = new_als with the changes from old_als scaled by p. Returns (scaled, kept_full)."""
-    old = ET.fromstring(gzip.open(old_als).read())
-    new = ET.fromstring(gzip.open(new_als).read())
+    old = ET.fromstring(read_gz(old_als))
+    new = ET.fromstring(read_gz(new_als))
     s, k = blend_trees(old, new, p)
+    from hypnomix.session import liveversion as LV
+    LV.guard_write(new)                # refuses a set saved by a Live newer than the newest tested
     with gzip.open(out_als, "wb") as fh:
         fh.write(b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(new, encoding="utf-8"))
     return s, k
@@ -197,9 +200,65 @@ def load_decisions(sd):
     return atomic.load_json(Path(sd) / "decisions.json", {})       # a cut-off file falls back to decisions.json.bak
 
 
+def load_findings_doc(sd):
+    """findings.json as a dict. A cut-off file falls back to findings.json.bak; with neither, FileNotFoundError."""
+    from hypnomix.core import atomic
+    doc = atomic.load_json(Path(sd) / "findings.json", None)
+    if not isinstance(doc, dict):
+        raise FileNotFoundError(f"no readable findings.json in {sd} (scan first: hypnomix scan SET)")
+    return doc
+
+
 def save_decisions(sd, dec):
     from hypnomix.core import atomic
     atomic.write_json(Path(sd) / "decisions.json", dec)             # whole or not at all; the last good one is kept
+
+
+# ---------------------------------------------------------------- "approve all low": what a bulk approve may take
+TASTE_TOOLS = ("tune", "voices", "motion", "colour", "borrow", "variations")     # taste calls: always decided one at a time
+TIDY_TOOLS = ("order", "tidy")                                                  # reorder, remove, merge: structure, not sound
+TIDY_KINDS = ("track-order", "retire-off", "consolidate", "vocal-stack")
+
+
+def is_taste_call(f):
+    """A finding that is a matter of taste: the tools that always ask, or anything the finding itself marks as taste."""
+    return (f.get("tool") in TASTE_TOOLS or bool(f.get("taste")) or str(f.get("kind") or "") == "taste"
+            or str(f.get("applies") or "") == "answer")
+
+
+def bulk_class(f):
+    """Where a finding stands for "Approve all low" (the decision is not looked at): None when it is not a candidate at all
+    (not low, or only information or a question), "ok" when a bulk approve may take it, else why it is left out:
+    "tidy" (a reorder, removal or merge, also when it is on by default), "taste", "protected" or "by_hand"."""
+    ap = f.get("applies_here") or f.get("applies")
+    if f.get("severity") != "low" or ap in ("info", "answer", None):
+        return None
+    if f.get("default") == "approve" or f.get("tool") in TIDY_TOOLS or f.get("kind") in TIDY_KINDS:
+        return "tidy"
+    if is_taste_call(f):
+        return "taste"
+    if f.get("protected"):
+        return "protected"
+    if ap in ("manual", "blocked"):
+        return "by_hand"
+    return "ok"
+
+
+def bulk_low(findings, dec):
+    """(the findings "Approve all low" may approve, {why: how many it leaves out}). Never a taste call (tuning, harmony
+    balance, motion, colour, borrowed moves, variations), a tidy step (reordering, removing or merging tracks: on by
+    default or not), a protected track, a by-hand item, or anything already decided. The list is always shown before
+    anything is recorded."""
+    ok, out = [], dict(taste=0, tidy=0, protected=0, by_hand=0)
+    for f in findings:
+        c = bulk_class(f)
+        if c is None or decision_of(dec, f.get("id")):
+            continue
+        if c == "ok":
+            ok.append(f)
+        else:
+            out[c] += 1
+    return ok, out
 
 
 def decision_of(dec, fid):
@@ -286,6 +345,7 @@ KIND_CONF = {  # how sure the tool usually is, when it gives no number of its ow
     ("measure", None): 0.95, ("qc", None): 0.95, ("refs", None): 0.99, ("key", None): 0.5, ("voices", None): 0.5,
     ("sections", None): 0.5, ("match", None): 0.5, ("motion", None): 0.4, ("borrow", None): 0.4, ("colour", None): 0.35,
     ("intent", None): 0.3, ("structure", None): 0.9,
+    ("profile", None): 0.45,
 }
 
 
@@ -467,7 +527,7 @@ def parse_stamp(s):
 
 def add_note(sd, fid, text, at=None, by=None):
     """A reviewer's note on a finding, at a bar ("33.2") or a time ("1:23.5", "83.5s")."""
-    ids = {f["id"] for f in json.loads((Path(sd) / "findings.json").read_text())["findings"]}
+    ids = {f["id"] for f in load_findings_doc(sd)["findings"]}
     if fid not in ids:
         raise ValueError(f"unknown id: {fid}")
     if not str(text or "").strip():
@@ -486,7 +546,7 @@ def fingerprint(f):
 
 def export(sd, path, by=None):
     sd = Path(sd)
-    data = json.loads((sd / "findings.json").read_text())
+    data = load_findings_doc(sd)
     dec = load_decisions(sd)
     by = reviewer(by)
     doc = dict(format="hypnomix-review", version=1, set=Path(data.get("set") or "").name, by=by, exported=now(),
@@ -502,7 +562,7 @@ def merge(sd, path):
     Where the owner already decided differently, the owner's decision stays and the collaborator's is kept under
     `conflicts` on that entry for the owner to settle (review --settle ID=mine|theirs, or fix --decide)."""
     sd = Path(sd)
-    data = json.loads((sd / "findings.json").read_text())
+    data = load_findings_doc(sd)
     by_fp = {tuple(fingerprint(f)): f["id"] for f in data["findings"]}
     ids = {f["id"] for f in data["findings"]}
     doc = json.loads(Path(path).expanduser().read_text())

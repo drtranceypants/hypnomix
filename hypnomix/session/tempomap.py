@@ -94,6 +94,7 @@ def main():
     ap.add_argument("--preview", metavar="OUT.wav", help="with --conform: render the conformed take with a click, without Live")
     ap.add_argument("--anyway", action="store_true", help="use a tempo map that looks unreliable")
     ap.add_argument("--apply", metavar="NEW.als")
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args()
     src = Path(a.source)
     mult = 2.0 if a.double else 0.5 if a.half else 1.0

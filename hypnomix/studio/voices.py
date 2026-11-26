@@ -44,6 +44,7 @@ import numpy as np, soundfile as sf, librosa
 from pathlib import Path
 from scipy.ndimage import uniform_filter1d
 from hypnomix.core.paths import out_at
+from hypnomix.core.gz import read_gz
 from concurrent.futures import ProcessPoolExecutor
 
 AN = 22050
@@ -280,7 +281,7 @@ def song_spacing(set_path, win_s=2.0):
     files = {n: rd / f"{safe(n)}.wav" for n in names if (rd / f"{safe(n)}.wav").exists()}
     if len(files) < 2:
         return dict(song=set_path.stem, skipped="could not render the vocals")
-    root = ET.fromstring(gzip.open(set_path).read())
+    root = ET.fromstring(read_gz(set_path))
     fader = {}
     for t in root.find(".//Tracks"):
         nm = t.find("./Name/EffectiveName").get("Value")
@@ -375,7 +376,7 @@ def chain_model(set_path, names):
     """{track: f(level dB) -> level after its chain (track compressors' static curve + output gain) + fader}.
     Only Live's Compressor is modelled (threshold, ratio, knee, output gain, auto makeup); other devices pass."""
     import gzip, math, xml.etree.ElementTree as ET
-    root = ET.fromstring(gzip.open(set_path).read())
+    root = ET.fromstring(read_gz(set_path))
     g = lambda d, k, dflt: float(d.find(f"./{k}/Manual").get("Value")) if d.find(f"./{k}/Manual") is not None else dflt
     out = {}
     for t in root.find(".//Tracks"):
@@ -541,7 +542,7 @@ def balance(a):
     json.dump(dict(settings=settings, summary=summary, windows=rows), open(str(od / "balance.json"), "w"), indent=1)
     if a.apply_set:
         import gzip, xml.etree.ElementTree as ET
-        tempo = float(ET.fromstring(gzip.open(a.set).read()).find(".//Tempo/Manual").get("Value"))
+        tempo = float(ET.fromstring(read_gz(a.set)).find(".//Tempo/Manual").get("Value"))
         if Path(a.apply_set).resolve() == Path(a.set).resolve():
             raise SystemExit("refusing to overwrite the set; give a new file name")
         changed = write_volume(a.set, a.apply_set, gains, win_s, tempo)
@@ -557,6 +558,7 @@ def balance(a):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix voices", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("stems", nargs="*"); ap.add_argument("--out")
     ap.add_argument("--learn", nargs="+", metavar="SONG.als",
                     help="learn how YOU space harmonies from finished songs; --tame then uses your numbers")

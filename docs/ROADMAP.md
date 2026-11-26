@@ -11,9 +11,12 @@ before building anything else on top of it.
 
 - The Live devices and the Live fix paths were tested in Live 12.
 - REAPER support was tested in REAPER 7.86.
-- Everything newest passes unit tests and hypnomix's own structure checks on synthetic data only. The new Live
-  sets, REAPER projects and Ardour snapshots have not been opened in their DAWs, and the new tools have not been run
-  on real songs.
+- Everything newest passes unit tests and hypnomix's own structure checks on synthetic data. On 2026-11-26 the REAPER
+  files the newest code writes (the demo project, a project written by `fix`, masking cuts as ReaEQ bands, the
+  hand-off marker and the A/B project) were opened in REAPER 7.86 and read back through its API: no offline media, and
+  everything matched what hypnomix wrote. The new Live sets (hand-off locators, the EQ Eight band, colour chains) have
+  not been opened in Live, the Ardour snapshots have not been opened in Ardour, the new tools have not been run on
+  real songs, and nothing new has been judged by ear.
 
 Items marked *(to verify)* below rest on research that has not been tested here yet.
 
@@ -38,7 +41,7 @@ One line per area. Each command's own help (`hypnomix <command> -h`) and its wik
   `match`, `reference`, and `--plan` for `prep`, `automix` and `master`.
 - **Release:** `translate`, `qc`, `release`, `versions`, `compare`, `album`.
 - **Previews:** `ab` builds before and after pairs for clips, tuning, timing nudges, masking cuts and changes to six
-  of Live's stock devices (labelled as a model of the device); `abset` puts every fix next to yours inside Live;
+  of Live's stock devices (labelled as a model of the device); `abset` puts every fix next to yours inside Live (or in a new REAPER project);
   `plugrender` and `plugins` bring your own VST3 and Audio Unit plug-ins in.
 - **Inside Live:** `live`, `loop`, `diagnose`, `probe` and the Max for Live devices (HypnomixProbe, HypnomixMain,
   the review device, Hypnomix Align).
@@ -48,6 +51,11 @@ One line per area. Each command's own help (`hypnomix <command> -h`) and its wik
   fader, pan and mute moves into a new `.ardour` snapshot.
 - **The app and teacher mode:** `app` (the first pass by clicking), the Assistant and the optional Listener, and the
   Teacher tab: three courses per DAW, including the complete course A to Z.
+- **Your own profile in the scan:** `scan --mix` compares the mix with your own profile ranges (built by
+  `profile build`); `--no-profile` skips it, and `prefs set taste.profile=off` turns it off for every scan.
+- **Tested Live versions:** hypnomix has been tested with Live 11 and Live 12. A tool that writes a new set refuses
+  one saved by a newer major version of Live than 12 unless forced (the environment variable `HYPNOMIX_FORCE_LIVE_VERSION=1`, or
+  `--force-live-version` on a command that has it); reading and scanning still work, with one warning line.
 - **Safety and care:** a security pass (the Assistant runs only read-only commands without a click, wiki content is
   cleaned, updates are checked harder) and automatic disk care.
 
@@ -59,9 +67,10 @@ decisions, the same "new files only". What hypnomix cannot change in a DAW becom
 
 ## (b) Next, in order
 
-1. **Open everything the newest release added, in real DAWs and on real songs.** The items: the new EQ bands for
-   masking cuts (EQ Eight in Live, ReaEQ in REAPER); the handoff markers (locators in a Live set, markers in a REAPER
-   project); the colour chains in a Live set; `balance` on a real folder of stems; the Ardour snapshots, opened in
+1. **Open everything the newest release added, in real DAWs and on real songs.** The REAPER files were opened in
+   REAPER 7.86 and read back on 2026-11-26 (see "Checked where"); what is left is to judge them by ear and run them on
+   real songs. The items still to open: the new EQ Eight band for masking cuts in Live; the handoff locators in a Live
+   set; the colour chains in a Live set; `balance` on a real folder of stems; the Ardour snapshots, opened in
    Ardour (the snapshot opens without a warning, the audio is found, fades and gain are as written, the pan goes the
    way round expected with azimuth 0 on the left, the trim is unchanged), plus a session saved by Ardour 8 or 9 with
    hypnomix's renders compared with Ardour's own export; `release`, `compare`, `versions`, `album`, `preflight` and

@@ -18,6 +18,7 @@ const isAct = f => f.applies !== 'info' && f.applies !== 'answer';
 const byHand = f => f.applies === 'info' || (f.applies_here || f.applies) === 'manual';
 const entryOf = id => S.review.decisions[id];
 const dOf = f => { const e = entryOf(f.id); return e && e.decision; };
+const undecided = fl => fl.filter(f => isAct(f) && !byHand(f) && !dOf(f) && !isDflt(f));   // the one definition of "undecided": the count bar and the Apply card both use it
 const isDflt = f => f.default === 'approve' && !entryOf(f.id) && isAct(f);                 // on, because you have not said otherwise
 const stOf = f => isDflt(f) ? 'dflt' : (dOf(f) || 'open');
 const hasPrev = f => !!((S.review.ab[f.id] || {}).a);
@@ -196,7 +197,7 @@ function applyHTML(R) {
   } else if (pl.defs.length) t += '<p style="margin-top:0">None of your own fixes are approved.</p>';
   else t += '<p style="margin-top:0">No fix is approved yet.</p>';
   if (pl.defs.length) {
-    t += `<p><b>${pl.defs.length} step${pl.defs.length === 1 ? ' is' : 's are'} on by default</b> and will also run unless you turn ${pl.defs.length === 1 ? 'it' : 'them'} off above (each runs only if it is still needed once the other steps have run; the result says which ran):</p>
+    t += `<p><b>${pl.defs.length} step${pl.defs.length === 1 ? ' is' : 's are'} on by default</b> and will run if still needed, unless you turn ${pl.defs.length === 1 ? 'it' : 'them'} off above (each is checked once the other steps have run, and one with nothing left to do is skipped; the result says which ran):</p>
       <ul class="plain">${pl.defs.map(f => `<li><span class="tag">${esc(f.id)}</span> ${stepWords(f, R)}</li>`).join('')}</ul>`;
   }
   if (pl.manual.length) {
@@ -215,10 +216,8 @@ function applyHTML(R) {
   const field = writes ? `<div class="row"><label for="out">New file name</label><input type="text" id="out" value="${esc(outName)}"><span class="note">ends in ${esc(R.suffix)}: added if you leave it out</span></div>` : '';
   const tuneF = tune ? `<div class="row"><label for="fkey">Confirmed key</label><input type="text" id="fkey" placeholder='needed for vocal tuning, e.g. F# major (or "sections")' value="${esc(S.rv.fkey != null ? S.rv.fkey : S.form.key)}"></div>` : '';
   const protF = prot ? `<div class="row"><label for="prot">Protected tracks</label><input type="checkbox" id="prot"${S.rv.prot ? ' checked' : ''}> <span class="note">yes, change the protected tracks I approved</span></div>` : '';
-  const undec = R.findings.filter(f => f.applies !== 'info' && f.applies !== 'answer' && !dec[f.id] && f.default !== 'approve');
-  const leftHand = undec.filter(byHand).length, leftFix = undec.length - leftHand;
-  const left = undec.length;
-  const leftWords = !left ? '' : (leftFix ? leftFix + ' fix' + (leftFix === 1 ? '' : 'es') : '') + (leftFix && leftHand ? ' and ' : '') + (leftHand ? leftHand + ' by-hand item' + (leftHand === 1 ? '' : 's') : '') + ' still undecided (left alone).';
+  const leftFix = undecided(R.findings).length;                       // the same count as the bar above the findings
+  const leftWords = !leftFix ? '' : leftFix + ' fix' + (leftFix === 1 ? '' : 'es') + ' still undecided (left alone).';
   const blockedWhy = stale ? `This ${NOUN_[R.kind] || 'song'} was saved after the scan: re-scan before applying.` : missing ? 'The original is not where the scan found it.' : '';
   return `<h2>Apply</h2><div class="card">${t}${field}${tuneF}${protF}
     <div class="row"><button type="button" class="primary" id="apply" ${nAuto && !blockedWhy && !pl.blocked.length ? '' : 'disabled'} ${writes ? 'data-writes="1"' : ''} data-archive="${esc(archive)}">Apply ${nAuto || ''}${nAuto ? (nAuto === 1 ? ' step' : ' steps') : ''}</button>
@@ -247,7 +246,7 @@ function damageHTML(R) {
   }
   return `<div class="banner bad"><h2>This song's decisions file is damaged</h2>
     <p>hypnomix cannot read <code>decisions.json</code> (${m.size} bytes, last saved ${esc(m.when)}), so it cannot tell which fixes you approved or skipped. Nothing was applied because of it, and the scan's findings are fine.</p>
-    ${m.backup ? `<p>A backup saved ${esc(m.backup_when)} is there. <button type="button" class="primary" data-restore="${esc(R.dir)}">Restore the backup</button> The damaged file is kept next to it as decisions.damaged.json.</p>`
+    ${m.backup ? `<p>A backup is there: your decisions as they were before the last change you saved (made ${esc(m.backup_when)}), so that one change may need doing again. <button type="button" class="primary" data-restore="${esc(R.dir)}">Restore the backup</button> The damaged file is kept next to it as decisions.damaged.json.</p>`
       : `<p><b>There is no backup, so what was in the file is lost:</b> every approve, skip and change you saved for this song, and your notes on them. The scan itself is intact, so you can decide again.
         <button type="button" class="primary" data-restore="${esc(R.dir)}" data-fresh="1">Start the decisions again</button> The damaged file is kept as decisions.damaged.json in case it can be repaired by hand.</p>`}</div>`;
 }
@@ -263,8 +262,8 @@ function counts() {
   const R = S.review, fl = R.findings.filter(f => isAct(f) && !byHand(f));
   const n = {approve: 0, skip: 0, change: 0};
   fl.forEach(f => { const d = dOf(f); if (d) n[d]++; });
-  const onDef = fl.filter(f => !entryOf(f.id) && f.default === 'approve').length;
-  const left = fl.length - n.approve - n.skip - n.change - onDef;
+  const onDef = fl.filter(isDflt).length;
+  const left = undecided(fl).length;
   return {n, onDef, left, never: nevers().length, total: fl.length};
 }
 function countText() {

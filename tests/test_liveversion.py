@@ -23,12 +23,9 @@ HEADERS = {
 }
 
 
-# writers of their own sets that do not call the check yet (see the hand-over note); this list may only shrink
-NOT_GUARDED_YET = {
-    "engineer/duck.py", "engineer/devices.py", "engineer/sidechain.py", "session/motion.py", "session/unroll.py",
-    "session/tidy.py", "session/names.py", "session/vocallevel.py", "session/order.py", "session/cliplevel.py",
-    "session/edges.py", "session/borrow.py", "workflow/abset.py", "workflow/oversight.py", "workflow/fix.py",
-}
+# gzip writes under hypnomix/ that are NOT a Live set (so need no version check), as {"relative/path.py": "why"}.
+# Every other gzip write must call the Live version guard in the same function. There are none today.
+NOT_SETS = {}
 
 
 def set_xml(header):
@@ -157,23 +154,60 @@ class Writing(Tmp):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertIsNone(LV.check_text("not a set"))                  # unreadable: a warning, not a refusal
 
-    def test_every_writer_of_a_set_is_guarded_or_on_the_known_list(self):
-        """A tool that gzips a new .als must call the version check. NOT_GUARDED_YET are the writers that do not yet:
-        the list may only shrink (a writer that has the guard must come off it)."""
-        import re
+    def test_every_gzip_write_of_a_set_calls_the_version_guard(self):
+        """Greps the whole package: a function that gzips a new .als must call the Live version check in the same
+        function (guard_write, guard_write_text, check_write, check_text or check_file). A write that is not a set
+        goes on NOT_SETS with its reason. Reading a set needs no check (it only warns)."""
+        import ast
         root = Path(LV.__file__).resolve().parents[1]
+        guards = ("guard_write", "guard_write_text", "check_write", "check_text", "check_file")
+
+        def gzip_name(n):
+            return isinstance(n, ast.Name) and n.id in ("gzip", "_gz", "gz")
+
+        def writes(call):
+            f = call.func
+            if not (isinstance(f, ast.Attribute) and gzip_name(f.value)):
+                return False
+            if f.attr in ("compress", "GzipFile"):
+                return True
+            if f.attr == "open":
+                mode = call.args[1] if len(call.args) > 1 else next((k.value for k in call.keywords if k.arg == "mode"), None)
+                if isinstance(mode, ast.Constant) and isinstance(mode.value, str):
+                    return any(c in mode.value for c in "wax")
+                return mode is not None                 # a mode held in a variable cannot be read here: guard it
+            return False
+
         found = {}
         for py in sorted(root.rglob("*.py")):
+            rel = str(py.relative_to(root))
             text = py.read_text()
-            if re.search(r'gzip\.open\([^)]*,\s*["\']wb["\']\)|_gz\.open\([^)]*,\s*["\']wb["\']\)', text):
-                found[str(py.relative_to(root))] = "liveversion" in text
-        for rel, guarded in found.items():
-            if rel in NOT_GUARDED_YET:
-                self.assertFalse(guarded, f"{rel} is guarded now: take it off NOT_GUARDED_YET")
-            else:
-                self.assertTrue(guarded, f"{rel} writes a set without the Live version check")
-        self.assertTrue({"session/automation.py"} <= set(found))
-        self.assertLessEqual(NOT_GUARDED_YET - set(found), set(), "a listed writer no longer writes sets")
+            if "gzip" not in text:
+                continue
+            tree = ast.parse(text)
+            self.assertNotRegex(text, r"import gzip as (?!_gz\b)", f"{rel}: import gzip under its own name so the guard test can see it")
+            self.assertNotRegex(text, r"from gzip import", f"{rel}: use `import gzip` so the guard test can see the write")
+            parent = {id(c): n for n in ast.walk(tree) for c in ast.iter_child_nodes(n)}
+
+            def enclosing(node):
+                while id(node) in parent:
+                    node = parent[id(node)]
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        return node
+                return tree                             # a write at module level: the whole file must hold the guard
+
+            for call in [c for c in ast.walk(tree) if isinstance(c, ast.Call) and writes(c)]:
+                fn = enclosing(call)
+                guarded = any(isinstance(c, ast.Call) and getattr(c.func, "attr", "") in guards for c in ast.walk(fn))
+                found.setdefault(rel, []).append((getattr(fn, "name", "<module>"), guarded))
+        for rel, fns in found.items():
+            if rel in NOT_SETS:
+                continue
+            for name, guarded in fns:
+                self.assertTrue(guarded, f"{rel}: {name}() gzips a set without calling the Live version guard "
+                                         f"(add LV.guard_write(root) before the write, or list the file in NOT_SETS with a reason)")
+        self.assertTrue({"session/automation.py", "workflow/fix.py", "workflow/oversight.py", "workflow/abset.py"} <= set(found))
+        self.assertEqual(set(NOT_SETS) - set(found), set(), "a listed file no longer writes gzip")
 
     def test_the_flag_on_a_command_sets_the_allowance(self):
         import argparse
@@ -224,6 +258,68 @@ class ReadingNewerSets(Tmp):
                            capture_output=True, text=True, env=dict(os.environ, HYPNOMIX_HOME=str(self.td / "home")))
         self.assertEqual(r.stderr.count("saved by Live 13.0.2"), 1, r.stderr[-800:])
         self.assertIn("scanning n.als", r.stdout)
+
+
+class EveryWriterRefuses(Tmp):
+    """The tools that write a set with their own code, not through automation.save: a Live 13 set is refused, and
+    --force-live-version (or the environment variable) lets it through, also in the tools `fix` runs."""
+
+    def tree13(self):
+        x = set_xml(HEADERS["13"]).replace(b"<Tracks/>", b"<Tracks/><Tempo><Manual Value=\"120\"/></Tempo>")
+        return ET.ElementTree(ET.fromstring(x))
+
+    def test_abset_save_refuses_and_writes_nothing(self):
+        from hypnomix.workflow import abset
+        with self.assertRaises(SystemExit) as cm:
+            abset.save(self.tree13(), self.td / "out.als")
+        self.assertIn("saved by Live 13.0.2", str(cm.exception))
+        self.assertFalse((self.td / "out.als").exists())
+        with mock.patch.dict(os.environ, {LV.ENV_FORCE: "1"}):
+            abset.save(self.tree13(), self.td / "forced.als")
+        self.assertTrue((self.td / "forced.als").exists())
+
+    def test_rename_and_blend_refuse(self):
+        from hypnomix.session import names
+        from hypnomix.workflow import oversight
+        src = write_set(self.td / "s13.als", "13")
+        with self.assertRaises(SystemExit):
+            names.rename_set(src, self.td / "renamed.als", {})
+        self.assertFalse((self.td / "renamed.als").exists())
+        with self.assertRaises(SystemExit):
+            oversight.blend(src, src, self.td / "blend.als", 0.5)
+        self.assertFalse((self.td / "blend.als").exists())
+
+    def test_a_tool_command_refuses_then_takes_the_flag_and_fix_passes_it_on(self):
+        import subprocess, sys
+        from hypnomix.workflow import fix
+        x = set_xml(HEADERS["13"]).replace(b"<Tracks/>", b"<Tracks/><Tempo><Manual Value=\"120\"/></Tempo>")
+        src = self.td / "s13.als"
+        with gzip.open(src, "wb") as f:
+            f.write(x)
+        base = [sys.executable, "-m", "hypnomix.cli", "unroll", str(src), "--track", "X"]
+        r = subprocess.run(base + ["--apply", str(self.td / "a.als")], capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("saved by Live 13.0.2", r.stdout + r.stderr)
+        self.assertFalse((self.td / "a.als").exists())
+        r = subprocess.run(base + ["--apply", str(self.td / "b.als"), "--force-live-version"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue((self.td / "b.als").exists())
+        # `fix` runs its tools as child processes: its own flag reaches them through the environment
+        code, out = fix.hx("unroll", src, "--track", "X", "--apply", self.td / "c.als")
+        self.assertNotEqual(code, 0)
+        self.assertIn("saved by Live 13.0.2", out)
+        LV.allow()
+        code, out = fix.hx("unroll", src, "--track", "X", "--apply", self.td / "d.als")
+        self.assertEqual(code, 0, out)
+        self.assertTrue((self.td / "d.als").exists())
+
+    def test_every_set_writing_command_lists_the_flag_in_its_help(self):
+        import subprocess, sys
+        for cmd in ("fix", "unroll", "tidy", "order", "edges", "cliplevel", "motion", "borrow", "duck", "devices",
+                    "sidechain", "name", "vocallevel", "abset", "smooth", "timing", "masking", "distortion", "voices",
+                    "tempomap", "breathe", "loops", "tighten", "colour", "alignset", "variations"):
+            r = subprocess.run([sys.executable, "-m", "hypnomix.cli", cmd, "--help"], capture_output=True, text=True)
+            self.assertIn("--force-live-version", r.stdout, f"hypnomix {cmd} --help does not list the flag")
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ Usage:
   hypnomix borrow SET.als --mix MIX.wav --apply NEW.als --ids borrow-1,borrow-3
 """
 import argparse, copy, gzip, hashlib, json, math, re, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -42,7 +43,7 @@ NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
 
 
 def load(p):
-    return ET.ElementTree(ET.fromstring(gzip.open(p).read()))
+    return ET.ElementTree(ET.fromstring(read_gz(p)))
 
 
 def song_name(path):
@@ -363,6 +364,7 @@ def place_clip(new_track, src_clip, kind, ls, w0, bars, a, b, nudge):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix borrow", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als"); ap.add_argument("--mix"); ap.add_argument("--from", dest="orig", action="append")
     ap.add_argument("--json"); ap.add_argument("--plan", nargs="?", const=True)
     ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
@@ -423,6 +425,8 @@ def main():
                 for i, c in enumerate(ev if ev is not None else []):
                     c.set("Id", str(i))
         data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
+        from hypnomix.session import liveversion as LV
+        LV.guard_write(root)                # refuses a set saved by a Live newer than the newest tested
         with gzip.open(a.apply, "wb") as fh:
             fh.write(data)
         print(f"wrote {a.apply}: {done} loop(s) on {len(made)} new switched-off track(s)")

@@ -237,7 +237,7 @@ def make_cli():
     (d / "CLAUDE.md").write_text(
         "# hypnomix (installed app)\n\n"
         "This folder is for an AI agent (Claude Code, Codex, Cursor…) working with hypnomix, a mixing and mastering\n"
-        "assistant for Ableton Live and REAPER. Read AGENTS.md first: the loop every job follows, the safety rules\n"
+        "assistant for Ableton Live, REAPER and Ardour. Read AGENTS.md first: the loop every job follows, the safety rules\n"
         "and the command map. GUIDE.md is the user's guide.\n\n"
         f"Run hypnomix as `hypnomix <command>` (or by its full path, `{cmd}`). Start with `hypnomix doctor`.\n"
         "Every change that writes a set needs the person's OK first; hypnomix never overwrites the original.\n"

@@ -26,6 +26,7 @@ Usage:
   hypnomix order SET.als --names names.json --apply NEW.als [--ids order-1,order-2]
 """
 import argparse, gzip, json, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -109,7 +110,7 @@ def propose_order(tracks):
 
 # ---------------------------------------------------------------- set reading
 def load(path):
-    return ET.ElementTree(ET.fromstring(gzip.open(path).read()))
+    return ET.ElementTree(ET.fromstring(read_gz(path)))
 
 
 def track_rows(root, names):
@@ -347,6 +348,7 @@ def read_names(path):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix order", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als"); ap.add_argument("--names", required=True, help="names.json from `hypnomix name`")
     ap.add_argument("--json"); ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
     ap.add_argument("--no-clips", action="store_true", help="only reorder tracks; leave every clip where it is")
@@ -383,6 +385,8 @@ def main():
         if "order-1" in want and any(f["id"] == "order-1" for f in fs):
             reorder(root, new_ids)
         data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
+        from hypnomix.session import liveversion as LV
+        LV.guard_write(root)                # refuses a set saved by a Live newer than the newest tested
         with gzip.open(a.apply, "wb") as fh:
             fh.write(data)
         print(f"wrote {a.apply}: {'tracks reordered; ' if 'order-1' in want else ''}{done} clip(s) moved")

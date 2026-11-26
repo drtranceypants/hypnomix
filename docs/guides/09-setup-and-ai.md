@@ -144,7 +144,7 @@ and costs add up with the bigger models on long sessions.
    and sends only a reduced mono copy (about 1 to 5 cents a listen on the paid tier). Before each one it shows the
    length, the model, the tokens (the review that goes along as text included) and an estimated cost; a song over 12
    minutes asks whether to send all of it or the first 12 minutes; notes already heard for the same song, model and
-   question come back free. Which Gemini model hears best, and how to give the Listener a key of its own: the wiki
+   question come back free. `hypnomix critique "Song.wav" --estimate` only prints what would be sent and roughly what it costs; without `--estimate`, `critique` prints the same and asks y/N (anywhere that is not a terminal it refuses unless `--yes`, which is only for when you have said yes to exactly what `--estimate` shows), and a song over 12 minutes is warned about (`--minutes N` sends only the first N minutes). Which Gemini model hears best, and how to give the Listener a key of its own: the wiki
    article "The Assistant and the Listener".
 
 The free tier needs no card and has daily limits. If you hit them, the Assistant says "too many requests": wait,

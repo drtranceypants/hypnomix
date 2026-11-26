@@ -27,6 +27,7 @@ Usage:
   hypnomix edges SET.als --apply NEW.als --ids edges-1,edges-4
 """
 import argparse, copy, gzip, json, re, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -579,6 +580,7 @@ def apply(root, items, fix_fade_ms=10, als=None, passes=3, log=print):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix edges", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als"); ap.add_argument("--tracks", nargs="*", default=[])
     ap.add_argument("--names", help="names.json from `hypnomix name` (finds vocal tracks by what they are)")
     ap.add_argument("--all-tracks", action="store_true", help="every audio track (default: vocal tracks)")
@@ -592,7 +594,7 @@ def main():
     ap.add_argument("--json"); ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
     a = ap.parse_args()
     src = Path(a.als)
-    root = ET.fromstring(gzip.open(src).read())
+    root = ET.fromstring(read_gz(src))
     tracks = pick_tracks(root, a.names, set(a.tracks), a.all_tracks)
     found = scan(str(src), root, tracks, a.look, a.range, a.max_fade_ms, a.loss, a.cut_range, a.swell_s)
     fs = findings(found, a.fix_fade_ms)
@@ -613,6 +615,8 @@ def main():
             sys.exit("say which: --ids edges-1,… (nothing is changed by default)")
         n = apply(root, [f for f in fs if f["id"] in want], a.fix_fade_ms, als=str(src))
         data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
+        from hypnomix.session import liveversion as LV
+        LV.guard_write(root)                # refuses a set saved by a Live newer than the newest tested
         with gzip.open(a.apply, "wb") as fh:
             fh.write(data)
         print(f"wrote {a.apply}: {n} edge fix(es) (fades {a.fix_fade_ms:g} ms; consonant edges moved where asked)")

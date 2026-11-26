@@ -18,7 +18,8 @@ What you can do in it:
                 website's /wiki/ (source: hypnomix/app/wiki/articles/; Edit and Publish in a git checkout)
   assistant     chat with an AI (your own key: Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, or a free model
                 in Ollama on this computer) that runs hypnomix for you; anything that writes a set waits for your
-                click. Needs `pip install "hypnomix[assistant]"`
+                click. Included in the installers; from source, run
+                `uv pip install -e ".[assistant]"` in the hypnomix folder
   Live          with the Max for Live device (`hypnomix device`) loaded in your set, "Show in Live" jumps Live
                 to the finding: the track is selected, the playhead and the loop brace move to the spot, and
                 the clip opens. The device also steps through the open questions from inside Live.
@@ -268,6 +269,13 @@ def read_json(path, default=None):
         return default
 
 
+def read_scan_json(d):
+    """scan.json of a scan folder: if it was cut off by a crash, the previous copy (scan.json.bak); {} if there is neither."""
+    from hypnomix.core import atomic
+    meta = atomic.load_json(Path(d) / "scan.json", {}, warn=False)
+    return meta if isinstance(meta, dict) else {}
+
+
 def when_of(p):
     return time.strftime("%Y-%m-%d %H:%M", time.localtime(Path(p).stat().st_mtime))
 
@@ -352,7 +360,7 @@ def scan_summary(d):
     if hit and hit[0] == key:
         return hit[1]
     f = d / "findings.json"
-    meta = read_json(d / "scan.json", {})
+    meta = read_scan_json(d)
     ins = inspect_scan(d) if f.exists() else dict(data=None, dec={}, damage=None)
     data = ins["data"] or {}
     source = data.get("set") or meta.get("set") or ""
@@ -450,7 +458,7 @@ def scan_slot(src):
     for d in root.iterdir():
         if not d.is_dir():
             continue
-        was = (read_json(d / "scan.json", {}) or {}).get("set") or (read_json(d / "findings.json", {}) or {}).get("set") or ""
+        was = (read_scan_json(d) or {}).get("set") or (read_json(d / "findings.json", {}) or {}).get("set") or ""
         try:
             same = bool(was) and str(Path(was).resolve()) == want
         except (OSError, ValueError):
@@ -631,7 +639,7 @@ def review_payload(d, light=False):
         if hit and hit[0] == fkey and hit[2] == stamp(hit[1] or "/nonexistent")[0]:
             return hit[3]
     ins = inspect_scan(d)
-    meta = read_json(Path(d) / "scan.json", {}) or {}
+    meta = read_scan_json(d) or {}
     data, dec = ins["data"], ins["dec"]
     if data is None:                               # the findings file itself is damaged: say so, never a raw error
         src = meta.get("set", "")
@@ -774,7 +782,7 @@ def hist_entries(d, h, kind, source):
     """History versions as the page shows them, each with whether it can be undone and what that would write."""
     from hypnomix.workflow import history as H
     d = Path(d)
-    meta = read_json(d / "scan.json", {}) or {}
+    meta = read_scan_json(d) or {}
     rows = []
     for v in reversed(h.get("versions", [])):
         snap = v.get("input_snapshot")
@@ -814,7 +822,7 @@ def fix_result(d):
     d = Path(d)
     ins = inspect_scan(d)
     data = ins["data"] or {}
-    meta = read_json(d / "scan.json", {}) or {}
+    meta = read_scan_json(d) or {}
     source = data.get("set", "")
     kind = source_kind(source, meta.get("mode", ""))
     text = (d / "fix-log.md").read_text() if (d / "fix-log.md").exists() else ""
@@ -893,10 +901,8 @@ def patch_heard(d, ids):
     if not heard:
         return                                             # nothing was played in this scan: nothing to copy, and no file to read again
     cur = d / "decisions.json"
-    try:
-        dec = json.loads(cur.read_text())
-    except (OSError, ValueError):
-        return
+    from hypnomix.core import atomic
+    dec = atomic.load_json(cur, None, warn=False)
     if not isinstance(dec, dict):
         return
     changed = False
@@ -906,7 +912,7 @@ def patch_heard(d, ids):
             e["heard"] = h
             changed = True
     if changed:
-        write_json_atomic(cur, dec)
+        atomic.write_json(cur, dec)                    # whole or not at all, the last good one kept as decisions.json.bak
 
 
 def mark_heard(d, fid, which):
@@ -957,7 +963,9 @@ def record_many(d, ids, decision, note="", amount=None, by=None, via=None):
         if bad:
             raise ValueError("unknown id: " + ", ".join(bad[:5]))
         cur = d / "decisions.json"
-        dec = json.loads(cur.read_text()) if cur.exists() else {}
+        from hypnomix.core import atomic
+        dec = atomic.load_json(cur, {}, warn=False)
+        dec = dec if isinstance(dec, dict) else {}
         heard = heard_of(d)
         out = {}
         for fid in dict.fromkeys(ids):
@@ -969,7 +977,7 @@ def record_many(d, ids, decision, note="", amount=None, by=None, via=None):
                 e["heard"] = heard[fid]
             dec[fid] = e
             out[fid] = e
-        write_json_atomic(cur, dec)
+        atomic.write_json(cur, dec)                    # whole or not at all, the last good one kept as decisions.json.bak
     return out
 
 
@@ -1073,7 +1081,7 @@ def prior_times(d):
     d = Path(d)
     out = dict(groups={}, wall=None, ab_wall=None)
     kept = (read_json(d / "app-scan.json", {}) or {}).get("times") or {}
-    gs = (read_json(d / "scan.json", {}) or {}).get("group_seconds")
+    gs = (read_scan_json(d) or {}).get("group_seconds")
     if isinstance(gs, dict) and gs:
         out["groups"] = {k: float(v) for k, v in gs.items() if isinstance(v, (int, float))}
     elif isinstance(kept.get("groups"), dict):
@@ -1337,7 +1345,8 @@ def start_probe_hub():
         PROBE["hub"] = h.start()
         PROBE["error"] = ""
     except Exception as e:                    # the port is taken (another app, or `hypnomix probe listen`)
-        PROBE["error"] = f"UDP port 8792 is in use ({e}); close the other program using it: it is tried again every few seconds"
+        from hypnomix.app import probe
+        PROBE["error"] = probe.port_in_use_text(probe.probe_port(), e)
     PROBE["tried"] = time.time()
 
 
@@ -1531,7 +1540,7 @@ def start_scan(body, title="First pass", folder=None):
 
 def rescan_body(d):
     """The options a scan folder was made with, from what the app kept and what the scan recorded."""
-    meta = read_json(Path(d) / "scan.json", {}) or {}
+    meta = read_scan_json(d) or {}
     kept = read_json(Path(d) / "app-scan.json", {}) or {}
     src = kept.get("source") or meta.get("set") or (read_json(Path(d) / "findings.json", {}) or {}).get("set") or ""
     if not src:
@@ -1605,10 +1614,15 @@ def start_demo():
         out = work() / f"demo {n}"
 
     def after():
-        names = [m[1] for line in reversed(JOB["log"]) for m in [re.search(r"(\S.*\.(?:als|rpp|ardour))\s*$", line.strip())] if m]
-        found = next((Path(x) for x in names if Path(x).exists()), None)
+        found = None                                   # the command says where: "demo song (folder) written to <path>"
+        for line in reversed(JOB["log"]):
+            m = re.search(r"demo song \((?:folder|reaper)\) written to (.+?)\s*$", line.strip())
+            if m and Path(m[1]).exists():
+                found = Path(m[1])
+                break
         if found is None:
-            found = next(iter(sorted(out.glob("*.als")) + sorted(out.glob("*.rpp"))), None)
+            found = next(iter(sorted(out.glob("*.rpp")) + sorted(out.glob("*.als")) + sorted(p for p in out.iterdir() if p.is_dir())), None) \
+                if out.is_dir() else None
         if found is None:
             raise RuntimeError("the demo did not leave a song I can scan")
         found = found.resolve()
@@ -1626,7 +1640,7 @@ def start_handoff(body):
     decisions_ok(d)
     ins = inspect_scan(d)
     src = Path((ins["data"] or {}).get("set") or "")
-    kind = source_kind(src, (read_json(d / "scan.json", {}) or {}).get("mode", ""))
+    kind = source_kind(src, (read_scan_json(d) or {}).get("mode", ""))
     watch = [d / "handoff"] + ([src.parent] if kind != "folder" and src.name else [])
     jid = run_job("handoff", f"Handoff list: {d.name}",
                   [("Making the handoff list (your project is not changed)", ["handoff", str(d)], True)], d, watch)
@@ -1638,7 +1652,7 @@ def start_undo(body):
     n = whole(body.get("n"), "n", 1, 100000)
     ins = inspect_scan(d)
     src = (ins["data"] or {}).get("set", "")
-    kind = source_kind(src, (read_json(d / "scan.json", {}) or {}).get("mode", ""))
+    kind = source_kind(src, (read_scan_json(d) or {}).get("mode", ""))
     h = read_json(d / "history" / "history.json", {"versions": []}) or {"versions": []}
     row = next((r for r in hist_entries(d, h, kind, src) if r["n"] == n), None)
     if row is None:
@@ -1780,7 +1794,7 @@ def make_handler(port):
                     d = scan_dir(need(q, "dir"))
                     ins = inspect_scan(d)
                     src = (ins["data"] or {}).get("set", "")
-                    kind = source_kind(src, (read_json(d / "scan.json", {}) or {}).get("mode", ""))
+                    kind = source_kind(src, (read_scan_json(d) or {}).get("mode", ""))
                     note = ""
                     try:
                         r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "history", str(d), "--json"], cwd=str(work()),
@@ -2118,6 +2132,10 @@ def main():
     a = ap.parse_args()
     if a.home:
         os.environ["HYPNOMIX_APP_HOME"] = a.home
+    if a.port == 8791:                             # the devices this app makes (and the jobs it runs) talk to this port:
+        os.environ.pop("HYPNOMIX_PORT", None)      # the default is what they use when nothing is set (and the updater
+    else:                                          # treats a set port as "a test copy", so the real one leaves it unset)
+        os.environ["HYPNOMIX_PORT"] = str(a.port)
     try:
         srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(a.port))
     except OSError:

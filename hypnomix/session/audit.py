@@ -12,6 +12,7 @@ Flags:
 Usage: hypnomix audit SET.als [BOUNCE.wav] [--name NAME]
 """
 import argparse, gzip, json, math, re, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -54,7 +55,7 @@ def eq8(d):
 
 
 def audit(als):
-    r = ET.fromstring(gzip.open(als).read())
+    r = ET.fromstring(read_gz(als))
     tracks = list(r.find(".//Tracks"))
     master = r.find(".//MainTrack") if r.find(".//MainTrack") is not None else r.find(".//MasterTrack")
     flags, chains, limit_count = [], {}, 0

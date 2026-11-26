@@ -28,22 +28,21 @@ PRESET = "Core Library/Defaults/Audio Effects/EQ Eight.adv"
 def find_template():
     """Live's own default EQ Eight (the preset Live loads when you drop one on a track), or None. The environment
     variable HYPNOMIX_EQ8_TEMPLATE can name another file (a Live preset or plain XML holding an <Eq8>)."""
-    import gzip
+    from hypnomix.core.gz import read_gz
     import os
     custom = os.environ.get("HYPNOMIX_EQ8_TEMPLATE")
     if custom:
-        raw = Path(custom).expanduser().read_bytes()
         try:
-            raw = gzip.decompress(raw)
-        except OSError:
-            pass
+            raw = read_gz(Path(custom).expanduser())
+        except OSError:                              # plain XML, not gzipped
+            raw = Path(custom).expanduser().read_bytes()
         el = ET.fromstring(raw)
         return el if el.tag == "Eq8" else el.find(".//Eq8")
     hits = glob.glob(f"/Applications/Ableton Live*/Contents/App-Resources/{PRESET}") + \
         glob.glob(f"C:/ProgramData/Ableton/Live*/Resources/{PRESET}")
     for p in sorted(hits, reverse=True):
         try:
-            el = ET.fromstring(gzip.open(p).read()).find(".//Eq8")
+            el = ET.fromstring(read_gz(p)).find(".//Eq8")
         except Exception:
             continue
         if el is not None:

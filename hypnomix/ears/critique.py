@@ -320,7 +320,8 @@ def listen(path, question="", notes="", provider=None, model=None, seconds_limit
     try:
         import openai
     except ImportError:
-        raise ValueError("listening needs the optional extra: uv pip install 'hypnomix[critique]'")
+        raise ValueError("listening needs the OpenAI client library: in the app, Setup, then Extras (the installers "
+                         "include it); from source, run uv pip install -e \".[critique]\" in the hypnomix folder")
     with tempfile.TemporaryDirectory() as td:
         mp3 = Path(td) / "listen.mp3"
         cut = ["-t", str(seconds_limit)] if seconds_limit else []

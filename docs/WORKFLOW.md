@@ -109,13 +109,9 @@ learn the whole loop on; `DEMO.md` in its folder lists each problem and the comm
   `--only GROUP --out SAME_DIR`, then `hypnomix scan --merge SAME_DIR`.
 
 Live versions: hypnomix's list of tested versions is Live 11 and Live 12 (the checks on real sets so far were in
-Live 12). A set saved by a newer major version of Live is still read and scanned, with one warning line. The tools
-that write a new set through hypnomix's common save (`smooth`, `timing`, `voices`, `masking`, `distortion`, `handoff`,
-the `automation` commands and the Live probe) refuse to write from such a set, because the format may have changed,
-unless you set `HYPNOMIX_FORCE_LIVE_VERSION=1` (or pass `--force-live-version` to a command that has that flag). The
-tools that write their own set (`unroll`, `tidy`, `order`, `edges`, `cliplevel`, `duck`, `devices`, `sidechain`,
-`motion`, `borrow`, `vocallevel`, `abset`, and the renaming in `name`) do not check yet, so with a set from a newer
-Live they write without a warning: open the result in Live and look before you trust it.
+Live 12). A set saved by a newer major version of Live is still read and scanned, with one warning line. Every tool
+that writes a new set refuses to write from such a set, because the format may have changed, unless you set
+`HYPNOMIX_FORCE_LIVE_VERSION=1` (or pass `--force-live-version` to a command that has that flag: `-h` shows it).
 
 Output in `hypnomix-out/scan/<song>/`: `REVIEW.md`, `findings.json`, `scan.json` (what was scanned, and when the
 set was last saved), one `<group>.json` per group, and `raw/` (each tool's own report, renders of the vocals).
@@ -133,8 +129,7 @@ that did not run means nothing.
 - **stems** (`--deep`): renders every track and reports each frequency fight between two tracks and the phase
   and polarity between mics on one source ("Kick In" / "Kick Out", "Snare Top" / "Snare Bottom"). An approved fight is
   written by `fix` as one gentle bell band on the part that should give way, on its own EQ, in a new file: an EQ Eight
-  in a Live set, a ReaEQ in a REAPER project (the amount scales it: `--decide mask-1=approve@50`). These written bands
-  have not yet been opened in Live or REAPER. For a folder of stems there is no set to write into, so the cut stays on
+  in a Live set, a ReaEQ in a REAPER project (the amount scales it: `--decide mask-1=approve@50`). The ReaEQ band was opened in REAPER 7.86 and read back (frequency, gain and bandwidth as written); the EQ Eight band has not yet been opened in Live. For a folder of stems there is no set to write into, so the cut stays on
   the by-hand list (see `handoff`).
 - `--like REF.wav` with `--mix`: tone by band, dynamics, width and loudness against a song you love, as proposals.
   With `--mix`, sections of the song are found from the set's tempo and compared ("the 2nd chorus is 2 LU quieter").
@@ -440,7 +435,7 @@ hypnomix reaper start && hypnomix chain master "Song mix.wav" --reaper --verify
 frequency-fight cut as one ReaEQ band on the part that gives way, and tuned vocals as new takes on the person's own items. Vocal stacks: where harmony parts swap tracks, each item moves to the track for its pitch (same level in the
 mix). Timing: out-of-time hits are nudged with stretch markers on the items. Sidechained ReaComps are measured and retuned in the new .rpp.
 `handoff` writes a new `Song (handoff).rpp` with a marker at each by-hand spot. The ReaEQ band, the handoff project and
-`hypnomix demo --kind reaper` have not yet been opened in REAPER. Details: `docs/guides/08-inside-reaper.md`.
+`hypnomix demo --kind reaper` were opened in REAPER 7.86 on 2026-11-26 and read back as written (not judged by ear). Details: `docs/guides/08-inside-reaper.md`.
 
 ## Ardour
 

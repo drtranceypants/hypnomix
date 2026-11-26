@@ -524,6 +524,7 @@ def write_json(path, src, tempo, issues, notes, a):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix smooth", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als")
     ap.add_argument("--track", action="append", default=[], help="only these audio tracks (repeatable)")
     ap.add_argument("--spike-db", type=float, default=12.0, help="smallest burst above its surroundings (dB)")

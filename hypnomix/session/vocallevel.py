@@ -33,6 +33,7 @@ Track names default to every file in the folder. The pitch order (which parts ar
 """
 import argparse
 import gzip
+from hypnomix.core.gz import read_gz
 import json
 import re
 import sys
@@ -306,6 +307,7 @@ def group_of(x, name):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="hypnomix vocallevel", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als")
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--renders", help="`hypnomix render` output: fader and volume automation are applied")
@@ -328,7 +330,7 @@ def main(argv=None):
     if not tracks:
         sys.exit("no vocal files found")
     melody = a.melody or next((t for t in tracks if t.lower().startswith("lead")), None)
-    x = gzip.open(a.als).read().decode()
+    x = read_gz(a.als).decode()
     sig, sr = {}, None
     for t in tracks:
         y, sr = _load(folder / f"{t}.wav")
@@ -378,6 +380,8 @@ def main(argv=None):
             x, k = write_gains(x, name, segs)
             if k:
                 done.append(f"{name}: {k} line(s)")
+        from hypnomix.session import liveversion as LV
+        LV.guard_write_text(x)                # refuses a set saved by a Live newer than the newest tested
         with gzip.open(a.apply, "wb") as f:
             f.write(x.encode())
         print(f"wrote {a.apply}: " + ("; ".join(done) if done else "nothing to change"))

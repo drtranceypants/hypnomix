@@ -10,6 +10,7 @@ Writes hypnomix-out/doctor/<song>.json and prints a summary.
 Usage: hypnomix doctor SET.als BOUNCE.wav [--bars 8]
 """
 import argparse, gzip, json, math, os, subprocess, sys, time
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 import numpy as np, soundfile as sf
@@ -39,7 +40,7 @@ def main():
     song = Path(a.set).stem
     out = {"song": song}
     # --- session map from the .als
-    r = ET.fromstring(gzip.open(a.set).read())
+    r = ET.fromstring(read_gz(a.set))
     tempo = float(r.find(".//Tempo/Manual").get("Value"))
     out["tempo"] = tempo
     # --- live session

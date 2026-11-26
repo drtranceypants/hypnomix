@@ -146,6 +146,7 @@ def main():
     ap.add_argument("--bpb", type=int, default=4); ap.add_argument("--bpm", type=float)
     ap.add_argument("--downbeat", type=float); ap.add_argument("--double", action="store_true"); ap.add_argument("--half", action="store_true")
     ap.add_argument("--out"); ap.add_argument("--apply", metavar="NEW.als")
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args()
     src = Path(a.source)
     is_set = src.suffix.lower() == ".als"

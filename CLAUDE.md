@@ -21,8 +21,10 @@ from. Claude Code specifics:
   Ardour), the complete course A to Z, a 101 crash course and a tour. It needs no AI, and it is theirs to use, not
   something to drive.
 - Say what has been checked where, never more: the Live devices and fix paths were tested in Live 12 and REAPER
-  support in REAPER 7.86; everything newer (including the Ardour snapshots) passes unit tests and structure checks on
-  synthetic data only, and has not been opened in its DAW or run on real songs (AGENTS.md has the list).
+  support in REAPER 7.86, and the newest REAPER files (the demo project, a fixed project, masking cuts as ReaEQ bands,
+  the handoff markers, the A/B project) were opened and read back in REAPER 7.86. The newest Live sets and the Ardour
+  snapshots pass unit tests and structure checks only and have not been opened in their DAWs; none of the newest tools
+  has been run on real songs or judged by ear (AGENTS.md has the list).
 - `.mcp.json` connects the Ableton MCP (telemetry off) for creating tracks and loading devices. It drives the
   open Live set: the same rules as the Live tools apply (ask first, one driver at a time).
 - Ask before taste calls, before any change to a set, before `hypnomix install` (and `device`, `aligndevice`,

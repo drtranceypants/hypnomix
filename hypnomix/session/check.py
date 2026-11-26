@@ -18,6 +18,7 @@ It cannot prove Live will open the set: only Live can. It catches the ways a scr
 `hypnomix fix` runs it on every set it writes.
 """
 import argparse, gzip, json, math, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -28,9 +29,11 @@ def is_pointee(tag):
 
 def load_root(path):
     try:
-        raw = gzip.open(path).read()
+        raw = read_gz(path)
     except OSError as e:
         return None, f"not a gzip file ({e})"
+    except ValueError as e:                       # unpacks past the size cap
+        return None, str(e)
     try:
         return ET.fromstring(raw), None
     except ET.ParseError as e:

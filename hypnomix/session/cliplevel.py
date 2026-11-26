@@ -16,6 +16,7 @@ Usage:
 Renders come from DIR if given (the scan's vocal renders), otherwise the vocal tracks are rendered (no Live).
 """
 import argparse, gzip, json, math, re, subprocess, sys, tempfile
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -44,7 +45,7 @@ def vocal_roles(names_json):
 def propose(set_path, names_json=None, renders=None, under=4.0, max_raise=6.0, lead_margin=1.5):
     from hypnomix.core import dsp, pitch
     set_path = Path(set_path)
-    root = ET.fromstring(gzip.open(set_path).read())
+    root = ET.fromstring(read_gz(set_path))
     tempo = float(v(root, ".//Tempo/Manual"))
     spb = 60.0 / tempo
     if names_json is None:
@@ -138,6 +139,7 @@ def findings(props):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix cliplevel", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als"); ap.add_argument("--names"); ap.add_argument("--renders"); ap.add_argument("--json")
     ap.add_argument("--under", type=float, default=4.0); ap.add_argument("--max-raise", type=float, default=6.0)
     ap.add_argument("--lead-margin", type=float, default=1.5)
@@ -159,7 +161,7 @@ def main():
         want = {x.strip() for x in (a.ids or "").split(",") if x.strip()}
         if not want:
             sys.exit("say which clips: --ids cliplevel-1,… (none is raised by default)")
-        root = ET.fromstring(gzip.open(src).read())
+        root = ET.fromstring(read_gz(src))
         tracks = {v(t, "./Name/EffectiveName"): t for t in root.find(".//Tracks") if t.tag == "AudioTrack"}
         done = 0
         for f, p in zip(fs, props):
@@ -170,6 +172,8 @@ def main():
                 c.find("./SampleVolume").set("Value", repr(p["new_gain"]))
                 done += 1
         data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
+        from hypnomix.session import liveversion as LV
+        LV.guard_write(root)                # refuses a set saved by a Live newer than the newest tested
         with gzip.open(a.apply, "wb") as fh:
             fh.write(data)
         print(f"wrote {a.apply}: {done} clip(s) raised")

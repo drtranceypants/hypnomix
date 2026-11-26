@@ -131,6 +131,35 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(list(self.d.glob("*.als")) + list(self.d.glob("*.rpp")), [])
         self.assertIn("bar 9.1", (sd / "handoff" / "HANDOFF.md").read_text())
 
+class RecordingJobTests(unittest.TestCase):
+    def test_recording_problems_get_their_own_to_do_and_listen_for_in_every_daw(self):
+        not_these = ("drag its volume fader", "volume-automation", "Move the", "covering the singer")
+        for tool, kind, problem, fix, expect in (
+                ("recording", "clipped", "412 clipped samples", "re-record lower", "flat tops"),
+                ("recording", "hot", "peaks reach -0.1 dBFS", "lower the input", "flat tops"),
+                ("recording", "quiet", "very quiet", "raise the clip gain", "gaps between phrases"),
+                ("dehiss", "boosted-noise", "3 clip(s) boosted +14 dB with clip gain", "hypnomix dehiss", "hiss"),
+                ("recording", "noise", "steady noise floor around -50 dBFS", "dehiss", "hiss"),
+                ("recording", "silent", "the file is silent", "check the export (wrong track or range?)", "silent"),
+                ("recording", "dc", "DC offset 1.2% of full scale", "remove it", "cleaned copy")):
+            f = dict(id="rec-1", tool=tool, kind=kind, problem=problem, fix=fix, track="Take 1", applies="manual")
+            job = H.job_for(f)
+            for daw in H.DAWS:
+                todo = job[2][daw].format(t="Take 1")
+                self.assertIn("Take 1", todo)
+                self.assertIn(expect, todo + job[3])
+                self.assertFalse(any(w in todo or w in job[3] for w in not_these), (kind, daw, todo))
+            self.assertNotEqual(job[0], "fader")
+        # Ardour's own plug-in is not named a-EQ (a parametric EQ with no high-pass)
+        self.assertNotIn("a-EQ", H.job_for(dict(tool="recording", kind="dc"))[2]["ardour"])
+        # the other jobs are as they were
+        fader = H.job_for(dict(tool="balance", kind="level", problem="too loud", fix="turn it down"))
+        self.assertEqual(fader[0], "fader")
+        self.assertEqual(H.job_for(dict(tool="smooth", kind="click"))[0], "fade")
+        # a recording kind it has no words for keeps the general lookup
+        self.assertEqual(H.job_for(dict(tool="recording", kind="sibilance", problem="s", fix="deess"))[0], H.job_for(dict(tool="x", kind="sibilance", problem="s", fix="deess"))[0])
+
+
 
 if __name__ == "__main__":
     unittest.main()

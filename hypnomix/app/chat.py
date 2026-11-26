@@ -433,11 +433,11 @@ def run_cli(command, args):
         S.run_job("tool", title, [(command, [command, *map(str, args)], True)])
     except RuntimeError as e:
         return f"not run: {e}"
+    stopped = False
     while S.JOB["status"] == "running":
-        if CHAT["stop"]:
-            p = S.JOB.get("proc")
-            if p:
-                p.terminate()
+        if CHAT["stop"] and not stopped:
+            stopped = bool(S.JOB.get("proc"))            # the app's own stop: the whole process group, and the leftover sets
+            S.stop_job()
         time.sleep(0.3)
     log = "\n".join(S.JOB["log"])
     status = S.JOB["status"]
@@ -557,7 +557,7 @@ def scan_bounce(scan_dir, wanted):
     models sometimes rebuild a ~ path from other paths they have seen and land in the wrong folder."""
     from hypnomix.app import server as S
     try:
-        info = json.loads((S.scan_dir(scan_dir) / "scan.json").read_text())
+        info = S.read_scan_json(S.scan_dir(scan_dir))      # falls back to scan.json.bak if scan.json was cut off
     except (KeyError, ValueError, OSError):
         return None
     for k in ("mix", "ref"):

@@ -1196,6 +1196,7 @@ def print_report(rep):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix distortion", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("inputs", nargs="+", help="a .als and/or audio files or folders")
     ap.add_argument("--post", action="append", default=[], help="stem export (folder or files) to confirm effect findings")
     ap.add_argument("--mix", help="full-mix bounce of this set: true peak and clipping")

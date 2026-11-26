@@ -60,7 +60,7 @@ What a set scan checks, in parallel groups:
 | timing | hits out of time with the band (the song's own grid, drums first, then bass) |
 | vocals | pitch of every vocal, harmonies against the lead, doubles' timing, harmony balance |
 | effects | distortion in takes and device chains, sidechain ducking, every compressor and gate |
-| mix | loudness, true peak, release checks (needs `--mix`) |
+| mix | loudness, true peak, release checks (needs `--mix`); with a profile (`hypnomix profile build`), also the mix against your own ranges, as things to listen for (`--no-profile` skips it) |
 
 The result is `REVIEW.md` and `findings.json`, most severe first, each item with an id. `REVIEW.md` explains each
 kind of fix once, near the top ("Why these fixes"); each item holds only what is its own. If a check could not
@@ -95,7 +95,7 @@ When `--deep` finds two parts fighting over a band, the fix is a bell cut on the
 by default, adjustable per decision with the amount, e.g. approve at 50%). Approved, it is written as one band on
 the track's own EQ in a new file: an EQ Eight in Live, a ReaEQ in REAPER. An EQ that is already there and has a
 free band is reused; nothing else on the track changes. `fix` runs hypnomix's structure check on these new sets and
-projects, but they have not yet been opened in Live or REAPER: open one and listen before you keep it. On a folder of
+projects. The ReaEQ band was opened in REAPER 7.86 and read back as written, but the EQ Eight band has not yet been opened in Live, and neither has been judged by ear: open one and listen before you keep it. On a folder of
 stems there is no set to write into, so the cut stays on the by-hand list (section 5).
 
 ## 2. Review: one item at a time
@@ -201,8 +201,7 @@ It collects every approved finding that `fix` cannot make itself, and every one 
   only.
 
 An item with no position (a whole part) is listed at the end, without a marker. The new Live set is checked with
-`hypnomix check` and the new REAPER project is read back and compared with yours; neither has yet been opened in its
-DAW. `handoff` itself is new: it passes unit tests and hypnomix's own checks on synthetic data and has not yet been run on a
+`hypnomix check` and the new REAPER project is read back and compared with yours; the REAPER project's marker was opened in REAPER 7.86 and read back as written, and the Live set has not yet been opened in Live. `handoff` itself is new: it passes unit tests and hypnomix's own checks on synthetic data and has not yet been run on a
 real song. The checklist is measured, not heard: your ears decide each line.
 
 ## Plans: tools that make many moves

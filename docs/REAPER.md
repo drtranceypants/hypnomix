@@ -1,7 +1,7 @@
 # REAPER: how hypnomix reads, writes and drives it
 
 For people and agents changing hypnomix's REAPER code. The user guide is `docs/guides/08-inside-reaper.md`.
-Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER" at the end), except the three rows marked "not yet opened in REAPER" (`handoff` `write_rpp`, `demo --kind reaper` and the ReaEQ masking band): hypnomix wrote and read those back on synthetic data only. They are listed again under "Not yet opened in REAPER" at the end.
+Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER" at the end). That includes the files hypnomix's newest code writes: on 2026-11-26 the demo project, a project written by `fix`, the masking cut as a ReaEQ band, the hand-off project's marker and the A/B project were opened in REAPER 7.86 and read back through its API (see "Opened and read back in REAPER 7.86" at the end). None of that has been run on a real song, and none has been judged by ear.
 
 ## Where the code is
 
@@ -17,9 +17,9 @@ Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER"
 | `hypnomix/workflow/sidechain_project.py` | sidechained ReaComps: found by their detector channel and the sends landing there, simulated with Live's `sidechain` model, suggestions written as ReaComp floats |
 | `hypnomix/reaper/jsfx/`, `reaper/probes.py` | Hypnomix Probe / Main as JSFX: 20 values per 100 ms into gmem `hypnomix`; the bridge assigns slots and keeps blocks (`probe_blocks`); `probes.feed` relays them into the app's `probe.Hub`; `insert` and `read_cards` for `.rpp` |
 | Record and review (`bridge.lua` `rec_*`, `probes.handle`, `server.reaper_record`) | Main's `@gfx` button adds 1 to gmem[8]; the bridge plays from the cursor, keeps start and furthest position, and queues start/stop events for `probe_blocks rec=1` (only a relay that asks gets them, and only it counts as "an app is there"); state back to Main in gmem[9] (0 idle, 1 recording, 2 rendering, 3 no app, 4 reviewing, 5 under a second played: no event sent, 6 the app's review failed), seconds in gmem[10]. Main reads the mouse each `@gfx` frame (about 30 a second) and counts a press on RELEASE over the button: REAPER does not start playing while the mouse is still held in an FX window, so acting on mouse-down left a normal (held) click with no playback. The bridge also waits up to 3 s for playback to start before it calls a take finished. A synthetic click shorter than a frame can still be missed. On stop the app closes the probe capture FIRST (a render runs every JSFX again and would add its blocks), renders `render_master(start, end)` and runs the same review steps as Live's `master_record`. `hypnomix reaper record` = a press |
-| `hypnomix/workflow/handoff.py` (`write_rpp`) | `handoff` on an `.rpp` scan: a NEW `Song (handoff).rpp` with one `MARKER` line per by-hand spot (position in seconds, a name, a new GUID), read back and compared with the original; nothing else in the project changes. Written and read back only: **not yet opened in REAPER** |
-| `hypnomix/studio/demo.py` | `demo --kind reaper`: a short synthetic song as stems plus a project that plays them (the comps as separate items on separate takes), so every planted problem is visible to `scan`. Round-trips through `rpp.load`; **not yet opened in REAPER** |
-| `hypnomix/engineer/masking.py` (`write_project`), `rpp_edit.add_reaeq_cut` | `masking --apply NEW.rpp` and `fix` on an approved frequency-fight finding: a bell cut as one ReaEQ band on the track that should give way (see "ReaEQ in a saved project" below). **Not yet opened in REAPER** |
+| `hypnomix/workflow/handoff.py` (`write_rpp`) | `handoff` on an `.rpp` scan: a NEW `Song (handoff).rpp` with one `MARKER` line per by-hand spot (position in seconds, a name, a new GUID), read back and compared with the original; nothing else in the project changes. Opened in REAPER 7.86 and read back: the marker's position and name matched what was written |
+| `hypnomix/studio/demo.py` | `demo --kind reaper`: a short synthetic song as stems plus a project that plays them (the comps as separate items on separate takes), so every planted problem is visible to `scan`. Round-trips through `rpp.load`; opened in REAPER 7.86 with no offline media |
+| `hypnomix/engineer/masking.py` (`write_project`), `rpp_edit.add_reaeq_cut` | `masking --apply NEW.rpp` and `fix` on an approved frequency-fight finding: a bell cut as one ReaEQ band on the track that should give way (see "ReaEQ in a saved project" below). Opened in REAPER 7.86: frequency, gain and bandwidth read back exactly as written |
 | `hypnomix/workflow/edges_project.py` | Live's word-edge detectors on the model; the REAPER edge fixes |
 | `hypnomix/workflow/fix_project.py` | `fix` for an `.rpp`: one pass into one new file, structure check, re-measure |
 | `hypnomix/reaper/bridge.lua`, `client.py`, `cli.py` | the bridge into the open REAPER, and `hypnomix reaper` |
@@ -98,7 +98,7 @@ New tools that should work in every DAW belong on the model (`project.load(path)
   named-config numbers above. `masking` / `fix` write a cut as a bell (8) into a free band (switched off, or a bell at
   0 dB) of a ReaEQ already on the track, else a new ReaEQ at the end of the chain with that one band; a ReaEQ stays
   within five bands and the rest of its state is written back byte for byte. Checked by reading a REAPER-saved chunk
-  back and writing it again unchanged; the new chunk has not yet been opened in REAPER.
+  back and writing it again unchanged; a chunk `masking` wrote was then opened in REAPER 7.86 and the band's frequency, gain and bandwidth read back exactly as written (REAPER's own renders with the effect on and bypassed show the cut).
 - **ReaComp**: Threshold, Ratio (shows "inf" at the top), Attack, Release, RMS size, Knee.
 - **ReaLimit**: Threshold, Ceiling, Release. The level goes up by `ceiling - threshold`. It limits SAMPLE peaks: the
   true peak can be over the ceiling, so `--verify` checks the whole song and lowers the ceiling.
@@ -165,13 +165,14 @@ compare REAPER's saved file with what the reader reads, and REAPER's render with
 every moment, through stretches, loops and playrate. The tests in `tests/test_rpp.py` and
 `tests/test_chain_reaper.py` hold the measured values.
 
-## Not yet opened in REAPER
+## Opened and read back in REAPER 7.86
 
-Written and read back by hypnomix, checked by hypnomix's own structure checks on synthetic data, and **not yet opened in
-REAPER**:
+On 2026-11-26 these files, written by hypnomix's newest code, were opened in REAPER 7.86 and read back through its API. Each opened with no offline media and matched what hypnomix wrote:
 
-- the ReaEQ band written for an approved frequency-fight cut (`masking --apply NEW.rpp`, and `fix`);
-- the `Song (handoff).rpp` with markers (`handoff`);
-- the demo project made by `hypnomix demo --kind reaper`.
+- the demo project (`hypnomix demo --kind reaper`);
+- a project written by `fix`, with an item fade and a volume-envelope dip;
+- masking cuts written as ReaEQ bands (`masking --apply NEW.rpp`, and `fix`): frequency, gain and bandwidth read back exactly as written, and REAPER's own renders with the effect on and bypassed show the cut;
+- the `Song (handoff).rpp` marker (position and name);
+- the A/B project (`abset`).
 
-None has been run on a real song. Open each in REAPER before you rely on it, and add what you measure to this file.
+What this does not cover: none of these has been run on a real song, and nothing here was judged by ear. Open one in REAPER and listen before you rely on it, and add what you measure to this file.

@@ -23,7 +23,7 @@ import importlib.util
 HAVE_SDKS = all(importlib.util.find_spec(m) for m in ("anthropic", "openai"))
 
 
-@unittest.skipUnless(HAVE_SDKS, "pip install 'hypnomix[assistant]' for the Assistant tab")
+@unittest.skipUnless(HAVE_SDKS, "needs the anthropic and openai libraries: in the app, Setup then Extras; from source, uv pip install -e \".[assistant]\" in the hypnomix folder")
 class Chat(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.TemporaryDirectory()
@@ -843,6 +843,23 @@ class StateFolder(unittest.TestCase):
                                    fake / ".hypnomix" / "updates",
                                    fake / ".hypnomix" / "ai.json", fake / ".hypnomix" / "ai.json"])
 
+    def test_saving_settings_writes_under_hypnomix_home_and_not_under_the_real_home(self):
+        with tempfile.TemporaryDirectory() as d:
+            home, fake = Path(d).resolve() / "h", Path(d).resolve() / "fakehome"
+            fake.mkdir()
+            code = ("from hypnomix.app import chat\n"
+                    "chat.save_conf({'provider': 'openai', 'models': {}, 'base_urls': {}, 'keys': {'openai': 'sk-test-1'}})\n"
+                    "print(chat.CONF)")
+            e = {k: v for k, v in os.environ.items()}
+            e.update(HYPNOMIX_HOME=str(home), HOME=str(fake))
+            r = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=e, capture_output=True, text=True, check=True)
+            self.assertEqual(Path(r.stdout.strip()), home / "ai.json")
+            self.assertEqual(json.loads((home / "ai.json").read_text())["keys"]["openai"], "sk-test-1")
+            self.assertFalse((fake / ".hypnomix").exists())                           # nothing under the (fake) real home
+            e.pop("HYPNOMIX_HOME")                                                    # not set: exactly where it has always been
+            r = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=e, capture_output=True, text=True, check=True)
+            self.assertEqual(Path(r.stdout.strip()), fake / ".hypnomix" / "ai.json")
+
     def test_the_saved_keys_file_is_unreadable_wherever_it_lives(self):
         with tempfile.TemporaryDirectory() as d:
             home = Path(d).resolve() / "h"
@@ -856,6 +873,57 @@ class StateFolder(unittest.TestCase):
             r = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=e, capture_output=True, text=True)
             self.assertIn("saved API keys", r.stdout + r.stderr)
             self.assertNotIn("sk-ant-secret", r.stdout)
+
+
+class ScanBounceFallback(unittest.TestCase):
+    """scan_bounce reads scan.json the safe way: a cut-off file falls back to scan.json.bak."""
+
+    def test_truncated_scan_json_falls_back_to_the_backup(self):
+        from hypnomix.app import server as S
+        with tempfile.TemporaryDirectory() as d:
+            work = Path(d).resolve() / "work"
+            sd = work / "scan" / "Song"
+            sd.mkdir(parents=True)
+            (sd / "findings.json").write_text("{}")
+            bounce = Path(d).resolve() / "mix.wav"
+            bounce.write_bytes(b"x")
+            good = json.dumps({"mix": str(bounce)})
+            (sd / "scan.json.bak").write_text(good)
+            (sd / "scan.json").write_text(good[:10])                                  # cut off by a crash
+            with mock.patch.object(S, "work", return_value=work):
+                self.assertEqual(CH.scan_bounce(str(sd), Path("mix.wav")), bounce)
+                self.assertIsNone(CH.scan_bounce(str(work / "scan" / "Nope"), Path("mix.wav")))
+
+
+class StopFromChat(unittest.TestCase):
+    """Stop in the chat ends the job the way the Activity page's Stop does: the whole process group, and the leftover sets."""
+
+    def test_stopping_the_chat_calls_the_apps_stop_job_not_terminate(self):
+        from hypnomix.app import server as S
+        proc = mock.Mock()
+        calls = []
+        saved = dict(S.JOB)
+
+        def fake_run_job(kind, title, steps, sdir="", watch=()):
+            S.JOB.update(status="running", log=["working"], proc=proc)
+
+        def fake_stop():
+            calls.append(1)
+            S.JOB.update(status="stopped", stopped=True)
+            return True
+
+        old = CH.CHAT.get("stop")
+        try:
+            CH.CHAT["stop"] = True
+            with mock.patch.object(S, "run_job", fake_run_job), mock.patch.object(S, "stop_job", fake_stop):
+                out = CH.run_cli("measure", ["x.wav"])
+        finally:
+            CH.CHAT["stop"] = old
+            S.JOB.clear()
+            S.JOB.update(saved)
+        self.assertEqual(calls, [1])                       # once, however long the job takes to go
+        proc.terminate.assert_not_called()
+        self.assertTrue(out.startswith("[stopped]"))
 
 
 if __name__ == "__main__":

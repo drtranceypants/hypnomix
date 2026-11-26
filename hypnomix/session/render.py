@@ -32,6 +32,7 @@ Output is 32-bit float, so nothing clips. Write re-renders to a NEW folder: Live
 path and keeps playing the old audio if you overwrite a file it has loaded.
 """
 import argparse, gzip, os, re, shutil, subprocess, sys, tempfile
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from fractions import Fraction
 from pathlib import Path
@@ -390,7 +391,7 @@ def main():
     ap.add_argument("--sr", type=int, default=44100)
     ap.add_argument("--no-cache", action="store_true", help="render every clip again (no render cache)")
     a = ap.parse_args()
-    r = ET.fromstring(gzip.open(a.als).read())
+    r = ET.fromstring(read_gz(a.als))
     tempo = float(v(r, ".//Tempo/Manual"))
     spb = 60 / tempo
     tr = list(r.find(".//Tracks"))

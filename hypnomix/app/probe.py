@@ -618,9 +618,9 @@ def read_cards(set_path, cards_file=None):
         from hypnomix.reaper.probes import read_cards as rpp_cards
         cf = Path(cards_file) if cards_file else Path(os.environ.get("HYPNOMIX_APP_HOME", "~/Documents/Hypnomix")).expanduser() / "cards.json"
         return rpp_cards(set_path, cf)
-    import gzip
     import xml.etree.ElementTree as ET
-    root = ET.fromstring(gzip.open(set_path).read())
+    from hypnomix.core.gz import read_gz
+    root = ET.fromstring(read_gz(set_path))            # capped: a crafted set cannot unpack without limit
     out = {"tracks": {}, "song": {}}
     names = []
     for t in root.iter():

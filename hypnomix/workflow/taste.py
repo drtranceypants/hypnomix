@@ -24,6 +24,7 @@ Usage:  hypnomix taste SONG.als [SONG2.als …] [--out DIR]
                                               (`hypnomix taste --library -h` lists every option)
 """
 import argparse, collections, gzip, hashlib, json, math, os, re, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -100,7 +101,7 @@ def song(set_path, labels=None, require_lead=True, root=None):
         labels = {r["old"]: (str(r.get("final") or r.get("label") or ""), float(r.get("confidence") or 0))
                   for r in json.loads(nj.read_text())["tracks"]}
     if root is None:
-        root = ET.fromstring(gzip.open(set_path).read())
+        root = ET.fromstring(read_gz(set_path))
     tempo = float(v(root, ".//Tempo/Manual"))
     returns = []
     for t in root.find(".//Tracks"):

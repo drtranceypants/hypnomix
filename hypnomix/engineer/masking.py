@@ -203,6 +203,7 @@ def write_project(src, out, items, scale=1.0):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix masking", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("folder", help="a folder of stems, or (with --apply) the set / project to write the cuts into")
     ap.add_argument("--top", type=int, default=12); ap.add_argument("--out")
     ap.add_argument("--apply", metavar="NEW", help="write the cuts into NEW (a new .als or .rpp next to the source)")

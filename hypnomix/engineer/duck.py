@@ -21,6 +21,7 @@ Usage:
   hypnomix duck SET.als --apply NEW.als --ids duck-1,duck-2
 """
 import argparse, gzip, json, math, re, subprocess, sys, tempfile
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -117,7 +118,7 @@ def fit(trig, act, c, target):
 
 def propose(set_path, names_json=None, renders=None, depth=3.0):
     set_path = Path(set_path)
-    root = ET.fromstring(gzip.open(set_path).read())
+    root = ET.fromstring(read_gz(set_path))
     if names_json is None:
         nd = Path(tempfile.mkdtemp()); hx("name", set_path, "--out", nd); names_json = nd / "names.json"
     rows = json.loads(Path(names_json).read_text())["tracks"]
@@ -250,6 +251,7 @@ def add_compressor(root, ret_el, source_id, source_name, c):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix duck", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als"); ap.add_argument("--names"); ap.add_argument("--renders"); ap.add_argument("--json")
     ap.add_argument("--depth", type=float, default=3.0, help="how far the ambience ducks while the singer sings (dB)")
     ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
@@ -271,7 +273,7 @@ def main():
         want = {x.strip() for x in (a.ids or "").split(",") if x.strip()}
         if not want:
             sys.exit("say which: --ids duck-1,… (nothing is applied by default)")
-        root = ET.fromstring(gzip.open(src).read())
+        root = ET.fromstring(read_gz(src))
         rets = {r["name"]: r["el"] for r in returns_of(root)}
         done = 0
         for f in fs:
@@ -285,6 +287,8 @@ def main():
                 if el is not None:
                     SC.write_settings(el, dict(d["c"], kind="glue" if el.tag == "GlueCompressor" else "compressor")); done += 1
         data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
+        from hypnomix.session import liveversion as LV
+        LV.guard_write(root)                # refuses a set saved by a Live newer than the newest tested
         with gzip.open(a.apply, "wb") as fh:
             fh.write(data)
         print(f"wrote {a.apply}: {done} ducking change(s)")

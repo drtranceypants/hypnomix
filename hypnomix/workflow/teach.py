@@ -194,6 +194,10 @@ TEXT = {
     ("master", None): (
         "Each mastering stage (clean-up, tone, glue, width, limiter) is one choice you can take or leave.",
         "small moves per stage; the limiter last"),
+    ("profile", None): (
+        "Your own finished songs show where your sound usually sits: loudness, punch, tone by band, width. A mix far "
+        "outside that range is worth a listen. It may be deliberate, so this is a question for your ears, not a rule.",
+        "play one of your finished songs and this mix at the same loudness, and keep a difference only if you hear it and mean it"),
 }
 
 FALLBACK = ("A measured problem with a proposed fix. Listen to the spot before and after deciding.",

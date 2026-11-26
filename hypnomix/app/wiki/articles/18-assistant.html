@@ -42,7 +42,7 @@ teaser: Rather talk than click? The app's Assistant tab is a chat with the AI of
     </div>
 
     <h3 class="sub-h">Without the app</h3>
-    <div class="term" data-label="listen from the terminal"><pre><span class="p">$</span> pip install "hypnomix[assistant,critique]"
+    <div class="term" data-label="listen from the terminal"><pre><span class="p">$</span> uv pip install -e ".[assistant,critique]"        <span class="c"># from source, in the hypnomix folder; the installed app already has both</span>
 <span class="p">$</span> hypnomix critique "Song.wav" --estimate                 <span class="c"># what would be sent, and roughly what it costs</span>
 <span class="p">$</span> hypnomix critique "Song.wav" --scan "hypnomix-out/scan/Song" --question "is the vocal too far back in the chorus?"
 <span class="c">  Song.wav: 3.5 min of reduced mono audio, to Google Gemini (generativelanguage.googleapis.com), model gemini-4-carbon. About 7,000 tokens in and 1,500 back, roughly $0.01 (an estimate)…</span>

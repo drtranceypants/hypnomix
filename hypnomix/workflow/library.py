@@ -36,6 +36,7 @@ Usage:
   python -m hypnomix.workflow.library [DIR …] [same options]
 """
 import argparse, collections, concurrent.futures as cf, functools, gzip, hashlib, json, math, os, re, subprocess, sys, time
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -331,7 +332,7 @@ def lowest_midi_note(t):
 def read_set(path, known=None):
     """Everything the library learns from one set (no audio is read here). `known`: labels from names_index()."""
     path = Path(path)
-    root = ET.fromstring(gzip.open(path).read())
+    root = ET.fromstring(read_gz(path))
     ls = root.find("LiveSet")
     main = next((m for m in (ls.find("MainTrack"), ls.find("MasterTrack")) if m is not None), None)
     tempo = float(v(root, ".//Tempo/Manual") or 120)

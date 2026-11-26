@@ -34,6 +34,7 @@ range; for sends: dB=N), every=N (throws: one per N bars), track=NAME (move it t
 same kind of control).
 """
 import argparse, gzip, json, math, re, sys
+from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -421,7 +422,7 @@ def classify_envelope(pts, lo, hi, song_beats):
 def learn(paths):
     found = []
     for path in paths:
-        root = ET.fromstring(gzip.open(path).read())
+        root = ET.fromstring(read_gz(path))
         song = max([float(v(c, "./CurrentEnd")) for t in root.find(".//Tracks") for path in MAIN_LANE
                     for c in t.findall(path) if v(t, "./DeviceChain/Mixer/Speaker/Manual") != "false"
                     and v(c, "./Disabled") != "true"] + [1.0])
@@ -716,6 +717,7 @@ def parse_tweaks(items):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix motion", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als", nargs="?"); ap.add_argument("--mix")
     ap.add_argument("--learn", nargs="+", metavar="EXAMPLE.als", help="learn your moves from finished songs")
     ap.add_argument("--style", default=str(STYLE), help="style file (default ~/.hypnomix/motion-style.json)")
@@ -738,7 +740,7 @@ def main():
         sys.exit("give a set (or --learn examples)")
     src = Path(a.als)
     style = json.loads(Path(a.style).read_text()) if Path(a.style).exists() else None
-    root = ET.fromstring(gzip.open(src).read())
+    root = ET.fromstring(read_gz(src))
     labels = None
     if a.names and Path(a.names).exists():
         labels = {r["old"]: (r.get("final") or r.get("label") or "") for r in json.loads(Path(a.names).read_text())["tracks"]
@@ -802,6 +804,8 @@ def main():
             else:
                 done += 1
         data = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(root, encoding="utf-8")
+        from hypnomix.session import liveversion as LV
+        LV.guard_write(root)                # refuses a set saved by a Live newer than the newest tested
         with gzip.open(a.apply, "wb") as fh:
             fh.write(data)
         print(f"wrote {a.apply}: {done} move(s) written as automation" + ("".join(f"\n  skipped {s}" for s in skipped)))

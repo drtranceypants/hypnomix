@@ -1,5 +1,6 @@
 """The hypnomix app server (first pass in a window) and the Max for Live device builder."""
-import json, os, shutil, subprocess, tempfile, threading, time, unittest, urllib.error, urllib.request
+import json, os, shutil, subprocess, sys, tempfile, threading, time, unittest, urllib.error, urllib.request
+from unittest import mock
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -853,6 +854,41 @@ history: logged as v1 (`hypnomix history "x"`)
         self.assertEqual(self.review(d)["decisions"], {})
         self.assertEqual(self.post("/api/decide", dict(dir=str(d), id="smooth-1", decision="approve"))[0], 200)
 
+    def test_a_cut_off_decisions_file_written_by_the_real_writer_is_restored_from_its_real_backup(self):
+        als = self.source("Song.als")
+        d = self.scan("Song", als, [F("smooth-1"), F("smooth-2"), F("smooth-3")])
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), id="smooth-1", decision="approve"))[0], 200)
+        self.assertFalse((d / "decisions.json.bak").exists())                         # one write: nothing before it to keep
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), id="smooth-2", decision="skip"))[0], 200)
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), ids=["smooth-3"], decision="approve"))[0], 200)
+        self.assertEqual(sorted(json.loads((d / "decisions.json.bak").read_text())), ["smooth-1", "smooth-2"])   # the writer's own name
+        full = (d / "decisions.json").read_text()
+        (d / "decisions.json").write_text(full[:len(full) // 2])                      # a crash in the middle of a write
+        row = call(self.base, "/api/state")[1]["scans"][0]
+        self.assertEqual((row["name"], row["damaged"], row["can_restore"]), ("Song", "decisions.json", True))   # still listed, Restore offered
+        r = self.review(d)
+        self.assertEqual((r["damaged"]["file"], r["damaged"]["backup"], len(r["findings"])), ("decisions.json", True, 3))
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), id="smooth-1", decision="skip"))[0], 409)
+        code, j, _ = self.post("/api/restore-decisions", dict(dir=str(d)))
+        self.assertEqual((code, j["restored"], j["decisions"]), (200, True, 2))
+        r = self.review(d)
+        self.assertIsNone(r["damaged"])
+        self.assertEqual({k: v["decision"] for k, v in r["decisions"].items()}, {"smooth-1": "approve", "smooth-2": "skip"})
+        self.assertEqual(self.post("/api/decide", dict(dir=str(d), id="smooth-3", decision="approve"))[0], 200)
+
+    def test_a_cut_off_scan_json_is_read_from_its_backup_and_a_cut_off_one_with_none_gives_nothing(self):
+        from hypnomix.core import atomic
+        d = self.work / "scan" / "Song"
+        d.mkdir(parents=True)
+        atomic.write_json(d / "scan.json", dict(mode="folder", group_seconds=dict(mix=7)))
+        atomic.write_json(d / "scan.json", dict(mode="folder", group_seconds=dict(mix=8)))       # the first one is now scan.json.bak
+        (d / "scan.json").write_text('{"mode": "fol')
+        self.assertEqual(self.S.read_scan_json(d), dict(mode="folder", group_seconds=dict(mix=7)))
+        self.assertEqual(self.S.prior_times(d)["groups"], dict(mix=7.0))
+        (d / "scan.json.bak").unlink()
+        self.assertEqual(self.S.read_scan_json(d), {})
+        self.assertEqual(self.S.read_scan_json(d / "nowhere"), {})
+
     def test_a_damaged_findings_file_is_listed_not_dropped(self):
         als = self.source("Song.als")
         d = self.scan("Song", als, [F("smooth-1")])
@@ -931,6 +967,54 @@ history: logged as v1 (`hypnomix history "x"`)
             self.assertEqual(code, 400, body)
             self.assertIn("parts", r["error"])
 
+    # ---- the port the app runs on is the port its devices and jobs use
+    def _main_with(self, argv, env):
+        from hypnomix.app import update as UP, diskcare as DC
+
+        class FakeServer:
+            def __init__(self, *a, **k): pass
+            def serve_forever(self): raise KeyboardInterrupt
+        saved = {k: os.environ.get(k) for k in ("HYPNOMIX_PORT", "HYPNOMIX_APP_HOME")}
+        os.environ.pop("HYPNOMIX_PORT", None)
+        os.environ.update({k: v for k, v in env.items() if v is not None})
+        try:
+            with mock.patch.object(self.S, "ThreadingHTTPServer", FakeServer), mock.patch.object(self.S, "start_probe_hub"), \
+                    mock.patch.object(UP, "check_in_background"), mock.patch.object(DC, "start_in_background"), \
+                    mock.patch.object(sys, "argv", ["hypnomix-app"] + argv), mock.patch("builtins.print"):
+                self.S.main()
+            return os.environ.get("HYPNOMIX_PORT")
+        finally:
+            for k, v in saved.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+    def test_app_port_n_is_exported_so_devices_and_jobs_use_it(self):
+        self.assertEqual(self._main_with(["--port", "8931", "--no-open"], {}), "8931")
+        from hypnomix.app import probe
+        with mock.patch.dict(os.environ, {"HYPNOMIX_PORT": "8931"}):
+            self.assertEqual(probe.app_port(), 8931)
+            from hypnomix.app import device
+            self.assertEqual(device.app_port(), 8931)
+        os.environ["HYPNOMIX_PORT"] = "1234"                                        # a stale value from outside never wins
+        try:
+            self.assertEqual(self._main_with(["--port", "8940", "--no-open"], {"HYPNOMIX_PORT": "1234"}), "8940")
+            self.assertIsNone(self._main_with(["--no-open"], {"HYPNOMIX_PORT": "1234"}))      # the default port: nothing set
+        finally:
+            os.environ.pop("HYPNOMIX_PORT", None)
+
+    def test_the_probe_hubs_busy_port_message_names_the_port_in_use(self):
+        from hypnomix.app import probe
+        saved = dict(self.S.PROBE)
+        try:
+            with mock.patch.dict(os.environ, {"HYPNOMIX_PROBE_PORT": "9123"}), \
+                    mock.patch.object(probe, "Hub", side_effect=OSError("Address already in use")):
+                self.S.start_probe_hub()
+            self.assertIn("UDP port 9123 is in use", self.S.PROBE["error"])
+            self.assertNotIn("8792", self.S.PROBE["error"])
+            self.assertIn("HYPNOMIX_PROBE_PORT", self.S.PROBE["error"])
+        finally:
+            self.S.PROBE.clear()
+            self.S.PROBE.update(saved)
+
     # ---- 12. the demo song
     def test_the_demo_button_only_exists_where_the_command_does(self):
         from hypnomix import cli
@@ -957,6 +1041,14 @@ history: logged as v1 (`hypnomix history "x"`)
             self.assertEqual(more[0][0], "Getting ready")
             self.assertEqual([a[0] for _, a, _ in more if isinstance(a, list)], ["scan", "ab"])
             self.assertEqual(self.S.JOB["dir"], str(self.work / "scan" / "Demo"))
+            # what `hypnomix demo` really prints: a folder of stems (the default kind), named on its "written to" line
+            folder = out / "Hypnomix Demo Song"
+            folder.mkdir()
+            (out / "Demo.als").unlink()
+            self.S.JOB["log"] = ["$ hypnomix demo", f"demo song (folder) written to {folder}", f"problems, with times: {folder / 'DEMO.md'}"]
+            more = steps[1][1]()
+            self.assertEqual(Path(next(a for _, a, _ in more if isinstance(a, list) and a[0] == "scan")[1]), folder.resolve())
+            self.assertEqual(self.S.JOB["dir"], str(self.work / "scan" / "Hypnomix Demo Song"))
         finally:
             cli.COMMANDS.pop("demo", None)
             if had:
@@ -1108,12 +1200,13 @@ class ReviewB(unittest.TestCase):
         d = self.scan("Song", [F(f"smooth-{i}") for i in range(30)])
         ids = [f"smooth-{i}" for i in range(30)]
         writes = []
-        real = self.S.write_json_atomic
-        self.S.write_json_atomic = lambda p, o: (writes.append(Path(p).name), real(p, o))[1]
+        from hypnomix.core import atomic
+        real = atomic.write_json
+        atomic.write_json = lambda p, o, **kw: (writes.append(Path(p).name), real(p, o, **kw))[1]
         try:
             code, r, _ = self.post("/api/decide", dict(dir=str(d), ids=ids, decision="approve", note="batch: like smooth-1", via="batch"))
         finally:
-            self.S.write_json_atomic = real
+            atomic.write_json = real
         self.assertEqual(code, 200)
         self.assertEqual(sorted(r["ids"]), sorted(ids))
         self.assertEqual(writes, ["decisions.json"])                                  # not 30 writes
