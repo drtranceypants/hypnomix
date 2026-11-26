@@ -1,7 +1,7 @@
 ---
 title: Command Reference
 subtitle: Every hypnomix command, by group, in one line each
-file: 7 - Command Reference
+file: 8 - Command Reference
 ---
 
 # Every command
@@ -13,14 +13,15 @@ Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full optio
 | command | what it does |
 |---|---|
 | `automix` | stems folder → balanced mix + master, with notes on every move |
-| `master` | stereo mix → release master at a loudness target (or matched to a reference) |
+| `master` | stereo mix → release master at a loudness target (or a reference); options: tonal stabilizer, dynamic EQ, band width, limiter character, harshness, dither, amount |
+| `rebalance` | turn vocals / drums / bass / other up or down in a finished stereo mix (separation + residual, true-peak safe)  [extra: ml, or --stems] |
 | `chain` | build the mastering chain (or channel strips) in Live from stock devices: no paid plug-ins |
 | `devices` | check every Live device by what it does (compressors, gates, limiters, EQ low cut) and suggest settings (writes a new set) |
 | `duck` | duck the vocal reverb and delay: tune the ducking you have, or add a sidechained Compressor fed by the vocals (writes a new set) |
 | `sidechain` | sidechain compressors: measure the ducking (depth, recovery, timing) and suggest settings |
 | `masking` | which stems fight over which frequencies, and the cut that fixes it |
 | `align` | phase/polarity/time offset between mics on one source |
-| `translate` | mono, phone, earbuds, car, streaming normalisation, codec clipping |
+| `translate` | mono, phone, earbuds, car, streaming normalisation, codec clipping; --preview to hear MP3 / AAC / as streaming plays it |
 | `qc` | release checks: format, silence, true peak, loudness, phase (exit 1 on fail) |
 
 ## Studio: recording real instruments
@@ -53,6 +54,8 @@ Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full optio
 | `stems` | who owns which band (and a resonance) in a folder of stems |
 | `reference` | what it would take to sound like a reference  [extra: reference] |
 | `match` | mix vs a reference as a list of proposals: tone by band, dynamics, width, loudness |
+| `tonal` | tonal-balance targets from your own masters or chosen references; where a mix sits outside the range, with EQ proposals and a plot |
+| `harsh` | harshness report: sustained 2-6 kHz build-ups with timestamps (master --harsh tames only those) |
 | `sections` | find the song's sections; loudness and vocal balance per section (give --bpm) |
 | `separate` | split a mixed song into stems  [extra: ml] |
 | `midi` | audio → MIDI (+ into a Live clip)  [extra: ml] |
@@ -64,19 +67,22 @@ Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full optio
 |---|---|
 | `live` | mixer, devices, VST parameters, transport, snapshots, arm/record |
 | `loop` | play bars → record → measure → compare; one-change A/Bs |
+| `probe` | measure every track while Live plays, after all its plug-ins (Max for Live probe): no renders, a review from what was heard |
+| `abset` | one new set with every proposed fix as a switched-off B next to yours: A / B / Blind inside Live, loudness-matched |
 | `diagnose` | solo every group in the loudest section: who owns the sub, bass, vocal band |
 
-## Projects: REAPER (.rpp) and Live (.als)
+## Projects: REAPER (.rpp), Ardour (.ardour) and Live (.als)
 
 | command | what it does |
 |---|---|
-| `project` | look inside a REAPER or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks |
+| `project` | look inside a REAPER, Ardour or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks |
 
 ## Session files (.als, Live closed or open)
 
 | command | what it does |
 |---|---|
 | `render` | render tracks from a .als to stems without opening Live (clip gain, fades, warps) |
+| `plugrender` | render tracks from a .als through their real VST3/AU plug-in chains, offline, faster than real time  [extra: plugins] |
 | `name` | name every track and group by how it sounds (vocal, harmony, guitar, strings, drums…) |
 | `mine` | tempo, key, tracks, plug-in chains, routing, levels from a set |
 | `audit` | flags EQ, stacked limiters, bypassed devices; bounce vs your profile |
@@ -107,10 +113,12 @@ Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full optio
 |---|---|
 | `scan` | first pass: run every check on a set or a folder of recordings, change nothing, write REVIEW.md |
 | `fix` | apply only the findings you approved, into ONE new set (original untouched) |
-| `taste` | your tastes and standards from your own finished songs: levels, pans, sends, chains, vocals (TASTE.md) |
+| `taste` | your tastes and standards from your own finished songs: levels, pans, sends, chains, vocals (TASTE.md); --library studies every set on this computer: style plus where to improve |
 | `prefs` | your preferences, asked once: targets, protected tracks, how you like to review |
 | `ab` | before/after clips for each proposed fix, level-matched, so you hear it before approving |
 | `review` | the review as one page: play each A/B, tick approve / skip / change |
+| `history` | every version fix wrote for a song: list, diff, undo into a new set, rebuild without one item |
+| `watch` | watch a set while you work: a quick incremental scan on every save (read-only) |
 
 ## App: no terminal, no AI needed
 

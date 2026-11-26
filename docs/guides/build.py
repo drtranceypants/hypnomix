@@ -8,7 +8,7 @@ Needs Google Chrome or Chromium (prints the HTML to PDF, headless). No Python pa
 library: the Markdown here is a small, known subset (headings, paragraphs, lists, tables, code, quotes).
 The command reference (99-commands.md) is generated from hypnomix's own command list each time.
 """
-import argparse, html, re, shutil, subprocess, sys, tempfile
+import argparse, html, re, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -180,7 +180,7 @@ def front(text):
 def commands_md():
     sys.path.insert(0, str(HERE.parents[1]))
     from hypnomix import cli
-    out = ["---", "title: Command Reference", "subtitle: Every hypnomix command, by group, in one line each", "file: 7 - Command Reference", "---", "",
+    out = ["---", "title: Command Reference", "subtitle: Every hypnomix command, by group, in one line each", "file: 8 - Command Reference", "---", "",
            "# Every command", "", "Run `hypnomix` for this list, `hypnomix <command> -h` for a command's full options and "
            "examples. Commands that change a Live set always write a new set next to the original.", ""]
     for group, cmds in cli.GROUPS:
@@ -217,11 +217,24 @@ def main():
             h = Path(td) / f"{name}.html"
             h.write_text(doc)
             pdf = OUT / f"hypnomix {meta.get('file', name[3:].replace('-', ' '))}.pdf"
-            r = subprocess.run([exe, "--headless=new", "--disable-gpu", "--no-pdf-header-footer", "--no-margins",
-                                f"--user-data-dir={td}/profile", f"--print-to-pdf={pdf}", h.as_uri()],
-                               capture_output=True, text=True, timeout=120)
+            pdf.unlink(missing_ok=True)
+            pr = subprocess.Popen([exe, "--headless=new", "--disable-gpu", "--no-pdf-header-footer", "--no-margins",
+                                   f"--user-data-dir={td}/profile", f"--print-to-pdf={pdf}", h.as_uri()],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            # Chrome sometimes keeps running after printing: stop it once the PDF is complete
+            t0, last = time.time(), -1
+            while pr.poll() is None and time.time() - t0 < 120:
+                time.sleep(0.5)
+                size = pdf.stat().st_size if pdf.exists() else -1
+                if size > 0 and size == last:
+                    pr.terminate()
+                    break
+                last = size
+            if pr.poll() is None:
+                pr.kill()
+            pr.wait()
             if not pdf.exists():
-                sys.exit(f"Chrome did not write {pdf.name}: {r.stderr[-400:]}")
+                sys.exit(f"Chrome did not write {pdf.name}: {(pr.stderr.read() or '')[-400:]}")
             if a.html:
                 shutil.copy(h, OUT / f"{name}.html")
         print(f"wrote {pdf.relative_to(HERE.parents[1])}")
