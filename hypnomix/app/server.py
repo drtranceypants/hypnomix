@@ -340,8 +340,17 @@ def start_probe_hub():
     try:
         from hypnomix.app.probe import Hub
         PROBE["hub"] = Hub().start()
+        PROBE["error"] = ""
     except Exception as e:                    # the port is taken (another app, or `hypnomix probe listen`)
-        PROBE["error"] = str(e)
+        PROBE["error"] = f"UDP port 8792 is in use ({e}); close the other program using it: it is tried again every few seconds"
+    PROBE["tried"] = time.time()
+
+
+def probe_hub():
+    """The hub, starting it again (at most every 5 s) if the port was taken when the app started."""
+    if PROBE["hub"] is None and time.time() - PROBE.get("tried", 0) > 5:
+        start_probe_hub()
+    return PROBE["hub"]
 
 
 # ---------------------------------------------------------------- native file dialogs (macOS)
@@ -435,7 +444,7 @@ def make_handler(port):
                     cmd = LIVE["cmd"] if LIVE["seq"] > since >= 0 else None
                     return self.send(200, dict(seq=LIVE["seq"], cmd=cmd, current=live_current()))
                 if u.path == "/api/probe/status":
-                    hub = PROBE["hub"]
+                    hub = probe_hub()
                     return self.send(200, dict(tracks=hub.status() if hub else [], error=PROBE["error"],
                                                recording=bool(hub and hub.capture is not None)))
                 if u.path == "/api/probe/cmd":            # each probe asks twice a second: its gain (A/B loudness match)
@@ -498,7 +507,7 @@ def make_handler(port):
                 if u.path == "/api/master/record":
                     return self.send(200, master_record(body))
                 if u.path == "/api/probe/start":
-                    if not PROBE["hub"]:
+                    if not probe_hub():
                         return self.send(409, {"error": "the probe receiver is not running: " + PROBE["error"]})
                     PROBE["hub"].begin(body.get("label", ""))
                     return self.send(200, {"recording": True})
