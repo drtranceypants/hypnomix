@@ -373,7 +373,9 @@ def main():
     reaper_ = orig is not None and orig.suffix.lower() == ".rpp"
     voices_in_set = bool(orig) and not reaper_ and any(f.get("tool") == "voices" for f in audio_items)
     tune_rpp = reaper_ and any(f.get("tool") == "tune" for f in audio_items)
-    if set_items or name_items or voices_in_set or tune_rpp:
+    # tuning in a Live set also writes a new set (the comp clips play the tuned takes), so it needs --out too
+    tune_als = orig is not None and not reaper_ and any(f.get("tool") == "tune" for f in audio_items)
+    if set_items or name_items or voices_in_set or tune_rpp or tune_als:
         if not orig:
             sys.exit("this scan has no Live set: set changes cannot be applied")
         if not a.out:
