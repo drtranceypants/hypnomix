@@ -322,6 +322,10 @@ Everything is measurement plus rules an engineer would use. There are no black-b
 
 It measures; it doesn't listen. Treat the automix as a strong first pass by an assistant, then make the taste calls yourself.
 
+## Contributing
+
+Bug reports, ideas and pull requests are welcome, and so is building with your own AI coding agent: the repo is set up for one (`AGENTS.md`). [CONTRIBUTING.md](CONTRIBUTING.md) has the bug report form, the feature idea form and the steps, from forking to testing on your own songs to opening a pull request. No GitHub account? Use the [feedback form](https://hypnomix.bradfieldenterprises.org/feedback/).
+
 ## Licence
 
 MIT. Bundles AbletonOSC (MIT, © Daniel John Jones and contributors) with small patches marked `hypnomix patch`; see [THIRD_PARTY.md](THIRD_PARTY.md). Not affiliated with Ableton.

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Feedback without a GitHub account
+    url: https://hypnomix.bradfieldenterprises.org/feedback/
+    about: Send a bug, an idea or a question through the website. Every message is read.
+  - name: The wiki
+    url: https://hypnomix.bradfieldenterprises.org/wiki/
+    about: Guides, every command and the FAQ.

@@ -1,0 +1,70 @@
+name: Bug report
+description: Something broke, gave a wrong result, or didn't do what the docs say.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Please don't attach audio or whole sets, and remove anything personal (such as your name in file paths) from logs.
+        If an AI agent helped you find this, it's welcome to fill the form in with you.
+  - type: textarea
+    id: what
+    attributes:
+      label: What you did
+      description: The command or button, and on what (a Live set, a REAPER or Ardour project, a folder of stems, one file).
+      placeholder: "hypnomix scan Song.als, then Approve on the first finding in Review"
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: dropdown
+    id: computer
+    attributes:
+      label: Computer
+      options:
+        - Mac (Apple silicon)
+        - Mac (Intel)
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: hypnomix version
+      description: The app version from the download page, or `git rev-parse --short HEAD` if you run from source.
+      placeholder: "v0.1.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How you ran it
+      options:
+        - The Mac or Windows app
+        - The web app (hypnomix app)
+        - The terminal
+        - With an AI agent
+        - The Live device
+        - The REAPER panels
+  - type: input
+    id: daw
+    attributes:
+      label: DAW and version
+      placeholder: "Ableton Live 12.1, REAPER 7.2, none (folder of stems)"
+  - type: textarea
+    id: doctor
+    attributes:
+      label: hypnomix doctor
+      description: Output of `hypnomix doctor` (it checks your setup and changes nothing).
+      render: text
+  - type: textarea
+    id: log
+    attributes:
+      label: Error or log
+      description: The end of the Activity log in the app, the terminal output, or the lines from REVIEW.md for a wrong finding.
+      render: text

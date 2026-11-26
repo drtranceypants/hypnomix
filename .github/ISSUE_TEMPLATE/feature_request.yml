@@ -1,0 +1,37 @@
+name: Feature idea
+description: A chore you'd like hypnomix to take on, or a way to make it easier to use.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful ideas describe a chore: "every song I spend twenty minutes doing X by hand". `docs/ROADMAP.md` lists what's already planned.
+  - type: textarea
+    id: chore
+    attributes:
+      label: The chore or the problem
+      description: What you do by hand today, or what was hard to figure out.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you'd like hypnomix to do
+      description: Which parts you'd want to decide yourself, and which could be automatic.
+    validations:
+      required: true
+  - type: input
+    id: daw
+    attributes:
+      label: DAW
+      placeholder: "Ableton Live, REAPER, Ardour, any (folder of stems)"
+  - type: dropdown
+    id: build
+    attributes:
+      label: Would you like to build it?
+      description: With or without an AI coding agent. CONTRIBUTING.md has the steps.
+      options:
+        - Not this time
+        - Yes, with an AI agent
+        - Yes, by hand
+        - Maybe, with some pointers

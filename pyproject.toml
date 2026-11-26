@@ -49,6 +49,7 @@ packages = ["hypnomix"]
 "GUIDE.md" = "hypnomix/app/wiki/docs/GUIDE.md"
 "AGENTS.md" = "hypnomix/app/wiki/docs/AGENTS.md"
 "CLAUDE.md" = "hypnomix/app/wiki/docs/CLAUDE.md"
+"CONTRIBUTING.md" = "hypnomix/app/wiki/docs/CONTRIBUTING.md"
 "THIRD_PARTY.md" = "hypnomix/app/wiki/docs/THIRD_PARTY.md"
 "docs/ALIGN.md" = "hypnomix/app/wiki/docs/ALIGN.md"
 "docs/APP.md" = "hypnomix/app/wiki/docs/APP.md"

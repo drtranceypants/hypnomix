@@ -121,7 +121,7 @@ def docs_dir(root=None):
 
 
 def doc_files(root=None):
-    """README.md and AGENTS.md first, then docs/[A-Z]*.md."""
+    """The files in wiki_md.ROOT_FILES first, then docs/[A-Z]*.md."""
     from hypnomix.app.wiki_md import ROOT_FILES
     root = Path(root) if root else HERE
     d = docs_dir(root)
