@@ -122,6 +122,16 @@ class Structure(unittest.TestCase):
         for ch, s in all_steps():
             self.assertIsNone(banned_in(" ".join(strings(s))), f"{s['id']} names a paid product")
 
+    def test_the_fingerprints_still_catch_a_name(self):
+        import hashlib
+        probe = "zz made-up brand"                                    # proves the matcher works without naming anything real
+        BANNED.add(hashlib.sha256(probe.encode()).hexdigest()[:12])
+        try:
+            self.assertEqual(banned_in("Put the ZZ Made-Up Brand, on the vocal."), probe)
+            self.assertIsNone(banned_in("Put a compressor on the vocal."))
+        finally:
+            BANNED.discard(hashlib.sha256(probe.encode()).hexdigest()[:12])
+
     def test_plain_spelling_and_no_leftovers(self):
         for _, s in all_steps():
             blob = " ".join(strings(s))
