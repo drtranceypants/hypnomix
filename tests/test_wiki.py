@@ -234,7 +234,7 @@ class WikiTest(unittest.TestCase):
         """Each docs/*.md is listed in pyproject.toml, so an installed hypnomix has the same wiki."""
         root = Path(wiki.__file__).resolve().parents[2]
         toml = (root / "pyproject.toml").read_text()
-        for n in ("README.md", "GUIDE.md", "AGENTS.md"):
+        for n in wiki_md.ROOT_FILES:
             self.assertIn(f'"{n}" = "hypnomix/app/wiki/docs/{n}"', toml)
         for f in sorted((root / "docs").glob("[A-Z]*.md")):
             self.assertIn(f'"docs/{f.name}" = "hypnomix/app/wiki/docs/{f.name}"', toml,

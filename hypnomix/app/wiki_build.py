@@ -25,6 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from hypnomix.app import wiki as W   # noqa: E402
+from hypnomix.app.wiki_md import ROOT_FILES as ROOT   # noqa: E402
 
 STYLE = """<style>
 .wiki{scroll-margin-top:70px;display:grid;grid-template-columns:260px 1fr;gap:2.2rem;align-items:start;max-width:1180px;margin:0 auto;padding:0 1rem 3rem}
@@ -173,7 +174,7 @@ def commit_time(root):
     d = W.docs_dir(root)
     if d is not None:
         paths.append(str(d / "[A-Z]*.md"))
-    paths += [str(f) for f in W.doc_files(root) if f.name in ("README.md", "GUIDE.md", "AGENTS.md")]
+    paths += [str(f) for f in W.doc_files(root) if f.name in ROOT]
     cli = Path(root).resolve().parents[1] / "cli.py"             # the command reference is built from it
     if cli.exists():
         paths.append(str(cli))

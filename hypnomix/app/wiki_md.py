@@ -140,7 +140,7 @@ def to_html(text):
 
 
 DOCS_GROUP = "Docs"
-ROOT_FILES = ("README.md", "GUIDE.md", "AGENTS.md")          # read from the top of the repo (bundled into wiki/docs/ when installed)
+ROOT_FILES = ("README.md", "GUIDE.md", "AGENTS.md", "THIRD_PARTY.md")          # read from the top of the repo (bundled into wiki/docs/ when installed)
 REPO = "https://github.com/drtranceypants/hypnomix/blob/main/"
 
 
