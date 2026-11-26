@@ -37,8 +37,8 @@ from hypnomix.core import paths
 
 REPO = "drtranceypants/hypnomix"
 API = os.environ.get("HYPNOMIX_UPDATE_URL") or f"https://api.github.com/repos/{REPO}/releases/latest"
-STATE = Path("~/.hypnomix/update.json").expanduser()
-DIR = Path("~/.hypnomix/updates").expanduser()
+STATE = paths.HOME / "update.json"       # the same home as the rest of hypnomix: HYPNOMIX_HOME moves these (default ~/.hypnomix)
+DIR = paths.HOME / "updates"
 TAG = re.compile(r"v?[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}", re.ASCII)  # a release name must be a plain version: ASCII digits and dots only
 ASSETS = {"Hypnomix-windows-setup.exe", "Hypnomix-mac-arm64.dmg", "Hypnomix-mac-intel.dmg", "SHA256SUMS.txt"}
 RELEASES = f"/{REPO}/releases/"

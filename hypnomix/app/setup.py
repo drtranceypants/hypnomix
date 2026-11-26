@@ -11,7 +11,7 @@ audio), and sets that up:
 Then the connection to your DAW (Live: `hypnomix install`; REAPER: the bridge; only on a click), and for desktop AI apps a `hypnomix`
 command and a folder with the agent guide and the Claude Code skills; then the optional extras (hypnomix/extras.py),
 each installed only on a click. Keys are saved by the Assistant's own settings (~/.hypnomix/ai.json,
-readable by you alone). The setup's own answers are in ~/.hypnomix/setup.json.
+readable by you alone). The setup's own answers are in ~/.hypnomix/setup.json (the folder HYPNOMIX_HOME names, if set).
 
 Costs are estimates from list prices for one typical song (scan to approved fixes, about 40 assistant steps:
 ~1.2 M input tokens, most of them repeated context, and ~20 k output tokens). The guide docs/guides/09-setup-and-ai.md
@@ -20,26 +20,32 @@ import io, json, os, shutil, sys, time
 from contextlib import redirect_stdout
 from pathlib import Path
 
-STATE = Path("~/.hypnomix/setup.json").expanduser()
+from hypnomix.core import paths, prices
+
+STATE = paths.HOME / "setup.json"       # the same home as the rest of hypnomix: HYPNOMIX_HOME moves it (default ~/.hypnomix)
 VERSION = 3                      # bump when the setup gains a step people who finished it should see
 
 # one typical song through the Assistant: what the cost estimates assume
 TYPICAL = dict(input=1_200_000, repeated=0.9, output=20_000)
-PRICES_CHECKED = "2026-11-25"
+PRICES_CHECKED = prices.CHECKED
 
 # $ per million tokens: (input, output, repeated-context price or None when not counted). Claude's repeated
-# context is the prompt cache (1-hour writes cost 2x input), as the Assistant uses it.
+# context is the prompt cache (1-hour writes cost 2x input), as the Assistant uses it. The numbers come from the one
+# table in hypnomix/core/prices.py (the Assistant's cost counter and the guide read the same one).
 PRICES = {
-    "claude-opus-5-5":   dict(label="Claude Opus 5.5",   inp=4.00, out=20.00, cached=0.20, write=8.00),
-    "claude-sonnet-5-5": dict(label="Claude Sonnet 5.5", inp=2.00, out=10.00, cached=0.10, write=4.00),
-    "claude-haiku-5-5":  dict(label="Claude Haiku 5.5",  inp=0.10, out=0.50,  cached=0.01, write=0.20),
-    "gemini-flash":      dict(label="Gemini Flash (paid tier)", inp=0.75, out=3.75, cached=None, write=None,
-                              note="introductory price through 2026-12-31; $1.50 / $7.50 from 2027-01-01"),
+    "claude-opus-5-5":   prices.for_setup("claude-opus-5-5"),
+    "claude-sonnet-5-5": prices.for_setup("claude-sonnet-5-5"),
+    "claude-haiku-5-5":  prices.for_setup("claude-haiku-5-5"),
+    "gemini-flash":      dict(label=prices.GEMINI["label"], inp=prices.GEMINI["inp"], out=prices.GEMINI["out"],
+                              cached=None, write=None, note=prices.GEMINI["note"]),
 }
 
 
-def song_cost(p):
-    t, d = TYPICAL, PRICES[p]
+def song_cost(p, long=False):
+    """What one typical song costs on model p. long=True: a very long session, whose requests pass the 100,000-token
+    prompt size above which Haiku's price is higher (other models have one price, so it changes nothing for them)."""
+    t = TYPICAL
+    d = prices.for_setup(p, long=True) if long and p in prices.TIERS else PRICES[p]
     if d["cached"] is None:
         return t["input"] / 1e6 * d["inp"] + t["output"] / 1e6 * d["out"]
     fresh = t["input"] * (1 - t["repeated"])
@@ -52,6 +58,7 @@ def money(x):
 
 def modes():
     c = {k: money(song_cost(k)) for k in PRICES}
+    longhaiku = money(song_cost("claude-haiku-5-5", long=True))
     return [
         dict(id="app", title="Just the app", tag="free · no account",
              cost="$0",
@@ -59,7 +66,7 @@ def modes():
              pros=["Free, nothing to sign up for", "Nothing leaves your computer", "Every tool works: the AI options only explain and drive them"],
              cons=["You read the reports and decide on your own", "No one to ask \"what does this mean?\" in plain words"]),
         dict(id="key", title="Assistant with an AI key", tag="recommended to start: Gemini free tier",
-             cost=f"Gemini free tier $0 (daily limits) · Gemini paid {c['gemini-flash']} per song · Claude Haiku {c['claude-haiku-5-5']}, Sonnet {c['claude-sonnet-5-5']}, Opus {c['claude-opus-5-5']} per song",
+             cost=f"Gemini free tier $0 (daily limits) · Gemini paid {c['gemini-flash']} per song · Claude Haiku {c['claude-haiku-5-5']} ({longhaiku} on a very long song), Sonnet {c['claude-sonnet-5-5']}, Opus {c['claude-opus-5-5']} per song",
              what="The Assistant tab explains each finding, answers questions, runs the scans and checks for you, and asks before anything changes a set. You paste a key from the AI company; you pay them per use (or not at all on Gemini's free tier).",
              pros=["Works right inside the app, no other program", "Pay only for what you use; Gemini's free tier costs nothing",
                    "Gemini can also be the Listener: it hears a bounce and gives notes by ear (off until you turn it on)"],
@@ -89,7 +96,7 @@ PROVIDER_GUIDES = {
                           "Copy the key (it starts with AIza) and paste it below.",
                           "Free tier: no card needed, with daily limits. For higher limits, set up billing in AI Studio (the paid tier)."],
                    listen=True),
-    "anthropic": dict(label="Claude (Anthropic)", model="claude-sonnet-5-5", url="https://console.anthropic.com/settings/keys",
+    "anthropic": dict(label="Claude (Anthropic)", model=prices.DEFAULT_CLAUDE_MODEL, url="https://console.anthropic.com/settings/keys",
                       steps=["Open console.anthropic.com and sign up or sign in.",
                              "Under Billing, add credit (prepaid; you can set a monthly limit).",
                              "Under Settings → API keys, click Create Key, copy it (it starts with sk-ant-) and paste it below.",

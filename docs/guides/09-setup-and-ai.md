@@ -91,7 +91,7 @@ overwrites your original.
 Rough estimates for **one song from scan to approved fixes**, about 40 assistant steps: around 1.2 million input
 tokens (most of it the same context sent again, which Claude bills at a discount) and 20 thousand output tokens.
 A short question costs a fraction of this. A long session with many re-scans costs more. List prices, checked
-2026-11-25:
+2026-11-26:
 
 | model | price per million tokens (input / output) | one song, roughly |
 |---|---|---|
@@ -102,9 +102,18 @@ A short question costs a fraction of this. A long session with many re-scans cos
 | Claude Opus 5.5 | $4 / $20 | about $1.58 |
 | OpenRouter, OpenAI and others | see each model's page | varies |
 
-The Assistant tab counts the tokens of every conversation and shows the cost as you go (exactly for Claude; for
-other companies it shows the tokens, and their own page has the price). Every company lets you set a monthly
-spending limit. Set one.
+Claude Haiku 5.5 costs $0.50 / $2.50 instead for any request whose prompt is longer than 100,000 tokens, which a long
+session reaches, so a very long song on Haiku costs about $0.22 rather than $0.04.
+
+The Assistant tab counts the tokens of every conversation and shows the cost as you go: exactly for Claude, as an
+estimate for Gemini (at the paid-tier price above; the free tier costs nothing), and for other companies as tokens only
+(their own page has the price). Every company lets you set a monthly spending limit. Set one.
+
+**Keeping a long conversation cheap.** Every step re-reads the whole conversation, so the Assistant clears the full
+text of old results (a page of findings, a report, a listen) once the conversation has grown long, leaving a one-line
+note of what each was and how to fetch it again; your files are untouched. It also stops and asks "keep going?" when
+a single message has used more than 400,000 input tokens (change the number in the Assistant's settings), and stops
+if it calls the same tool with the same arguments three times in a row.
 
 ## Just the app
 
@@ -132,8 +141,11 @@ and costs add up with the bigger models on long sessions.
 4. In hypnomix: **Setup → An AI key → Google Gemini**, paste the key, keep the model `gemini-flash-latest`, and
    click **Save and test**. It should say how many models it can reach.
 5. Leave **Also make it the Listener** ticked if you'd like notes by ear. The Assistant asks before each listen
-   and sends only a reduced mono copy (about 1 to 5 cents a listen on the paid tier). Which Gemini model hears
-   best, and how to give the Listener a key of its own: the wiki article "The Assistant and the Listener".
+   and sends only a reduced mono copy (about 1 to 5 cents a listen on the paid tier). Before each one it shows the
+   length, the model, the tokens (the review that goes along as text included) and an estimated cost; a song over 12
+   minutes asks whether to send all of it or the first 12 minutes; notes already heard for the same song, model and
+   question come back free. Which Gemini model hears best, and how to give the Listener a key of its own: the wiki
+   article "The Assistant and the Listener".
 
 The free tier needs no card and has daily limits. If you hit them, the Assistant says "too many requests": wait,
 or set up billing in AI Studio for the paid tier. On the **free tier Google may use what you send to improve its
@@ -146,8 +158,10 @@ products**; the paid tier doesn't. Don't use the free tier for songs you need ke
 3. Under **Settings → API keys**, click **Create Key** and copy it (it starts with `sk-ant-`).
 4. In hypnomix: **Setup → An AI key → Claude**, paste it, choose a model and **Save and test**.
 
-Which model: **Sonnet 5.5** is the everyday choice. **Opus 5.5** thinks harder and costs about twice as much.
-**Haiku 5.5** is very cheap and fine for quick questions, but makes more mistakes on long jobs.
+Which model: **Sonnet 5.5** (`claude-sonnet-5-5`) is the everyday choice, and the one the Assistant uses until you
+pick another (the picker marks it *default*; a model you saved stays). **Opus 5.5** thinks harder and costs about
+twice as much. **Haiku 5.5** is very cheap and fine for quick questions, but makes more mistakes on long jobs. Every
+model your key can use stays selectable: **List models**, or type its name.
 
 A Claude Pro or Max subscription doesn't include API keys. To use your subscription, choose **a desktop AI app**
 instead (below).

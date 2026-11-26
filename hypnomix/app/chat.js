@@ -10,7 +10,8 @@ const C = {items: [], total: 0, busy: false, pending: null, settings: null, open
   .msg.ai{align-self:flex-start;border:1px solid var(--line)}.msg.err{border:1px solid var(--hi);color:var(--hi)}
   .msg pre,.ask pre{white-space:pre-wrap;overflow-x:auto}.act{color:var(--mute);font-size:.9em}
   #ctext{width:100%;box-sizing:border-box;font:inherit}
-  #ckey,#clkey{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);flex:1;min-width:200px}`;
+  #ckey,#clkey{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);flex:1;min-width:200px}
+  #cbudget{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}`;
   document.head.appendChild(st);
 })();
 
@@ -27,13 +28,21 @@ function chatItem(it) {
   if (it.kind === 'assistant') return `<div class="msg ai">${chatMd(it.text)}</div>`;
   if (it.kind === 'tool') return `<div class="act">↳ ${esc(it.text)}</div>`;
   if (it.kind === 'ask') {
-    const live = C.pending && C.pending.id === it.id, hear = it.what === 'listen';
-    return `<div class="card ask"><b>${hear ? 'The assistant wants to listen to your song:' : 'The assistant wants to run this command:'}</b><pre>${esc(it.text)}</pre>
-      ${live ? `<button class="primary" data-chatok="${esc(it.id)}">${hear ? 'Send it' : 'Run it'}</button> <button data-chatno="${esc(it.id)}">Don't</button>
-        <span class="note">${hear ? 'Only this song leaves the computer, as a reduced mono copy, and only to the listening service you chose.'
-          : 'If it writes a set, it is a new one next to the original. Save and close the set in Live first.'}</span>`
-        : `<span class="note">${it.answer === 'ran' ? (hear ? 'You sent it.' : 'You ran it.') : (hear ? 'Not sent.' : 'Not run.')}</span>`}</div>`;
+    const live = C.pending && C.pending.id === it.id, hear = it.what === 'listen', budget = it.what === 'budget',
+      opts = it.options || [], sent = it.answer && it.answer !== 'declined';
+    const title = budget ? 'The assistant has used a lot on this message:' : hear ? 'The assistant wants to listen to your song:'
+      : 'The assistant wants to run this command:';
+    const yes = opts.length ? opts.map(o => `<button class="primary" data-chatchoice="${esc(it.id)}" data-value="${esc(o.value)}">${esc(o.label)}</button>`).join(' ')
+      : `<button class="primary" data-chatok="${esc(it.id)}">${budget ? 'Keep going' : hear ? 'Send it' : 'Run it'}</button>`;
+    const help = budget ? 'Each message has a token allowance (in the settings above). Keep going gives it another one.'
+      : hear ? 'Only this song leaves the computer, as a reduced mono copy, and only to the listening service you chose. The cost is an estimate.'
+      : 'If it writes a set, it is a new one next to the original. Save and close the set in Live first.';
+    const done = budget ? (sent ? 'You said keep going.' : 'Stopped.') : sent ? (hear ? 'You sent it.' : 'You ran it.') : (hear ? 'Not sent.' : 'Not run.');
+    return `<div class="card ask"><b>${title}</b><pre>${esc(it.text)}</pre>
+      ${live ? `${yes} <button data-chatno="${esc(it.id)}">${budget ? 'Stop here' : "Don't"}</button> <span class="note">${help}</span>`
+        : `<span class="note">${done}</span>`}</div>`;
   }
+  if (it.again) return `<div class="act">${esc(it.text)} <button data-cagain="${esc(it.again)}" ${C.busy ? 'disabled' : ''}>Listen again</button></div>`;
   if (it.kind === 'error') return `<div class="msg err">${esc(it.text)}</div>`;
   return `<div class="act">${esc(it.text)}</div>`;
 }
@@ -53,6 +62,7 @@ function chatSettings() {
   const p = st.providers.find(x => x.id === st.provider) || st.providers[0];
   const opts = st.providers.map(x => `<option value="${x.id}" ${x.id === p.id ? 'selected' : ''}>${esc(x.label)}</option>`).join('');
   const needsBase = p.id === 'custom' || p.id === 'ollama';
+  const dm = p.default_model || '', models = (dm ? [dm] : []).concat(C.models.filter(m => m !== dm));
   return `<div class="card"><div class="row"><label for="cprov">AI provider</label><select id="cprov">${opts}</select></div>
     ${p.no_key ? '<div class="row note">No key needed: Ollama runs models on this computer (ollama.com).</div>' :
       `<div class="row"><label for="ckey">API key</label><input type="password" id="ckey" placeholder="${p.key_hint ? 'saved (' + esc(p.key_hint) + '): paste to replace' : 'paste your key'}" autocomplete="off">
@@ -60,7 +70,10 @@ function chatSettings() {
       <div class="row note">${p.keys_at ? 'Get a key at ' + esc(p.keys_at) + '. ' : ''}Kept on this computer only, and sent only to ${esc(p.label)}.${st.listen && st.listen.provider ? '' : ' Your audio never leaves this computer.'}</div>`}
     ${needsBase ? `<div class="row"><label for="cbase">Address</label><input type="text" id="cbase" value="${esc(p.base_url)}" placeholder="https://…/v1"></div>` : ''}
     <div class="row"><label for="cmodel">Model</label><input type="text" id="cmodel" list="cmodels" value="${esc(p.model)}" placeholder="choose with List models">
-      <datalist id="cmodels">${C.models.map(m => `<option value="${esc(m)}">`).join('')}</datalist><button id="clist">List models</button></div>
+      <datalist id="cmodels">${models.map(m => `<option value="${esc(m)}"${m === dm ? ' label="' + esc(m) + ' (default)"' : ''}>`).join('')}</datalist><button id="clist">List models</button></div>
+    ${dm ? `<div class="row note">${p.model === dm ? esc(dm) + ' is the default model.' : 'The default is <b>' + esc(dm) + '</b>.'} Every other model stays available: List models, or type its name.</div>` : ''}
+    <div class="row"><label for="cbudget">Ask me before one message uses more than</label><input type="number" id="cbudget" min="50000" step="50000" value="${st.budget_tokens}" style="width:9em"> <span>input tokens</span></div>
+    <div class="row note">Each step re-reads the conversation, so a long message adds up. Past this it stops and asks "keep going?" (default ${(st.budget_default || 400000).toLocaleString('en-US')}).</div>
     ${C.notice ? `<div class="row note"><b>${esc(C.notice)}</b></div>` : ''}
     <div class="row"><button class="primary" id="csave">Save</button> <span class="note" id="csaved"></span></div></div>`;
 }
@@ -96,7 +109,8 @@ function chatCost() {
   const k = n => n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
   const read = u.input + u.cache_write + u.cache_read;
   const prov = C.settings && C.settings.provider;
-  const cost = prov === 'ollama' ? 'free (on this computer)' : u.priced ? 'about $' + u.cost.toFixed(2)
+  const cost = prov === 'ollama' ? 'free (on this computer)' : u.priced
+    ? 'about $' + (u.cost < 0.1 ? u.cost.toFixed(3) : u.cost.toFixed(2)) + (u.estimated ? ' (an estimate at Gemini\'s paid-tier prices; the free tier costs nothing)' : '')
     : 'cost: see your provider\'s price list for these tokens';
   return `<p class="note" id="ccost">This conversation: ${u.calls} call${u.calls === 1 ? '' : 's'} · ${k(read)} tokens read`
     + (u.cache_read ? ` (${k(u.cache_read)} from cache, cheaper)` : '') + ` · ${k(u.output)} written · ${cost}</p>`;
@@ -108,7 +122,7 @@ function chatView() {
   return `<h1>Assistant</h1>
   <p class="sub">Talk about your song and let an AI run hypnomix for you. Bring a key from the AI service you like.
   It reads hypnomix's reports${st && st.listen && st.listen.provider ? ', listens to a song only when you click Send it,' : ', never your audio,'} and anything that changes a set waits for your click.</p>
-  ${!ready || C.open ? chatSettings() : `<p class="note">${esc(p.label)} · ${esc(p.model)} <button id="copen">Settings</button> <button id="creset">New conversation</button></p>`}
+  ${!ready || C.open ? chatSettings() : `<p class="note">${esc(p.label)} · ${esc(p.model)}${p.model === p.default_model ? ' (default)' : ''} <button id="copen">Settings</button> <button id="creset">New conversation</button></p>`}
   ${chatListen()}
   ${chatCost()}
   <div id="chatlog" aria-live="polite">${C.items.map(chatItem).join('') ||
@@ -141,6 +155,7 @@ async function chatSaveSettings() {
   if ($('#cmodel')) body.model = $('#cmodel').value;
   if ($('#cbase')) body.base_url = $('#cbase').value;
   if ($('#ckey') && $('#ckey').value) body.key = $('#ckey').value;
+  if ($('#cbudget')) body.budget_tokens = $('#cbudget').value;
   C.settings = await post('/api/chat/settings', body);
   C.notice = C.settings.notice || '';
 }
@@ -164,6 +179,8 @@ document.addEventListener('click', async e => {
       await post('/api/chat/send', {text: t}); await chatPoll(); }
     else if (b.id === 'cstop') { await post('/api/chat/stop', {}); }
     else if (b.dataset.chatok) { await post('/api/chat/answer', {id: b.dataset.chatok, ok: true}); await chatPoll(); }
+    else if (b.dataset.chatchoice) { await post('/api/chat/answer', {id: b.dataset.chatchoice, ok: true, choice: b.dataset.value}); await chatPoll(); }
+    else if (b.dataset.cagain) { if (!C.busy) { await post('/api/chat/send', {text: b.dataset.cagain}); await chatPoll(); } }
     else if (b.dataset.chatno) { await post('/api/chat/answer', {id: b.dataset.chatno, ok: false}); await chatPoll(); }
     else if (b.dataset.cpick) { const r = await post('/api/pick', {kind: b.dataset.cpick}); if (r.path) {
       const t = $('#ctext'); t.value = (t.value + ' "' + r.path + '"').trim(); C.draft = t.value; t.focus(); } }
