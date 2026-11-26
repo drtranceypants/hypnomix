@@ -56,6 +56,7 @@ try { W.id = localStorage.getItem('hypnomix.wiki') || null; } catch (e) {}
   .wa .devpanel{max-width:430px}.wa .frame-paper img,.wa .frame-paper video{display:block;width:100%}
   .wa .demo-loops figcaption b,.wa .shots figcaption b{display:block;font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
   .wa .demo-cap{color:var(--mute);font-size:.88rem}
+  .wa .wnet{font-size:.78rem;color:var(--mute);margin-top:4px}.wa .wnet.off{color:var(--med);font-weight:600}
   .wa .foot+.foot{margin-top:6px;border-top:0;padding-top:0}.wa .foot label{display:inline-flex;gap:6px;align-items:center}
   .wa .foot{margin-top:36px;padding-top:12px;border-top:1px solid var(--line);color:var(--mute);font-size:.86rem;display:flex;gap:12px;flex-wrap:wrap}
   .wa .next{display:flex;justify-content:space-between;gap:12px;margin-top:28px}
@@ -118,7 +119,22 @@ async function wikiView() {
       ${wikiAbout()}</article></div>`;
 }
 
+function wikiVideos() {     // videos that stream from the website: say so, and what to do without a connection
+  document.querySelectorAll('.wa video').forEach(v => {
+    const src = v.getAttribute('src') || '';
+    if (!/^https?:/.test(src)) return;
+    const note = document.createElement('div');
+    note.className = 'wnet';
+    note.innerHTML = `Plays from the website. <a href="${esc(src)}" target="_blank" rel="noopener">Open it in your browser ↗</a>`;
+    (v.closest('.frame-paper') || v).after(note);
+    const off = () => { note.classList.add('off'); note.firstChild.textContent = 'Needs an internet connection: this video plays from the website. '; };
+    if (!navigator.onLine) off();
+    v.addEventListener('error', off);
+  });
+}
+
 function wikiAfter() {
+  wikiVideos();
   clearTimeout(W.recheck);
   if (W.index && W.index.about.checking) W.recheck = setTimeout(() => {
     if (S.view === 'wiki' && document.activeElement.id !== 'wq') render(); }, 2500);
