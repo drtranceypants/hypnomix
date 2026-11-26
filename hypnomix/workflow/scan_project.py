@@ -338,8 +338,8 @@ SPIKE_DB = 12.0         # a burst this far over its surroundings is a spike (Liv
 
 def _edit(p, finding, **edit):
     """Attach the exact project edit to a finding. Only REAPER projects are written for now; elsewhere the
-    finding stays manual (what to do by hand)."""
-    if p.daw == "reaper":
+    finding stays manual (what to do by hand). An Ardour session is written for item fades, cuts and spikes."""
+    if p.daw == "reaper" or (p.daw == "ardour" and edit.get("op") in ("fade", "cut", "dip")):
         finding.update(applies="set", edit=edit)
     return finding
 
@@ -379,7 +379,10 @@ def spikes(levels_db, block_s=0.01, spike_db=SPIKE_DB):
 
 
 def g_clips(p, R, od, a, vocals=()):
-    from hypnomix.project.rpp_edit import locator
+    if p.daw == "ardour":
+        from hypnomix.project.ardour_edit import locator
+    else:
+        from hypnomix.project.rpp_edit import locator
     from hypnomix.session.smooth import HIT_DB, PLOSIVE_HZ, PLOSIVE_MAX_DIP, PLOSIVE_SHARE, SPIKES_PER_MIN
     out, n, notes, regular, onsets = [], 0, [], [], 0
     for t in p.audio_tracks():
@@ -482,6 +485,9 @@ def g_clips(p, R, od, a, vocals=()):
         notes.append("edges: no vocal tracks found, so no word edges checked")
     if p.daw == "reaper":
         notes.append("clips: approved fixes are written into a NEW .rpp by `hypnomix fix` (the original is never touched)")
+    elif p.daw == "ardour":
+        notes.append("clips: approved fades, cuts and spikes are written into a NEW .ardour snapshot beside the "
+                     "original by `hypnomix fix` (written and re-read by hypnomix; not yet opened in Ardour)")
     return out, notes
 
 

@@ -8,6 +8,7 @@ import numpy as np
 import soundfile as sf
 
 from hypnomix import project
+from hypnomix.project import ardour_edit as AE
 
 SR = 48000
 SC = 282240000            # superclocks per second (Ardour 7.2+)
@@ -222,6 +223,155 @@ class ArdourTest(unittest.TestCase):
         bad.write_text("<NotASession/>")
         with self.assertRaises(SystemExit):
             project.load(bad)
+
+
+class ArdourWriteTest(unittest.TestCase):
+    """`fix` writes a NEW .ardour: approved fades, gain, dips and mixer moves land, and nothing else does."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        base = Path(self._td.name)
+        self.new = base / "Song"
+        self.old = base / "Old"
+        with_pan = SESSION.replace('<Controllable name="mute" value="1"/>',
+                                   '<Controllable name="mute" value="1"/>\n      <Pannable><Controllable name="pan-azimuth" '
+                                   'value="0.5"/></Pannable>')
+        for d, name, xml in ((self.new, "Song", with_pan), (self.old, "Old", OLD)):
+            af = d / "interchange" / name / "audiofiles"
+            af.mkdir(parents=True)
+            for fn in ("lead.wav", "comp.wav", "gtr-L.wav", "gtr-R.wav"):
+                sf.write(af / fn, np.full(3 * SR, 0.1), SR, subtype="FLOAT")
+            (d / f"{name}.ardour").write_text(xml)
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def edit(self, d, name, fn):
+        src = d / f"{name}.ardour"
+        p = project.load(src)
+        fn(p)
+        out = d / f"{name} (fixed).ardour"
+        AE.save(p, out)
+        return src, out
+
+    def test_new_format_all_edits(self):
+        def go(p):
+            lead = p.track("Lead")
+            c, comp = lead.clips
+            self.assertTrue(AE.fade(p, c, "out", 0.02, "power"))          # a new fade out with a curve
+            self.assertFalse(AE.fade(p, c, "in", 0.01))                   # 0.1 s fade in is already longer
+            AE.region_gain(comp, -6.0)
+            self.assertEqual(AE.dip(p, lead, 1.5, 1.6, 9.0, 0.02), 1)     # 1.5 s is inside the first region only
+            AE.fader(p.track("Vocals"), -3.0)
+            AE.pan(p.track("Guitar"), 0.5)
+            AE.mute(p.track("Guitar"), False)
+        src, out = self.edit(self.new, "Song", go)
+        self.assertEqual(AE.check(src, out), [])
+        changes = AE.diff(src, out)
+        self.assertEqual(len(changes), 6, changes)
+        q = project.load(out)
+        c, comp = q.track("Lead").clips
+        self.assertAlmostEqual(c.fade_out, 0.02, places=6)
+        self.assertAlmostEqual(c.fade_in, 0.1, places=6)
+        self.assertEqual(c.fade_out_curve[0], (0.0, 1.0))
+        self.assertAlmostEqual(c.fade_out_curve[-1][1], 0.0, places=9)
+        self.assertAlmostEqual(comp.take.gain, 2 * 10 ** (-6 / 20), places=9)
+        low = min(v for t, v in c.envelope if 0.49 < t < 0.61)            # the 1.5 s dip is 0.5 s into the region
+        self.assertAlmostEqual(low, 10 ** (-9 / 20), places=6)
+        self.assertAlmostEqual(q.track("Vocals").volume, 0.5 * 10 ** (-3 / 20), places=9)
+        self.assertAlmostEqual(q.track("Guitar").pan, 0.5)
+        self.assertFalse(q.track("Guitar").muted)
+        # the old envelope's other points are still there (1 at 1 s and 0 at 2 s, region-relative)
+        self.assertTrue(any(abs(t - 1.0) < 1e-6 and abs(v - 1) < 1e-6 for t, v in c.envelope))
+        self.assertTrue(any(abs(t - 2.0) < 1e-6 and v == 0 for t, v in c.envelope))
+        self.assertIn('length="a', out.read_text())                       # the times keep Ardour 7's format
+        self.assertEqual(q.path.name, "Song (fixed).ardour")
+        self.assertEqual(ET_name(out), "Song (fixed)")
+
+    def test_old_format_in_samples(self):
+        def go(p):
+            tr = p.track("Audio 1")
+            AE.fade(p, tr.clips[0], "in", 0.01)
+            AE.fade(p, tr.clips[0], "out", 0.02)
+            AE.region_gain(tr.clips[0], 3.0)
+            self.assertEqual(AE.dip(p, tr, 1.2, 1.3, 6.0, 0.02), 1)
+            AE.fader(tr, -6.0)
+        src, out = self.edit(self.old, "Old", go)
+        self.assertEqual(AE.check(src, out), [])
+        text = out.read_text()
+        self.assertRegex(text, r"\n480 1\n")                              # fade in: 0.01 s = 480 samples, no 'a' times
+        q = project.load(out)
+        c = q.track("Audio 1").clips[0]
+        self.assertAlmostEqual(c.fade_in, 0.01, places=6)
+        self.assertAlmostEqual(c.fade_out, 0.02, places=6)
+        self.assertAlmostEqual(c.take.gain, 10 ** (3 / 20), places=9)
+        self.assertAlmostEqual(min(v for _, v in c.envelope), 10 ** (-6 / 20), places=6)
+        self.assertAlmostEqual(q.track("Audio 1").volume, 0.25 * 10 ** (-6 / 20), places=9)
+        self.assertEqual(len(AE.diff(src, out)), 5)
+        # (c.start, length, offset unchanged is enforced by check(): nothing but the approved edits differs)
+        self.assertEqual((c.start, c.length, c.take.offset), (1.0, 0.5, 0.25))
+
+    def test_ease_and_untouched_parts_identical(self):
+        def go(p):
+            c = p.track("Lead").clips[1]
+            AE.ease(p, c, -4.0, 0.3)
+        src, out = self.edit(self.new, "Song", go)
+        self.assertEqual(AE.check(src, out), [])
+        a = AE._stripped(project.load(src).native)
+        b = AE._stripped(project.load(out).native)
+        self.assertEqual(AE._same(a, b), [])                                 # everything that is not an edit: identical
+        c = project.load(out).track("Lead").clips[1]
+        self.assertAlmostEqual(c.envelope[0][1], 10 ** (-4 / 20), places=6)
+        self.assertAlmostEqual(c.envelope[-1][1], 1.0)
+
+    def test_check_catches_a_moved_region_and_new_duplicate_ids(self):
+        p = project.load(self.new / "Song.ardour")
+        p.track("Lead").clips[0].native.set("start", a(0.25))               # not an edit hypnomix makes
+        out = self.new / "bad.ardour"
+        AE.save(p, out)
+        errs = AE.check(self.new / "Song.ardour", out)
+        self.assertTrue(errs and any("differs" in e or "moved" in e for e in errs), errs)
+        p = project.load(self.new / "Song.ardour")
+        p.native.find("Routes").findall("Route")[1].set("id", "100")        # a second id 100
+        out2 = self.new / "bad2.ardour"
+        AE.save(p, out2)
+        self.assertTrue(any("used 2 times" in e for e in AE.check(self.new / "Song.ardour", out2)))
+
+    def test_refusals(self):
+        p = project.load(self.new / "Song.ardour")
+        with self.assertRaises(ValueError):                                   # this fader plays automation
+            AE.fader(p.track("Lead"), -3.0)
+        with self.assertRaises(ValueError):
+            AE.fade(p, p.track("Keys").clips[0], "in", 0.01)                 # a MIDI region has no fades
+        with self.assertRaises(ValueError):
+            AE.fade(p, p.track("Lead").clips[0], "in", 0.5, "bouncy")
+
+    def test_fix_run_writes_one_snapshot(self):
+        from hypnomix.workflow import fix_ardour as FA
+        p = project.load(self.new / "Song.ardour")
+        lead = p.track("Lead")
+        loc = AE.locator(lead, lead.clips[1])
+        items = [
+            dict(id="clips-1", tool="clips", track="Lead", where="", edit=dict(op="fade", which="in", seconds=0.01, item=loc)),
+            dict(id="clips-2", tool="clips", track="Lead", where="",
+                 edit=dict(op="dip", t0=1.5, t1=1.6, db=6.0, ramp=0.02)),
+            dict(id="clips-3", tool="clips", track="Lead", where="",
+                 edit=dict(op="fade", which="in", seconds=0.01, item=dict(loc, guid="nope", start=99.0))),
+            dict(id="names-1", tool="name", track="Lead", where="", edit=dict(op="rename", index=1)),
+        ]
+        out = self.new / "Song (fixed).ardour"
+        wrote, log, failed, skipped = FA.run(Path(self._td.name), {}, self.new / "Song.ardour", out, items, {}, verify=False)
+        self.assertEqual(wrote, out)
+        self.assertEqual(failed, [])
+        self.assertEqual({f["id"] for f, _ in skipped}, {"clips-3", "names-1"})
+        self.assertTrue(any("structure check: OK" in l for l in log))
+        self.assertEqual(sorted(x.name for x in self.new.glob("*.ardour")), ["Song (fixed).ardour", "Song.ardour"])
+        self.assertNotIn("(fixed)", (self.new / "Song.ardour").read_text())     # the original is untouched
+
+
+def ET_name(path):
+    import xml.etree.ElementTree as ET
+    return ET.parse(path).getroot().get("name")
 
 
 if __name__ == "__main__":
