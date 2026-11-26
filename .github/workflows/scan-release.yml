@@ -1,0 +1,152 @@
+# Scans a release's installers with public virus scanners and publishes the reports with the release:
+#   Microsoft Defender (on GitHub's Windows runner, signatures updated first)
+#   ClamAV (on GitHub's Linux runner, signatures updated first)
+#   VirusTotal (about 70 engines plus sandbox behaviour reports) when the repository has a VT_API_KEY secret:
+#     a free account at virustotal.com → your profile → API key → GitHub repo Settings → Secrets → Actions → VT_API_KEY
+# The release gets SECURITY-SCAN.md (every engine's verdict, signature versions, the files' SHA-256) and a
+# summary in its notes. Runs after every tagged installer build, or by hand: Actions → scan-release → Run workflow.
+name: scan-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to scan (e.g. v0.1.1)"
+        required: true
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      VT_API_KEY:
+        required: false
+
+permissions:
+  contents: write
+
+env:
+  FILES: "Hypnomix-mac-arm64.dmg Hypnomix-mac-intel.dmg Hypnomix-windows-setup.exe"
+
+jobs:
+  defender:
+    runs-on: windows-latest
+    steps:
+      - name: Download the installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory dist | Out-Null
+          foreach ($f in $env:FILES.Split(" ")) { gh release download "${{ inputs.tag }}" -R "${{ github.repository }}" -p $f -D dist }
+      - name: Microsoft Defender scan
+        shell: pwsh
+        run: |
+          $mp = "$env:ProgramFiles\Windows Defender\MpCmdRun.exe"
+          $out = @("## Microsoft Defender", "")
+          if (-not (Test-Path $mp)) { $out += "Not available on this runner."; $out | Set-Content defender.md; exit 0 }
+          & $mp -SignatureUpdate | Out-Null
+          $st = Get-MpComputerStatus
+          $out += "Engine $($st.AMEngineVersion), signatures $($st.AntivirusSignatureVersion) (updated $($st.AntivirusSignatureLastUpdated))", ""
+          $bad = 0
+          foreach ($f in Get-ChildItem dist) {
+            $r = & $mp -Scan -ScanType 3 -File $f.FullName -DisableRemediation 2>&1 | Out-String
+            $code = $LASTEXITCODE
+            $verdict = if ($code -eq 0) { "no threats found" } elseif ($code -eq 2) { $bad++; "THREAT FOUND" } else { "scan error ($code)" }
+            Write-Host "$($f.Name): $verdict`n$r"
+            $out += "- ``$($f.Name)``: $verdict"
+          }
+          $out | Set-Content defender.md
+          if ($bad) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: defender, path: defender.md }
+
+  clamav:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir dist
+          for f in $FILES; do gh release download "${{ inputs.tag }}" -R "${{ github.repository }}" -p "$f" -D dist; done
+          (cd dist && sha256sum *) | tee sums.txt
+      - name: ClamAV scan
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq clamav > /dev/null
+          sudo systemctl stop clamav-freshclam 2>/dev/null || true
+          sudo freshclam --quiet || sudo freshclam
+          ver=$(clamscan --version)
+          { echo "## ClamAV"; echo; echo "$ver"; echo; } > clamav.md
+          bad=0
+          for f in dist/*; do
+            r=$(clamscan --no-summary --max-filesize=1000M --max-scansize=4000M --max-files=200000 --max-recursion=30 "$f" 2>&1) && v="no threats found" || { [ $? -eq 1 ] && { v="THREAT FOUND: $r"; bad=1; } || v="scan error: $r"; }
+            echo "$(basename "$f"): $v"
+            echo "- \`$(basename "$f")\`: $v" >> clamav.md
+          done
+          echo >> clamav.md; echo '```' >> clamav.md; cat sums.txt >> clamav.md; echo '```' >> clamav.md
+          exit $bad
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: clamav, path: clamav.md }
+
+  virustotal:
+    runs-on: ubuntu-latest
+    env:
+      HAS_VT: ${{ secrets.VT_API_KEY != '' }}
+    steps:
+      - name: Download the installers
+        if: env.HAS_VT == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir dist
+          for f in $FILES; do gh release download "${{ inputs.tag }}" -R "${{ github.repository }}" -p "$f" -D dist; done
+      - name: Upload to VirusTotal
+        id: vt
+        if: env.HAS_VT == 'true'
+        uses: crazy-max/ghaction-virustotal@v4
+        with:
+          vt_api_key: ${{ secrets.VT_API_KEY }}
+          files: dist/*
+          request_rate: 4
+      - name: Report
+        run: |
+          {
+            echo "## VirusTotal"; echo
+            if [ "$HAS_VT" != "true" ]; then
+              echo "Not run: the repository has no VT_API_KEY secret yet."
+            else
+              echo "Reports (about 70 antivirus engines, plus sandbox behaviour where VirusTotal runs one). Each link shows the latest verdicts:"; echo
+              echo "${{ steps.vt.outputs.analysis }}" | tr ',' '\n' | while IFS='=' read -r file url; do
+                [ -n "$file" ] && echo "- \`$(basename "$file")\`: $url"
+              done
+            fi
+          } > virustotal.md
+          cat virustotal.md
+      - uses: actions/upload-artifact@v4
+        with: { name: virustotal, path: virustotal.md }
+
+  report:
+    needs: [defender, clamav, virustotal]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { merge-multiple: true }
+      - name: Attach SECURITY-SCAN.md and a summary to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "# Security scan: hypnomix ${{ inputs.tag }}"; echo
+            echo "Scanned $(date -u +'%Y-%m-%d %H:%M UTC') by GitHub Actions run ${{ github.run_id }} (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."; echo
+            for f in defender.md clamav.md virustotal.md; do [ -f "$f" ] && { cat "$f"; echo; } || echo "_${f%.md}: no report (the job failed; see the run)_"; done
+          } > SECURITY-SCAN.md
+          cat SECURITY-SCAN.md
+          gh release upload "${{ inputs.tag }}" SECURITY-SCAN.md -R "${{ github.repository }}" --clobber
+          notes=$(gh release view "${{ inputs.tag }}" -R "${{ github.repository }}" --json body --jq .body | sed '/^## Security scan/,$d')
+          summary=$(grep -E '^- `|^Not run|^Engine|^ClamAV' SECURITY-SCAN.md | head -20)
+          printf '%s\n\n## Security scan\n\n%s\n\nFull report: SECURITY-SCAN.md (attached).\n' "$notes" "$summary" > notes.md
+          gh release edit "${{ inputs.tag }}" -R "${{ github.repository }}" --notes-file notes.md
