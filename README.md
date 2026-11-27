@@ -1,12 +1,10 @@
 # HypnoMix
 
-**A mixing and mastering engineer for Ableton Live, REAPER and HypnoMix DAW, driven by you or by Claude Code.**
+**A free, open-source mixing and mastering assistant for Mac and Windows. Work in its own built-in DAW, or use it as plug-ins inside Ableton Live and REAPER.**
 
-Hand it a folder of raw stems and get back a cleaned, balanced, mastered song, plus notes that explain every EQ cut, compressor setting and level in plain words. Or keep your hands on your own session: HypnoMix sets exact fader dB and plug-in parameters in the open Live set, records A/B loops, and measures what each change did.
+It takes on the technical chores, from cleaning up recordings, timing and tuning to balance, clashing frequencies and loudness for release, whether you record a band, sing over a beat or build tracks in the box. It proposes each fix, lets you hear before and after, changes nothing until you say yes, and learns your taste as you go. Click through the app yourself, or let your AI agent drive it: Claude Code, Codex, Cursor, or a free model on your own computer.
 
-Built for any kind of music, from a full band or a voice and guitar to beats and tracks made in the box, with extra tools for recorded instruments and vocals.
-
-HypnoMix DAW is HypnoMix's own DAW. It is built on Ardour, a free open-source DAW under the GNU General Public License. HypnoMix DAW is not released yet. Until it is, everything written here for it is written for Ardour 8 or 9, the free DAW it is built on, and has not yet been tried in either.
+Hand it a folder of raw stems and get back a cleaned, balanced, mastered song, with notes that explain every EQ cut, compressor setting and level in plain words. Or keep your hands on your own session: HypnoMix sets exact fader levels and plug-in parameters in the open Live or REAPER session, records A/B loops, and measures what each change did. New to production? The [free course](https://hypnomix.bradfieldenterprises.org/wiki/#teacher) teaches the craft from scratch.
 
 Made by **Dr. Trance**.
 
@@ -296,7 +294,7 @@ Live, REAPER, HypnoMix DAW or any DAW. **HypnoMix DAW**, HypnoMix's own DAW, is 
 their own DAW downloads an engine they do not use. It is **not available yet**: no archive of it is published, so there
 is nothing to add and the app downloads nothing. When it is, Setup adds it with one click (expected to be about 100 MB, fetched once from the
 project's release page and checked against a SHA-256 fingerprint before it is used; it runs only while the DAW view is open,
-and Setup removes it again). Its engine is a separate program under the GNU General Public License (version 2 or later);
+and Setup removes it again). Until then, what is written here for it has not been tried in a released DAW. Its engine is a separate program under the GNU General Public License (version 2 or later);
 HypnoMix itself stays MIT and contains none of the engine's code (see [THIRD_PARTY.md](THIRD_PARTY.md)).
 The source will be published with the first release that includes the engine.
 
