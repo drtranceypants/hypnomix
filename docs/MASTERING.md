@@ -278,8 +278,10 @@ multiband width → warmth → clipper (punch / loud) → limiter (codec-safe ce
   the build is taken back out (what this run added is removed, yours are switched on again; yours are only bypassed with
   `--existing bypass` once the whole chain is in) and the message says what was undone; a stage that could not be built
   or set reads NOT BUILT / NOT SET in the table and the command exits with an error. The engine address must be on this
-  computer (no proxy, no redirect). It has been tried against a stand-in for the engine's MCP surface, not against the
-  running engine.
+  computer (no proxy, no redirect). It has been tried against a stand-in for the engine's MCP surface, and the whole chain
+  (ACE EQ with both cuts, ACE Compressor with Range / Auto Release / Mix, Hypnomix Saturator, Hypnomix Limiter) was
+  built in a development build of the engine on its Dummy backend, every value read back as planned; not heard
+  through a sound card, not judged by ear.
 - A -1 dBTP ceiling does not stay at -1 dBTP after AAC encoding, which adds peaks of its own (one loud pop master
   measured -1.05 dBTP in the file and -0.44 dBTP after AAC 256 with afconvert; a -2 dBTP ceiling gave -1.6). Keep the
   codec check (`translate --preview`) on.
