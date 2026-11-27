@@ -6,7 +6,7 @@ It takes on the technical chores, from cleaning up recordings, timing and tuning
 
 Hand it a folder of raw stems and get back a cleaned, balanced, mastered song, with notes that explain every EQ cut, compressor setting and level in plain words. Or keep your hands on your own session: HypnoMix sets exact fader levels and plug-in parameters in the open Live or REAPER session, records A/B loops, and measures what each change did. New to production? The [free course](https://hypnomix.bradfieldenterprises.org/wiki/#teacher) teaches the craft from scratch.
 
-HypnoMix DAW is HypnoMix's own DAW. It is built on Ardour, a free open-source DAW under the GNU General Public License. HypnoMix DAW is not released yet. Until it is, everything written here for it is written for Ardour 8 or 9, the free DAW it is built on, and has not yet been tried in either.
+HypnoMix DAW is HypnoMix's own DAW: an add-on you can pick in Setup (see Install below for what it is built on and where it runs today).
 
 Made by **Dr. Trance**.
 
