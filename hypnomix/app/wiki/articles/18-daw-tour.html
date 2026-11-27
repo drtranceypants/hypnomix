@@ -1,0 +1,46 @@
+<!--
+title: A guided tour inside the HypnoMix DAW
+sub: optional, step by step, on the real screen · you do the things, the tour only points · Escape ends it any time
+group: Start here
+teaser: The HypnoMix DAW has short guided tours: a soft spotlight on one real control and a few plain words beside it. First look, Edit a region, Mix, Scan and review, Ask the Assistant, and Save and export. They are optional, they never change your song for you, and you can stop at any step. The DAW itself is not released yet, so the tours arrive with it.
+-->
+<div class="prose paper">
+<p class="lead"><b>Not available yet.</b> The HypnoMix DAW is not released, so these tours arrive with it. Today they can be tried in the local test build, on its made-up demo song, which needs no engine.</p>
+<p>A DAW has a lot of buttons, and a manual is hard to follow while you look at the real thing. So the HypnoMix DAW can show you around on its own screen. A tour lights <b>one</b> real control, dims the rest, and puts a short card beside it with a title and a sentence or two. The lit control still works, and so does everything else.</p>
+
+<h3>It is optional</h3>
+<ul>
+<li>The first time the DAW opens, a small card at the bottom left offers <b>Show me around</b> or <b>Not now</b>. It does not take the keyboard from what you are doing, and once you answer it never comes back. Both answers are remembered, in your browser and in the app.</li>
+<li>The <b>Tour</b> button in the top bar opens the list of tours at any time. In a narrow window the top bar scrolls sideways and the button may be out of sight: press <code>?</code> on the keyboard, and choose <b>Take a tour</b> in the shortcuts list. The <b>Teacher</b> tab has a card, <b>Take the tour inside the HypnoMix DAW</b>, that opens the same list; it shows only where the DAW view is available.</li>
+<li>Each card has <b>Back</b>, <b>Next</b> and <b>Skip this tour</b>, and says "Step 3 of 9". <b>Escape</b> ends the tour. What you finished is remembered (a tour ended on its last step counts as finished), and so is the step you left a tour at: the list offers <b>Continue</b>. If you reload the page in the middle of a tour, it carries on where it was.</li>
+</ul>
+
+<h3>The tours</h3>
+<div class="tablewrap"><table>
+<tr><th>Tour</th><th>What it shows</th></tr>
+<tr><td><b>First look</b></td><td>About ten steps round the whole window: the transport, the track list, the timeline and its regions, the mixer, the device chain, the browser, Review, the Assistant, Save and the engine panel.</td></tr>
+<tr><td><b>Edit a region</b></td><td>Select, move, trim, split and fade a region, then undo it.</td></tr>
+<tr><td><b>Mix</b></td><td>Faders, pan, mute and solo, sends, then add an effect and turn one knob.</td></tr>
+<tr><td><b>Scan and review</b></td><td>Save and scan, read a finding, hear it before and after, approve it, and see that Apply writes a new snapshot and never your original.</td></tr>
+<tr><td><b>Ask the Assistant</b></td><td>Ask a question (answered at once, read-only), ask for a change (it arrives as a card you approve), and what Hear it does.</td></tr>
+<tr><td><b>Save and export</b></td><td>What saved means, snapshots, how to make an audio file of your mix, and how to leave without losing work.</td></tr>
+</table></div>
+
+<h3>Learning by doing</h3>
+<p>Some steps ask you to do the thing: press play, click a region, move a fader, split a region, open the mixer, add an effect, press Save, open Review, type in the Assistant box. The tour notices when you have, and says so. <b>Next</b> is always there, and says "I'll do it later" while a step is waiting, so nobody is ever stuck.</p>
+<p><b>The tour itself never changes your session, never sends the engine a command, and never clicks for you.</b> The one thing it moves is the view (Arrange, Mixer, Review) when a step lives in another one, and the card says so. Everything else is yours to do.</p>
+
+<h3>On the demo song, and on a real session</h3>
+<p>Every tour can be finished on the demo song with no engine: it is made up, plays no sound, saves nothing and sends nothing. On a real session the same steps apply, and the things you do are real, so the cards say so where it matters (for example that <b>Hear it</b> really changes your open session until you press it again, cancel or approve). The Save step cannot be done on the demo song, because Save stays grey there: press <b>I'll do it later</b>.</p>
+<p>If there is no song on screen, a tour waits and points at <b>Practice with the demo song</b>. If the engine stops answering in the middle of a tour, the tour pauses with a sentence and carries on by itself when the engine is back.</p>
+
+<h3>Keyboard and screen readers</h3>
+<ul>
+<li><b>Tab</b> stays inside the card and the lit control. The arrow keys, or <b>Enter</b> on a focused button, move between steps. <b>Escape</b> ends the tour and puts the keyboard back where it was.</li>
+<li>The DAW's own shortcuts keep working on the lit control. A key typed in the tour card never reaches one of them, with one exception: a step that asks you to press a shortcut (for example <code>⌘Z</code> to undo) lets exactly that shortcut through, so you can do it without leaving the card.</li>
+<li>Each step is read out by a polite announcement. Motion stops if your system asks for less of it. Both light and dark themes are readable, and in a narrow window (about 400 pixels) the card docks to the bottom, or to the top when the bottom would cover what it points at.</li>
+</ul>
+
+<h3>Adding a tour</h3>
+<p>Tours are data, in <code>hypnomix/app/daw/js/tours.js</code>: a list of steps, each naming the control it points at (every control is listed once, with the file that makes it, and a test fails if one is renamed), the words, and optionally what to wait for. The engine that runs them is <code>tour.js</code>. See <a data-wiki="daw" href="#">DAW mode</a> for the DAW itself.</p>
+</div>

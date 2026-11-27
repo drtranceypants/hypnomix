@@ -1,4 +1,4 @@
-"""`hypnomix install` and `hypnomix doctor`: get Live talking to hypnomix, and check that it does."""
+"""`hypnomix install` and `hypnomix doctor`: get Live talking to HypnoMix, and check that it does."""
 import filecmp, os, platform, re, shutil, socket, subprocess, sys, time
 from pathlib import Path
 
@@ -138,13 +138,13 @@ def install(argv):
                 print(f"2. {opt} already sets the plug-in parameter threshold")
             else:
                 print(f"2. {'would add' if dry else 'adding'} {PARAM_LINE} to {opt} "
-                      "(Live shows up to 128 parameters of every plug-in to hypnomix)")
+                      "(Live shows up to 128 parameters of every plug-in to HypnoMix)")
                 if not dry:
                     opt.parent.mkdir(parents=True, exist_ok=True)
                     opt.write_text(text + ("\n" if text and not text.endswith("\n") else "") + PARAM_LINE + "\n",
                                    encoding="utf-8", errors="surrogateescape")
     else:
-        print("2. plug-in parameters: run `hypnomix install --plugin-params` to let hypnomix see up to 128 parameters\n"
+        print("2. plug-in parameters: run `hypnomix install --plugin-params` to let HypnoMix see up to 128 parameters\n"
               "   of every plug-in without clicking Configure (adds one line to Live's Options.txt)")
 
     print("3. Recording what Live plays (for `hypnomix loop` and `diagnose`): install BlackHole 2ch\n"
@@ -171,7 +171,7 @@ LIVE_APP_DIRS = (Path("/Applications"), Path("C:/ProgramData/Ableton"), Path("C:
 
 def uses_live():
     """True when this computer looks like it belongs to someone who uses Ableton Live: its User Library or its
-    preferences folder exist, or the app is installed. REAPER, Ardour and folder-of-stems users never need the Live parts."""
+    preferences folder exist, or the app is installed. REAPER, HypnoMix DAW and folder-of-stems users never need the Live parts."""
     try:
         if remote_scripts_dir().parent.exists() or live_prefs_dir() is not None:
             return True
@@ -182,7 +182,7 @@ def uses_live():
 
 def live_mark(found, live_here):
     """The mark for a part only Live needs: ✓ when it is there; ✗ (needed) for someone who uses Live; · (optional)
-    for everyone else, so a REAPER or Ardour user is not told something is missing that they never need."""
+    for everyone else, so a REAPER or HypnoMix DAW user is not told something is missing that they never need."""
     return "✓" if found else ("✗" if live_here else "·")
 
 
@@ -281,5 +281,5 @@ def doctor_rows():
             __import__(mod); have = True
         except Exception:
             have = False
-        rows.append(("✓" if have else "·", f"extra [{extra}] ({mod})", "installed" if have else f"not installed (in the app: Setup, then Extras; from source, in the hypnomix folder: uv pip install -e \".[{extra}]\")"))
+        rows.append(("✓" if have else "·", f"extra [{extra}] ({mod})", "installed" if have else f"not installed (in the app: Setup, then Extras; from source, in the HypnoMix folder: uv pip install -e \".[{extra}]\")"))
     return rows

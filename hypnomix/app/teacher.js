@@ -48,23 +48,36 @@ async function teachLoad(daw) {
 async function teachView() {
   await teachLoad(T.daw);
   const st = T.st;
-  const pick = `<div class="daws">${Object.entries(st.daws).map(([k, v]) => `<button data-tdaw="${k}" class="${k === T.daw ? 'sel' : ''}">${esc(v)}</button>`).join('')}</div>`;
-  const lv = `<div class="daws">${[['tour', 'Tour: hypnomix in ' + (st.daws[T.daw] || 'your DAW'), 'for people who already record and mix'], ['101', '101 crash course', 'for people new to audio: the basics first, then the tour'], ['az', 'The complete course, A to Z', 'everything from what sound is to releasing a song: gear, recording, editing, mixing, mastering, cheat sheets']].map(([k, v, d]) => `<button data-tlevel="${k}" class="${k === T.level && !T.view ? 'sel' : ''}" title="${d}">${esc(v)}</button>`).join('')}<button data-tgloss="1" class="${T.view === 'glossary' ? 'sel' : ''}" title="Every word the lessons teach, A to Z">Glossary</button></div>`;
+  const dawTour = await dawTourCard();
+  const pick =`<div class="daws">${Object.entries(st.daws).map(([k, v]) => `<button data-tdaw="${k}" class="${k === T.daw ? 'sel' : ''}">${esc(v)}</button>`).join('')}</div>`;
+  const lv = `<div class="daws">${[['tour', 'Tour: ' + (T.daw === 'ardour' ? st.daws.ardour : 'HypnoMix in ' + (st.daws[T.daw] || 'your DAW')), 'for people who already record and mix'], ['101', '101 crash course', 'for people new to audio: the basics first, then the tour'], ['az', 'The complete course, A to Z', 'everything from what sound is to releasing a song: gear, recording, editing, mixing, mastering, cheat sheets']].map(([k, v, d]) => `<button data-tlevel="${k}" class="${k === T.level && !T.view ? 'sel' : ''}" title="${d}">${esc(v)}</button>`).join('')}<button data-tgloss="1" class="${T.view === 'glossary' ? 'sel' : ''}" title="Every word the lessons teach, A to Z">Glossary</button></div>`;
   if (!T.daw) return `<h1>Teacher</h1><p class="sub">A step-by-step course for people who have never used a DAW: from an empty song to a mastered one.</p>
     <div class="card"><p style="margin-top:0">Which DAW will you use? The lessons, and the Wiki, follow your choice.</p>${pick}
-    <p class="note">Ableton Live has the most depth, REAPER a little less, and Ardour the short version (it's the least tested with hypnomix).</p></div>`;
+    <p class="note">Ableton Live has the most depth, REAPER a little less, and HypnoMix DAW the short version (it's the least tested with HypnoMix).</p></div>${dawTour}`;
   if (T.view === 'glossary') return glossaryView(pick, lv);
   const all = tsteps(), i = Math.max(0, all.findIndex(s => s.id === T.at)), s = all[i];
   const nav = st.chapters.map((c, ci) => `<h4>${ci + 1} · ${esc(c.title)}</h4>` + c.steps.map(x =>
     `<a href="#" data-tstep="${esc(x.id)}"${x.id === s.id ? ' aria-current="step"' : ''} class="${x.id === s.id ? 'on' : ''} ${st.done.includes(x.id) ? 'done' : ''}"><i aria-hidden="true">${st.done.includes(x.id) ? '✓' : '○'}</i>${st.done.includes(x.id) ? '<span class="sr">done: </span>' : ''}${esc(x.title)}</a>`).join('')).join('');
   const ai = st.mode === 'key' || st.mode === 'local';
-  return `<div class="teach"><aside>${pick}${lv}
+  return `<div class="teach"><aside>${pick}${lv}${dawTour}
     <label class="note" style="display:flex;gap:6px;align-items:center;margin:6px 0"><input type="checkbox" id="tmode" ${st.teach ? 'checked' : ''}> Teacher mode: open on this tab, and the Assistant teaches this course</label>
     <p class="note">${st.done.length} of ${all.length} steps done</p><nav>${nav}</nav></aside>
     <div class="lesson">${lessonHTML(s, i, all.length)}
       <div class="nav"><button data-tgo="-1" ${i ? '' : 'disabled'}>Back</button>
         <span>${ai ? `<button data-task="${esc(s.id)}" title="Opens the Assistant with a question about this step; nothing is sent until you press Send">Ask the Assistant</button> ` : ''}
         <button class="primary" data-tnext="${esc(s.id)}">${i === all.length - 1 ? 'Done: finish the course' : st.done.includes(s.id) ? 'Next step' : 'Done, next step'}</button></span></div></div></div>`;
+}
+
+// The card that opens the guided tours inside the HypnoMix DAW (hypnomix/app/daw/js/tour.js). Only where the DAW view is there at all:
+// the same test as the DAW tab's (a DAW-mode app, or an engine found, attached or connected).
+async function dawTourCard() {
+  if (T.dawOk === undefined) {
+    try { const d = await get('/api/daw/state'); T.dawOk = !!(d.daw_mode || d.binary || d.mode || d.connected); } catch (e) { T.dawOk = false; }
+  }
+  if (!T.dawOk) return '';
+  let n = '';
+  try { const t = await get('/api/teach/tour'); if (t.done && t.done.length) n = ` ${t.done.length} tour${t.done.length === 1 ? '' : 's'} done.`; } catch (e) { /* the count is a nicety */ }
+  return `<div class="card" id="tdawtour"><b>Take the tour inside the HypnoMix DAW</b><p class="note" style="margin:4px 0 8px">Short, optional tours point at the real controls of the DAW view, one step at a time. Nothing changes unless you do it yourself.${esc(n)}</p><button data-tdawtour="1">Open the tours</button></div>`;
 }
 
 function lessonHTML(s, i, n) {
@@ -81,7 +94,7 @@ function lessonHTML(s, i, n) {
   if (s.try) h += `<div class="try"><b>Try it</b><p style="margin:4px 0">${tmd(s.try.do)}</p><p class="note" style="margin:0">You'll know it worked when: ${tmd(s.try.success)}</p></div>`;
   if (s.quiz) h += quizHTML(s);
   if (s.action) h += actionHTML(s);
-  else if (T.daw === 'ardour' && ['tempo', 'click', 'drums', 'track', 'take', 'chain'].includes(s.id)) h += `<p class="note">hypnomix can't drive Ardour yet, so this one is by hand: the steps above say where.</p>`;
+  else if (T.daw === 'ardour' && ['tempo', 'click', 'drums', 'track', 'take', 'chain'].includes(s.id)) h += `<p class="note">The Teacher can't do this one in HypnoMix DAW yet, so it is by hand: the steps above say where.</p>`;
   if (s.app) h += `<p><button data-view="${esc(s.app.view)}">${esc(s.app.label)}</button></p>`;
   if (s.more && s.more.length) h += moreHTML(s.more);
   if (r) h += resultHTML(r);
@@ -162,14 +175,14 @@ function actionHTML(s) {
     ? `<select id="tf-${esc(f.id)}" data-tfield="${esc(s.id + ':' + f.id)}" ${p ? 'disabled' : ''}>${f.options.map(o => `<option ${String(T.pending && T.pending.args[f.id] || f.value) === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`
     : `<input id="tf-${esc(f.id)}" type="${f.type === 'number' ? 'number' : 'text'}" data-tfield="${esc(s.id + ':' + f.id)}" value="${esc(p ? T.pending.args[f.id] : f.value)}" ${p ? 'disabled' : ''}>`}</div>`).join('');
   const rec = T.st.recording && T.st.recording.busy;
-  return `<div class="do"><b>Let hypnomix do it</b> <span class="note">· ${a.changes ? 'changes your song, after you say yes' : 'changes nothing'}</span>${fields}
+  return `<div class="do"><b>Let HypnoMix do it</b> <span class="note">· ${a.changes ? 'changes your song, after you say yes' : 'changes nothing'}</span>${fields}
     ${p ? `<div class="sure">${T.pending.will}</div><button class="primary" data-tdo="${esc(s.id)}" ${T.busy ? 'disabled' : ''}>${T.busy ? 'Working…' : 'Do it'}</button> <button data-tcancel="1">Not now</button>`
         : `<button data-task-do="${esc(s.id)}" ${rec ? 'disabled' : ''}>${esc(a.label)}…</button>${a.kind === 'record' && T.daw === 'reaper' ? ' <button data-tstop="' + esc(s.id) + '">Stop</button>' : ''}`}
     ${rec ? '<p class="note">Recording…</p>' : T.st.recording && T.st.recording.msg && a.kind === 'record' ? `<p class="note">${esc(T.st.recording.msg)}</p>` : ''}</div>`;
 }
 
 function resultHTML(r) {
-  if (r.error) return `<p class="bad">${esc(r.error)}</p><p class="note">Nothing else changed. You can always do it by hand with the steps above.</p>`;
+  if (r.error) return `<p class="bad">${esc(r.error)} <button type="button" data-report="banner">Report this</button></p><p class="note">Nothing else changed. You can always do it by hand with the steps above.</p>`;
   return `<p class="ok">${esc(r.done)}</p>${(r.by_hand || []).length ? `<ul>${r.by_hand.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
     ${r.done && T.daw !== 'ardour' ? '<p class="note">Changed your mind? Undo it in your DAW (Cmd+Z / Ctrl+Z).</p>' : ''}`;
 }
@@ -244,3 +257,6 @@ document.addEventListener('input', e => {
 window.teachChanged = () => { T.st = null; T.daw = ''; T.level = ''; T.at = ''; if (S.view === 'teach') render(); };
 // teacher mode on: the app opens on this tab
 get('/api/teach/state').then(st => { if (st.teach && st.daw && S.view === 'home') go('teach'); }).catch(() => {});
+
+// "Take the tour inside the HypnoMix DAW": the DAW view opens with its list of tours (hypnomix/app/daw/js/tour.js reads the #tour in the address)
+document.addEventListener('click', e => { if (e.target.closest('[data-tdawtour]')) location.href = '/daw/#tour'; });

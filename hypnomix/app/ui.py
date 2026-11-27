@@ -1,8 +1,8 @@
-"""The hypnomix app's page: one file, no network access beyond this computer."""
+"""The HypnoMix app's page: one file, no network access beyond this computer."""
 
 PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>hypnomix</title>
+<title>HypnoMix</title>
 <style>
 :root{--bg:#f6f4ef;--card:#fff;--ink:#1d1b18;--mute:#6b665e;--line:#e2ddd2;--hi:#b3261e;--med:#955808;--low:#3d6b4f;
 --info:#5a6472;--ok:#2f6f4f;--skip:#6e695f;--chg:#8a5a00;--accent:#8e3f3f;--accent-ink:#fff;--focus:#1a56c4}
@@ -87,9 +87,9 @@ details.byhand{background:var(--card);border:1px solid var(--line);border-radius
 @media (max-width:560px){.ab{grid-template-columns:1fr}.row label{min-width:100%}}
 </style></head><body>
 <a class="skiplink" href="#main">Skip to the page</a>
-<header><span class="brand">hypnomix</span>
-<nav aria-label="Main"><button class="tab" data-daw hidden title="DAW: the Hypnomix DAW (Arrangement, Session, Mixer, Review) on the Hypnomix engine">DAW</button><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
-<button class="tab" data-view="chat">Assistant</button><button class="tab" data-view="wiki">Wiki</button><button class="tab" data-view="teach" title="Teacher: make a song from scratch, step by step, in your DAW">Teacher</button><button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button><button class="tab" data-setup title="How you work with hypnomix: AI provider, keys, your DAW, teacher mode">Setup</button></nav>
+<header><span class="brand">HypnoMix</span>
+<nav aria-label="Main"><button class="tab" data-daw hidden title="DAW: the HypnoMix DAW (Arrangement, Session, Mixer, Review) on the HypnoMix DAW engine">DAW</button><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
+<button class="tab" data-view="chat">Assistant</button><button class="tab" data-view="wiki">Wiki</button><button class="tab" data-view="teach" title="Teacher: make a song from scratch, step by step, in your DAW">Teacher</button><button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button><button class="tab" data-setup title="How you work with HypnoMix: AI provider, keys, your DAW, teacher mode">Setup</button></nav>
 <span class="live" id="live" role="status"></span></header>
 <div id="msg" role="alert"></div><div id="sr" class="sr" role="status" aria-live="polite"></div>
 <main id="main" tabindex="-1"></main>
@@ -99,7 +99,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const get = (u) => fetch(u).then(r => r.json());
 const post = (u, body) => fetch(u, {method:'POST', headers:{'Content-Type':'application/json','X-Hypnomix':TOKEN},
-  body: JSON.stringify(body || {})}).then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; });
+  body: JSON.stringify(body || {})}).then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error(j.error || r.statusText); e.fromServer = true; throw e; } return j; });
 // What the browser remembers for this person (it can come back empty, or refuse: nothing depends on it).
 const LS = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
@@ -123,7 +123,7 @@ const barePath = v => {
 // An error or a notice is shown in the page, where a screen reader reads it too: never in a pop-up that takes the page away.
 function showMsg(text, kind) {
   const m = document.getElementById('msg'); if (!m) return;
-  m.innerHTML = text ? `<div class="banner${kind === 'ok' ? '' : ' bad'}"><span>${esc(text)}</span><button type="button" id="msgx" aria-label="Dismiss this message">Dismiss</button></div>` : '';
+  m.innerHTML = text ? `<div class="banner${kind === 'ok' ? '' : ' bad'}"><span>${esc(text)}</span>${kind === 'ok' ? '' : '<button type="button" data-report="msg">Report this</button>'}<button type="button" id="msgx" aria-label="Dismiss this message">Dismiss</button></div>` : '';
   if (text && kind === 'ok') setTimeout(() => { if (m.textContent.includes(text)) m.innerHTML = ''; }, 6000);
 }
 window.alert = t => showMsg(t);
@@ -166,7 +166,7 @@ async function refresh() {
     S.cmdRev = S.state.commands_rev;
     get('/api/commands').then(r => { S.commands = r.commands || []; if (S.view === 'tools') render(); }).catch(() => { S.cmdRev = ''; });
   }
-  // the Live pill is for a person who uses Live: a REAPER or Ardour song on screen (or that DAW chosen in Setup) never sees "Live device not connected"
+  // the Live pill is for a person who uses Live: a REAPER or HypnoMix DAW song on screen (or that DAW chosen in Setup) never sees "Live device not connected"
   const rk = S.view === 'review' && S.review ? S.review.kind : '', noLive = rk ? (rk === 'rpp' || rk === 'ardour') : ['reaper', 'ardour', 'other'].includes(S.state.daw);
   const lv = $('#live'), lt = S.state.live ? '<b aria-hidden="true">●</b> Live device connected' : noLive ? '' : 'Live device not connected';
   if (lv.dataset.t !== lt) { lv.dataset.t = lt; lv.innerHTML = lt; lv.hidden = !lt; }            // only when it changes: a screen reader is not told every second
@@ -175,7 +175,7 @@ async function refresh() {
 }
 
 // ---------------------------------------------------------------- home
-const KIND_WORD = {als:'Live set', rpp:'REAPER project', ardour:'Ardour session', folder:'folder of recordings'};
+const KIND_WORD = {als:'Live set', rpp:'REAPER project', ardour:'HypnoMix DAW session', folder:'folder of recordings'};
 function songCard(s) {
   const tags = [];
   if (s.damaged) tags.push(`<span class="tag prot">${s.damaged === 'decisions.json' ? "this song's decisions file is damaged" : "this scan's results file is damaged"}</span>`);
@@ -195,7 +195,7 @@ function homeView() {
   <p class="sub">Every check runs at once. Nothing is changed. You then hear each proposed fix and decide.</p>
   ${st.unanswered ? `<div class="prefs">${st.unanswered} preference question(s) not answered yet. <button data-view="prefs">Answer them</button> so the review starts from how you work.</div>` : ''}
   <div class="card">
-    <div class="row"><label>Song</label><span class="path">${esc(f.source) || 'a Live set (.als), REAPER project (.rpp), Ardour session (.ardour), or a folder of recordings or stems from any DAW'}</span>
+    <div class="row"><label>Song</label><span class="path">${esc(f.source) || 'a Live set (.als), REAPER project (.rpp), HypnoMix DAW session (.ardour), or a folder of recordings or stems from any DAW'}</span>
       ${ch ? '<button data-pick="source:song">Choose project…</button><button data-pick="source:folder">Choose folder…</button>' : ''}</div>
     <div class="row"><label for="src">Path</label><input type="text" id="src" placeholder="or paste the path here" value="${esc(f.source)}"></div>
     <div class="row"><label${ch ? '' : ' for="mixp"'}>Bounce of the mix <span class="note">(optional)</span></label>${ch ? `<span class="path">${esc(f.mix) || 'adds loudness, release checks and the key'}</span>
@@ -204,7 +204,7 @@ function homeView() {
       <button data-pick="like:audio">Choose…</button>` : `<input type="text" id="likep" data-form="like" placeholder="paste its path: compare tone, dynamics and width with it" value="${esc(f.like)}">`}${f.like && ch ? '<button data-clear="like">Clear</button>' : ''}</div>
     <div class="row"><label for="key">Key <span class="note">(optional)</span></label><input type="text" id="key" placeholder='e.g. F# major: needed before any vocal tuning is applied' value="${esc(f.key)}"></div>
     <div class="row"><label for="deep">Deep scan</label><input type="checkbox" id="deep" ${f.deep ? 'checked' : ''}> <span class="note">also render every track: frequency fights and mic phase (slower)</span></div>
-    ${/\.als$/i.test(f.source || '') ? `<div class="row"><label for="devices">Live devices</label><input type="checkbox" id="devices" ${f.devices ? 'checked' : ''}> <span class="note">also write a copy of the set with the hypnomix devices on every track (probes, the review device, HypnomixMain on Main), next to yours</span></div>` : ''}
+    ${/\.als$/i.test(f.source || '') ? `<div class="row"><label for="devices">Live devices</label><input type="checkbox" id="devices" ${f.devices ? 'checked' : ''}> <span class="note">also write a copy of the set with the HypnoMix devices on every track (probes, the review device, HypnomixMain on Main), next to yours</span></div>` : ''}
     <div class="row"><button class="primary" id="scan">Start the first pass</button>
       <span class="note">Read-only. Close nothing: your project is not touched${/\.als$/i.test(f.source || '') && f.devices ? ' (the devices go into a new copy)' : ''}. A song you scanned before is scanned again in its own folder.</span></div>
   </div>
@@ -236,7 +236,7 @@ function jobView() {
   const j = S.state.job, info = S.jobInfo && S.jobInfo.id === j.id ? S.jobInfo : {};
   const running = j.status === 'running';
   const sub = running ? `<span class="spin" aria-hidden="true"></span>${esc(j.step)}…` : j.status === 'done' ? 'Finished.' : j.status === 'failed' ? (info.stopped ? 'Stopped: you pressed Stop.' : 'Stopped with an error.') : '';
-  const why = !running && j.status === 'failed' && info.reason && !info.stopped ? `<div class="banner bad"><b>Why it stopped:</b> ${esc(info.reason)}<br><span class="note">The last lines of the log are below.</span></div>` : '';
+  const why = !running && j.status === 'failed' && info.reason && !info.stopped ? `<div class="banner bad"><b>Why it stopped:</b> ${esc(info.reason)}<br><span class="note">The last lines of the log are below.</span> <button type="button" data-report="job">Report this</button></div>` : '';
   const files = !running && info.files && info.files.length ? `<h2>Files made</h2>${fileLines(info.files)}` : '';
   const text = !running && info.text ? `<h2>The handoff list</h2><pre>${esc(info.text)}</pre>` : '';
   const back = !running && j.dir ? `<button class="primary" data-open="${esc(j.dir)}">${['fix', 'undo', 'handoff'].includes(j.kind) ? 'Back to the review' : 'Open the review'}</button>` : '';
@@ -285,11 +285,11 @@ function resultView() {
   const r = S.result, bad = r.status === 'failed', part = bad && !r.wrote_nothing, u = r.wrote_nothing ? null : r.undo;     // part: it stopped, but a new file was written first
   const head = part ? `<h1>Applied in part: ${esc(r.name)}</h1>` : bad ? `<h1>Apply stopped: ${esc(r.name)}</h1>` : r.wrote_nothing ? `<h1>Nothing applied: ${esc(r.name)}</h1>` : `<h1>Applied: ${esc(r.name)}</h1>`;
   const why = bad ? `<div class="banner bad"><h2>${r.stopped ? 'You stopped it' : part ? 'Some steps did not run' : 'It could not finish'}</h2>${r.reason ? `<p>${esc(r.reason)}</p>` : ''}
-    ${r.tail && r.tail.length ? `<details><summary class="note">The last lines it printed</summary><pre class="fix">${esc(r.tail.join('\n'))}</pre></details>` : ''}<p class="note">${part ? 'The new file below has the steps that did run.' : 'Nothing was written.'} Your original was not changed.</p></div>` : '';
+    ${r.tail && r.tail.length ? `<details><summary class="note">The last lines it printed</summary><pre class="fix">${esc(r.tail.join('\n'))}</pre></details>` : ''}<p class="note">${part ? 'The new file below has the steps that did run.' : 'Nothing was written.'} Your original was not changed. <button type="button" data-report="job">Report this</button></p></div>` : '';
   const nothing = r.wrote_nothing && !bad ? `<div class="banner"><b>Nothing was written.</b> ${r.note ? esc(r.note) + '.' : 'None of the approved fixes could be applied.'} Your original was not changed. The log below says what happened to each item.</div>` : '';
   const files = r.wrote_nothing ? '' : r.files.length ? `<h2>${r.files.length === 1 ? 'The new file' : 'The new files'}</h2>${fileLines(r.files)}`
     : (!bad ? `<h2>New files</h2><p class="note">${r.kind === 'folder' ? 'Repaired copies are in this scan\'s "fixed" folder.' : 'No new project file was written.'}</p>${r.kind === 'folder' ? `<button data-reveal="${esc(r.dir)}/fixed">Show the fixed folder</button>` : ''}` : '');
-  const listen = r.listen.length && !r.wrote_nothing ? `<h2>Listen at these spots</h2><p class="note">hypnomix re-checked what it changed; only you can hear it. Open the new project and A/B each spot against the original.</p>
+  const listen = r.listen.length && !r.wrote_nothing ? `<h2>Listen at these spots</h2><p class="note">HypnoMix re-checked what it changed; only you can hear it. Open the new project and A/B each spot against the original.</p>
     <ul class="plain">${r.listen.map(x => `<li><b>${esc(x.track)}</b>${x.where ? ' at <span class="where">' + esc(x.where) + '</span>' : ''}${x.what ? ': ' + esc(x.what) : ''}</li>`).join('')}</ul>` : '';
   const undo = u && u.can_undo ? `<button data-undo="${u.n}" data-undoname="${esc(u.undo_name)}">Undo this</button>`
     : (u ? `<p class="note">${esc(u.why_not)}</p>` : '');
@@ -373,7 +373,7 @@ function toolsView() {
   let last = '';
   const rows = S.commands.map(c => (c.group !== last ? (last = c.group, `<tr class="grp"><td colspan="2">${esc(c.group)}</td></tr>`) : '')
     + `<tr class="cmd" data-tool="${esc(c.name)}" tabindex="0"><td><code>${esc(c.name)}</code></td><td>${esc(c.about)}</td></tr>`).join('');
-  return `<h1>Tools</h1><p class="sub">Every hypnomix command. Choose one to see its options and run it.</p><table>${rows}</table>`;
+  return `<h1>Tools</h1><p class="sub">Every HypnoMix command. Choose one to see its options and run it.</p><table>${rows}</table>`;
 }
 
 // ---------------------------------------------------------------- render + events
@@ -423,8 +423,8 @@ document.addEventListener('click', async e => {
       await post('/api/scan', S.form); await startJob();
     }
     else if (ds.open) await openReview(ds.open);
-    else if (ds.jump) { const r = await post('/api/live/jump', {dir: S.review.dir, id: ds.jump}); if (!r.device) showMsg(S.review.kind === 'rpp' ? 'Sent, but the Hypnomix panel is not open in REAPER. Open the project, then run "hypnomix reaper review".'
-      : 'Sent, but the hypnomix device is not connected. Load it on any track in your Live set (run "hypnomix device" to make it).'); }
+    else if (ds.jump) { const r = await post('/api/live/jump', {dir: S.review.dir, id: ds.jump}); if (!r.device) showMsg(S.review.kind === 'rpp' ? 'Sent, but the HypnoMix panel is not open in REAPER. Open the project, then run "hypnomix reaper review".'
+      : 'Sent, but the HypnoMix device is not connected. Load it on any track in your Live set (run "hypnomix device" to make it).'); }
     else if (b.id === 'apply') {
       const body = {dir: S.review.dir, out: $('#out') ? $('#out').value : '', key: $('#fkey') ? $('#fkey').value : '', allow_protected: $('#prot') ? $('#prot').checked : false};
       const said = typeof rvAnswers === 'function' ? rvAnswers() : [];            // answers to the key questions: read section by section once there are some
@@ -492,7 +492,7 @@ const tick = () => {
 };
 setInterval(() => { if (!document.hidden) tick(); }, 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { quiet = 0; tick(); } });
-</script><script src="/review.js"></script><script src="/chat.js"></script><script src="/wiki.js"></script><script src="/teacher.js"></script><script src="/setup.js"></script><script src="/update.js"></script><script src="/diskcare.js"></script><script src="/store.js"></script></body></html>
+</script><script src="/review.js"></script><script src="/chat.js"></script><script src="/wiki.js"></script><script src="/teacher.js"></script><script src="/setup.js"></script><script src="/update.js"></script><script src="/diskcare.js"></script><script src="/report.js"></script><script src="/store.js"></script></body></html>
 """
 
 from hypnomix.workflow.review import OVERSIGHT_CSS as _OC, OVERSIGHT_JS as _OJ   # noqa: E402

@@ -1,7 +1,8 @@
-"""The Hypnomix store: the catalogue's schema, and the installer on archives built here (zip, tar, 7z, dmg), into a
+"""The HypnoMix store: the catalogue's schema, and the installer on archives built here (zip, tar, 7z, dmg), into a
 temporary HYPNOMIX_STORE_ROOT. Nothing touches the real ~/Library or ~/Music.
 
 HYPNOMIX_STORE_NET=1 also runs one real download (GATE-12 from GitHub) into a temporary root."""
+import contextlib
 import hashlib
 import io
 import json
@@ -44,6 +45,14 @@ def sha(p):
     return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
 
+def flag_settable():
+    """The Mac's "downloaded from the internet" flag is set by `xattr`: with it, the installer package tests use the real
+    thing; without it (Linux, Windows) the flag is a stand-in that says it worked, so the logic after it is still tested."""
+    if sys.platform == "darwin" and shutil.which("xattr"):
+        return contextlib.nullcontext()
+    return mock.patch.object(I, "_quarantine", return_value=True)
+
+
 ITEM = dict(id="fooverb", name="Fooverb", kind="effect", vendor="Test", licence="MIT", open_source=True,
             formats=["VST3", "AU"], macos_arm64=None, homepage="https://example.org/", about="test",
             source={"type": "url", "url": "https://example.org/foo.zip", "version": "1"}, method="bundles")
@@ -54,6 +63,14 @@ class Catalogue(unittest.TestCase):
     def test_shipped_catalogue_is_valid(self):
         data = C.load()
         self.assertEqual(C.validate(data), [])
+        # 0.3.0 shipped 26 items as version 2026.11.26; this one has more, so it carries a later version (it is shown on the page)
+        self.assertGreater(tuple(map(int, data["version"].split("."))), (2026, 11, 26))
+        self.assertGreater(len(data["items"]), 26)
+        # the article names every format the filter offers (the page builds the filter from these) and no vendor is a person's handle
+        article = open(Path(__file__).resolve().parent.parent / "hypnomix/app/wiki/articles/18-store.html", encoding="utf-8").read()
+        for f in {f for it in data["items"] for f in it.get("formats", [])}:
+            self.assertIn(f, article.split("and licence")[0].split("format (")[-1], f)
+        self.assertNotIn("TheWaveWarden", {it.get("vendor") for it in data["items"]})
         ids = [it["id"] for it in data["items"]]
         for must in ("surge-xt", "dexed", "ob-xd", "odin2", "cardinal", "airwindows-consolidated", "dragonfly-reverb",
                      "chowtapemodel", "sfizz",
@@ -229,9 +246,16 @@ class Installer(unittest.TestCase):
                 info = zipfile.ZipInfo(name)
                 info.external_attr = (stat.S_IFLNK | 0o777) << 16
                 zf.writestr(info, target)
-        with self.assertRaises(I.StoreError):
-            I.install(ITEM, archive=z3, info={"version": "1"}, confirm_unverified=True)
-        self.assertFalse((self.root / "Library").exists())
+        if sys.platform == "darwin" and shutil.which("ditto"):
+            with self.assertRaises(I.StoreError):
+                I.install(ITEM, archive=z3, info={"version": "1"}, confirm_unverified=True)
+            self.assertFalse((self.root / "Library").exists())
+        else:
+            # Only `ditto` (the Mac's unzip) makes the links of a zip; Python's zipfile writes a link as a small file holding
+            # its target text, so the chain cannot climb out: nothing unpacked is a link, and nothing needs refusing
+            out3 = I.unpack(z3, self.tmp / "out3")
+            made = [os.path.join(d, n) for d, ds, fs in os.walk(out3) for n in ds + fs if os.path.islink(os.path.join(d, n))]
+            self.assertEqual(made, [])
 
     @unittest.skipUnless(sys.platform == "darwin" and shutil.which("hdiutil"), "needs hdiutil")
     def test_dmg_with_a_link_outside_is_refused(self):
@@ -254,7 +278,8 @@ class Installer(unittest.TestCase):
     def test_pkg_is_opened_for_the_person_never_run(self):
         z = self.build_zip("pkg.zip", [], extra={"Foo Installer.pkg": "xar!"})
         opened = []
-        e = I.install(dict(ITEM, method="pkg"), archive=z, info={"version": "1"}, confirm_unverified=True, open_pkg=lambda p: opened.append(p) or True)
+        with flag_settable():
+            e = I.install(dict(ITEM, method="pkg"), archive=z, info={"version": "1"}, confirm_unverified=True, open_pkg=lambda p: opened.append(p) or True)
         self.assertEqual(e["method"], "pkg")
         self.assertEqual(e["paths"], [])
         self.assertTrue(Path(e["installer"]).is_file())
@@ -388,7 +413,7 @@ class Catalogue2(unittest.TestCase):
         once_named = {"352a3de45045", "800392455c95", "9bc705a6205a", "299d1d52bc93", "eed59d514cf4", "fd3d8515757c",
                       "af87901ee08f", "39ca0c269f8b", "c7555c52934c", "0dcd87854d99"}
         data = C.load()
-        texts = [(it["id"], " ".join(str(it.get(k, "")) for k in ("name", "vendor", "about"))) for it in data["items"]]
+        texts = [(it["id"], " ".join(str(it.get(k, "")) for k in ("name", "vendor", "about", "note", "mpe_note"))) for it in data["items"]]
         texts += [("left_out", " ".join(x["name"] + " " + x["why"] for x in data["left_out"]))]
         for where, text in texts:
             self.assertEqual(names_in(text), set(), where)
@@ -763,6 +788,7 @@ class Loopback(unittest.TestCase):
             zf.writestr("Plugins/Fooverb.vst3/Contents/MacOS/Fooverb", "v1")
             zf.writestr("Plugins/Fooverb.vst3/Contents/Info.plist", "<plist/>")
         cls.payload = cls.payload.getvalue()
+        cls.pkg_payload = b"xar!" + bytes(range(256)) * 8              # flat installer packages start with these four bytes
         cls.seen = []
         outer = cls
 
@@ -781,6 +807,12 @@ class Loopback(unittest.TestCase):
                         self.send_header("Content-Length", str(len(outer.payload)))
                         self.end_headers()
                         self.wfile.write(outer.payload)
+                    elif self.path in ("/Foo-1.0.pkg", "/Fake.pkg"):    # a bare installer package, and a file only named like one
+                        body = outer.pkg_payload if self.path == "/Foo-1.0.pkg" else b"not an installer"
+                        self.send_response(200)
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
                     elif self.path == "/huge":                          # claims 1 TB
                         self.send_response(200)
                         self.send_header("Content-Length", str(10 ** 12))
@@ -907,6 +939,58 @@ class Loopback(unittest.TestCase):
         with self.assertRaises(I.StoreError):
             I.install(wrong)
         self.assertFalse((self.root / "Library/Audio/Plug-Ins/VST3/Fooverb.vst3").exists())
+
+    def test_a_download_that_is_itself_an_installer_package_is_kept_and_never_run(self):
+        """The maker publishes NAME.pkg directly (no disk image, no archive): it is checked, kept in the installers
+        folder, marked as downloaded from the internet, offered to the person, and never started."""
+        good = hashlib.sha256(self.pkg_payload).hexdigest()
+        item = dict(ITEM, method="pkg", size="1 MB", source={"type": "url", "url": self.url("/Foo-1.0.pkg"), "version": "1.0", "sha256": good})
+        opened, started = [], []
+        real_run, real_popen = subprocess.run, subprocess.Popen
+
+        def spy(cmd, *a, **k):                                               # every program the install starts (run uses Popen)
+            started.append([str(x) for x in cmd] if isinstance(cmd, (list, tuple)) else [str(cmd)])
+            return real_popen(cmd, *a, **k)
+        with mock.patch.object(I.subprocess, "Popen", spy), flag_settable():
+            e = I.install(item, open_pkg=lambda p: opened.append(p) or True)
+        kept = I.state_dir() / "installers" / "fooverb" / "Foo-1.0.pkg"
+        self.assertEqual(e["method"], "pkg")
+        self.assertEqual(e["installer"], str(kept))
+        self.assertEqual(kept.read_bytes(), self.pkg_payload)
+        self.assertTrue(e["sha256_checked"])
+        self.assertEqual(e["sha256"], good)
+        self.assertEqual(opened, [kept])                                     # offered to the person in the system Installer
+        self.assertEqual(e["paths"], [])
+        self.assertFalse((self.root / "Library").exists())                   # nothing was put into the Library
+        self.assertEqual(list((I.state_dir() / "work").glob("*")), [])       # the download's work folder is gone
+        self.assertLessEqual({os.path.basename(c[0]) for c in started}, {"xattr"})      # only the quarantine flag was set
+        self.assertFalse([c for c in started if str(kept) == c[0] or "installer" in os.path.basename(c[0])])
+        self.assertTrue(I.status([item])["fooverb"]["installed"])
+        self.assertEqual(I.status([item])["fooverb"]["method"], "pkg")
+        if sys.platform == "darwin" and shutil.which("xattr"):
+            self.assertTrue(e["quarantined"])
+            r = real_run(["xattr", "-p", "com.apple.quarantine", str(kept)], capture_output=True, text=True)
+            self.assertTrue(r.stdout.startswith("0081;"))
+        I.uninstall("fooverb")                                               # Forget: the kept installer goes, nothing else
+        self.assertFalse(kept.exists())
+
+    def test_a_file_named_like_a_package_that_is_not_one_is_refused(self):
+        item = dict(ITEM, method="pkg", size="1 MB", source={"type": "url", "url": self.url("/Fake.pkg"), "version": "1",
+                                                          "sha256": hashlib.sha256(b"not an installer").hexdigest()})
+        with self.assertRaises(I.StoreError) as cm:
+            I.install(item, open_pkg=lambda p: self.fail("must not be offered"))
+        self.assertIn("is not one", str(cm.exception))
+        self.assertFalse((I.state_dir() / "installers").exists() and any((I.state_dir() / "installers").rglob("*.pkg")))
+        self.assertNotIn("fooverb", I.manifest()["items"])
+
+    def test_a_bare_package_with_no_fingerprint_asks_a_second_time(self):
+        item = dict(ITEM, method="pkg", size="1 MB", source={"type": "url", "url": self.url("/Foo-1.0.pkg"), "version": "1.0"})
+        with self.assertRaises(I.NotVerified) as cm:
+            I.install(item)
+        self.assertIn("administrator rights", str(cm.exception))
+        self.assertEqual(self.seen, [])                                      # nothing was fetched
+        e = I.install(item, confirm_unverified=True, open_pkg=lambda p: True)
+        self.assertFalse(e["sha256_checked"])
 
 
 class AppJobs(unittest.TestCase):
@@ -1069,6 +1153,500 @@ class App(unittest.TestCase):
             r = ST.rescan()
         self.assertTrue(r["ok"])
         self.assertEqual(calls[-1], ("tools/call", {"name": "plugin_rescan", "arguments": {}}))
+
+
+
+# ---------------------------------------------------------------- MPE, notes, the 21 approved items, a bare .pkg, the time limit
+# The files the makers publish for the 21 items the owner approved for their own Mac (read on the makers' own release
+# pages on 2026-11-26): id -> (repository or "", release tag, file name, how it installs, fingerprint: "gh" = GitHub publishes
+# one, "pinned" = the catalogue holds it, "-" = nobody publishes one)
+APPROVED = {
+    "six-sines": ("baconpaul/six-sines", "v1.2.1", "six-sines-macOS-2026-07-20-18ecb36.dmg", "pkg", "gh"),
+    "js80p": ("attilammagyar/js80p", "v4.1.1", "js80p-4_1_1-macos-universal-vst3_bundle-signed.pkg", "pkg", "gh"),
+    "overtonium": ("benjamindehli/overtonium", "v1.18.0", "Overtonium-v1.18.0-macOS.pkg", "pkg", "gh"),
+    "ca-72": ("idlefoundry/ca-72", "v0.3.2", "CA-72-0.3.2-macOS.pkg", "pkg", "gh"),
+    "resonarium": ("gabrielsoule/resonarium", "v0.1.1", "Resonarium-Instrument-0.1.1-macOS-notarized.zip", "bundles", "gh"),
+    "sfizioso-player": ("rullopat/sfizioso-player", "v0.12.3", "sfizioso-player-macos.tar.gz", "bundles", "gh"),
+    "mpe-emulator": ("attilammagyar/mpe-emulator", "v1.2.4", "mpe-emulator-1_2_4-macos-universal-vst3_bundle-signed.pkg", "pkg", "gh"),
+    "dexed": ("asb2m10/dexed", "v1.1.0", "Dexed-1.1.0-macOS.zip", "bundles", "gh"),
+    "membrum": ("", "0.12.5", "Membrum-0.12.5-macOS.pkg", "pkg", "pinned"),
+    "freepats-synthesizer-percussion": ("freepats/synthesizer-percussion", "v1.0.0", "SynthesizerPercussion-20220718.zip", "content", "-"),
+    "freepats-world-percussion": ("freepats/world-percussion", "2020-09-05", "WorldPercussion-SFZ+FLAC-20200905.7z", "content", "-"),
+    "freepats-colomboadk": ("freepats/colomboADK", "2020-05-30", "ColomboADK-FreePats-SFZ+FLAC-20200530.7z", "content", "-"),
+    "freepats-hang": ("freepats/hang-D-minor", "2022-03-30", "Hang-D-minor-SFZ+FLAC-20220330.7z", "content", "-"),
+    "freepats-timpani": ("freepats/timpani", "2024-08-10", "Timpani-SFZ+FLAC-20240810.7z", "content", "-"),
+    "freepats-glass": ("freepats/glass", "v1.0.0", "Glass-20191227.zip", "content", "-"),
+    "gogodze-phu": ("sfzinstruments/karoryfer.gogodze-phu-vol-i", "v1.001", "Karoryfer.Gogodze_Phu_vol_I.v1.001.zip", "content", "-"),
+    "body-percussion": ("", "4ac9d89", "4ac9d8966679c648b62fa10a188179e186b97f24.zip", "content", "-"),
+    "zl-equalizer-2": ("ZL-Audio/ZLEqualizer", "1.4.2", "ZL.Equalizer.2-1.4.2-macOS-arm64.dmg", "pkg", "gh"),
+    "zl-compressor": ("ZL-Audio/ZLCompressor", "0.6.1", "ZL.Compressor-0.6.1-macOS-arm64.dmg", "pkg", "gh"),
+    "master-me": ("trummerschlunk/master_me", "1.3.1", "master_me-1.3.1-macos-universal.dmg", "pkg", "gh"),
+    "chowmultitool": ("Chowdhury-DSP/ChowMultiTool", "v1.1.0", "ChowMultiTool-Mac-1.1.0.dmg", "pkg", "-"),
+}
+MPE_DOCUMENTED = ("surge-xt", "six-sines", "js80p", "overtonium", "ca-72", "resonarium", "sfizioso-player", "vaporizer2", "plugdata",
+                  "dexed", "cardinal", "mpe-emulator")
+
+
+def fake_digest(name):
+    return "sha256:" + hashlib.sha256(name.encode()).hexdigest()
+
+
+class Additions(unittest.TestCase):
+    """The 21 items approved for the owner's Mac, the optional "mpe" and "note" fields, and the --mpe filter."""
+
+    def test_the_shipped_catalogue_validates_and_holds_the_approved_items(self):
+        self.assertEqual(len(APPROVED), 21)
+        data = C.load()
+        self.assertEqual(C.validate(data), [])
+        ids = [it["id"] for it in data["items"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual([i for i in APPROVED if i not in ids], [])
+        # MPE instruments come first among the instruments, and only the documented ones carry the field
+        self.assertEqual({it["id"] for it in data["items"] if it.get("mpe")}, set(MPE_DOCUMENTED))
+        first = [it["id"] for it in data["items"][:len(MPE_DOCUMENTED)]]
+        self.assertEqual(set(first), set(MPE_DOCUMENTED))
+        for it in data["items"]:
+            s = it["source"]
+            if s["type"] == "github":
+                self.assertTrue(s["asset"].endswith("$"), it["id"])         # a longer name (a -compact or -src file) cannot match
+
+    def test_every_approved_item_resolves_to_exactly_the_published_file(self):
+        """With the makers' release listings stood in (the real ones were read on 2026-11-26, nothing is fetched here)
+        each approved id finds its one file, and learns whether a fingerprint is published for it."""
+        listings = {}
+        for iid, (repo, tag, name, how, fp) in APPROVED.items():
+            if not repo:
+                continue
+            stem = name.rsplit(".", 1)[0]
+            decoys = [name + ".sha256", stem + "-compact.zip", "source-" + tag + ".tar.gz", "README.txt"]
+            assets = [dict(name=n, size=1000 + k, browser_download_url=f"https://github.com/{repo}/releases/download/{tag}/{n}",
+                           digest=fake_digest(n) if (fp == "gh" and n == name) else None) for k, n in enumerate([name] + decoys)]
+            listings[repo] = dict(tag_name=tag, html_url=f"https://github.com/{repo}/releases/tag/{tag}", assets=assets)
+
+        def fake_github(path):
+            repo = path.split("/repos/", 1)[1].split("/releases/", 1)[0]
+            return listings[repo]
+        for iid, (repo, tag, name, how, fp) in APPROVED.items():
+            it = C.get(iid)
+            self.assertEqual(it["method"], how, iid)
+            with self.subTest(iid):
+                with mock.patch.object(I, "_github", fake_github):
+                    r = I.resolve(it, fresh=True)
+                self.assertEqual(r["filename"], name)
+                self.assertEqual(C.verification(it), {"gh": "github", "pinned": "pinned", "-": "github" if repo else "none"}[fp])
+                if fp == "gh":
+                    self.assertEqual(r["sha256"], fake_digest(name).split(":")[1])
+                elif fp == "-":
+                    self.assertIsNone(r["sha256"])                          # nobody publishes one: the store says so, and asks
+                else:
+                    self.assertEqual(r["sha256"], it["source"]["sha256"])
+                if not repo:
+                    self.assertEqual(it["source"]["type"], "url")
+                    self.assertTrue(it["source"]["url"].startswith("https://github.com/"))
+                    self.assertTrue(it["source"]["url"].endswith("/" + name))
+                self.assertGreater(C.size_bytes(it), 0)
+
+    def test_the_items_with_no_published_fingerprint_are_marked(self):
+        none = sorted(i for i, v in APPROVED.items() if v[4] == "-")
+        self.assertEqual(len(none), 9)
+        it = C.get("body-percussion")
+        self.assertEqual(C.verification(it), "none")
+        self.assertIn("no fingerprint", it["note"])
+        self.assertEqual(C.verification(C.get("membrum")), "pinned")
+
+    def test_the_mpe_field_is_validated(self):
+        def check(mutate, want):
+            bad = json.loads(json.dumps(C.load()))
+            by = {it["id"]: it for it in bad["items"]}
+            plain = next(i for i in bad["items"] if not i.get("mpe"))
+            mutate(by, plain)
+            self.assertIn(want, "\n".join(C.validate(bad)))
+        check(lambda by, p: p.update(mpe=False), "mpe must be true")
+        check(lambda by, p: p.update(mpe="yes", mpe_note="One sentence."), "mpe must be true")
+        check(lambda by, p: p.update(mpe=True), "needs an mpe_note")
+        check(lambda by, p: p.update(mpe_note="One sentence."), "only for items with mpe true")
+        for bad_note in ("", "a\nb", "x" * 401, 5):
+            check(lambda by, p, n=bad_note: by["six-sines"].update(mpe_note=n), "mpe_note must be one short paragraph")
+        self.assertEqual(C.validate(C.load()), [])
+
+    def test_freepats_world_percussion_does_not_claim_all_of_it_is_public_domain(self):
+        it = C.get("freepats-world-percussion")
+        self.assertNotIn("Public domain", it["about"])
+        self.assertIn("sounds are public domain", it["about"])
+        self.assertIn("Attribution 4.0", it["note"])
+        self.assertIn("picture", it["note"])
+
+    def test_the_note_field_is_validated_and_filled_where_the_makers_say_so(self):
+        base = json.loads(json.dumps(C.load()))
+        for bad_note, ok in (("", False), ("  ", False), ("two\nlines", False), ("x" * 501, False), (7, False),
+                             ("An installer for all users: it asks for your password.", True)):
+            bad = json.loads(json.dumps(base))
+            bad["items"][0]["note"] = bad_note
+            errs = C.validate(bad)
+            self.assertEqual(not errs, ok, (bad_note, errs))
+        by = {it["id"]: it for it in base["items"]}
+        for iid, words in (("membrum", "password"), ("zl-equalizer-2", "password"), ("zl-compressor", "password"), ("master-me", "password"),
+                           ("odin2", "nightly"), ("shortcircuit-xt", "nightly"), ("sfizioso-player", "Privacy and Security"),
+                           ("stftpitchshift", "Privacy and Security"), ("fire", "Privacy and Security"), ("aida-x", "Privacy and Security"),
+                           ("body-percussion", "fixed commit"), ("naked-drums", "fixed commit"), ("drskit", "fixed commit")):
+            self.assertIn(words.lower(), by[iid]["note"].lower(), iid)
+
+    def test_search_and_the_command_filter_by_mpe(self):
+        its = C.items()
+        hits = C.search(its, mpe=True)
+        self.assertEqual({i["id"] for i in hits}, set(MPE_DOCUMENTED))
+        self.assertEqual(len(C.search(its, mpe=None)), len(its))
+        self.assertEqual({i["id"] for i in C.search(its, "synth", mpe=True)} - set(MPE_DOCUMENTED), set())
+        self.assertIn("six-sines", {i["id"] for i in C.search(its, "sines", mpe=True)})
+        self.assertEqual(C.search(its, "dragonfly", mpe=True), [])
+
+    def test_the_command_lists_and_describes_mpe(self):
+        import contextlib
+        from hypnomix.store import cli
+        tmp = tempfile.mkdtemp(prefix="hx-store-cli-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+
+        def run(*argv):
+            out = io.StringIO()
+            with mock.patch.dict(os.environ, {"HYPNOMIX_STORE_ROOT": tmp}), mock.patch.object(sys, "argv", ["hypnomix store", *argv]), \
+                    contextlib.redirect_stdout(out):
+                try:
+                    cli.main()
+                except SystemExit as e:                                              # `check` ends with sys.exit(0)
+                    self.assertFalse(e.code)
+            return out.getvalue()
+        rows = run("list", "--mpe").splitlines()
+        self.assertEqual({r.split()[0] for r in rows}, set(MPE_DOCUMENTED))
+        self.assertTrue(all("MPE" in r for r in rows))
+        everything = run("list").splitlines()
+        self.assertGreater(len(everything), len(rows))
+        self.assertEqual(sum(1 for r in everything if r.split()[-1] == "MPE" or " MPE " in r), len(MPE_DOCUMENTED))
+        self.assertEqual({r.split()[0] for r in run("search", "--mpe", "--open", "--kind", "synth").splitlines()} - set(MPE_DOCUMENTED), set())
+        info = {"version": "v1", "url": "https://example.org/a", "sha256": None}
+        with mock.patch.object(I, "resolve", return_value=info):
+            text = run("info", "six-sines")
+            self.assertIn("MPE:", text)
+            self.assertIn(C.get("six-sines")["mpe_note"], text)
+            self.assertIn("note:", text)
+            self.assertIn(C.get("six-sines")["note"], text)
+            self.assertNotIn("MPE:", run("info", "dragonfly-reverb"))
+        self.assertIn("catalogue OK", run("check"))
+        self.assertIn("--mpe", cli._parser().format_help())
+
+    def test_the_app_sends_the_fields_and_the_page_shows_them(self):
+        from hypnomix.app import store as ST
+        with mock.patch.dict(os.environ, {"HYPNOMIX_STORE_ROOT": tempfile.mkdtemp(prefix="hx-store-state-")}):
+            code, st = ST.handle_get("/api/store/state", {})
+        self.assertEqual(code, 200)
+        by = {it["id"]: it for it in st["items"]}
+        self.assertTrue(by["six-sines"]["mpe"])
+        self.assertIn("MPE", by["six-sines"]["mpe_note"])
+        self.assertNotIn("mpe", by["dragonfly-reverb"])
+        self.assertTrue(by["membrum"]["note"])
+        js = ST.handle_get("/store.js", {})[1].decode()
+        for want in ("id=\"stmpe\"", "ST.mpe && !it.mpe", "tag mpe", "it.mpe_note", "it.note", "Show installer"):
+            self.assertIn(want, js)
+
+
+class BareInstallerPackage(unittest.TestCase):
+    """A download that is itself NAME.pkg (the Loopback class runs it through a real download too)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="hx-store-pkg-"))
+        self.root = self.tmp / "root"
+        self.env = mock.patch.dict(os.environ, {"HYPNOMIX_STORE_ROOT": str(self.root), "HYPNOMIX_STORE_NO_OPEN": "1"})
+        self.env.start()
+        self.pkg = self.tmp / "Foo-1.0.pkg"
+        self.pkg.write_bytes(b"xar!" + b"\0" * 200)
+        self.item = dict(ITEM, method="pkg", source={"type": "url", "url": "https://example.org/Foo-1.0.pkg", "version": "1.0"})
+
+    def tearDown(self):
+        self.env.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_it_is_verified_kept_recorded_and_offered_never_run(self):
+        opened = []
+        with flag_settable():
+            e = I.install(self.item, archive=self.pkg, info={"version": "1.0", "sha256": sha(self.pkg)}, open_pkg=lambda p: opened.append(p) or True)
+        kept = I.state_dir() / "installers" / "fooverb" / "Foo-1.0.pkg"
+        self.assertEqual((e["method"], e["paths"], e["installer"], e["opened"]), ("pkg", [], str(kept), True))
+        self.assertTrue(e["sha256_checked"])
+        self.assertEqual(opened, [kept])
+        self.assertEqual(kept.read_bytes(), self.pkg.read_bytes())
+        self.assertIn("Installer", e["note"])
+        self.assertEqual(I.manifest()["items"]["fooverb"]["installer"], str(kept))
+        self.assertFalse((self.root / "Library").exists())
+
+    def test_an_installer_that_could_not_be_marked_is_kept_but_not_opened(self):
+        opened = []
+        with mock.patch.object(I, "_quarantine", return_value=False):
+            e = I.install(self.item, archive=self.pkg, info={"version": "1.0", "sha256": sha(self.pkg)},
+                          open_pkg=lambda p: opened.append(p) or True)
+        self.assertEqual(opened, [])                                       # the Installer is not offered an unmarked file
+        self.assertFalse(e["opened"])
+        self.assertFalse(e["quarantined"])
+        self.assertTrue(Path(e["installer"]).is_file())                    # but it is kept, and recorded
+        self.assertIn("NOT opened", e["note"])
+        self.assertIn("downloaded from the internet", e["note"])
+        self.assertEqual(I.manifest()["items"]["fooverb"]["installer"], e["installer"])
+
+    def test_show_installer_does_not_open_an_unmarked_package_either(self):
+        calls = []
+        kept = self.tmp / "k.pkg"
+        kept.write_bytes(b"xar!")
+        real_env = {k: v for k, v in os.environ.items() if k != "HYPNOMIX_STORE_NO_OPEN"}
+        with mock.patch.dict(os.environ, real_env, clear=True), mock.patch.object(I.sys, "platform", "darwin"), \
+                mock.patch.object(I, "_is_quarantined", return_value=False), mock.patch.object(I, "_quarantine", return_value=False), \
+                mock.patch.object(I.subprocess, "run", side_effect=lambda *a, **k: calls.append(a) or mock.Mock(returncode=0)):
+            self.assertFalse(I._open_pkg(kept))
+            self.assertEqual(calls, [])
+        with mock.patch.dict(os.environ, real_env, clear=True), mock.patch.object(I.sys, "platform", "darwin"), \
+                mock.patch.object(I, "_is_quarantined", return_value=False), mock.patch.object(I, "_quarantine", return_value=True), \
+                mock.patch.object(I.subprocess, "run", side_effect=lambda *a, **k: calls.append(a) or mock.Mock(returncode=0)):
+            self.assertTrue(I._open_pkg(kept))                              # marked just now, then offered
+            self.assertEqual(calls[0][0][:3], ["open", "-b", "com.apple.installer"])
+
+    def test_odd_file_names_are_not_plain_file_names(self):
+        for bad in (".pkg", ".hidden.pkg", "\u202egkp.pkg", "a\u200bb.pkg", "x\u2066y.pkg", "../x.pkg", "a/b.pkg", "a:b.pkg",
+                    "x.pkg\n", " x.pkg", "", ".", ".."):
+            with self.subTest(bad):
+                self.assertFalse(C.safe_part(bad))
+        for good in ("Foo-1.0.pkg", "Six Sines 1.2.dmg", "Wavetable_v2.tar.gz", "R\u00e9verb.pkg"):
+            with self.subTest(good):
+                self.assertTrue(C.safe_part(good))
+        it = dict(ITEM, method="pkg", source={"type": "url", "url": "https://example.org/%E2%80%AEgkp.pkg", "version": "1.0"})
+        self.assertTrue(any("plain file name" in e for e in C.validate({"schema": 1, "version": 1, "items": [it]})))
+
+    def test_a_wrong_fingerprint_keeps_nothing(self):
+        with self.assertRaises(I.StoreError) as cm:
+            I.install(self.item, archive=self.pkg, info={"version": "1.0", "sha256": "0" * 64}, open_pkg=lambda p: self.fail("offered"))
+        self.assertIn("sha256 does not match", str(cm.exception))
+        self.assertFalse((I.state_dir() / "installers").exists())
+
+    def test_without_a_fingerprint_it_needs_the_second_yes_and_says_administrator(self):
+        with self.assertRaises(I.NotVerified) as cm:
+            I.install(self.item, archive=self.pkg, info={"version": "1.0"})
+        self.assertIn("administrator rights", str(cm.exception))
+
+    def test_a_file_that_only_has_the_name_is_refused(self):
+        fake = self.tmp / "Fake.pkg"
+        fake.write_bytes(b"MZ not an installer")
+        with self.assertRaises(I.StoreError) as cm:
+            I.install(self.item, archive=fake, info={"version": "1.0", "sha256": sha(fake)}, open_pkg=lambda p: self.fail("offered"))
+        self.assertIn("is not one", str(cm.exception))
+        self.assertFalse((I.state_dir() / "installers").exists())
+
+    def test_an_old_style_package_folder_in_an_archive_still_works(self):
+        z = self.tmp / "x.zip"
+        with zipfile.ZipFile(z, "w") as zf:
+            zf.writestr("Old Style.mpkg/Contents/Info.plist", "<plist/>")
+        e = I.install(self.item, archive=z, info={"version": "1"}, confirm_unverified=True, open_pkg=lambda p: True)
+        self.assertEqual(Path(e["installer"]).name, "Old Style.mpkg")
+        self.assertTrue(Path(e["installer"]).is_dir())
+
+
+class FakeTime:
+    """A clock that only moves when the code under test sleeps (or is asked the time), so a time limit is tested without waiting."""
+    def __init__(self, step=0.0):
+        self.now, self.step = 1000.0, step
+
+    def __call__(self):
+        self.now += self.step
+        return self.now
+
+    def sleep(self, s):
+        self.now += s
+
+
+class FakeProc:
+    """Stands in for a long unpacking command: it finishes `lasts` fake seconds after it was started."""
+    clock, lasts, made = None, 0, []
+
+    def __init__(self, cmd, **kw):
+        self.cmd, self.returncode, self.killed = cmd, None, False
+        self.until = FakeProc.clock.now + FakeProc.lasts
+        FakeProc.made.append(self)
+
+    def poll(self):
+        if self.returncode is None and FakeProc.clock.now >= self.until:
+            self.returncode = 0
+        return self.returncode
+
+    def kill(self):
+        self.killed, self.returncode = True, -9
+
+    def wait(self):
+        return self.returncode
+
+
+class UnpackTimeLimit(unittest.TestCase):
+    """An unpack or a copy may take 15 minutes plus a second for every 2 MB (of the download, or of what it says it holds,
+    if that is more), never more than 2 hours: so a multi-gigabyte archive is no longer killed at a fixed 15 minutes."""
+
+    def run_for(self, archive_bytes, lasts, cancel=None, claims=0):
+        ft = FakeTime()
+        FakeProc.clock, FakeProc.lasts, FakeProc.made = ft, lasts, []
+        b = I.Budget(archive_bytes, cancel=cancel)
+        if claims:
+            b.add(claims)
+        with mock.patch.object(I, "_clock", ft), mock.patch.object(I, "_sleep", ft.sleep), mock.patch.object(I.subprocess, "Popen", FakeProc):
+            return I._run_limited(["unpack", "x"], "unpacking", None, b)
+
+    def test_the_rule(self):
+        mb = 10 ** 6
+        self.assertEqual(I.unpack_limit(0), 15 * 60)
+        self.assertEqual(I.unpack_limit(None), 15 * 60)
+        self.assertEqual(I.unpack_limit(100 * mb), 900 + 50)
+        self.assertEqual(I.unpack_limit(3000 * mb), 900 + 1500)               # 3 GB: 40 minutes
+        self.assertEqual(I.unpack_limit(10 ** 12), 2 * 3600)                  # never more than 2 hours
+        self.assertEqual(I.unpack_limit(14 * 10 ** 9), 2 * 3600)
+        self.assertGreater(I.unpack_limit(6 * 10 ** 9), I.unpack_limit(3 * 10 ** 9))
+        self.assertEqual(I.Budget(10 * mb).limit_s(), I.unpack_limit(10 * mb))
+        b = I.Budget(10 * mb)
+        b.max_bytes = 10 ** 11
+        b.add(3 * 10 ** 9)                                                    # an archive that says it holds 3 GB gets 3 GB's time
+        self.assertEqual(b.limit_s(), I.unpack_limit(3 * 10 ** 9))
+
+    def test_the_ceiling_is_reached_at_12_point_6_gb_and_minutes_round_up(self):
+        self.assertEqual(I.unpack_limit(12.6e9), 2 * 3600)
+        self.assertLess(I.unpack_limit(12.5e9), 2 * 3600)
+        self.assertEqual(I.unpack_limit(10e9), 900 + 5000)                    # 98 minutes, below the ceiling
+        self.assertEqual(I._duration(900), "15 minutes")
+        self.assertEqual(I._duration(950), "16 minutes")                      # 100 MB: 16, as the article says
+        self.assertEqual(I._duration(2400), "40 minutes")
+        self.assertEqual(I._duration(5900), "99 minutes")
+        self.assertEqual(I._duration(7200), "2 hours")
+        self.assertEqual(I._duration(90), "90 seconds")
+        art = (Path(I.__file__).parents[1] / "app" / "wiki" / "articles" / "18-store.html").read_text()
+        self.assertIn("about 13 GB up gets the 2 hours", art)
+        self.assertNotIn("about 14 GB", art)
+
+    def test_a_big_archive_gets_the_time_its_size_needs(self):
+        self.run_for(3 * 10 ** 9, lasts=2000)                                 # 33 minutes: inside 40, far past the old fixed 15
+        self.assertFalse(FakeProc.made[0].killed)
+        self.run_for(10 * 10 ** 6, lasts=800)                                 # a small one that is quick is fine too
+        self.assertFalse(FakeProc.made[0].killed)
+
+    def test_a_small_archive_is_stopped_at_its_short_limit_in_plain_words(self):
+        with self.assertRaises(I.StoreError) as cm:
+            self.run_for(10 * 10 ** 6, lasts=2000)
+        msg = str(cm.exception)
+        self.assertIn("took longer than the 16 minutes the store allows for a download of 10 MB", msg)
+        self.assertIn("nothing was installed", msg)
+        self.assertIn("try again", msg)
+        self.assertTrue(FakeProc.made[0].killed)                              # the command was stopped, not left running
+
+    def test_the_upper_bound_holds_and_is_named(self):
+        with self.assertRaises(I.StoreError) as cm:
+            self.run_for(100 * 10 ** 9, lasts=3 * 3600)
+        self.assertIn("the 2 hours the store allows for a download of 100.0 GB", str(cm.exception))
+        self.run_for(100 * 10 ** 9, lasts=7000)                               # just inside the ceiling
+
+    def test_the_person_can_cancel_a_long_unpack(self):
+        with self.assertRaises(I.StoreError) as cm:
+            self.run_for(3 * 10 ** 9, lasts=2000, cancel=lambda: True)
+        self.assertIn("cancelled", str(cm.exception))
+        self.assertTrue(FakeProc.made[0].killed)
+
+    def test_unpacking_in_python_follows_the_same_limit_and_cancel(self):
+        tar = Path(tempfile.mkdtemp(prefix="hx-store-lim-")) / "t.tar"
+        self.addCleanup(shutil.rmtree, tar.parent, ignore_errors=True)
+        with tarfile.open(tar, "w") as tf:
+            for n in range(5):
+                ti = tarfile.TarInfo(f"Kit/f{n}.txt")
+                ti.size = 1
+                tf.addfile(ti, io.BytesIO(b"x"))
+        zp = tar.with_name("z.zip")
+        with zipfile.ZipFile(zp, "w") as zf:
+            for n in range(5):
+                zf.writestr(f"Kit/f{n}.txt", "x")
+        for src in (tar, zp):
+            with self.subTest(src.name):
+                with mock.patch.object(I, "_clock", FakeTime(step=2000)), mock.patch.object(I.sys, "platform", "linux"):
+                    with self.assertRaises(I.StoreError) as cm:
+                        I.unpack(src, src.parent / ("slow-" + src.name))
+                self.assertIn("took longer than the 15 minutes", str(cm.exception))
+                with mock.patch.object(I.sys, "platform", "linux"):
+                    with self.assertRaises(I.StoreError) as cm:
+                        I.unpack(src, src.parent / ("stop-" + src.name), I.Budget(src.stat().st_size, cancel=lambda: True))
+                self.assertIn("cancelled", str(cm.exception))
+                with mock.patch.object(I.sys, "platform", "linux"):
+                    out = I.unpack(src, src.parent / ("ok-" + src.name))       # and with no trouble it unpacks
+                self.assertEqual(len(list((out / "Kit").iterdir())), 5)
+
+    def test_the_listing_of_a_7z_is_watched_for_cancel_and_the_limit(self):
+        src = Path(tempfile.mkdtemp(prefix="hx-store-7z-")) / "Big.7z"
+        self.addCleanup(shutil.rmtree, src.parent, ignore_errors=True)
+        src.write_bytes(b"7z\xbc\xaf\x27\x1c" + b"\0" * 100)
+
+        def go(lasts, cancel=None, nbytes=3 * 10 ** 9):
+            ft = FakeTime()
+            FakeProc.clock, FakeProc.lasts, FakeProc.made = ft, lasts, []
+            b = I.Budget(nbytes, cancel=cancel)
+            with mock.patch.object(I, "_clock", ft), mock.patch.object(I, "_sleep", ft.sleep), \
+                    mock.patch.object(I.subprocess, "Popen", FakeProc), mock.patch.object(I.shutil, "which", return_value="/usr/bin/bsdtar"), \
+                    mock.patch.object(I, "_run_limited"), mock.patch.object(I, "_check_links"):
+                I._unpack(src, src.parent / "out", b)
+        with self.assertRaises(I.StoreError) as cm:                           # Cancel is honoured while the archive is listed
+            go(lasts=2000, cancel=lambda: True)
+        self.assertIn("cancelled", str(cm.exception))
+        self.assertTrue(FakeProc.made[0].killed)
+        with self.assertRaises(I.StoreError) as cm:                           # and the limit for ITS size applies (3 GB: 40 minutes)
+            go(lasts=2500)
+        self.assertIn("Listing the archive took longer than the 40 minutes", str(cm.exception))
+        self.assertTrue(FakeProc.made[0].killed)
+        go(lasts=2000)                                                        # inside the 40 minutes it goes on (FakeProc lists nothing)
+        self.assertFalse(FakeProc.made[0].killed)
+
+    def _dmg(self, size_mb, cancel=None, clock=None, claims=None):
+        """Run _dmg_copy with the attach faked: a mounted folder holding one top-level file of size_mb MB."""
+        tmp = Path(tempfile.mkdtemp(prefix="hx-store-dmg-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        src, dest = tmp / "Thing.dmg", tmp / "out"
+        src.write_bytes(b"dmg")
+        dest.mkdir()
+        attach = []
+
+        def fake_attach(cmd, what, watch, budget, timeout=None):
+            attach.append((what, timeout))
+            mnt = Path(cmd[cmd.index("-mountpoint") + 1])
+            (mnt / "Installer.pkg").write_bytes(b"xar!" + b"\0" * (size_mb * 1024 * 1024))
+            return 0, ""
+        b = I.Budget(3 * 10 ** 9, cancel=cancel)
+        with mock.patch.object(I.sys, "platform", "darwin"), mock.patch.object(I, "_run_watched", fake_attach), \
+                mock.patch.object(I.subprocess, "run", return_value=mock.Mock(returncode=0)), \
+                mock.patch.object(I, "_clock", clock or time.monotonic):
+            try:
+                I._dmg_copy(src, dest, b)
+            finally:
+                self.dmg_result = (attach, dest)
+        return attach, dest
+
+    def test_a_disk_image_is_attached_by_size_and_a_big_file_in_it_can_be_cancelled(self):
+        attach, dest = self._dmg(1)                                           # no trouble: attached with the 3 GB limit, copied whole
+        self.assertEqual(attach, [("opening the disk image", I.unpack_limit(3 * 10 ** 9))])
+        self.assertEqual((dest / "Installer.pkg").stat().st_size, 4 + 1024 * 1024)
+        calls = []
+        def cancel_after_first_piece():
+            calls.append(1)
+            return len(calls) > 4                                             # the copy is under way when Cancel comes
+        with self.assertRaises(I.StoreError) as cm:
+            self._dmg(40, cancel=cancel_after_first_piece)                    # a 40 MB file: 5 pieces of 8 MB
+        self.assertIn("cancelled", str(cm.exception))
+        self.assertLess((self.dmg_result[1] / "Installer.pkg").stat().st_size, 40 * 1024 * 1024)   # stopped part-way
+
+    def test_a_file_copied_out_of_a_disk_image_obeys_the_time_limit(self):
+        with self.assertRaises(I.StoreError) as cm:
+            self._dmg(20, clock=FakeTime(step=1500))                          # each look at the clock costs 25 fake minutes
+        self.assertIn("took longer than the 40 minutes", str(cm.exception))
+
+    def test_no_caller_still_has_the_old_fixed_limit(self):
+        text = Path(I.__file__).read_text()
+        self.assertEqual(text.count("timeout=900"), 1)                        # only the default of the short listing helper
+        section = lambda fn: text.split("def " + fn, 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("limit_s()", section("_dmg_copy"))                      # the disk image is opened and copied by size
+        self.assertIn("unpack_limit(", section("_copy_tree"))
+        self.assertIn("limit_s()", section("_run_watched"))
 
 
 if __name__ == "__main__":

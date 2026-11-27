@@ -41,13 +41,13 @@ WARP = {"0": "Beats", "1": "Tones", "2": "Texture", "3": "Re-Pitch", "4": "Compl
 
 
 def cache_dir():
-    """The cache `voices --learn` fills: <hypnomix home>/cache, the same place every other cache lives (HYPNOMIX_HOME)."""
+    """The cache `voices --learn` fills: <HypnoMix home>/cache, the same place every other cache lives (HYPNOMIX_HOME)."""
     from hypnomix.core.atomic import cache_root
     return cache_root()
 
 
 def profile_path():
-    """Your taste profile: <hypnomix home>/taste.json (HYPNOMIX_HOME decides the home)."""
+    """Your taste profile: <HypnoMix home>/taste.json (HYPNOMIX_HOME decides the home)."""
     return cache_dir().parent / "taste.json"
 
 

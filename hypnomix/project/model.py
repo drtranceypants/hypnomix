@@ -328,7 +328,7 @@ def render_clip(c, sr, warn, name=""):
 
 
 def render_clips(track, N, sr, warn):
-    """Clips summed onto the timeline. An opaque clip (Ardour) covers what is under it, crossfading through
+    """Clips summed onto the timeline. An opaque clip (HypnoMix DAW) covers what is under it, crossfading through
     its own fades, so clips are laid down from the lowest layer up."""
     y = np.zeros(N)
     for c in sorted(track.clips, key=lambda c: (c.layer, c.start)):

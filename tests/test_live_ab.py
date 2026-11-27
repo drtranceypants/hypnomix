@@ -3,7 +3,7 @@ import json, os, shutil, subprocess, tempfile, threading, time, unittest, urllib
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
-JSC = "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc"
+from tests import _jscheck
 
 FAKE_LIVE = r"""
 var SET = {tracks: [{name: "Vox", mute: 0, devices: [{name: "EQ Eight", on: 1}, {name: "Compressor", on: 1}, {name: "B · dev-1", on: 0}]},
@@ -43,15 +43,15 @@ SPEC = {"id": "dev-1", "ab": {"set": "Song (A-B).als", "parts": [
     {"mode": "tracks", "a": ["Gtr"], "b": ["Gtr · B smooth-2"], "a_on": [True], "b_on": [True]}]}}
 
 
-@unittest.skipUnless(os.path.exists(JSC), "needs JavaScriptCore (macOS)")
 class DeviceScript(unittest.TestCase):
     def run_js(self, body):
+        runner = _jscheck.need_runner(self)
         from hypnomix.app import device as D
         js = FAKE_LIVE + D.JS.replace("__PORT__", "8791").replace("__W__", "430").replace("__H__", "169") + body
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / "t.js"
-            f.write_text(js)
-            r = subprocess.run([JSC, str(f)], capture_output=True, text=True, timeout=20)
+            f.write_text(js, encoding="utf-8")
+            r = subprocess.run(runner + [str(f)], capture_output=True, text=True, encoding="utf-8", timeout=20)
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         return json.loads(r.stdout.strip().splitlines()[-1])
 

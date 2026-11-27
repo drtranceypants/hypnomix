@@ -1,5 +1,5 @@
 /* Hypnomix · the Assistant dock: a command palette and a chat in one input (⌘K).
-   REAL, in the hypnomix app with a model key set (Assistant tab) and the engine connected: the chat is the app's
+   REAL, in the HypnoMix app with a model key set (Assistant tab) and the engine connected: the chat is the app's
    Assistant (hypnomix/app/chat.py, the same conversation as the Assistant tab). It reads the session through the
    engine's own tools and proposes every change as a card with Approve / Cancel; nothing changes until you approve.
    DEMO otherwise (no key, no engine, or opened outside the app): the replies are scripted below (intents → proposed
@@ -130,6 +130,7 @@
     cards.push(card);
     msgs.push({ card });
     HX.emit('preview');
+    HX.emit('assistant', { what: 'card' });
   }
   /* Hear it. With an engine it is a real change to the open session, so the APP holds it: before the values are sent, the
      page tells the app (POST /api/chat/preview) what puts each one back; the app puts them back when the card is
@@ -179,6 +180,7 @@
     c.ops.forEach((o) => HX.live(o, o.after));
     HX.log(HX.mcp.connected ? 'mcp' : 'mock', 'audition B · ' + c.title);
     renderBody();
+    HX.emit('assistant', { what: 'hear' });
   }
   async function approve(c) {
     if (c.state !== 'pending') return;
@@ -195,12 +197,14 @@
     if (c.action) { c.result = (await c.action()) || 'Done'; }
     else { await HX.commit('Assistant: ' + c.title, c.ops.map((o) => Object.assign({}, o)), 'assistant'); c.hist = S.history[S.history.length - 1]; }
     HX.emit('preview'); renderBody();
+    HX.emit('assistant', { what: 'answered', how: 'approved' });
     if (c.after) setTimeout(() => { ai(c.after); renderBody(); }, 350);
   }
   async function cancel(c) {
     if (c.state !== 'pending') return;
     if (c.audition) await stopAudition(c, 'cancelled');
     c.state = 'cancelled'; HX.emit('preview'); renderBody();
+    HX.emit('assistant', { what: 'answered', how: 'cancelled' });
   }
   const lastPending = () => [...cards].reverse().find((c) => c.state === 'pending');
 
@@ -239,7 +243,7 @@
     if (/^(stop|pause)\b/.test(q)) { HX.stop(); return { say: 'Stopped.' }; }
 
     if (/scan|review|what.*(wrong|fix)|check the mix|mix check/.test(q)) {
-      return { say: 'A scan saves the session first, then checks vocal level line to line, harmony balance, comp edges, pitch against the chord, stack timing, masking, noise and true peak after AAC. It changes nothing by itself.', card: { title: 'Save the session and scan', ops: [], note: 'Calls session_save, then the hypnomix scan (mock in the demo). Opens Review.', action: async () => { HX.runScan(true); return 'Scanning · see Review'; } }, after: 'Findings are in <b>Review</b> (⌘4). Each one has A/B, Approve, Skip and Change; approved fixes go into one new snapshot.' };
+      return { say: 'A scan saves the session first, then checks vocal level line to line, harmony balance, comp edges, pitch against the chord, stack timing, masking, noise and true peak after AAC. It changes nothing by itself.', card: { title: 'Save the session and scan', ops: [], note: 'Calls session_save, then the HypnoMix scan (mock in the demo). Opens Review.', action: async () => { HX.runScan(true); return 'Scanning · see Review'; } }, after: 'Findings are in <b>Review</b> (⌘4). Each one has A/B, Approve, Skip and Change; approved fixes go into one new snapshot.' };
     }
     if (/line to line|vocal level|levels? (of|on) the (lead|vocal)|vocallevel/.test(q)) {
       const o = clipOp(lead, 'Verse 2 B', 2.5);
@@ -306,6 +310,7 @@
     if (!full && st.total < R.total) { R.total = 0; return realPoll(true); }   // a new conversation (another tab reset it)
     if (full) R.items = [];
     R.items.push(...st.items);
+    if (!full && st.items.some((x) => x.kind === 'ask')) HX.emit('assistant', { what: 'card' });
     /* a card that was drawn earlier keeps its place: how it ended (approved and done, failed, cancelled) comes from the app */
     if (st.asks) R.items.forEach((x) => { const a = x.id && st.asks[x.id]; if (a) Object.assign(x, a); });
     /* a card answered, or the turn finished: read every item again (a card's state is updated in place) */
@@ -348,8 +353,8 @@
     const cls = live ? '' : it.answer === 'ran' ? '.done' : it.answer === 'failed' ? '.failed' : '.cancelled';
     const el = h('div.card' + cls);
     it._seen = it._seen || Date.now();
-    const title = daw ? (it.title || it.tool) : scan ? (it.title || 'Save the session and scan it') : budget ? (it.title || 'This message has used a lot: keep going?') : hear ? 'Listen to the song' : 'Run a hypnomix command';
-    el.append(h('div.card-h', null, h('b', null, title), h('small', null, daw ? 'engine call' : budget ? 'tokens' : scan ? 'scan' : 'hypnomix')));
+    const title = daw ? (it.title || it.tool) : scan ? (it.title || 'Save the session and scan it') : budget ? (it.title || 'This message has used a lot: keep going?') : hear ? 'Listen to the song' : 'Run a HypnoMix command';
+    el.append(h('div.card-h', null, h('b', null, title), h('small', null, daw ? 'engine call' : budget ? 'tokens' : scan ? 'scan' : 'HypnoMix')));
     if ((daw || scan || budget) && it.summary) el.append(h('p', { style: { margin: '6px 8px', color: 'var(--tx2)', fontSize: '11px' } }, it.summary));
     /* what it changes, read from the engine just before the card was shown: before → after */
     if ((it.rows || []).length) el.append(h('table.rows', null, it.rows.map((r) => {
@@ -387,6 +392,7 @@
     it.answer = ok ? (it.what === 'daw' ? 'sending' : 'ran') : 'declined';
     if (ok && it.what === 'daw') { R.ranDaw = true; R.ranTools.push(it.tool); }
     R.pending = null; renderBody(); realPoll(false);
+    HX.emit('assistant', { what: 'answered', how: ok ? 'approved' : 'cancelled' });
   }
   /* after approved engine calls: read the mix again, so faders, mutes, sends and plug-ins show what the engine has */
   async function refreshFromEngine(full) {
@@ -424,6 +430,7 @@
 
   HX.assistantAsk = function (text) {
     if (!text.trim()) return;
+    HX.emit('assistant', { what: 'asked' });                 // the guided tours listen for these (what: asked, card, hear, answered)
     if (R.on) {
       if (HX.$('#app').classList.contains('dock-min')) HX.toggleDock();
       setTab('chat');
@@ -477,7 +484,7 @@
       { k: 'View', n: 'Show keyboard shortcuts', kb: '?', run: HX.showHelp },
       { k: 'Edit', n: 'Undo', kb: '⌘Z', run: HX.undo },
       { k: 'Edit', n: 'Redo', kb: '⇧⌘Z', run: HX.redo },
-      { k: 'Hypnomix', n: 'Scan session', kb: '', run: () => HX.runScan() },
+      { k: 'HypnoMix', n: 'Scan session', kb: '', run: () => HX.runScan() },
       { k: 'Engine', n: HX.mcp.connected ? 'Disconnect from engine' : 'Connect to engine (MCP)', kb: '', run: () => HX.$('#btnConnect').click() },
     ];
     HX.allTracks().forEach((t) => {

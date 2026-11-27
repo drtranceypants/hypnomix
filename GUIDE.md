@@ -1,4 +1,4 @@
-# The hypnomix guide
+# The HypnoMix guide
 
 How to get from a recording to a released song, the craft behind each step, and which command does it. Read it top to bottom once; after that, jump to the section you need.
 
@@ -25,12 +25,12 @@ takes                     align                     masking
 ```
 
 Starting from an unfinished song or a pile of raw takes? Do a first pass before anything else: `hypnomix prefs`
-once, then `hypnomix scan` (a Live set, a REAPER project, an Ardour session, or a folder of recordings from any
+once, then `hypnomix scan` (a Live set, a REAPER project, a HypnoMix DAW session, or a folder of recordings from any
 DAW), review the list, and `hypnomix fix` applies only what you approve. What it cannot change in your DAW comes
 back as a checklist in your DAW's words (`hypnomix handoff`). See [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
-New to audio? The app's **Teacher** tab (`hypnomix app`) is a free course in your own DAW (Live, REAPER or Ardour):
-the complete course from what sound is to releasing a song, a 101 crash course, or a tour of hypnomix. No AI needed.
+New to audio? The app's **Teacher** tab (`hypnomix app`) is a free course in your own DAW (Live, REAPER or HypnoMix DAW):
+the complete course from what sound is to releasing a song, a 101 crash course, or a tour of HypnoMix. No AI needed.
 No song of your own to practise on? `hypnomix demo` writes a 40-second song with six labelled problems.
 
 From a folder of stems to a checked master in one go:
@@ -85,7 +85,7 @@ You get the best whole take, plus a comp list naming the best take for each 4-ba
 
 ## 3. Editing and prep
 
-Assistant engineers spend hours on this before a mix starts. `hypnomix prep` does it in seconds and logs every fix. Check the files first, so a bad export is caught before it costs you an hour:
+Junior engineers in a studio spend hours on this before a mix starts. `hypnomix prep` does it in seconds and logs every fix. Check the files first, so a bad export is caught before it costs you an hour:
 
 ```bash
 hypnomix preflight "raw stems/"     # read-only: mixed sample rates, stems of different length, duplicates, fake stereo, missing files
@@ -124,7 +124,7 @@ hypnomix render "Song.als" --group "Vocals" --tighten 35
 hypnomix render "Song.als" --group "Vocals" --sources "hypnomix-out/dehiss" --tighten 35   # with cleaned sources
 ```
 
-This renders each track from bar 1 with clip gain, clip fades and warping applied, without opening Live. It finds moved files the way Live does. `--tighten 35` silences each clip outside its performance (where the hiss lives). Clips warped with more than two markers are rendered as a straight stretch, and hypnomix warns you when that happens.
+This renders each track from bar 1 with clip gain, clip fades and warping applied, without opening Live. It finds moved files the way Live does. `--tighten 35` silences each clip outside its performance (where the hiss lives). Clips warped with more than two markers are rendered as a straight stretch, and HypnoMix warns you when that happens.
 
 **Doubles and harmonies:**
 
@@ -234,7 +234,7 @@ The chain, in order:
 hypnomix chain master "Song bounce.wav" --target -14 --verify --existing bypass
 ```
 
-| hypnomix stage | Live device | settings |
+| HypnoMix stage | Live device | settings |
 |---|---|---|
 | subsonic + reference tone | EQ Eight | band 1 low cut 12 dB/oct at 22 Hz; bands 2–7 low shelf, bells and high shelf fitted to the reference curve |
 | glue | Glue Compressor | 2:1, 30 ms attack, 0.2 s release, threshold set for ~1.5 dB of gain reduction |
@@ -281,7 +281,7 @@ hypnomix album "Song 1.wav" "Song 2.wav" "Song 3.wav"                           
 
 ## 7. Working inside Live
 
-hypnomix talks to Live through AbletonOSC (bundled, patched: exact dB readout, master and return tracks, clip gain, localhost only). Run `hypnomix doctor` to see what's connected.
+HypnoMix talks to Live through AbletonOSC (bundled, patched: exact dB readout, master and return tracks, clip gain, localhost only). Run `hypnomix doctor` to see what's connected.
 
 **Ground rules:**
 - `hypnomix live snapshot` before changing anything; `hypnomix live restore <file>` to undo.
@@ -298,7 +298,7 @@ hypnomix live params "Lead Vox" "TDR Nova"
 hypnomix live paramd "Lead Vox" "EQ Eight" "1 Frequency A" 2500   # set what Live displays: Hz, dB, ms
 ```
 
-Live shows hypnomix (and its own automation lanes) a limited set of parameters for large plug-ins. `hypnomix install --plugin-params` raises the limit to 128 via `Options.txt` (restart Live), or click the plug-in's Configure button and touch the parameters you want.
+Live shows HypnoMix (and its own automation lanes) a limited set of parameters for large plug-ins. `hypnomix install --plugin-params` raises the limit to 128 via `Options.txt` (restart Live), or click the plug-in's Configure button and touch the parameters you want.
 
 **The A/B loop**, the most useful habit in mixing:
 
@@ -322,7 +322,7 @@ hypnomix profile build song1.wav song2.wav song3.wav song4.wav song5.wav
 
 `loop` and `audit` then flag anything outside your usual range, and so does `scan` when you give it `--mix` (`--no-profile` leaves that out).
 
-### In REAPER, and in Ardour
+### In REAPER, and in HypnoMix DAW
 
 The same loop works on a REAPER project, with REAPER open: `hypnomix scan "Song.rpp"`, review, then
 `hypnomix fix DIR --approved --out "Song (fixed).rpp"` writes what you approved into a new project (fades, rides,
@@ -331,9 +331,9 @@ word edges, track names and order; tuned vocals as new takes on your own items).
 plug-ins and land it on your loudness target. Every change in REAPER is one undo step. The full walk-through is
 guide 8, `docs/guides/08-inside-reaper.md`.
 
-For an Ardour session (Ardour 3 to 9), `hypnomix scan "Song/"` and `hypnomix project "Song/"` read it the same way, and
+For a HypnoMix DAW session (`.ardour`; the wiki article "HypnoMix DAW" says what that is), `hypnomix scan "Song/"` and `hypnomix project "Song/"` read it the same way, and
 `fix` writes approved fades, gain, dips and fader, pan and mute moves into one new `.ardour` snapshot beside it. That
-snapshot is written and re-read by hypnomix and has not yet been opened in Ardour, so open it and look first. Whatever
+snapshot is written and re-read by HypnoMix and has not yet been opened in a released DAW, so open it in a DAW that reads `.ardour` sessions and look first. Whatever
 else belongs in the session comes back as a checklist: `hypnomix handoff "<scan folder>"`.
 
 ---
@@ -389,7 +389,7 @@ and [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 ## 10. Your own standards
 
-Good defaults are someone else's taste. hypnomix can measure yours:
+Good defaults are someone else's taste. HypnoMix can measure yours:
 
 ```bash
 hypnomix prefs                                        # asked once: targets, protected tracks, what is deliberate

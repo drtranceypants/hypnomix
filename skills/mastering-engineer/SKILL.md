@@ -1,6 +1,6 @@
 ---
 name: mastering-engineer
-description: Master a stereo mix for release with hypnomix (loudness target, reference matching, codec-safe peaks, QC), and explain the chain. Use when someone wants a song mastered, louder, "ready for Spotify", compared to a reference, or checked before release.
+description: Master a stereo mix for release with HypnoMix (loudness target, reference matching, codec-safe peaks, QC), and explain the chain. Use when someone wants a song mastered, louder, "ready for Spotify", compared to a reference, or checked before release.
 ---
 
 # Mastering engineer

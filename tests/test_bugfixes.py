@@ -55,7 +55,7 @@ class ReadErrors(Temp):
         bad = self.d / "bad.wav"; bad.write_text("not audio")
         with self.assertRaises(dsp.AudioReadError) as c:
             dsp.load(bad)
-        self.assertIn("not an audio file hypnomix can decode", str(c.exception))
+        self.assertIn("not an audio file HypnoMix can decode", str(c.exception))
         with self.assertRaises(dsp.AudioReadError) as c:
             dsp.load(self.d)
         self.assertIn("folder", str(c.exception))
@@ -79,11 +79,15 @@ class ReadErrors(Temp):
         with self.assertRaises(dsp.AudioReadError):
             run_cli(["translate", str(self.d / "missing.wav")], debug=True)
 
-    def test_real_bugs_still_raise(self):
+    def test_real_bugs_end_with_a_crash_record_and_exit_70_and_raise_when_debugging(self):
         from hypnomix import cli
         with mock.patch.object(cli, "_main", side_effect=ZeroDivisionError("boom")):
+            code, _, err = run_cli(["measure"])
+            self.assertEqual(code, 70)
+            self.assertIn("HypnoMix hit a bug", err)
+            self.assertNotIn("Traceback", err)
             with self.assertRaises(ZeroDivisionError):
-                cli.main(["measure"])
+                run_cli(["measure"], debug=True)
 
 
 class Measure(Temp):
@@ -399,7 +403,12 @@ class Prefs(Temp):
     def test_daw_question_matches_setup_ids(self):
         from hypnomix.app import setup
         q = next(q for q in self.P.QUESTIONS if q["key"] == "tools.daw")
-        self.assertEqual(q["options"], [d["id"] for d in setup.DAWS])
+        # HypnoMix DAW is built on Ardour: Preferences read that choice as "ardour" (prefs._DAW_WORDS), so it is not an option of its own
+        # (Setup no longer asks "Ardour" as a choice of its own; Preferences still reads Ardour sessions, so it keeps that answer)
+        ids = [d["id"] for d in setup.DAWS if d["id"] != "hypnomix"]
+        self.assertEqual(q["options"], ids[:-1] + ["ardour"] + ids[-1:])
+        self.assertIn("ardour", setup.DAW_IDS)                                        # and an Ardour choice saved before still works
+        self.assertEqual(self.P.daw({"tools": {"daw": "hypnomix"}}), "ardour")
 
     def test_wants(self):
         P = self.P

@@ -1,7 +1,7 @@
-"""Start menu entry for the Windows install: start the hypnomix app (if it is not running) and open it.
+"""Start menu entry for the Windows install: start the HypnoMix app (if it is not running) and open it.
 
     pythonw launcher.pyw          start it, then open http://127.0.0.1:8791 in the default browser
-    pythonw launcher.pyw --stop   stop it (the "Quit hypnomix" entry, and the uninstaller)
+    pythonw launcher.pyw --stop   stop it (the "Quit HypnoMix" entry, and the uninstaller)
     pythonw launcher.pyw --quiet  start it without opening a browser tab (after an update: the open tab reloads itself)
 
 The server runs with python.exe in a hidden console, so the programs it calls (ffmpeg) share that console
@@ -28,7 +28,7 @@ def up():
 
 def message(text):
     import ctypes
-    ctypes.windll.user32.MessageBoxW(None, text, "hypnomix", 0x40)
+    ctypes.windll.user32.MessageBoxW(None, text, "HypnoMix", 0x40)
 
 
 def stop():
@@ -64,7 +64,7 @@ def start(show=True):
         if p.poll() is not None:
             break
         time.sleep(0.25)
-    message(f"hypnomix did not start. What it said is in\n{LOG}\n\nIf another program uses port {PORT}, close it and try again.")
+    message(f"HypnoMix did not start. What it said is in\n{LOG}\n\nIf another program uses port {PORT}, close it and try again.")
 
 
 if __name__ == "__main__":

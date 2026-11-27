@@ -11,7 +11,7 @@ Also the tempo and tracks added, removed or renamed.
 Use it after any tool writes a new set, to see exactly what it did, and before opening the set in Live.
 `hypnomix fix` writes this list into its log. Plug-in internals that Live stores as opaque data are not
 compared; --all also lists changes to parameters that are not plain numbers or switches.
-Live sets (.als) only: a REAPER project or an Ardour session is refused with one sentence (`fix` lists what it changed
+Live sets (.als) only: a REAPER project or a HypnoMix DAW session is refused with one sentence (`fix` lists what it changed
 there in fix-log.md).
 """
 import argparse, json, math, sys

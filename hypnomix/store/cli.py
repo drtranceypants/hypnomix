@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Hypnomix store from the command line: free and open-source plug-ins, synths, instruments, drum kits and
+"""The HypnoMix store from the command line: free and open-source plug-ins, synths, instruments, drum kits and
 sample packs, from their publishers' own downloads. The app's Store tab does the same with buttons.
 
 macOS only for now: on another system this command says so and does nothing else (HYPNOMIX_STORE_ROOT, below, is
@@ -8,6 +8,7 @@ only for trying it out).
   hypnomix store                       list everything, with what is installed
   hypnomix store search reverb         search names, makers and descriptions
   hypnomix store search --kind synth --format CLAP --open
+  hypnomix store list --mpe            only the items whose maker documents MPE (per-note pitch bend, pressure and slide)
   hypnomix store info surge-xt         licence, formats, source, and the exact download it would fetch
   hypnomix store install surge-xt      download (HTTPS, sha256-checked when known), unpack, copy into place
   hypnomix store install surge-xt --replace   also replace copies the store did not install (moved to its trash)
@@ -19,8 +20,11 @@ only for trying it out).
 
 Plug-ins go into ~/Library/Audio/Plug-Ins/<VST3|Components|CLAP|LV2>/, content into ~/Music/Hypnomix Library/.
 Downloads have limits (size, time, free disk space, and how far an archive may unpack), so a wrong or hostile file
-stops early. Nothing from a download is run. Items that ship only as an installer package (.pkg) are opened in Apple's
-Installer for you to read and run yourself; uninstall those with the publisher's instructions.
+stops early (an unpack may take 15 minutes plus a second per 2 MB, at most 2 hours; Ctrl-C or the app's Cancel stops it
+sooner). Nothing from a download is run. Items that ship only as an installer package (.pkg), whether it is found inside
+a disk image or archive or is the download itself, are kept (marked as downloaded from the internet) and opened in Apple's
+Installer for you to read and run yourself; uninstall those with the publisher's instructions. `info` also shows a
+catalogue item's note (what to know before installing it) and what its maker documents about MPE.
 HYPNOMIX_STORE_ROOT=/a/folder puts every target under that folder instead (for trying it out).
 """
 import argparse
@@ -36,7 +40,7 @@ def _row(it, st):
     s = st.get(it["id"], {})
     mark = "installed " + (s.get("version") or "") if s.get("installed") else ""
     oss = "open source" if it["open_source"] else "freeware"
-    return f"  {it['id']:<26} {it['name']:<34} {it['kind']:<15} {it['licence']:<13} {oss:<12} {mark}"
+    return f"  {it['id']:<26} {it['name']:<34} {it['kind']:<15} {it['licence']:<13} {oss:<12} {'MPE' if it.get('mpe') else '':<4}{mark}"
 
 
 def _parser():
@@ -49,6 +53,7 @@ def _parser():
     ap.add_argument("--kind", default="", choices=[""] + list(C.KINDS))
     ap.add_argument("--format", default="", choices=[""] + list(C.FORMATS))
     ap.add_argument("--open", action="store_true", help="open-source only")
+    ap.add_argument("--mpe", action="store_true", help="only items whose maker documents MPE (per-note pitch bend, pressure and slide)")
     ap.add_argument("--licence", default="")
     ap.add_argument("--replace", action="store_true", help="replace copies the store did not install")
     ap.add_argument("--unverified", action="store_true",
@@ -72,7 +77,7 @@ def main():
         sys.exit(str(e))
     if a.action in ("list", "search"):
         st = I.status(its)
-        hits = C.search(its, " ".join(a.words), a.kind, a.format, a.licence, True if a.open else None)
+        hits = C.search(its, " ".join(a.words), a.kind, a.format, a.licence, True if a.open else None, True if a.mpe else None)
         print("\n".join(_row(it, st) for it in hits) or "nothing matches")
         return
     if not a.words:
@@ -84,6 +89,10 @@ def main():
                 print(f"{k:>12}: {it[k]}")
             if it.get("credit"):
                 print(f"{'credit':>12}: {it['credit']}")
+            if it.get("mpe"):
+                print(f"{'MPE':>12}: {it['mpe_note']}")
+            if it.get("note"):
+                print(f"{'note':>12}: {it['note']}")
             r = I.resolve(it)
             print(f"{'download':>12}: {r.get('url') or r.get('page')}\n{'version':>12}: {r.get('version')}\n"
                   f"{'sha256':>12}: {r.get('sha256') or 'not published: NOT VERIFIED, installing needs --unverified'}")
@@ -132,7 +141,7 @@ def card_text(command, args):
         risky = any(len(x) >= 3 and "--unverified".startswith(x) for x in a if x.startswith("--"))   # that looks like the flag
     if risky:
         return ("hypnomix store " + " ".join(shlex.quote(x) for x in a) + "\n\nNOT VERIFIED: this download has no fingerprint (sha256) from its "
-                "publisher to be checked against, so hypnomix cannot tell whether the file is the one the publisher "
+                "publisher to be checked against, so HypnoMix cannot tell whether the file is the one the publisher "
                 "released. Say yes only if you trust where it comes from. (An installer package would run with "
                 "administrator rights once you click through Apple's Installer.)")
     return None

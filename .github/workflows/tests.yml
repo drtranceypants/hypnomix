@@ -2,11 +2,13 @@
 # (pyproject.toml: requires-python >=3.9). The tests build synthetic audio and sessions in temporary folders and move
 # themselves onto temporary hypnomix folders (tests/_isolate.py), so the job needs no setup of its own.
 #
-# CI=true makes the tests that need an optional extra (the Assistant's SDKs) or a tool (Node.js, for the page-script
-# parse check) fail when it is missing instead of skipping: a skipped safety test says "OK" (tests/test_repo_rules.py).
+# CI=true makes the tests that need an optional extra (the Assistant's SDKs) or a tool (Node.js, which runs the page and
+# device scripts and parses every page script) fail when it is missing instead of skipping: a skipped safety test says
+# "OK" (tests/test_repo_rules.py). Node.js comes with the ubuntu-latest image; the first step checks that it is there, so
+# a runner image without it stops the job at once with a sentence, not with skipped tests.
 #
-# NOT YET RUN: this file was written without access to GitHub. The first run may show tests that assume a Mac (the
-# suite has so far run on macOS only); those need a skip with a stated reason or a fix, not a quieter job.
+# On Python 3.9 the Assistant extra installs without Anthropic's library (it needs 3.10; pyproject.toml), and the tests that
+# use it run against the stand-ins they always use (tests/_isolate.py).
 name: tests
 
 on:
@@ -32,6 +34,10 @@ jobs:
       CI: "true"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Node.js is there (the tests that run page and device scripts need it)
+        run: |
+          command -v node >/dev/null || { echo "::error::Node.js is not on this runner: the page and device script tests would be skipped"; exit 1; }
+          node --version
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
       - name: System programs the tests use (audio libraries, ffmpeg, Rubber Band)
         run: |

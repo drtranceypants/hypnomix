@@ -15,21 +15,21 @@ CHAPTER = dict(id="record", levels=("101", "az"), title="Your first recording", 
        say=["The **click** (metronome) ticks on every beat while you play. Recording to it keeps the bar lines meaningful, so "
             "later you can copy a chorus, drop in drums or fix one word without everything drifting.",
             "It doesn't make you a machine. Play with it, not *at* it: being a little ahead or behind is the feel of the "
-            "song, and hypnomix never forces your playing onto the grid. Give yourself a **count-in** (one or two bars of "
+            "song, and HypnoMix never forces your playing onto the grid. Give yourself a **count-in** (one or two bars of "
             "click before recording starts) so you come in on time.",
             "In your headphones, not the speakers: a click in the room ends up on the vocal mic."],
        how={"live": ["Click the metronome icon (the two circles next to the tempo) so it lights up.",
                      "Its little arrow menu: set **Count-In** to 1 Bar.", "The click goes to your headphones through Live's Cue output (open Live's Preferences, called Settings in Live 12, then Audio, and use the Mixer's Cue Out)."],
             "reaper": ["Click the metronome button in the transport bar (or Options → Metronome) so it's on.",
                        "Right-click it → Metronome settings: tick **Count-in before recording** (2 bars is comfortable)."],
-            "ardour": ["Click the **Click** button in the toolbar so it lights up.", "In the Transport menu, choose **Record w/Count-In**: Ardour clicks two bars before it starts recording."]},
+            "ardour": ["Click the **Click** button in the toolbar so it lights up.", "In the Transport menu, choose **Record w/Count-In**: HypnoMix DAW clicks two bars before it starts recording."]},
        action={d: dict(kind="click") for d in LR}),
   dict(id="drums", title="A drum beat to play over (optional)", daws=ALL,
        say=["A click is honest but dull. A simple drum beat on a **MIDI track** is nicer to play to, and you can replace it "
             "with real drums or a better beat later.",
             "MIDI is notes, not sound: each note says *which drum, when, how hard*. The drum kit on the track turns those "
             "notes into sound, so you can change the kit, the tempo or a single hit at any time.",
-            "hypnomix can add a four-bar beat: kick, snare on 2 and 4, eighth-note hi-hats, with small differences in how "
+            "HypnoMix can add a four-bar beat: kick, snare on 2 and 4, eighth-note hi-hats, with small differences in how "
             "hard each hit lands so it doesn't sound like a typewriter."],
        terms=[["MIDI track", "a track that holds notes and plays an instrument (here a drum kit) instead of holding a recording."],
               ["Velocity", "how hard a note is played, 1 to 127."], ["Loop", "a clip or region that repeats."]],
@@ -64,7 +64,7 @@ CHAPTER = dict(id="record", levels=("101", "az"), title="Your first recording", 
             "Sing or play the **loudest** part of the song and turn the knob until the track's meter peaks around **-12 to "
             "-6 dB**, about two-thirds of the way up, never in the red. That leaves room for the moment you sing louder than "
             "you did in the soundcheck. Recording quieter than you'd think is normal in 24-bit: there's no need to record hot.",
-            "hypnomix can listen to your input for about 15 seconds while you sing or play your loudest part (`hypnomix soundcheck`), and tell you which way to turn the knob."],
+            "HypnoMix can listen to your input for about 15 seconds while you sing or play your loudest part (`hypnomix soundcheck`), and tell you which way to turn the knob."],
        settings=[["Peaks while you play your loudest", "-12 to -6 dBFS", "room for a louder take; never touches 0"],
                  ["Recording format", "24-bit, 44.1 or 48 kHz", "24-bit keeps quiet parts clean at sensible levels"],
                  ["Mic distance (vocal)", "a hand's width, with a pop filter", "closer is boomier, further is roomier"]],
@@ -90,13 +90,13 @@ CHAPTER = dict(id="record", levels=("101", "az"), title="Your first recording", 
             "four-bar loop into one slot, another idea into the next, and play them against each other. A row of clips "
             "across the tracks is a **scene**: a verse, a chorus.",
             "When an idea works, record it into the Arrangement: press the Arrangement Record button and launch scenes as "
-            "the song plays, or drag clips across. The drum beat hypnomix adds lands in the Session View for this reason."],
+            "the song plays, or drag clips across. The drum beat HypnoMix adds lands in the Session View for this reason."],
        terms=[["Scene", "one row of clips, launched together."], ["Launch quantisation", "clips start on the next bar, so they stay in time when you click them."]],
        how={"live": ["Press Tab for the Session View. With a track armed, click a slot's record button (the circle) to record a clip; click again to stop and loop it.",
                      "Click a scene's play button on the right to launch the whole row.",
                      "To record what you launch into the timeline: Arrangement Record (F9), then launch scenes."]}),
-  dict(id="takes-hypnomix", title="Let hypnomix help with the takes", daws=ALL,
-       say=["Once you have takes, hypnomix's **first pass** (the Songs tab) checks the recording for the technical things "
+  dict(id="takes-hypnomix", title="Let HypnoMix help with the takes", daws=ALL,
+       say=["Once you have takes, HypnoMix's **first pass** (the Songs tab) checks the recording for the technical things "
             "ears miss at first: clicks where a take was cut, the level jumping between takes, notes that drifted flat, "
             "hum and hiss. It suggests a fix for each, lets you hear before and after, and changes nothing until you say yes.",
             "For now, keep recording the rest of the song: each instrument gets its own track, recorded the same way."],

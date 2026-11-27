@@ -77,7 +77,7 @@ FEATURES_STATS = {"hits": 0, "misses": 0}
 
 
 def _features_file(y, sr):
-    """Where this audio's features are kept: <hypnomix home>/cache/names/, named by a hash of the samples, the
+    """Where this audio's features are kept: <HypnoMix home>/cache/names/, named by a hash of the samples, the
     sample rate and FEATURES_VERSION. The callers hand over samples, not a path, so the key is the audio itself:
     it changes whenever the file's path, modification time or size would, and a copy of the same audio hits too."""
     import hashlib

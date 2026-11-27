@@ -438,7 +438,7 @@
      (POST /api/daw/upload: a browser page never sees a dropped file's path), then imports the saved copy. */
   HX.uploadForImport = async function (file, onProgress) {
     const tok = window.HX_TOKEN && !/^__/.test(window.HX_TOKEN) ? window.HX_TOKEN : '';
-    if (!tok) throw new Error('open the DAW view from the hypnomix app to import');
+    if (!tok) throw new Error('open the DAW view from the HypnoMix app to import');
     return new Promise((resolve, reject) => {
       const x = new XMLHttpRequest();
       x.open('POST', '/api/daw/upload?name=' + encodeURIComponent(file.name));

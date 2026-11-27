@@ -1,8 +1,8 @@
-"""Review from inside REAPER: the Hypnomix panel, A / B / Blind on an A/B project. The REAPER side of the Live device.
+"""Review from inside REAPER: the HypnoMix panel, A / B / Blind on an A/B project. The REAPER side of the Live device.
 
-  hypnomix reaper review          open the Hypnomix panel in REAPER and keep it in step with the app's review
+  hypnomix reaper review          open the HypnoMix panel in REAPER and keep it in step with the app's review
 
-Needs the hypnomix app running with a review open (`hypnomix app`; for an app on another port give --port N, or
+Needs the HypnoMix app running with a review open (`hypnomix app`; for an app on another port give --port N, or
 set HYPNOMIX_PORT). The panel shows the finding you are on, and:
 
   Prev / Next / Next open   step through the findings; REAPER selects the track and puts the time selection on the spot
@@ -107,7 +107,7 @@ class Panel:
     def show(self):
         c = self.cur or {}
         if not c.get("id"):
-            st = dict(status="", head=c.get("text", "Open a review in the hypnomix app."), problem="", fix="", ab="0",
+            st = dict(status="", head=c.get("text", "Open a review in the HypnoMix app."), problem="", fix="", ab="0",
                       decision="")
         else:
             st = dict(status=f"{c['n']} of {c['of']}  ·  {c.get('left', 0)} open  ·  {c.get('song', '')}",
@@ -159,21 +159,21 @@ def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(prog="hypnomix reaper review", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", type=int, default=None, help="the hypnomix app's port (default: HYPNOMIX_PORT, else 8791)")
+    ap.add_argument("--port", type=int, default=None, help="the HypnoMix app's port (default: HYPNOMIX_PORT, else 8791)")
     a = ap.parse_args(argv)
     global APP
     APP = f"http://127.0.0.1:{app_port(a.port)}"
     try:
         app("/api/live/poll?since=-1", timeout=2)
     except OSError:
-        sys.exit("the hypnomix app is not running: start it (`hypnomix app`) and open a review")
+        sys.exit("the HypnoMix app is not running: start it (`hypnomix app`) and open a review")
     r = Reaper()
     r.start()
     p = Panel(r)
     p.tempo = float(r.ping().get("tempo") or 120.0)
     r.call("panel_open")
     seq, last_gain = -1, 0.0
-    print("The Hypnomix panel is open in REAPER. Ctrl-C (or close the panel) to stop.")
+    print("The HypnoMix panel is open in REAPER. Ctrl-C (or close the panel) to stop.")
     try:
         while True:
             d = app(f"/api/live/poll?since={seq}")

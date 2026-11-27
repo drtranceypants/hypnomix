@@ -8,7 +8,7 @@ give way (the less important part, by role), with a concrete cut you can make in
 
 Usage:
     hypnomix masking STEMS_DIR [--top 12] [--out REPORT.md]
-A stem hypnomix cannot measure (no audio in it, NaN samples, more than five channels) is named on stderr and left out; the
+A stem HypnoMix cannot measure (no audio in it, NaN samples, more than five channels) is named on stderr and left out; the
 command refuses only when fewer than two usable stems remain. `balance` and `stems` do the same.
 A folder that would take more than 400 MB decoded (HYPNOMIX_STEMS_LAZY_MB changes that; 0 = always) is read one stem at
 a time, from disk, as each step needs it, so memory does not grow with the number of stems; the answers are the same.

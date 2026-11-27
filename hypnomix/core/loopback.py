@@ -1,6 +1,6 @@
 """HTTP to this computer only: never through a proxy, never to another host, never followed to one.
 
-The app talks to the Hypnomix engine (its MCP surface, http://127.0.0.1:PORT/mcp) and to a Hypnomix or Ardour window
+The app talks to the HypnoMix engine (its MCP surface, http://127.0.0.1:PORT/mcp) and to a HypnoMix DAW window
 on the same computer. `urllib.request.urlopen` would send those calls to the HTTP proxy named in the environment
 (http_proxy, or the system's proxy on a Mac) and with them the session's paths and every tool argument. Everything
 that calls the engine uses `urlopen` from here instead:

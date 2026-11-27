@@ -243,8 +243,8 @@ local function build_named(name)
   for i = 0, m - 1 do if ours(tr, i) then have[#have + 1] = i end end
   if #have > 0 and not M.yes then
     say(S.ASKING)
-    if reaper.MB("Replace the Hypnomix chain on the master (" .. #have .. " plug-ins, your edits included)?",
-                 "Hypnomix", 4) ~= 6 then say(S.CANCELLED); return end
+    if reaper.MB("Replace the HypnoMix chain on the master (" .. #have .. " plug-ins, your edits included)?",
+                 "HypnoMix", 4) ~= 6 then say(S.CANCELLED); return end
   end
   reaper.Undo_BeginBlock()
   reaper.PreventUIRefresh(1)
@@ -255,7 +255,7 @@ local function build_named(name)
   reaper.PreventUIRefresh(-1)
   reaper.Undo_EndBlock("hypnomix: build mastering chain (" .. name .. ")", -1)
   M.last_missing = miss
-  if #miss > 0 then reaper.ShowConsoleMsg("hypnomix chain: not set: " .. table.concat(miss, "; ") .. "\n") end
+  if #miss > 0 then reaper.ShowConsoleMsg("HypnoMix chain: not set: " .. table.concat(miss, "; ") .. "\n") end
   card_seen = card()
   say(name == "hypnomix stock" and S.BUILT or S.LOADED, n, #miss)
   return n, miss
@@ -269,7 +269,7 @@ function M.build(name)
   local opened = false
   if gfx.getchar() < 0 then                  -- no window of ours is open (the review panel would do)
     local x, y = reaper.GetMousePosition()
-    gfx.init("Hypnomix", 1, 1, 0, x, y); opened = true
+    gfx.init("HypnoMix", 1, 1, 0, x, y); opened = true
   end
   menu = { list = list, opened = opened, passes = 0 }
   say(S.ASKING)

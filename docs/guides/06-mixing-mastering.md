@@ -6,7 +6,7 @@ subtitle: From stems to a master that survives phones, cars and every streaming 
 # Balance, tone, dynamics, space
 
 The order that works: **balance → tone → dynamics → space**. Most mixing problems are balance problems in
-disguise. hypnomix can do a whole mix from stems, or check and tune the mix you're building in Live, and it
+disguise. HypnoMix can do a whole mix from stems, or check and tune the mix you're building in Live, and it
 writes down the reason for every move so you can disagree with it.
 
 <!--toc-->
@@ -31,7 +31,7 @@ With `--plan`, each move is a finding. Approve the ones you like, and `fix --app
 its move baked in, and a trial mix into `fixed/balance/` in the scan folder. It is measured, not heard: play the trial
 mix and move the faders until it feels right.
 
-> Careful: `balance`, `compare`, `album`, `versions` and `release` are new. They pass unit tests and hypnomix's own
+> Careful: `balance`, `compare`, `album`, `versions` and `release` are new. They pass unit tests and HypnoMix's own
 > checks on synthetic data only, and have not yet been run on real songs. Keep your originals and listen.
 
 ## Stems in, song out: automix
@@ -72,7 +72,7 @@ When `masking` finds a fight you agree with, the cut can be written for you: app
 `hypnomix masking Song.als --apply "Song (cut).als" --findings SCAN/findings.json --ids mask-1`) and the cut goes on the part
 that should give way, as one bell band on its own EQ in a new file: an EQ Eight in a Live set, a ReaEQ in a REAPER project.
 It is gentle (2 dB for a fight that happens less than half the time, 3 dB for more), `--scale` or the approval's amount
-makes it smaller, and nothing else on the track changes. When `fix` writes it, the new file gets hypnomix's structure
+makes it smaller, and nothing else on the track changes. When `fix` writes it, the new file gets HypnoMix's structure
 check; the ReaEQ band was opened in REAPER 7.86 and read back as written, and the EQ Eight band has not yet been opened in Live. For a folder of stems there is no set to write into, so the cut stays on the by-hand list.
 
 `devices` plays each track through its own chain and judges every stock device by what it actually does:
@@ -120,7 +120,7 @@ EQ Eight → Glue Compressor → Utility → Saturator → Limiter on the Main t
 your bounce. `--verify` records the loudest 8 bars from Live and trims the Limiter until it measures on
 target. Nothing is deleted: `--existing bypass` switches off what was already on Main.
 
-Before the first run: `hypnomix install` and restart Live (it adds the piece that lets hypnomix load Live's
+Before the first run: `hypnomix install` and restart Live (it adds the piece that lets HypnoMix load Live's
 devices), and for `--verify` install BlackHole and set Live's output to a Multi-Output Device (your speakers +
 BlackHole). `--dry-run` prints the plan and touches nothing. Checked in Live 12 on a real song: the chain is
 built with the planned values, and verify took Live from 6 dB under the target to on it in two passes. It plays
@@ -134,7 +134,8 @@ hypnomix chain strips "hypnomix-out/automix/Song/recipe.json"      # a channel s
 (stem "Bass" finds the track "3-Detuned Lowpass Bass"). A stem with no matching track is listed, never
 guessed: name the track after the stem and run it again.
 
-**The same chain in Hypnomix (Ardour), over MCP:**
+**The same chain in HypnoMix DAW, over MCP** (HypnoMix DAW is not released yet, and the stock DAW it is built on has no such MCP
+surface, so this cannot be done today):
 
 ```bash
 hypnomix chain master "Song bounce.wav" --target -14 --ardour --existing bypass
@@ -142,9 +143,9 @@ hypnomix chain master "Song bounce.wav" --target -14 --ardour --existing bypass
 
 ACE High/Low Pass Filter → ACE EQ → ACE Compressor → Hypnomix Utility (bass mono below 120 Hz, width) →
 Hypnomix Limiter (holds a true-peak ceiling, measured with 4x oversampling) on the master bus, before Hypnomix
-Main if it is there. Open the session in Hypnomix first, with its MCP server on (Preferences → Control Surfaces →
+Main if it is there. Open the session in HypnoMix DAW first, with its MCP server on (Preferences → Control Surfaces →
 MCPHttp; the address is `http://127.0.0.1:4820/mcp`, `--mcp-url` for another). It has been tried against a stand-in
-for the engine's MCP surface, not against the running engine. There is no saturator in Hypnomix yet, so the warmth stage
+for the engine's MCP surface, not against the running engine. There is no saturator in HypnoMix DAW yet, so the warmth stage
 is listed instead of built, and `--verify` is Live and REAPER only for now: use Hypnomix Main's Match target.
 
 No bounce yet? **HypnomixMain** on Main has its own mastering chain: **Build chain** puts an editable rack of

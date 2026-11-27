@@ -1,6 +1,6 @@
 # Contributing: bug reports, ideas, and building with your AI agent
 
-hypnomix gets better when musicians who use it send back what broke, what was confusing and what they wish it
+HypnoMix gets better when musicians who use it send back what broke, what was confusing and what they wish it
 did. You don't need to be a programmer. If you use an AI coding agent (Claude Code, Codex, Cursor, Aider,
 OpenCode or another), it can do the programming with you while you test on your own songs.
 
@@ -31,7 +31,7 @@ decide yourself and what could be automatic. `docs/ROADMAP.md` lists what's alre
 
 ## Build it with your AI agent
 
-The repo is set up for AI agents. `AGENTS.md` tells any agent what hypnomix is, the rules that protect a
+The repo is set up for AI agents. `AGENTS.md` tells any agent what HypnoMix is, the rules that protect a
 person's music, and how to change the code. `CLAUDE.md` adds the Claude Code details. Your agent reads them; you
 bring the songs, the ears and the judgement.
 
@@ -67,13 +67,18 @@ Your agent will find these in `AGENTS.md`, but they're worth knowing:
 - **No paid product names** in code, docs, tests or screenshots, and no personal paths or details.
 - **Keep the wiki current.** The wiki in the app and on the website is built from the Markdown in this repo:
   `README.md`, `AGENTS.md`, this file, `docs/*.md` and `docs/guides/`. A change people can see updates its
-  article in the same pull request.
+  article in the same pull request. There are **three copies** of the wiki and you edit none of them by hand: the
+  app's Wiki tab, the website's `/wiki/` page and this repository's GitHub wiki are all built from the same files
+  (`hypnomix/app/wiki.py`). When a change to those files lands on `main`, the website rebuilds itself and
+  `.github/workflows/wiki.yml` rebuilds the GitHub wiki (`python -m hypnomix.app.wiki_github --out DIR` shows you its
+  pages before you push), so a fix to an article reaches all three. Edit the sources, never the GitHub wiki's pages: the
+  next build replaces every one of them.
 - **Say what's untested.** If you couldn't check something in a real DAW, say so in the pull request and in
   the docs.
 
 ### Testing without touching your own setup
 
-hypnomix keeps your preferences and your scans in your own folders, and a few commands write into Ableton's User
+HypnoMix keeps your preferences and your scans in your own folders, and a few commands write into Ableton's User
 Library. To try a change safely, run it in an instance that cannot reach any of that:
 
 1. **Point four folders at scratch space.** Make an empty folder and set `HOME`, `HYPNOMIX_HOME`,
@@ -92,12 +97,16 @@ Library. To try a change safely, run it in an instance that cannot reach any of 
    `--dry-run` (`install`) so they write somewhere else, or show what they would do.
 4. **Do not start Live or REAPER from a test run** unless the test is about them. A test that needs them says so.
 5. **The unit tests need none of this:** `python -m unittest discover -s tests` builds synthetic audio and sets in a
-   temp folder, and moves itself onto temporary hypnomix folders when the four variables above are not set
+   temp folder, and moves itself onto temporary folders of its own when the four variables above are not set
    (`tests/_isolate.py`; it removes them at the end). A tool or extra the tests use that is not installed (the
    `assistant` extra, Node.js, Rubber Band, ffmpeg) is named in the first lines of the run, because the tests that
    need it are skipped, and a skip still says OK. With `CI=true` a missing extra or Node.js fails the run instead.
    The page scripts are all parsed by one helper (`tests/_jscheck.py`): with Node.js, else with the JavaScript engine
-   macOS ships (osascript), else the test is skipped and says that nothing could parse them.
+   macOS ships (osascript), else the test is skipped and says that nothing could parse them. The tests that RUN a page
+   or device script (against stand-ins for the page or for Live) start it through the same file, `_jscheck.runner()`:
+   Node.js (with `print` defined for it), else macOS's JavaScriptCore, else a skip that says which is missing.
+   The Assistant's Claude library needs Python 3.10 or newer, so on 3.9 the tests use an empty stand-in module of that name
+   (`tests/_isolate.py`); none of them calls the real library.
    Run only the files for your area while you work, as `python -m unittest tests.test_NAME` (several names are fine)
    or `python -m unittest discover -s tests -t . -p 'test_NAME.py'`. Leave out the `-t .` and the run is NOT isolated: it
    writes into your real `~/.hypnomix` and `~/Documents/Hypnomix`.
@@ -110,5 +119,5 @@ out, it'll take the next person a while too.
 
 ## Licence
 
-hypnomix is MIT licensed. By opening a pull request you agree your contribution is released under the same
+HypnoMix is MIT licensed. By opening a pull request you agree your contribution is released under the same
 licence.

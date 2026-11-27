@@ -1,0 +1,97 @@
+# Keeps the repository's GitHub wiki the same as the website's /wiki/ (and the app's Wiki tab). All three are built
+# from the same sources in this repository (hypnomix/app/wiki.py): the pages for GitHub are built by
+# hypnomix/app/wiki_github.py, copied into the wiki's own repository (this repository's name + ".wiki") and pushed.
+# Nobody edits the GitHub wiki by hand: the next build replaces every page and deletes the ones the sources no longer have.
+# It deletes everything in the wiki's repository except .git, so a page, a folder or an image added by hand in the wiki
+# (an upload through GitHub's wiki editor included) is deleted by the next build too.
+#
+# Runs when a push to main changes any of the wiki's sources (the same list the site's build watches: the articles, the
+# guides and docs, the command list, the teacher-mode course) and by hand: Actions -> wiki -> Run workflow.
+#
+# ONE-TIME SETUP, by hand, before the first run (GitHub makes a wiki's repository only when its first page is saved in the
+# web interface; this job stops and says so when that has not been done):
+#   1. Settings -> General -> Features: tick "Wikis".
+#   2. Open the repository's Wiki tab, click "Create the first page", save it as it is (any text).
+#   3. Actions -> wiki -> Run workflow. The first page you made is replaced by the build.
+#
+# NOT YET RUN: this file was written without access to GitHub. The first run may need a fix.
+name: wiki
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "hypnomix/app/wiki/**"
+      - "hypnomix/app/wiki*.py"
+      - "hypnomix/app/teacher.py"
+      - "hypnomix/app/teach_audio.py"
+      - "hypnomix/app/lessons/**"
+      - "hypnomix/cli.py"
+      - "docs/**"
+      - "skills/**"
+      - "agents/**"
+      - "README.md"
+      - "GUIDE.md"
+      - "AGENTS.md"
+      - "CONTRIBUTING.md"
+      - "CLAUDE.md"
+      - "THIRD_PARTY.md"
+      - "pyproject.toml"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # A run from another branch gets a group of its own, so it can never replace a pending run from main.
+  group: wiki-${{ github.ref == 'refs/heads/main' && 'main' || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    # A manual run from another branch must not publish that branch's pages, and a fork must not try to (its own token
+    # would fail with the 'wiki is not set up' error).
+    if: github.repository == 'drtranceypants/hypnomix' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Check that the wiki has been set up
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 | tr -d '\n')"
+          if ! git -c "http.extraheader=AUTHORIZATION: basic ${auth}" ls-remote --exit-code \
+               "https://github.com/${GITHUB_REPOSITORY}.wiki.git" >/dev/null 2>&1; then
+            echo "::error title=The wiki is not set up yet::GitHub makes a wiki's repository only when its first page is saved in the web interface (or the wiki could not be reached)."
+            echo "To set it up: 1. Settings -> General -> Features: tick Wikis. 2. Open the Wiki tab of this repository, click 'Create the first page' and save it as it is. 3. Run this workflow again (Actions -> wiki -> Run workflow)."
+            exit 1
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          # The footer names the date of the last commit that changed the sources; a shallow clone would name today's.
+          fetch-depth: 0
+      # The build uses only Python's standard library, and the runner's own python3 is enough: no setup step.
+      - name: Build the pages
+        run: python3 -m hypnomix.app.wiki_github --out "$RUNNER_TEMP/wiki-build"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki
+      - name: Replace the wiki's pages with the build, and push if anything changed
+        run: |
+          short="$(git -C "$GITHUB_WORKSPACE" rev-parse --short=7 HEAD)"
+          cd wiki
+          find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} +
+          cp "$RUNNER_TEMP"/wiki-build/* .
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The wiki is already the same as the build: nothing to push."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Mirror the site wiki from ${short}"
+          git push origin HEAD

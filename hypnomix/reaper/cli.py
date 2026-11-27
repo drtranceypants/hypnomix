@@ -1,6 +1,6 @@
 """Talk to the REAPER that is open: start the bridge, look at the project, list plug-ins and parameters.
 
-  hypnomix reaper start           run the hypnomix bridge inside REAPER (starts REAPER if it is closed). Nothing
+  hypnomix reaper start           run the HypnoMix bridge inside REAPER (starts REAPER if it is closed). Nothing
                                   is installed and no setting is changed; it runs until REAPER quits or `stop`.
   hypnomix reaper stop
   hypnomix reaper status          is it running; REAPER version, open project, tempo, tracks
@@ -10,14 +10,14 @@
                                   master; FX: name or number)
   hypnomix reaper record          Record and review before export (the same as the button on Hypnomix Main): plays
                                   from the edit cursor while the probes listen; run it again or stop REAPER, and the
-                                  hypnomix app renders exactly what played and reviews it
+                                  HypnoMix app renders exactly what played and reviews it
   hypnomix reaper chain build [NAME] | match | save NAME | state
                                   the mastering chain (the same as the buttons on Hypnomix Main): build the stock
                                   chain of REAPER's own plug-ins (or a saved template) before Main, turn ReaLimit
                                   until the master hits the song card's target while REAPER plays, keep the chain
                                   as FXChains/hypnomix/NAME.RfxChain
-  hypnomix reaper review          the Hypnomix panel in REAPER: step through the app's review, A / B / Blind
-  hypnomix reaper align           the Hypnomix Align panel in REAPER: align a vocal stack (guide, parts, presets,
+  hypnomix reaper review          the HypnoMix panel in REAPER: step through the app's review, A / B / Blind
+  hypnomix reaper align           the HypnoMix Align panel in REAPER: align a vocal stack (guide, parts, presets,
                                   protect, sync, pitch with the chord check, formant) into a NEW aligned project
   hypnomix reaper probes install|insert SONG.rpp|cards SONG.rpp
                                   Hypnomix Probe and Hypnomix Main for REAPER (JSFX): see `hypnomix reaper probes -h`
@@ -59,9 +59,9 @@ def main():
         if a.cmd == "record":
             out = r.call("record")
             print({"start": "recording the master from the edit cursor: run it again (or stop REAPER) to review",
-                   "stop": "stopped: the hypnomix app renders what played and reviews it",
+                   "stop": "stopped: the HypnoMix app renders what played and reviews it",
                    "short": "stopped: under a second played, so there is nothing to review",
-                   "no app": "the hypnomix app is not relaying (start `hypnomix app`, with the bridge running)"}[out["did"]])
+                   "no app": "the HypnoMix app is not relaying (start `hypnomix app`, with the bridge running)"}[out["did"]])
             return
         if a.cmd == "chain":
             return chain(r, a.args, a.json)

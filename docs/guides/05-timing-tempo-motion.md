@@ -128,10 +128,10 @@ the measurements suggest) as a chain of Live's own devices on a switched-off cop
 with a four-bar before / after clip. `--max`, `--per-part`, `--amount` and `--static` (how close counts as "the same",
 2 dB) are yours to set. Nothing is added unless you pick a number: `--apply "Song (colour).als" --ids colour-1` (close the
 set in Live first). Live sets only for now. The clip "after" is a model of the chain, so listen in Live: the written set
-passes hypnomix's structural check and has not yet been opened in Live, and `colour` has not yet been run on a real song.
+passes HypnoMix's structural check and has not yet been opened in Live, and `colour` has not yet been run on a real song.
 
 If you saved the list of plug-ins you have (`hypnomix plugins --save`, see `docs/PLUGINS.md`), a proposal also names the
-installed free plug-ins that suit its kind of colour, as things to try by hand. hypnomix never writes a third-party
+installed free plug-ins that suit its kind of colour, as things to try by hand. HypnoMix never writes a third-party
 plug-in into a set: the chain it writes is always Live's own devices.
 
 ### borrow: from the song's original project
@@ -169,4 +169,4 @@ It never writes where you already automated that control, and never edits comped
 ## Limits worth knowing
 
 - `tighten`, `variations` and `alignset` assume one tempo; `timing` assumes a constant tempo and 4/4.
-- Every set these tools write passes hypnomix's structural check. Open it in Live and listen before keeping it.
+- Every set these tools write passes HypnoMix's structural check. Open it in Live and listen before keeping it.

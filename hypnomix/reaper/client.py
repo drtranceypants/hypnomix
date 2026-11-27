@@ -70,7 +70,7 @@ class Reaper:
         boot = self.dir / "start-bridge.lua"
         lua_dir = str(self.dir).replace("\\", "/").replace('"', '\\"')
         lua_bridge = str(BRIDGE).replace("\\", "/").replace('"', '\\"')
-        boot.write_bytes(f'HYPNOMIX_DIR = "{lua_dir}"\ndofile("{lua_bridge}")\n'.encode("utf-8"))      # UTF-8 bytes, plain \n, on every system
+        boot.write_bytes(f'HYPNOMIX_DIR = "{lua_dir}"\ndofile("{lua_bridge}")\n'.encode("utf-8", "surrogateescape"))      # UTF-8 bytes, plain \n, on every system; a folder name this computer could not decode keeps its own bytes
         subprocess.Popen([exe, "-nosplash", str(boot)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True)
         t0 = time.time()

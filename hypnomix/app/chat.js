@@ -58,7 +58,7 @@ function chatItem(it) {
         : `<span class="note">${done}</span>`}</div>`;
   }
   if (it.again) return `<div class="act">${esc(it.text)} <button data-cagain="${esc(it.again)}" ${C.busy ? 'disabled' : ''}>Listen again</button></div>`;
-  if (it.kind === 'error') return `<div class="msg err">${esc(it.text)}</div>`;
+  if (it.kind === 'error') return `<div class="msg err">${esc(it.text)} <button type="button" data-report="chat">Report this</button></div>`;
   return `<div class="act">${esc(it.text)}</div>`;
 }
 
@@ -115,7 +115,7 @@ function chatListen() {
     .concat(L.options.map(o => `<option value="${o.id}" ${cur && cur.id === o.id ? 'selected' : ''}>${esc(o.label)}</option>`)).join('');
   const models = cur ? [...cur.picks.map(x => x.id), ...C.lmodels.filter(m => !cur.picks.some(x => x.id === m))] : [];
   return `<div class="card"><h3 style="margin-top:0">Listener: a Google model that hears your songs</h3>
-    <p class="note">The assistant above talks and runs hypnomix; the listener only listens. Use the model that is best at each.</p>
+    <p class="note">The assistant above talks and runs HypnoMix; the listener only listens. Use the model that is best at each.</p>
     <div class="row"><label for="clisten">Service</label><select id="clisten">${opts}</select></div>
     ${cur ? `<div class="row"><label for="clkey">${esc(cur.label)} key</label><input type="password" id="clkey" autocomplete="off"
         placeholder="${cur.key_hint ? (cur.key_hint.startsWith('from ') ? esc(cur.key_hint) + ': paste to save one here' : 'saved (' + esc(cur.key_hint) + '): paste to replace') : 'paste your key'}">
@@ -143,8 +143,8 @@ function chatView() {
   const st = C.settings, p = st && (st.providers.find(x => x.id === st.provider));
   const ready = p && (p.no_key || p.key_hint) && p.model;
   return `<h1>Assistant</h1>
-  <p class="sub">Talk about your song and let an AI run hypnomix for you. Bring a key from the AI service you like.
-  It reads hypnomix's reports${st && st.listen && st.listen.provider ? ', listens to a song only when you click Send it,' : ', never your audio,'} and anything that changes a set waits for your click.</p>
+  <p class="sub">Talk about your song and let an AI run HypnoMix for you. Bring a key from the AI service you like.
+  It reads HypnoMix's reports${st && st.listen && st.listen.provider ? ', listens to a song only when you click Send it,' : ', never your audio,'} and anything that changes a set waits for your click.</p>
   ${!ready || C.open ? chatSettings() : `<p class="note">${esc(p.label)} · ${esc(p.model)}${p.model === p.default_model ? ' (default)' : ''} <button id="copen">Settings</button> <button id="creset">New conversation</button></p>`}
   ${chatListen()}
   ${chatCost()}

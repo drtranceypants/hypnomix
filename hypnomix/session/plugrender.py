@@ -3,7 +3,7 @@
 third-party VST3 and Audio Unit plug-ins on each track are loaded with the settings saved in the set and the
 track's audio is played through them in order, then through the track's fader and pan. Live can be closed.
 
-Uses Spotify's pedalboard library to host the plug-ins (an optional extra, GPL-3.0, kept separate so hypnomix
+Uses Spotify's pedalboard library to host the plug-ins (an optional extra, GPL-3.0, kept separate so HypnoMix
 stays MIT): `uv pip install -e ".[plugins]"` or `pip install pedalboard`.
 
 Usage:
@@ -21,9 +21,9 @@ that is switched on runs in order:
                            ~/Library/Audio/Plug-Ins on a Mac; Common Files\\VST3 on Windows; ~/.vst3 and /usr/lib/vst3
                            on Linux), found by name (AUs, Mac only, by their component codes), with the settings
                            Live saved in the set
-  Live's own devices       only those hypnomix models: Utility gain, Compressor and Glue Compressor (also
+  Live's own devices       only those HypnoMix models: Utility gain, Compressor and Glue Compressor (also
                            with a sidechain from another track), Limiter (a hard ceiling), Gate and EQ Eight
-                           (hypnomix's own models in session/devmodel.py: plain stereo EQ Eight only, and a
+                           (HypnoMix's own models in session/devmodel.py: plain stereo EQ Eight only, and a
                            Gate that is not in flip mode and has no sidechain; a device in a mode the model
                            does not cover is left out and the report says so). Every other Live device
                            (Saturator, reverbs, racks…) is skipped, and the report says so
@@ -494,7 +494,7 @@ def _comp_gain(x, sr, c):
 
 
 def run_stock(info, y, sr, sidechain_audio):
-    """Apply one of Live's devices that hypnomix models. y is (n, 2). Returns (y, note or None)."""
+    """Apply one of Live's devices that HypnoMix models. y is (n, 2). Returns (y, note or None)."""
     from hypnomix.engineer import devices as D, sidechain as SC
     d = info["el"]
     if d.tag == "StereoGain":
@@ -653,7 +653,7 @@ class SetRenderer:
                         row["sidechain"] = c.get("source_name") or c["source_target"]
                 y, note = run_stock(info, y, self.sr, sc)
                 row["status"] = ("skipped: " + note if note and note.startswith("no model") else
-                                 "rendered (hypnomix model)" + (f": {note}" if note else ""))
+                                 "rendered (HypnoMix model)" + (f": {note}" if note else ""))
                 continue
             if info["kind"] in ("vst3", "au", "vst2"):
                 if not self.plugins:
@@ -689,7 +689,7 @@ class SetRenderer:
                     self.warn.append(f"{name}: '{info['name']}' failed while playing; left out")
                 continue
             why = {"m4l": "Max for Live devices are not rendered", "rack": "racks are not rendered",
-                   "live": "no hypnomix model of this Live device"}[info["kind"]]
+                   "live": "no HypnoMix model of this Live device"}[info["kind"]]
             row["status"] = f"skipped: {why}"
         return y
 
@@ -738,7 +738,7 @@ def describe(info):
         return lab, "off: skipped"
     k = info["kind"]
     if k == "stock":
-        return lab, "Live device: hypnomix model"
+        return lab, "Live device: HypnoMix model"
     if k == "vst2":
         return lab, "VST2: not supported"
     if k in ("vst3", "au"):
@@ -767,7 +767,7 @@ def changed_devices(before_t, after_t):
 
 
 def device_preview(f, orig, scan, sd, sr, hx, before_cache, plugins=False):
-    """A before / after pair for one device-change finding, from hypnomix's own models of Live's devices (and, with
+    """A before / after pair for one device-change finding, from HypnoMix's own models of Live's devices (and, with
     `plugins`, real plug-ins through pedalboard): the track rendered through its chain in the set as it is and in a
     temporary copy with only this fix applied. Returns dict(before, after, note, model) stereo arrays, or
     dict(note=why) when it cannot be previewed honestly: the changed device has no model, is a plug-in that is not
@@ -809,7 +809,7 @@ def device_preview(f, orig, scan, sd, sr, hx, before_cache, plugins=False):
                    "au": "a plug-in: previews play real plug-ins only with --plugins (and pedalboard)",
                    "vst2": "a VST2 plug-in, which is not supported", "m4l": "a Max for Live device, which is not rendered",
                    "rack": "a rack, whose inside is not rendered",
-                   "live": "a Live device hypnomix has no model of"}.get(i["kind"], "not modelled")
+                   "live": "a Live device HypnoMix has no model of"}.get(i["kind"], "not modelled")
             blocked.append(f"'{i['name']}' is {why}")
         if blocked:
             return dict(note="no offline preview: " + "; ".join(blocked) + ". Apply this one fix into a new set "

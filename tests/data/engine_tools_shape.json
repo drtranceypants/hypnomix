@@ -1,5 +1,5 @@
 {
- "note": "The SHAPE of the Hypnomix engine's tools/list (111 tools): each tool's name, its arguments (name, type, limits) and the LENGTH of its texts. Made from the engine's list; none of the engine's own wording is kept here. tests/test_daw_assistant.py rebuilds a stand-in list from it (filler words of the same length) to check the Assistant's rules against the real names and sizes. Regenerate it when the engine's tool list changes.",
+ "note": "The SHAPE of the HypnoMix engine's tools/list (111 tools): each tool's name, its arguments (name, type, limits) and the LENGTH of its texts. Made from the engine's list; none of the engine's own wording is kept here. tests/test_daw_assistant.py rebuilds a stand-in list from it (filler words of the same length) to check the Assistant's rules against the real names and sizes. Regenerate it when the engine's tool list changes.",
  "tools": [
   {
    "name": "hello_world",

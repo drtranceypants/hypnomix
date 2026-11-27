@@ -1,4 +1,4 @@
-# Mastering with hypnomix
+# Mastering with HypnoMix
 
 `hypnomix master` turns a finished stereo mix into a release master with free DSP written in this repo. The classic
 chain (sub clean-up, optional reference tone match, glue, mono low end, width, warmth, limiter to a loudness target,
@@ -267,9 +267,9 @@ multiband width → warmth → clipper (punch / loud) → limiter (codec-safe ce
 - The stages run offline on files. `hypnomix chain` (building the chain in Live from stock devices) does not build the
   new stages yet. To master by ear inside Live instead, HypnomixMain on Main builds an editable rack of Live's own
   devices, matches the Limiter to your loudness target and saves your chain as a template (docs/LIVE.md, section 5).
-- `hypnomix chain master --ardour` builds the classic chain in an open Hypnomix (Ardour) session over MCP: ACE
+- `hypnomix chain master --ardour` builds the classic chain in an open HypnoMix DAW session over MCP: ACE
   High/Low Pass Filter, ACE EQ, ACE Compressor, Hypnomix Utility (bass mono, width) and Hypnomix Limiter (true peak,
-  4x oversampled). There is no saturator in Hypnomix yet (the warmth stage is left out and listed), `--verify` is not
+  4x oversampled). There is no saturator in HypnoMix DAW yet (the warmth stage is left out and listed), `--verify` is not
   available there yet (it needs an export over MCP), and `chain strips --ardour` is not built. If a step fails part-way
   the build is taken back out (what this run added is removed, yours are switched on again; yours are only bypassed with
   `--existing bypass` once the whole chain is in) and the message says what was undone; a stage that could not be built

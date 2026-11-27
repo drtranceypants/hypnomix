@@ -213,7 +213,7 @@ class LegacyEncodingRun(unittest.TestCase):
 
     def test_the_bridge_sends_utf8(self):
         code = (
-            "import sys, threading, time, json\nfrom pathlib import Path\nfrom unittest import mock\n"
+            "import os, sys, threading, time, json\nfrom pathlib import Path\nfrom unittest import mock\n"
             "from hypnomix.reaper import client as C\n"
             "d = Path(sys.argv[1]); (d / 'alive').write_text('x')\n"
             "def bridge():\n"
@@ -226,15 +226,17 @@ class LegacyEncodingRun(unittest.TestCase):
             "threading.Thread(target=bridge, daemon=True).start()\n"
             "r = C.Reaper(folder=d, timeout=5)\n"
             "r.call('track_info', track='Zo\\u00eb \\u58f0 Vox')\n"
-            "# starting the bridge writes the Lua boot file in the person's folder\n"
-            "boot = d / 'Jos\\u00e9'; boot.mkdir()\n"
+            "# starting the bridge writes the Lua boot file in the person's folder (made by the test, which runs in UTF-8: a\n"
+            "# child whose language setting is ASCII, as on Linux, sees the accent as bytes it cannot decode)\n"
+            "boot = Path(os.environ['HYPNOMIX_TEST_BOOT'])\n"
             "q = C.Reaper(folder=boot, timeout=1)\n"
             "answers = iter([False, True, True])\n"
             "with mock.patch.object(C.Reaper, 'alive', lambda self, within=4.0: next(answers, True)), "
             "mock.patch.object(C, 'reaper_executable', return_value='reaper'), mock.patch.object(C.subprocess, 'Popen'):\n"
             "    q.start(wait=2)\n")
         with tempfile.TemporaryDirectory() as td:
-            r = run_legacy(code.replace("sys.argv[1]", repr(td)))
+            (Path(td) / "Jos\u00e9").mkdir()
+            r = run_legacy(code.replace("sys.argv[1]", repr(td)), env=legacy_env({"HYPNOMIX_TEST_BOOT": str(Path(td) / "Jos\u00e9")}))
             self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace")[-500:])
             self.assertEqual((Path(td) / "seen.bin").read_bytes(), "track_info\ntrack=Zo\u00eb \u58f0 Vox\n".encode("utf-8"))
             lua = (Path(td) / "Jos\u00e9" / "start-bridge.lua").read_bytes()
@@ -533,13 +535,79 @@ class WindowsCommand(unittest.TestCase):
         from hypnomix.app import setup as SU
         with tempfile.TemporaryDirectory() as td:
             shim = Path(td) / "bin" / "hypnomix.cmd"
+            # sys.platform says win32 for the whole block, and Python 3.12 and later then asks the Windows API from shutil.which
+            # (a module that exists only on Windows): the lookup of "hypnomix" on the PATH is not what this test is about
             with mock.patch.object(sys, "platform", "win32"), mock.patch.object(SU, "shim_path", return_value=shim), \
                     mock.patch.object(SU, "agent_dir", return_value=Path(td) / "agent"), mock.patch.object(SU, "_bin_dir", return_value=None), \
-                    mock.patch.object(SU, "copy_skills", return_value=([], [])):
+                    mock.patch.object(SU, "copy_skills", return_value=([], [])), mock.patch.object(SU.shutil, "which", return_value=None):
                 SU.make_cli()
             data = shim.read_bytes()
             self.assertIn(b"hypnomix.cli %*\r\n", data)
             self.assertNotIn(b"\r\r", data)
+
+
+# ---------------------------------------------------------------- a folder name this computer cannot decode (Linux, a bare "C" language setting)
+class UndecodableFolderName(unittest.TestCase):
+    """Python holds a file name's bytes it cannot decode as lone surrogate characters. The test makes one by hand (no Linux
+    here: a Mac refuses such a name on disk), so nothing touches the disk but the folder the test made."""
+    HELD = "Jos" + "".join(chr(0xDC00 + b) for b in "\u00e9".encode("utf-8"))        # "Jos" + the two bytes of an e with an acute accent
+
+    def test_the_boot_file_keeps_the_bytes_of_the_folders_name(self):
+        from hypnomix.reaper import client as C
+        with tempfile.TemporaryDirectory() as td:
+            r = C.Reaper(timeout=1, folder=Path(td))
+            r.dir = Path(td) / self.HELD
+            written = {}
+            answers = iter([False, True, True])
+            with mock.patch.object(C.Reaper, "alive", lambda self, within=4.0: next(answers, True)), \
+                    mock.patch.object(C, "reaper_executable", return_value="reaper"), mock.patch.object(C.subprocess, "Popen"), \
+                    mock.patch.object(Path, "write_bytes", lambda self, data: written.update({self.name: data})), \
+                    mock.patch.object(Path, "glob", lambda self, pattern: iter(())):
+                r.start(wait=2)
+        self.assertIn("Jos\u00e9".encode("utf-8"), written["start-bridge.lua"])      # the folder's own bytes, not a traceback
+        self.assertNotIn(b"\r", written["start-bridge.lua"])
+
+
+# ---------------------------------------------------------------- Python 3.9: no Claude library
+class ClaudeLibraryOnPython39(unittest.TestCase):
+    """Anthropic's library needs Python 3.10 or newer, so on 3.9 the Assistant has the OpenAI-compatible providers only.
+    Python 3.9 is simulated: sys.version_info is patched for the length of each test."""
+    OLD = (3, 9, 25, "final", 0)
+
+    def test_the_extra_does_not_ask_for_it_on_39(self):
+        import re
+        toml = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        line = next(l for l in toml.splitlines() if l.startswith("assistant ="))
+        self.assertRegex(line, r"anthropic>=[\d.]+; python_version >= '3\.10'")      # the marker that lets pip install the rest on 3.9
+        self.assertIn("openai", line)
+        self.assertEqual(re.findall(r"requires-python = \"(.*?)\"", toml), [">=3.9"])
+
+    def test_the_tests_get_an_empty_stand_in_module_only_where_the_library_cannot_be(self):
+        from tests import _isolate
+        with mock.patch.dict(sys.modules), mock.patch.object(sys, "version_info", self.OLD), \
+                mock.patch.object(_isolate.importlib.util, "find_spec", return_value=None):
+            sys.modules.pop("anthropic", None)
+            self.assertTrue(_isolate.stand_in_for_claude_library())
+            with mock.patch("anthropic.Anthropic", lambda **k: "fake"):
+                import anthropic
+                self.assertEqual(anthropic.Anthropic(), "fake")
+            with self.assertRaises(RuntimeError):
+                sys.modules["anthropic"].Anthropic()
+        with mock.patch.dict(sys.modules, {"anthropic": object()}), mock.patch.object(sys, "version_info", (3, 12, 1, "final", 0)):
+            self.assertFalse(_isolate.stand_in_for_claude_library())             # a Python that can have it never gets a stand-in
+
+    def test_the_assistant_says_why_claude_is_missing_on_39(self):
+        from hypnomix.app import chat as CH
+        e = ImportError("No module named 'anthropic'", name="anthropic")
+        with mock.patch.object(sys, "version_info", self.OLD):
+            said = CH._friendly(e, "Claude")
+        self.assertIn("Python 3.10 or newer", said)
+        self.assertIn("Python 3.9", said)
+        self.assertNotIn("uv pip install", said)                                  # that would not bring it
+        with mock.patch.object(sys, "version_info", (3, 12, 1, "final", 0)):
+            self.assertIn("uv pip install", CH._friendly(e, "Claude"))
+        with mock.patch.object(sys, "version_info", self.OLD):
+            self.assertIn("uv pip install", CH._friendly(ImportError("x", name="openai"), "Ollama"))   # the other library: as before
 
 
 # ---------------------------------------------------------------- bug 9: the port

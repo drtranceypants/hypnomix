@@ -196,7 +196,7 @@ class ScanInputs(Base):
         (self.base / "Junk.als").write_text("junk\n")
         (self.base / "Song.ptx").write_text("x\n")
         shutil.copy(stems / "bass.wav", self.base / "Keys.wav")
-        for name, word in (("Bad.rpp", "REAPER project"), ("Bad.ardour", "Ardour session"), ("Junk.als", "Live set"),
+        for name, word in (("Bad.rpp", "REAPER project"), ("Bad.ardour", "HypnoMix DAW session"), ("Junk.als", "Live set"),
                            ("Song.ptx", "not something scan can read"), ("Keys.wav", "not something scan can read")):
             code, out = self.hx("scan", self.base / name)
             self.assertNotEqual(code, 0, out)
@@ -389,7 +389,7 @@ class ArdourFixes(Base):
         d = self.session()
         code, out = self.hx("scan", d, "--since", self.base / "x")
         self.assertNotEqual(code, 0)
-        self.assertIn("an Ardour project", out)
+        self.assertIn("a HypnoMix DAW project", out)
 
 
 # ---------------------------------------------------------------- the review page
@@ -432,9 +432,8 @@ class ReviewPage(Base):
     def test_the_page_script_reads_the_ranges_like_the_lists(self):
         """The saved page script, run as it ships, lists the same findings like this one as the full map did."""
         import re
-        osa = shutil.which("osascript")
-        if not osa:
-            self.skipTest("needs a JavaScript engine (osascript) to run the page script")
+        from tests import _jscheck
+        runner = _jscheck.need_runner(self)
         from hypnomix.workflow import review as RV
         fs = self.findings(120)
         role_of = {}
@@ -444,13 +443,12 @@ class ReviewPage(Base):
         dec = {"smooth-3": {"decision": "skip"}}
         probe = fs[5]["id"]
         script = (fn + "var ov = " + json.dumps(dict(like_runs=runs, like_order=order)) + "; var dec = " + json.dumps(dec)
-                  + "; JSON.stringify(ovLikeIds(ov, dec, " + json.dumps(probe) + "));")
+                  + "; print(JSON.stringify(ovLikeIds(ov, dec, " + json.dumps(probe) + ")));")
         f = self.base / "probe.js"
-        f.write_text(script)
-        r = subprocess.run([osa, "-l", "JavaScript", str(f)], capture_output=True, text=True)
-        if r.returncode != 0:
-            self.skipTest("no usable JavaScript engine: " + r.stderr[:80])
-        got = json.loads(r.stdout.strip())
+        f.write_text(script, encoding="utf-8")
+        r = subprocess.run(runner + [str(f)], capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(r.returncode, 0, "the page script did not run: " + r.stderr[:300])      # an engine that is here and fails is a failure, not a skip
+        got = json.loads(r.stdout.strip().splitlines()[-1])
         want = [x for x in like[probe] if x != "smooth-3"]
         self.assertEqual(sorted(got), sorted(want))
 

@@ -11,13 +11,13 @@ as you would hear it on the track, with your real plug-ins in the chain, instead
 ## Install
 
 The plug-in host is Spotify's [pedalboard](https://github.com/spotify/pedalboard). It is GPL-3.0, so it is an
-optional extra and hypnomix itself stays MIT:
+optional extra and HypnoMix itself stays MIT:
 
 ```bash
 uv pip install -e ".[plugins]"        # or: pip install pedalboard
 ```
 
-Without it, `plugrender` still renders the clips, Live's devices that hypnomix models and the mixer, and says
+Without it, `plugrender` still renders the clips, Live's devices that HypnoMix models and the mixer, and says
 that each plug-in was skipped.
 
 ## Use
@@ -40,7 +40,7 @@ settings as readable state (many free ones do), setting by setting. Run it first
 | audio clips | yes, as `hypnomix render` does: clip gain, fades, warps (as mono, fed to the chain as stereo) |
 | VST3 plug-ins | yes, found by name in `/Library/Audio/Plug-Ins/VST3` and `~/Library/Audio/Plug-Ins/VST3` |
 | Audio Unit plug-ins | yes, found by their component codes in the two `Components` folders |
-| Live's Utility (gain), Compressor, Glue Compressor, Limiter, Gate, EQ Eight | yes, with hypnomix's models of them (approximations; a compressor's sidechain from another track is followed; an EQ Eight in L/R or M/S mode and a Gate that listens to a sidechain have no model and are skipped) |
+| Live's Utility (gain), Compressor, Glue Compressor, Limiter, Gate, EQ Eight | yes, with HypnoMix's models of them (approximations; a compressor's sidechain from another track is followed; an EQ Eight in L/R or M/S mode and a Gate that listens to a sidechain have no model and are skipped) |
 | other Live devices (Saturator, reverbs, delays…), racks, Max for Live | no: skipped, and listed as skipped |
 | VST2 plug-ins | no: pedalboard hosts VST3 and AU only |
 | switched-off devices | skipped, as in Live |
@@ -68,7 +68,7 @@ its chain in both, and writes a level-matched pair around the loudest part of th
 tracks (most `duck` items) can't be previewed, because returns are fed by sends; `ab.json` says so.
 
 Without `--plugins` (or without pedalboard) `ab` still previews the device changes it can model (and timing nudges and
-masking cuts, which need neither), with no real plug-in: the track is played through hypnomix's models of Live's Compressor, Glue Compressor, Gate, EQ Eight, Utility
+masking cuts, which need neither), with no real plug-in: the track is played through HypnoMix's models of Live's Compressor, Glue Compressor, Gate, EQ Eight, Utility
 and Limiter, and the other plug-ins are left out of the chain (the pair says which). Those pairs are labelled
 **a model of the device, not Live itself** in `ab.json` (`"model": true`) and on the review page: the curve of an EQ
 Eight band lands where its settings say, a compressor follows the same gain-reduction model `devices` and `sidechain`
@@ -93,7 +93,7 @@ It looks in the standard folders of the system (Mac: `/Library/Audio/Plug-Ins` a
 the CLAP and LV2 equivalents), one vendor folder deep and more. Add your own with `--folder FORMAT=DIR`. Audio Units are
 read from their `Info.plist` (which also says instrument or effect); the rest by file name.
 
-**The free list** is the README's "Free plug-ins that work with hypnomix". A plug-in on it is marked, and is what
+**The free list** is the README's "Free plug-ins that work with HypnoMix". A plug-in on it is marked, and is what
 `colour` may name; every other plug-in is listed and never proposed.
 
 **`--check`** loads each plug-in the way `plugrender` does: in its own process, with a time limit (`--timeout`,

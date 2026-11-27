@@ -17,7 +17,7 @@ $Version = (Select-String -Path "$Repo\pyproject.toml" -Pattern '^version = "(.*
 $Work = "$Repo\packaging\build\windows-x64"
 $App = "$Work\Hypnomix"
 $Dist = "$Repo\packaging\dist"
-Write-Host "== hypnomix $Version for Windows x64"
+Write-Host "== HypnoMix $Version for Windows x64"
 if (Test-Path $Work) { Remove-Item -Recurse -Force $Work }
 New-Item -ItemType Directory -Force -Path $App, $Dist, "$App\bin" | Out-Null
 
@@ -39,7 +39,7 @@ foreach ($d in "test", "idlelib", "tkinter", "turtledemo", "ensurepip") {
 }
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$App\python\tcl"
 
-Write-Host "-- hypnomix and its packages"
+Write-Host "-- HypnoMix and its packages"
 uv pip install --quiet --python $Py --no-cache --only-binary llvmlite --only-binary numba "$Repo[$Extras]" imageio-ffmpeg pip   # pip: Setup -> Extras installs the other extras with it
 if ($LASTEXITCODE) { throw "uv pip install failed" }
 

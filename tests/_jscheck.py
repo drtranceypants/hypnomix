@@ -5,6 +5,10 @@ DAW page's inline scripts. `parse(scripts)` returns the problems found, or raise
 Node.js (`node --check`), else macOS's JavaScript engine through osascript, else nothing can parse, and a test that
 needs it SKIPS with that sentence (a skip, never a silent pass). The osascript way proves it works before it is trusted:
 it must report a script that is broken on purpose, so an engine that ran but checked nothing is an error, not a pass.
+
+The tests that RUN a script (a page script against stand-ins for the page, a Max device script against a simulated Live)
+use `runner()`: Node.js when it is there (with `print` defined for it, as the Mac's engine has it), else macOS's
+JavaScriptCore (jsc), else None, and the test calls `need_runner(self)`, which skips with a sentence naming what is missing.
 """
 import os
 import re
@@ -18,6 +22,13 @@ ROOT = Path(__file__).resolve().parent.parent / "hypnomix" / "app"
 
 MISSING = ("SKIPPED: nothing here can parse JavaScript, so the page scripts were NOT checked: "
            "install Node.js (the `node` program), or run on a Mac (osascript)")
+
+NO_RUNNER = ("SKIPPED: no JavaScript engine here to run the script, so it was NOT run: "
+             "install Node.js (the `node` program), or run on a Mac (JavaScriptCore)")
+
+PRINT_SHIM = Path(__file__).with_name("_print.js")       # `print` for Node.js: the Mac's engine has it, and the scripts use it
+JSC_PATHS = ("/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc",
+             "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc")
 
 CHECKER = r"""ObjC.import('Foundation');
 function run(argv) { var out = [], n = 0;
@@ -40,6 +51,25 @@ def engine():
         return "node", node
     osa = shutil.which("osascript") if sys.platform == "darwin" else None
     return ("osascript", osa) if osa else None
+
+
+def runner():
+    """The words that start a JavaScript engine on a script file with `print` defined: Node.js, else JavaScriptCore; or None."""
+    node = shutil.which("node")
+    if node:
+        return [node, "--require", str(PRINT_SHIM)]
+    for p in JSC_PATHS:
+        if os.path.exists(p):
+            return [p]
+    return None
+
+
+def need_runner(case):
+    """From a unittest test: the engine's words, or a visible skip that names what is missing."""
+    r = runner()
+    if r is None:
+        case.skipTest(NO_RUNNER)
+    return r
 
 
 def scripts(tmp):

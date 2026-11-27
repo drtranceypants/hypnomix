@@ -2,12 +2,12 @@
 
 The lessons live in the package hypnomix/app/lessons (one module per chapter); this module is the engine: which steps a
 course and a DAW get, the progress file, the hands-on actions, the routes, the glossary and the wiki articles.
-Ableton Live gets the most depth, REAPER a little less, Ardour the short version (the least tested).
+Ableton Live gets the most depth, REAPER a little less, HypnoMix DAW the short version (the least tested).
 
 A step can carry a hands-on action ("Set the tempo", "Add a drum beat"). Every action that changes the person's
 set or project shows exactly what it will do and waits for their click: the browser asks, and the server refuses
 an action without `ok`. Live is driven through AbletonOSC (hypnomix/live/osc.py), REAPER through its bridge
-(hypnomix/reaper/client.py); where the DAW can't be driven (Ardour, or no connection) the step's own instructions
+(hypnomix/reaper/client.py); where the DAW can't be driven (HypnoMix DAW, or no connection) the step's own instructions
 say how to do it by hand. Nothing here needs an AI: the Assistant can narrate a step when one is set up.
 
 Three courses (LEVELS): "tour" for people who already engineer and only need hypnomix, its devices and their DAW;
@@ -26,10 +26,10 @@ from pathlib import Path
 from hypnomix.app import lessons
 from hypnomix.app.lessons._common import ALL, LR
 
-DAWS = {"live": "Ableton Live", "reaper": "REAPER", "ardour": "Ardour"}
+DAWS = {"live": "Ableton Live", "reaper": "REAPER", "ardour": "HypnoMix DAW"}
 # three courses: "tour" for people who already engineer (hypnomix, its devices and the DAW they use it with), "101"
 # for people new to audio (the words, recording, mixing and mastering, then the same tour), "az" the complete course
-LEVELS = {"tour": "hypnomix in your DAW", "101": "The 101 crash course", "az": "The complete course, A to Z"}
+LEVELS = {"tour": "HypnoMix in your DAW", "101": "The 101 crash course", "az": "The complete course, A to Z"}
 DEFAULT_LEVEL = "101"                      # what an unknown saved level falls back to
 
 
@@ -61,9 +61,28 @@ def _levels(ch, s=None):
 EXTRA = ("terms", "settings", "listen", "app", "mistakes", "try", "quiz", "hear", "more")
 
 
-def steps(daw, level=DEFAULT_LEVEL):
+# Said once, at the first step of each HypnoMix DAW course (tour, 101, A to Z), because that DAW can't be downloaded yet.
+HONESTY = ("HypnoMix DAW is not released yet. Until it is, everything written here for it is written for Ardour 8 or 9, "
+           "the free DAW it is built on, and has not yet been tried in either.")
+
+
+def _hm_in(daw, how="in"):
+    """"HypnoMix in Ableton Live" / "HypnoMix with REAPER"; for HypnoMix DAW the name alone, so it isn't said twice."""
+    name = DAWS.get(daw, "your DAW")
+    return name if daw == "ardour" else f"HypnoMix {how} {name}"
+
+
+# What the wiki says instead of the honesty line: a link to the article about HypnoMix DAW (id "ardour")
+ABOUT_DAW = ' <a data-wiki="ardour" href="#">What HypnoMix DAW is, and where to get it</a>.'
+
+
+def _about(daw):
+    return ABOUT_DAW if daw == "ardour" else ""
+
+
+def steps(daw, level=DEFAULT_LEVEL, honesty=True):
     """The chapters of one course (LEVELS) with only this DAW's steps, each step's 'how', settings and action
-    resolved for it."""
+    resolved for it. `honesty=False` leaves out the honesty line (the wiki says it in its HypnoMix DAW article only)."""
     if level not in LEVELS:
         level = DEFAULT_LEVEL
     out = []
@@ -85,8 +104,12 @@ def steps(daw, level=DEFAULT_LEVEL):
             ss.append(t)
         if not ss:
             continue
-        title = ch["title"].replace("your DAW", DAWS[daw]) if daw in DAWS else ch["title"]
+        title = ch["title"]
+        if daw in DAWS:
+            title = title.replace("HypnoMix in your DAW", _hm_in(daw)).replace("your DAW", DAWS[daw])
         out.append(dict(id=ch["id"], title=title, sub=ch["sub"], steps=ss))
+    if honesty and daw == "ardour" and out:
+        out[0]["steps"][0]["how"] = [HONESTY] + list(out[0]["steps"][0]["how"])
     return out
 
 
@@ -325,7 +348,7 @@ def run(daw, sid, kind, args):
         return _run_live(step, kind, a)
     if daw == "reaper":
         return _run_reaper(step, kind, a)
-    raise ValueError(f"hypnomix can't drive {DAWS[daw]} yet: follow the steps above")
+    raise ValueError(f"The Teacher can't do this step in {DAWS[daw]} yet: follow the steps above")
 
 
 def _cli(*args):
@@ -345,7 +368,7 @@ def make_devices(daw):
     if daw == "reaper":
         _cli("reaper", "probes", "install")
         return dict(done="Installed Hypnomix Probe and Hypnomix Main: in REAPER, Add FX → JS → hypnomix. (Restart REAPER's FX browser if they don't show yet.)")
-    raise ValueError("Ardour has no hypnomix devices yet")
+    raise ValueError("HypnoMix DAW has no HypnoMix devices yet")
 
 
 def _num(a, k, default, lo, hi):
@@ -463,7 +486,7 @@ def _run_reaper(step, kind, a):
     from hypnomix.reaper.client import ReaperError
     r = _reaper()
     if not r.alive():
-        raise ReaperError("REAPER's bridge isn't running: open REAPER, then run `hypnomix reaper start` (Wiki → hypnomix in REAPER)")
+        raise ReaperError("REAPER's bridge isn't running: open REAPER, then run `hypnomix reaper start` (Wiki → HypnoMix in REAPER)")
     if kind == "tempo":
         bpm = _num(a, "bpm", 90, 40, 250)
         out = r.call("teach_tempo", bpm=bpm)
@@ -532,7 +555,9 @@ def choice():
     from hypnomix.app import setup as SU
     s = SU.load()
     lv = s.get("teach_level") or ("101" if s.get("teach") else "")
-    return s.get("daw", ""), (lv if lv in LEVELS else DEFAULT_LEVEL) if lv else "", s.get("mode", "")
+    daw = s.get("daw", "")
+    daw = "ardour" if daw == "hypnomix" else daw      # Setup calls the third DAW "hypnomix"; its lessons keep the key "ardour"
+    return daw, (lv if lv in LEVELS else DEFAULT_LEVEL) if lv else "", s.get("mode", "")
 
 
 def state(daw=None, level=None):
@@ -559,15 +584,43 @@ def mark(daw, sid, done=True, at=None, level=None):
     return state(daw, level)
 
 
+# ---------------------------------------------------------------- the tours inside the HypnoMix DAW
+# The DAW page (hypnomix/app/daw/js/tour.js) keeps its progress here as well as in the browser: the answer to the first offer
+# ("accepted" / "declined"), which tours are done, and the step each unfinished one was left at. Kept under the key "dawtour" of
+# the same progress file, apart from the courses' own entries. The page sends its whole state; this keeps only what is sane.
+TOUR_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+
+
+def tour_clean(t):
+    t = t if isinstance(t, dict) else {}
+    done = [x for x in (t.get("done") if isinstance(t.get("done"), list) else []) if isinstance(x, str) and TOUR_ID.match(x)]
+    at = t.get("at") if isinstance(t.get("at"), dict) else {}
+    return dict(offered=t.get("offered") if t.get("offered") in ("accepted", "declined") else "",
+                done=sorted(set(done))[:40],
+                at=dict([(k, v) for k, v in at.items() if isinstance(k, str) and TOUR_ID.match(k) and type(v) is int and 0 <= v < 99][:40]))
+
+
+def tour_state():
+    return tour_clean(load_progress().get("dawtour"))
+
+
+def tour_save(body):
+    t = tour_clean(body)
+    p = load_progress()
+    p["dawtour"] = t
+    save_progress(p)
+    return t
+
+
 def assistant_note():
     """For the Assistant's instructions when teacher mode is on: who it's talking to."""
     d, lv, _ = choice()
     if not lv:
         return ""
     if lv == "tour":
-        return (f"\n\nTeacher mode is on (the hypnomix tour): the person already knows recording and mixing, and is learning "
-                f"hypnomix with {DAWS.get(d, 'their DAW')}: its loop, its devices for that DAW, the song card, A/B inside the DAW, "
-                "the mastering chain. Skip audio basics unless asked; be precise about hypnomix's commands, buttons and limits, "
+        return (f"\n\nTeacher mode is on (the HypnoMix tour): the person already knows recording and mixing, and is learning "
+                f"HypnoMix with {DAWS.get(d, 'their DAW')}: its loop, its devices for that DAW, the song card, A/B inside the DAW, "
+                "the mastering chain. Skip audio basics unless asked; be precise about HypnoMix's commands, buttons and limits, "
                 "and follow the Teacher tab's order when they ask what's next.")
     name = "the complete course, A to Z" if lv == "az" else "the 101 crash course"
     return (f"\n\nTeacher mode is on ({name}): the person is a beginner who may never have used a DAW before, working in "
@@ -586,7 +639,7 @@ def _md_text(t):
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _esc(t)))
 
 
-WIKI_GROUP = {"live": "DAW: Ableton Live", "reaper": "DAW: REAPER", "ardour": "DAW: Ardour"}
+WIKI_GROUP = {"live": "DAW: Ableton Live", "reaper": "DAW: REAPER", "ardour": "DAW: HypnoMix DAW"}
 URL = "https://hypnomix.bradfieldenterprises.org/wiki/#"
 
 
@@ -643,13 +696,14 @@ def wiki_articles(daw):
     links keep working) and one article per chapter of that course (`learn-DAW-CHAPTER`)."""
     name = DAWS[daw]
     out = [wiki_article(daw, "az"), wiki_article(daw, "tour")]
-    for ch in steps(daw, "az"):
+    for i, ch in enumerate(steps(daw, "az", honesty=False)):
+        first = i == 0
         n = sum(1 for s in ch["steps"])
         body = "".join(_step_html(s, daw, name) for s in ch["steps"])
-        lead = f'<p class="lead">{_esc(ch["sub"][:1].upper() + ch["sub"][1:])}. {n} lessons, in {name}. In the app, the <b>Teacher</b> tab teaches the same lessons, with audio examples and quizzes.</p>'
+        lead = f'<p class="lead">{_esc(ch["sub"][:1].upper() + ch["sub"][1:])}. {n} lessons, in {name}. In the app, the <b>Teacher</b> tab teaches the same lessons, with audio examples and quizzes.{_about(daw) if first else ""}</p>'
         if daw == "ardour" and ch["id"] in ("record", "hypnomix"):
-            body += ('<div class="note-box">Ardour gets the short version for now: hypnomix can read and scan Ardour sessions, '
-                     'but can\'t drive Ardour yet, so every step here is done by hand.</div>')
+            body += ('<div class="note-box">HypnoMix DAW gets the short version for now: HypnoMix can read and scan HypnoMix DAW sessions (<code>.ardour</code>), '
+                     'but the Teacher can\'t do the hands-on steps there yet, so every step here is done by hand.</div>')
         out.append(_article(f"learn-{daw}-{ch['id']}", daw, ch["title"], f"teacher mode · {name} · {n} lessons",
                             '<div class="prose paper">' + lead + body + "</div>"))
     return out
@@ -659,17 +713,17 @@ def wiki_article(daw, level="az"):
     """The tour as one article (`tour-DAW`), or, for the complete course (any other level), its contents page (`learn-DAW`)."""
     name = DAWS[daw]
     if level == "tour":
-        parts = [f'<p class="lead">For people who already record and mix: hypnomix with {name}, its devices, and the loop from scan to master. '
-                 'In the app, the <b>Teacher</b> tab walks you through the same steps, and can do the hands-on ones for you (it asks first).</p>']
-        for ch in steps(daw, "tour"):
+        parts = [f'<p class="lead">For people who already record and mix: {_hm_in(daw, "with")}, its devices, and the loop from scan to master. '
+                 f'In the app, the <b>Teacher</b> tab walks you through the same steps, and can do the hands-on ones for you (it asks first).{_about(daw)}</p>']
+        for ch in steps(daw, "tour", honesty=False):
             parts.append(f"<h2>{_esc(ch['title'])}</h2><p><i>{_esc(ch['sub'])}</i></p>")
             parts += [_step_html(s, daw, name) for s in ch["steps"]]
         if daw == "ardour":
-            parts.append('<div class="note-box">Ardour gets the short version for now: hypnomix can read and scan Ardour sessions, '
-                         'but can\'t drive Ardour yet, so every step here is done by hand.</div>')
-        return _article(f"tour-{daw}", daw, f"Guided tour: hypnomix in {name}",
+            parts.append('<div class="note-box">HypnoMix DAW gets the short version for now: HypnoMix can read and scan HypnoMix DAW sessions (<code>.ardour</code>), '
+                         'but the Teacher can\'t do the hands-on steps there yet, so every step here is done by hand.</div>')
+        return _article(f"tour-{daw}", daw, f"Guided tour: {_hm_in(daw)}",
                         "teacher mode · the devices, the song card, A/B, the mastering chain", '<div class="prose paper">' + "".join(parts) + "</div>")
-    chs = steps(daw, "az")
+    chs = steps(daw, "az", honesty=False)
     n101 = count(daw, "101")
     rows = "".join(f'<li><a data-wiki="learn-{daw}-{c["id"]}" href="#"><b>{_esc(c["title"])}</b></a>: {_esc(c["sub"])} '
                    f'<span class="note">({len(c["steps"])} lessons)</span></li>' for c in chs)
@@ -677,8 +731,8 @@ def wiki_article(daw, level="az"):
             f'{name} as your DAW. {sum(len(c["steps"]) for c in chs)} short lessons in {len(chs)} chapters, with audio examples, '
             f'exercises and quizzes. In the app, the <b>Teacher</b> tab teaches the same course and keeps your place; the <a data-wiki="glossary" href="#">Glossary</a> '
             f'lists every word. New and short of time? The <b>101 crash course</b> ({n101} steps for {name}) is inside it: the words and the screen, '
-            f'your first recording, mixing one effect at a time, mastering, then the hypnomix tour.</p><ol>{rows}</ol>'
-            f'<p>Already a working engineer? <a data-wiki="tour-{daw}" href="#">The guided tour</a> covers only hypnomix in {name}.</p></div>')
+            f'your first recording, mixing one effect at a time, mastering, then the HypnoMix tour.</p><ol>{rows}</ol>'
+            f'<p>Already a working engineer? <a data-wiki="tour-{daw}" href="#">The guided tour</a> covers only {_hm_in(daw)}.{_about(daw)}</p></div>')
     return _article(f"learn-{daw}", daw, f"The complete course: make a song from scratch in {name}",
                     "teacher mode · sound, gear, recording, editing, mixing, mastering, releasing", html)
 
@@ -718,6 +772,8 @@ def handle_get(path, q):
         return 200, Path(__file__).with_name("teacher.js").read_bytes(), "text/javascript; charset=utf-8"
     if path == "/api/teach/state":
         return 200, state(q.get("daw"), q.get("level"))
+    if path == "/api/teach/tour":                        # the tours inside the HypnoMix DAW (daw/js/tour.js)
+        return 200, tour_state()
     if path == "/api/teach/connections":
         return 200, connections()
     if path == "/api/teach/glossary":
@@ -732,6 +788,8 @@ def handle_get(path, q):
 
 
 def handle_post(path, body):
+    if path == "/api/teach/tour":
+        return 200, tour_save(body)
     if path == "/api/teach/mark":
         daw = str(body.get("daw", ""))
         if daw not in DAWS:

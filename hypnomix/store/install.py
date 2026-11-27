@@ -10,6 +10,9 @@ Safety rules, all enforced here:
   - limits: a maximum download size (the catalogue's size plus a margin, else DEFAULT_MAX_DOWNLOAD), an overall
     deadline, a free-space check before a big download and before copying, and while unpacking a cap on the entry
     count, on the total unpacked size and on the unpack ratio (a small archive that explodes is refused)
+  - an unpack or a copy may take as long as its size needs: 15 minutes plus one second for every 2 MB (of the download, or of
+    what it says it unpacks to, if that is more), never more than 2 hours (see unpack_limit); the person can cancel it
+    at any time, and when the limit is reached the message says how long it was allowed and that nothing was installed
   - nothing from a download is ever run. Archives are unpacked with path checks (no absolute paths, no "..", no
     links that point outside; on a Python without tarfile's data filter a tar with any link is refused, and every
     member is checked before anything is extracted); a .dmg is attached read-only, without opening a window and
@@ -17,7 +20,8 @@ Safety rules, all enforced here:
   - plug-in bundles (.vst3 .component .clap .lv2 .vst) are copied into ~/Library/Audio/Plug-Ins/<Format>/; samples
     and SFZ content into ~/Music/Hypnomix Library/<Kind>/<Name>/
   - an installer package (.pkg) is never run for you: it is kept (marked as downloaded from the internet, so macOS
-    checks it) and opened in Apple's Installer for you to read and run; it installs outside your home folder
+    checks it) and opened in Apple's Installer for you to read and run; it installs outside your home folder. That holds
+    for a package found inside a disk image or an archive, and for a download that IS the package
   - every file and folder installed is written to a manifest, so uninstall removes exactly that (compared by real
     path: a link in a parent folder, or a plug-in folder itself, is refused) and an update replaces it; anything
     already there that the store did not install is left alone unless you confirm
@@ -65,6 +69,11 @@ MAX_RATIO = 100                         # unpacked / downloaded; a "zip bomb" is
 MIN_UNPACK_ALLOWED = 32 * 10 ** 6       # a tiny archive may still unpack to this much
 SPACE_FACTOR = 3                        # download + unpacked copy + installed copy
 SPACE_MARGIN = 512 * 10 ** 6
+UNPACK_BASE_S = 900                     # an unpack or copy may always take this long ...
+UNPACK_SLOW_BYTES_S = 2 * 10 ** 6       # ... plus one more second for every this many bytes (a slow, busy disk)
+UNPACK_MAX_S = 2 * 3600                 # ... but never more than this
+_clock = time.monotonic                 # the unpack watchdog's clock and sleep (a test swaps them for a fake clock)
+_sleep = time.sleep
 
 
 class StoreError(Exception):
@@ -77,7 +86,7 @@ class NotVerified(StoreError):
         self.name, self.url, self.pkg = name, url, pkg
         host = urllib.parse.urlparse(url).hostname or "its publisher"
         super().__init__(
-            f"{name} is NOT VERIFIED: its publisher gives no sha256 fingerprint for this download, so hypnomix cannot "
+            f"{name} is NOT VERIFIED: its publisher gives no sha256 fingerprint for this download, so HypnoMix cannot "
             f"check that the file is the one the publisher released. It would be fetched over HTTPS from {host}."
             + (" It is an installer package: once you click through Apple's Installer it runs with administrator rights."
                if pkg else "")
@@ -279,6 +288,26 @@ def _gb(n):
     return f"{n / 1e9:.1f} GB" if n >= 1e9 else f"{n / 1e6:.0f} MB"
 
 
+def _duration(seconds):
+    s = int(round(seconds))
+    if s >= 7200 and s % 3600 == 0:
+        return f"{s // 3600} hours"
+    return f"{-(-s // 60)} minutes" if s >= 120 else f"{s} seconds"      # whole minutes, rounded up (950 s is 16, not 15)
+
+
+def unpack_limit(nbytes):
+    """How many seconds an unpack or a copy of this many bytes may take: UNPACK_BASE_S (15 minutes) plus one second for
+    every UNPACK_SLOW_BYTES_S (2 MB), never more than UNPACK_MAX_S (2 hours). A 100 MB download gets 16 minutes, 3 GB
+    gets 40, and anything from about 13 GB up (12.6 GB exactly) gets the 2-hour ceiling."""
+    return int(min(UNPACK_MAX_S, UNPACK_BASE_S + max(int(nbytes or 0), 0) / UNPACK_SLOW_BYTES_S))
+
+
+def _too_slow(what, limit, nbytes):
+    return StoreError(f"{what} took longer than the {_duration(limit)} the store allows for a download of {_gb(nbytes)}, "
+                      "so it was stopped and nothing was installed. The disk may be slow or busy: try again when the "
+                      "computer is quiet (the downloaded file was deleted).")
+
+
 def download_cap(size=None, hint=0):
     """The most bytes a download may be: the publisher's exact size plus 10%, else the catalogue's rough size with a
     margin, else DEFAULT_MAX_DOWNLOAD."""
@@ -388,6 +417,7 @@ class Budget:
     entries, the total bytes, and the ratio of bytes to the size of what was downloaded. Also carries the deadline
     and the cancel check, so a long unpack can be stopped."""
     def __init__(self, archive_bytes, deadline=None, cancel=None, max_bytes=None, max_entries=None):
+        self.archive_bytes = int(archive_bytes or 0)
         self.max_bytes = max_bytes or min(MAX_UNPACKED, max(MIN_UNPACK_ALLOWED, MAX_RATIO * int(archive_bytes or 0)))
         self.max_entries = max_entries or MAX_ENTRIES
         self.bytes = self.entries = 0
@@ -405,14 +435,33 @@ class Budget:
     def left(self):
         return max(self.max_bytes - self.bytes, 0)
 
+    def limit_s(self):
+        """The seconds one unpack or copy may take: scaled by the larger of the download and what it says it holds."""
+        return unpack_limit(max(self.archive_bytes, self.bytes))
+
     def check(self):
         _stop_check(self.deadline, self.cancel)
 
+    def watch(self):
+        """-> a function to call between the files of an unpack done in Python (a tar, or a zip on a system without
+        ditto). It stops the unpack when the person cancels, when the install's overall deadline passes, and when this
+        unpack has taken longer than limit_s() (so a big archive gets the time its size needs, and no more than the cap)."""
+        start = _clock()
 
-def _tree_size(p):
-    """Bytes and entry count under p (links counted, never followed)."""
+        def tick():
+            self.check()
+            if _clock() - start > self.limit_s():
+                raise _too_slow("Unpacking", self.limit_s(), max(self.archive_bytes, self.bytes))
+        return tick
+
+
+def _tree_size(p, tick=None):
+    """Bytes and entry count under p (links counted, never followed). `tick`, when given, is called for every folder
+    so that a long walk can be cancelled."""
     n = c = 0
     for dirpath, dirs, files in os.walk(p):
+        if tick:
+            tick()
         c += len(dirs) + len(files)
         for f in files:
             try:
@@ -455,7 +504,9 @@ def _unpack(src, dest, budget):
             if sys.platform == "darwin" and shutil.which("ditto"):
                 _run_limited(["ditto", "-x", "-k", str(src), str(dest)], "unzipping", dest, budget)   # keeps links and permissions
             else:
+                tick = budget.watch()
                 for i in infos:
+                    tick()
                     out = z.extract(i, dest)
                     mode = (i.external_attr >> 16) & 0o777
                     if mode and not i.is_dir():
@@ -470,7 +521,10 @@ def _unpack(src, dest, budget):
                 if m.issym() and not _safe_link(m.name, m.linkname) or m.islnk() and not _safe_name(m.linkname):
                     raise StoreError(f"refused: the archive has a link pointing outside it ({m.name})")
             if _has_data_filter():
-                t.extractall(dest, filter="data")
+                tick = budget.watch()
+                for m in members:                          # one at a time, so Cancel and the time limit can stop it
+                    tick()
+                    t.extract(m, dest, filter="data")
             else:
                 # no safe-extraction filter in this Python: a chain of links (a/l -> .., m -> a/l/..) passes the
                 # per-entry checks and would write outside dest while extracting, so refuse any link, and extract
@@ -483,15 +537,19 @@ def _unpack(src, dest, budget):
                     tgt = os.path.realpath(os.path.join(dest, m.name))
                     if tgt != real and not tgt.startswith(real + os.sep):
                         raise StoreError(f"refused: the archive has an unsafe entry {m.name!r}")
+                tick = budget.watch()
                 for m in members:
-                    budget.check()
+                    tick()
                     m.mode &= 0o777
                     t.extract(m, dest)
     elif kind == ".7z":
         tar = shutil.which("bsdtar") or ("/usr/bin/tar" if sys.platform == "darwin" else None)
         if not tar:
             raise StoreError("unpacking .7z needs bsdtar (built into macOS)")
-        names = _run([tar, "-tf", str(src)], "listing the archive").splitlines()
+        rc, listing = _run_watched([tar, "-tf", str(src)], "listing the archive", None, budget)      # watched: Cancel works here too
+        if rc:
+            raise StoreError(f"listing the archive failed: {listing.strip()[-400:]}")
+        names = listing.splitlines()
         budget.add(0, len(names))
         bad = [n for n in names if not _safe_name(n)]
         if bad:
@@ -521,29 +579,36 @@ def _check_links(dest):
                                      f"({os.path.relpath(p, dest)} -> {os.readlink(p)})")
 
 
-def _run(cmd, what, timeout=900, stdin=subprocess.DEVNULL):
-    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, stdin=stdin)
+def _run(cmd, what, timeout=900, stdin=subprocess.DEVNULL, nbytes=0):
+    """A short command (a listing, a copy without a budget). Its limit is `timeout`; pass one that fits the size."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, stdin=stdin)
+    except subprocess.TimeoutExpired:
+        raise _too_slow(what.capitalize(), timeout, nbytes)
     if r.returncode:
         raise StoreError(f"{what} failed: {(r.stderr or r.stdout).strip()[-400:]}")
     return r.stdout
 
 
-def _run_limited(cmd, what, watch, budget, timeout=900):
-    """Run an unpacking command, and kill it when what it writes under `watch` passes the budget, when the deadline
-    passes, or when the person cancels (a hostile archive can claim small sizes and still expand without end). The
-    writing is looked at about once a second, so a fast unpack can land before the first look: the check after it is the
-    backstop (and the free-space check before the download bounds the damage)."""
-    start = last_look = time.monotonic()
+def _run_watched(cmd, what, watch, budget, timeout=None):
+    """Run an unpacking or copying command and watch it -> (return code, its output). It is killed when what it writes
+    under `watch` (if given) passes the budget, when the deadline passes, when the person cancels, or when it has taken
+    longer than `timeout` (default: budget.limit_s(), which grows with the size of the download: see unpack_limit). A
+    hostile archive can claim small sizes and still expand without end, so the writing is looked at about once a second;
+    a fast unpack can land before the first look, and the check after it is the backstop (with the free-space check
+    before the download, which bounds the damage)."""
+    limit = timeout if timeout is not None else budget.limit_s()
+    start = last_look = _clock()
     with tempfile.TemporaryFile("w+", encoding="utf-8", errors="replace") as out:
         p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
         try:
             while p.poll() is None:
-                time.sleep(0.2)
+                _sleep(0.2)
                 budget.check()
-                if time.monotonic() - start > timeout:
-                    raise StoreError(f"{what} took too long and was stopped")
-                if time.monotonic() - last_look >= 1.0:           # look at what has been written about once a second
-                    last_look = time.monotonic()
+                if _clock() - start > limit:
+                    raise _too_slow(what.capitalize(), limit, max(budget.archive_bytes, budget.bytes))
+                if watch is not None and _clock() - last_look >= 1.0:       # look at what has been written about once a second
+                    last_look = _clock()
                     n, c = _tree_size(watch)
                     if n > budget.max_bytes or c > budget.max_entries:
                         raise StoreError("refused: the archive is unpacking to far more than the store allows "
@@ -552,39 +617,52 @@ def _run_limited(cmd, what, watch, budget, timeout=900):
             p.kill()
             p.wait()
             raise
-        if p.returncode:
-            out.seek(0)
-            raise StoreError(f"{what} failed: {out.read().strip()[-400:]}")
-    n, c = _tree_size(watch)                                  # a fast unpack ends before the first look
-    if n > budget.max_bytes or c > budget.max_entries:
-        raise StoreError("refused: the archive unpacked to far more than the store allows "
-                         f"(over {_gb(budget.max_bytes)} or {budget.max_entries} files)")
+        out.seek(0)
+        text = out.read()
+    if watch is not None:
+        n, c = _tree_size(watch)                              # a fast unpack ends before the first look
+        if n > budget.max_bytes or c > budget.max_entries:
+            raise StoreError("refused: the archive unpacked to far more than the store allows "
+                             f"(over {_gb(budget.max_bytes)} or {budget.max_entries} files)")
+    return p.returncode, text
+
+
+def _run_limited(cmd, what, watch, budget, timeout=None):
+    rc, text = _run_watched(cmd, what, watch, budget, timeout)
+    if rc:
+        raise StoreError(f"{what} failed: {text.strip()[-400:]}")
 
 
 def _dmg_copy(src, dest, budget=None):
     if sys.platform != "darwin":
         raise StoreError("disk images (.dmg) can only be opened on a Mac")
+    budget = budget or Budget(src.stat().st_size)
     mnt = Path(tempfile.mkdtemp(prefix="hypnomix-store-mnt-"))
     try:
-        # read-only, no Finder window, nothing opened; stdin closed so a licence agreement is never accepted for you
-        r = subprocess.run(["hdiutil", "attach", "-readonly", "-nobrowse", "-noautoopen", "-mountpoint", str(mnt), str(src)],
-                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300, stdin=subprocess.DEVNULL)
-        if r.returncode:
-            msg = (r.stderr or r.stdout).strip()
+        # read-only, no Finder window, nothing opened; stdin closed so a licence agreement is never accepted for you.
+        # Watched like an unpack: the person can cancel, and a big image gets the time its size needs.
+        try:
+            rc, msg = _run_watched(["hdiutil", "attach", "-readonly", "-nobrowse", "-noautoopen", "-mountpoint", str(mnt), str(src)],
+                                   "opening the disk image", None, budget, timeout=max(300, budget.limit_s()))
+        except BaseException:
+            subprocess.run(["hdiutil", "detach", "-force", str(mnt)], capture_output=True, timeout=120)   # a stopped attach
+            raise
+        if rc:
+            msg = msg.strip()
             if "agreement" in msg.lower() or "license" in msg.lower():
                 raise StoreError("this disk image shows a licence agreement first: open it yourself to read and accept it")
             raise StoreError(f"could not open the disk image: {msg[-300:]}")
         try:
-            if budget:                                         # the image's contents are counted before any copy
-                n, c = _tree_size(mnt)
-                budget.add(n, c)
+            n, c = _tree_size(mnt, budget.watch())             # the image's contents are counted before any copy
+            budget.add(n, c)
             for p in mnt.iterdir():
+                budget.check()
                 if p.name in JUNK or p.is_symlink():          # the "Applications" shortcut and Finder's files
                     continue
                 if p.is_dir():
-                    _copy_tree(p, dest / p.name)
+                    _copy_tree(p, dest / p.name, budget)
                 else:
-                    shutil.copy2(p, dest / p.name)
+                    _copy_file(p, dest / p.name, budget)
         finally:
             d = subprocess.run(["hdiutil", "detach", str(mnt)], capture_output=True, timeout=120)
             if d.returncode:
@@ -596,10 +674,29 @@ def _dmg_copy(src, dest, budget=None):
             pass
 
 
-def _copy_tree(a, b):
-    """Copy a bundle or folder, keeping its links as links (never following them)."""
+def _copy_file(a, b, budget):
+    """Copy one file in pieces, keeping its permissions and dates, so that Cancel, the install's deadline and the time
+    limit for its size are looked at while it is copied (a disk image can hold one multi-gigabyte installer)."""
+    tick = budget.watch()
+    with open(a, "rb") as fin, open(b, "wb") as fout:
+        while True:
+            tick()
+            chunk = fin.read(8 * 1024 * 1024)
+            if not chunk:
+                break
+            fout.write(chunk)
+    shutil.copystat(a, b)
+
+
+def _copy_tree(a, b, budget=None):
+    """Copy a bundle or folder, keeping its links as links (never following them). With a budget the copy is watched
+    (cancel, deadline, time limit that fits the size); without one it gets the time limit for the size of what it copies."""
     if sys.platform == "darwin" and shutil.which("ditto"):
-        _run(["ditto", str(a), str(b)], "copying")
+        if budget is not None:
+            _run_limited(["ditto", str(a), str(b)], "copying", b, budget)
+        else:
+            n = _tree_size(a)[0]
+            _run(["ditto", str(a), str(b)], "copying", timeout=unpack_limit(n), nbytes=n)
     else:
         shutil.copytree(a, b, symlinks=True)
 
@@ -798,7 +895,57 @@ def _place(pairs, item_id, confirm_overwrite):
     return [str(t) for t in done], kept
 
 
+PKG_EXT = (".pkg", ".mpkg")
+PKG_NOTE = ("The publisher ships this as an installer package, so HypnoMix does not install it: "
+            "{opened} An installer package puts files outside your home folder and asks for your password: read it first. "
+            "Remove it later with the publisher's instructions.")
+
+
+def _is_bare_pkg(path):
+    return Path(path).name.lower().endswith(PKG_EXT)
+
+
+def _starts_like_pkg(path):
+    with open(path, "rb") as f:
+        return f.read(4) == b"xar!"
+
+
+def _keep_installer(item, pkg, open_pkg, work=None):
+    """Keep an installer package in the store's installers folder, marked as downloaded from the internet (so that macOS
+    checks it), and offer it to the person in Apple's Installer. It is NEVER run here. `pkg` is a file, or a folder
+    (an old-style package) found inside a download; a file that is the download itself is moved out of the work folder
+    instead of copied (the same disk, so it costs nothing)."""
+    pkg = Path(pkg)
+    if pkg.is_file() and not _starts_like_pkg(pkg):                    # every flat installer package starts like this
+        raise StoreError(f"{pkg.name} is named like an installer package but is not one (it does not start the way an "
+                         "installer package does), so it was refused and nothing was kept")
+    keep = state_dir() / "installers" / item["id"] / pkg.name
+    if keep.exists():
+        shutil.rmtree(keep) if keep.is_dir() else keep.unlink()
+    keep.parent.mkdir(parents=True, exist_ok=True)
+    if pkg.is_dir():
+        _copy_tree(pkg, keep)
+    elif work is not None and os.path.realpath(pkg).startswith(os.path.realpath(work) + os.sep):
+        shutil.move(str(pkg), str(keep))
+    else:
+        shutil.copy2(pkg, keep)
+    quarantined = _quarantine(keep)
+    if not quarantined:                                  # never hand macOS a file it has not been told came from the internet
+        opened = False
+        how = ("it could not be marked as downloaded from the internet (so macOS would not check it), and it was NOT "
+               "opened: use Show installer to try again, or open it yourself once you have read about it.")
+    else:
+        opened = _open_pkg(keep) if open_pkg is None else open_pkg(keep)
+        how = ("it is open in Apple's Installer for you to read and run." if opened else
+               "open the installer yourself (Show installer) to read and run it.")
+    return {"method": "pkg", "paths": [], "installer": str(keep), "opened": bool(opened), "quarantined": quarantined,
+            "note": PKG_NOTE.format(opened=how)}
+
+
 def _install_plugins(item, archive, work, confirm_overwrite, open_pkg, progress, budget=None):
+    if _is_bare_pkg(archive):                          # the download IS the installer package (nothing to unpack)
+        _say(progress, "install", 0, 1)
+        return _keep_installer(item, archive, open_pkg, work)
     top, found = _unpack_all(archive, work, lambda f: bool(f["bundles"]), budget)
     if found["bundles"]:
         pairs, seen = [], set()
@@ -813,20 +960,7 @@ def _install_plugins(item, archive, work, confirm_overwrite, open_pkg, progress,
                 "formats": sorted({FORMAT_OF[Path(p).suffix.lower()] for p in paths}),
                 "archs": {Path(p).name: archs(Path(p)) for p in paths}}
     if found["pkgs"]:
-        pkg = found["pkgs"][0]
-        keep = state_dir() / "installers" / item["id"] / pkg.name
-        if keep.exists():
-            shutil.rmtree(keep) if keep.is_dir() else keep.unlink()
-        keep.parent.mkdir(parents=True, exist_ok=True)
-        _copy_tree(pkg, keep) if pkg.is_dir() else shutil.copy2(pkg, keep)
-        quarantined = _quarantine(keep)
-        opened = _open_pkg(keep) if open_pkg is None else open_pkg(keep)
-        return {"method": "pkg", "paths": [], "installer": str(keep), "opened": bool(opened), "quarantined": quarantined,
-                "note": "The publisher ships this as an installer package, so hypnomix does not install it: "
-                        + ("it is open in Apple's Installer for you to read and run." if opened else
-                           "open the installer yourself (Show installer) to read and run it.")
-                        + " An installer package puts files outside your home folder and asks for your password: read it first."
-                        + " Remove it later with the publisher's instructions."}
+        return _keep_installer(item, found["pkgs"][0], open_pkg)
     raise StoreError("found no plug-in (.vst3, .component, .clap, .lv2) or installer in the download"
                      + (f"; it has an app ({found['apps'][0].name}) instead" if found["apps"] else ""))
 
@@ -841,9 +975,19 @@ def _quarantine(p):
                           stdin=subprocess.DEVNULL).returncode == 0
 
 
+def _is_quarantined(p):
+    """True when the file carries the "downloaded from the internet" flag."""
+    if sys.platform != "darwin" or not shutil.which("xattr"):
+        return False
+    return subprocess.run(["xattr", "-p", "com.apple.quarantine", str(p)], capture_output=True,
+                          stdin=subprocess.DEVNULL).returncode == 0
+
+
 def _open_pkg(pkg):
     """Show the installer package to the person in Apple's Installer (they read and run it). Never `installer`."""
     if os.environ.get("HYPNOMIX_STORE_NO_OPEN") or sys.platform != "darwin":
+        return False
+    if not _is_quarantined(pkg) and not _quarantine(pkg):      # an unmarked package is not handed to the Installer
         return False
     return subprocess.run(["open", "-b", "com.apple.installer", str(pkg)], capture_output=True).returncode == 0
 

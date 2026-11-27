@@ -5,7 +5,7 @@ subtitle: Tuning, harmony balance, comp edges, hiss, breaths and esses, without 
 
 # The voice first
 
-Vocals carry the song, and listeners hear every flaw in them. hypnomix's vocal tools share one idea:
+Vocals carry the song, and listeners hear every flaw in them. HypnoMix's vocal tools share one idea:
 **fix what distracts, keep what's human.** Every tool is gentle by default, changes only the moments that need
 it, and leaves the rest of the take bit for bit as it was.
 

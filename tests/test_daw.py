@@ -925,8 +925,9 @@ class AppQuits(unittest.TestCase):
                 os.kill(pid, signal.SIGKILL)
 
 
-class FullApp(unittest.TestCase):
-    """The full download's window: File → New Session / Open Session go through the DAW view to the supervisor."""
+class TestBuildApp(unittest.TestCase):
+    """A test build whose bundle carries the engine kit (found for one more version): its window's File → New Session / Open
+    Session go through the DAW view to the supervisor. The installer no longer carries the engine."""
     def test_the_window_and_the_view_are_wired(self):
         root = Path(__file__).resolve().parents[1]
         swift = (root / "macapp" / "Hypnomix.swift").read_text()
@@ -938,12 +939,13 @@ class FullApp(unittest.TestCase):
         self.assertIn("'/api/daw/new' : '/api/daw/open'", js)
         self.assertIn("'To ' + what + ', the engine closes '", js)      # asks before closing an open session (HX.guardedPost: Save / Don't save / Cancel)
         sh = (root / "packaging" / "mac" / "build_dmg.sh").read_text()
-        for word in ("--daw)", "--app-only)", '"$res/engine"', 'codesign --verify --deep --strict "$app"', "Hypnomix-$version-${edition}mac-$arch.dmg"):
+        for word in ("--app-only)", 'codesign --verify --deep --strict "$app"', "Hypnomix-$version-mac-$arch.dmg"):
             self.assertIn(word, sh)
+        self.assertNotIn("--daw)", sh)                                  # the engine is not put inside the installer's app
 
 
 class Attach(unittest.TestCase):
-    """No engine program yet: use a Hypnomix window that is already running (here: the stand-in, started by hand)."""
+    """No engine program yet: use a HypnoMix window that is already running (here: the stand-in, started by hand)."""
     def setUp(self):
         self.td = tempfile.TemporaryDirectory()
         self.p = subprocess.Popen([str(make_fake(self.td.name))], stdout=subprocess.PIPE, text=True)
@@ -989,20 +991,18 @@ class Attach(unittest.TestCase):
                 self.assertEqual(DW.find_engine(), Path(self.td.name) / "hypnomix-engine")
             with mock.patch.object(DW.sys, "executable", "/A/Hypnomix.app/Contents/Resources/python/bin/python3"):
                 self.assertIn(Path("/A/Hypnomix.app/Contents/Resources/engine/bin/hypnomix-engine"), DW.candidates())   # in the bundle
-                self.assertNotIn(Path("/A/Hypnomix.app/Contents/MacOS/hypnomix-engine"), DW.candidates())   # one place, as the edition counts it
+                self.assertNotIn(Path("/A/Hypnomix.app/Contents/MacOS/hypnomix-engine"), DW.candidates())   # only the bundle's one place
             app = Path(self.td.name).resolve() / "Hypnomix.app" / "Contents"             # the full download's bundle
             py = app / "Resources" / "python" / "bin" / "python3"
             kit = app / "Resources" / "engine" / "bin" / "hypnomix-engine"
             with mock.patch.object(DW.sys, "executable", str(py)), mock.patch.dict(os.environ, {"HYPNOMIX_ENGINE": ""}), \
                     mock.patch.object(DW, "_conf", lambda: {}):
-                self.assertEqual(DW.candidates()[0], kit)                              # the embedded kit comes first
-                self.assertEqual(DW.app_edition(), "assistant")                        # an app without the kit
-                self.assertIsNone(DW.embedded_engine())
+                self.assertIn(kit, DW.candidates())                                    # a test build's kit is still looked for
+                self.assertIsNone(DW.find_engine())                                    # an app without it (or the add-on) has none
                 kit.parent.mkdir(parents=True)
                 kit.write_text("#!/bin/sh\n")
                 kit.chmod(0o755)
-                self.assertEqual((DW.find_engine(), DW.embedded_engine(), DW.app_edition()), (kit, kit, "full"))
-            self.assertEqual(DW.app_edition(), "")                                     # a source checkout
+                self.assertEqual(DW.find_engine(), kit)
             dev = Path(self.td.name) / "tree" / "hypnomix" / "engine" / "engine-dev"     # a source build
             dev.parent.mkdir(parents=True)
             dev.write_text("#!/bin/sh\n")
@@ -1363,7 +1363,7 @@ class Bridge(unittest.TestCase):
             self.assertTrue(wait(lambda: not CH.state()["busy"], 10))
         self.assertIn("daw_track_set_fader_db", seen["tools"])
         self.assertIn("list_songs", seen["tools"])
-        self.assertIn("Hypnomix DAW is open", seen["system"])
+        self.assertIn("HypnoMix DAW is open", seen["system"])
         self.assertIn('"called":"track_set_fader_db"', seen["after_approve"])
         self.assertIn("cancelled", seen["after_cancel"])
         sent = [c for c in self.engine_calls() if c["name"] == "track_set_fader_db"]

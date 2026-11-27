@@ -113,7 +113,7 @@ def bounce_vs_profile(bounce):
     from hypnomix.ears.measure import measure
     a = audio_metrics(measure(bounce)); prof = profile_ranges()
     if not prof:
-        print("no profile yet (hypnomix profile build …): showing the numbers without your ranges", file=sys.stderr)
+        print("no profile yet (`hypnomix profile build …`): showing the numbers without your ranges", file=sys.stderr)
     rows = []
     for k in ["integrated_lufs", "true_peak_dbtp", "lra_lu", "crest_factor_db", "band_sub_20_60", "band_bass_60_250",
               "band_lowmid_250_500", "band_mid_500_2k", "band_highmid_2k_6k", "band_air_6k_20k", "spectral_centroid_hz",

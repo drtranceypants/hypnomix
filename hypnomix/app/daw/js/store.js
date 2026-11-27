@@ -138,6 +138,7 @@
     S.history.push(entry);
     S.future = [];
     HX.emit('history');
+    HX.emit('edit', entry);                            // one change made (the guided tours listen for it)
     return serial(async () => {
       for (const o of ops) {
         try { await send(o, o.after); } catch (e) {
@@ -200,6 +201,7 @@
     if (!h) return HX.toast('Nothing to undo');
     if (h.ops.some(viaEngine) && !(await HX.engineUndo(h, 'undo'))) { S.history.push(h); HX.emit('history'); return; }
     await step(h, 'undo');
+    if (S.future.includes(h)) HX.emit('undone', h);    // taken back (the guided tours listen for it)
   });
   HX.redo = () => serial(async () => {
     if (HX.editBlocked()) return HX.toast(HX.editBlocked(), 3600);
@@ -207,6 +209,7 @@
     if (!h) return HX.toast('Nothing to redo');
     if (h.ops.some(viaEngine) && !(await HX.engineUndo(h, 'redo'))) { S.future.push(h); HX.emit('history'); return; }
     await step(h, 'redo');
+    if (S.history.includes(h)) HX.emit('redone', h);
   });
 
   HX.select = function (trackId, clipId) {

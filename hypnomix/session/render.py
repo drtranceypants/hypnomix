@@ -22,7 +22,7 @@ Every clip edge gets Live's default ~3 ms fade so cuts don't click.
 Clips are played like Live: from the start marker, and looped clips wrap from loop end to loop start
 (missing this put whole phrases in the wrong place on sets that use looped vocal clips).
 
-Render cache: each rendered clip is kept (hypnomix home/cache/render, capped at HYPNOMIX_RENDER_CACHE_MB, default
+Render cache: each rendered clip is kept (HypnoMix home/cache/render, capped at HYPNOMIX_RENDER_CACHE_MB, default
 2048) keyed by its source file, its settings, the tempo and the sample rate, so rendering the same set again only
 renders what changed, bit for bit the same. --no-cache (or HYPNOMIX_NO_CACHE=1) renders everything again.
 
@@ -62,7 +62,7 @@ def clip_source(c, als, sources):
 
 
 # ---------------------------------------------------------------- render cache
-# Each rendered clip is kept under <hypnomix home>/cache/render/, keyed by a hash of: the source file (path, mtime,
+# Each rendered clip is kept under <HypnoMix home>/cache/render/, keyed by a hash of: the source file (path, mtime,
 # size), the clip's XML (warp markers, loop, fades, gain: everything but where it sits on the timeline), its
 # length, the tempo, the sample rate, --tighten and the stretcher in use. A changed clip or file is a new key, so
 # a stale render is never reused. Size cap: HYPNOMIX_RENDER_CACHE_MB (default 2048), oldest-used removed first,

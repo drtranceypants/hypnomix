@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""First-pass scan: run every hypnomix check on a song, change NOTHING, and write one review list.
+"""First-pass scan: run every HypnoMix check on a song, change NOTHING, and write one review list.
 
   hypnomix scan SET.als [--mix MIX.wav] [--ref INSTRUMENTAL.wav] [--out DIR] [--only GROUP ...]
   hypnomix scan SONG.rpp             (a REAPER project: see `hypnomix.workflow.scan_project` for its groups)
-  hypnomix scan SONG.ardour          (an Ardour session, or its session folder: the same groups as REAPER; a folder with
+  hypnomix scan SONG.ardour          (a HypnoMix DAW session, or its session folder: the same groups as REAPER; a folder with
                                      several snapshots and none named like it is read from the newest, and it says so)
   hypnomix scan FOLDER               (raw recordings or exported stems, any DAW: no Live set needed)
   hypnomix scan --merge DIR          (rebuild REVIEW.md from group results, e.g. after parallel agents)
@@ -49,7 +49,7 @@ A folder is measured file by file: --mix, --ref, --key, --like, --backing, --dee
 are not used for it (the scan says so, once on screen and once in REVIEW.md, and does not record them); --since and
 --quick are for a Live set. A file that cannot be measured (no audio, NaN samples, more than five channels) is a
 finding of its own, and is left out of the comparison of how the files sit together instead of stopping it. Anything
-that is not a Live set, a REAPER project, an Ardour session or a folder of recordings, and any project that cannot be
+that is not a Live set, a REAPER project, a HypnoMix DAW session or a folder of recordings, and any project that cannot be
 read, ends in one plain sentence (before any scan folder is made). `--merge DIR` needs a folder a scan wrote.
 
 Output folder (default hypnomix-out/scan/<song>/):
@@ -93,7 +93,7 @@ VOCAL_LABELS = ("Lead Vocal", "Vocal", "Harmony", "Backing Vocal")
 
 
 def hx(*args, timeout=3600):
-    """Run a hypnomix command; return (exit code, stdout+stderr text)."""
+    """Run a HypnoMix command; return (exit code, stdout+stderr text)."""
     r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)],
                        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
     return r.returncode, (r.stdout or "") + (("\n" + r.stderr) if r.stderr.strip() else "")
@@ -208,7 +208,7 @@ def g_names(als, od, a):
     if not path.exists():
         roles(als, od)
     if not path.exists():
-        return [], ["names: failed (hypnomix name did not finish), so no track names are proposed and the "
+        return [], ["names: failed (`hypnomix name` did not finish), so no track names are proposed and the "
                     "other checks lack track roles. Full output: raw/names.txt"]
     rows = json.loads(path.read_text(encoding="utf-8")).get("tracks", [])
     out, n = [], 0
@@ -316,7 +316,7 @@ def g_clips(als, od, a):
 
 
 def low_end_tracks(tracks, role):
-    """(bass tracks, drum tracks) among `tracks`, the way the REAPER and Ardour scans choose them: what the track is CALLED
+    """(bass tracks, drum tracks) among `tracks`, the way the REAPER and HypnoMix DAW scans choose them: what the track is CALLED
     first (engineer.roles.by_name), and only when its name says nothing the sound-based label from `hypnomix name`. A
     kick-heavy track called "Drums" is drums, not the bass."""
     from hypnomix.engineer import roles as RO
@@ -926,7 +926,7 @@ def check_recording(path):
         return [("empty", "high", "the file has no audio", "export it again", None)], {}
     pre = []
     if y.shape[1] > 5:         # the loudness meter reads mono up to five channels: qc, release and translate refuse more
-        pre.append(("channels", "medium", f"has {y.shape[1]} channels; hypnomix's measuring tools read up to five",
+        pre.append(("channels", "medium", f"has {y.shape[1]} channels; HypnoMix's measuring tools read up to five",
                     "export it as stereo or mono (or one file per channel); nothing was changed", None))
     bad = ~np.isfinite(y)
     if bad.any():              # NaN or infinite samples: report them, and measure the rest as if they were zero
@@ -1077,7 +1077,7 @@ def g_recordings(folder, od, a):
 
 
 def g_recordings_set(als, od, a):
-    """The folder scan's recordings check, on the audio files a Live set plays (the same one the REAPER and Ardour scans
+    """The folder scan's recordings check, on the audio files a Live set plays (the same one the REAPER and HypnoMix DAW scans
     run), so hiss, DC offset, clipping and levels in the source files are not missed because the song is a set."""
     from hypnomix import project as PJ
     from hypnomix.workflow import scan_project as SP
@@ -1159,7 +1159,7 @@ def stem_findings(stems, sr, paths=None, top=8, writable=None):
     notes = [f"stems: {len(stems)} parts compared; roles by name then sound: "
              + ", ".join(f"{n}={r}" for n, r in list(role_of.items())[:12])]
     if len(collisions) > top:
-        notes.append(f"stems: {len(collisions) - top} smaller frequency fights not listed (hypnomix masking shows all)")
+        notes.append(f"stems: {len(collisions) - top} smaller frequency fights not listed (`hypnomix masking` shows all)")
     return out + phase_findings(stems, sr, paths), notes
 
 
@@ -1322,7 +1322,7 @@ def g_intent(als, od, a):
                 add(name, f"panned hard {'right' if float(pan.get('Value')) > 0 else 'left'}")
     notes = [f"intent: {n} thing(s) that look deliberate, listed as questions"]
     if extra:
-        notes.append(f"intent: {extra} more automated controls not listed (hypnomix automation list shows all)")
+        notes.append(f"intent: {extra} more automated controls not listed (`hypnomix automation list` shows all)")
     return out, notes
 
 
@@ -1768,9 +1768,9 @@ def write_review(od, setp, findings, notes, meta, pref_lines=(), prefs=None):
     if rpp_:                                  # an Ardour session (REAPER returned above)
         L += ["## Apply", "", "```", f'hypnomix fix "{od}" --decide ID=approve,ID=skip      # record each decision',
               f'hypnomix fix "{od}" --approved --out "<Session> (fixed).ardour"   # apply only what was approved', "```",
-              "Ardour session: `fix` writes approved fades, cuts, dips and mixer moves into ONE new .ardour snapshot "
-              "next to the original, inside the same session folder. It is written and re-read by hypnomix; not yet "
-              "opened in Ardour. *Manual* items say what to change in Ardour; *audio* items (dehiss, deess, "
+              "HypnoMix DAW session: `fix` writes approved fades, cuts, dips and mixer moves into ONE new .ardour snapshot "
+              "next to the original, inside the same session folder. It is written and re-read by HypnoMix; not yet "
+              "opened in HypnoMix DAW. *Manual* items say what to change in HypnoMix DAW; *audio* items (dehiss, deess, "
               "breaths) become new files with `hypnomix fix`, and you swap them in as new regions. Tuning and the other "
               "kinds are done by hand."]
         AT.write_text(od / "REVIEW.md", "\n".join(L) + "\n", backup=False)
@@ -1883,7 +1883,7 @@ def incremental_decisions(od, since):
 
 # ---------------------------------------------------------------- main
 def _source_path(p):
-    """A project path in one form: an Ardour session folder and the .ardour file inside it are the same source."""
+    """A project path in one form: a HypnoMix DAW session folder and the .ardour file inside it are the same source."""
     from hypnomix import project as PJ
     q = Path(str(p)).expanduser().resolve()
     inner = PJ.ardour_session(q)
@@ -1899,7 +1899,7 @@ def same_source(recorded, als):
 
 def scan_folder(custom, als, name=None):
     """The folder this scan writes into. A folder that already holds the scan of a DIFFERENT source ("Song.als" and
-    then an Ardour session also called "Song") is never mixed with it: its decisions, fix log and history would
+    then a HypnoMix DAW session also called "Song") is never mixed with it: its decisions, fix log and history would
     be inherited by the wrong song. The next free "<name> (2)", "(3)" ... is used instead, and the person is told."""
     from hypnomix.core import paths
     als = Path(als)
@@ -1940,7 +1940,7 @@ def main():
     ap.add_argument("--deep", action="store_true", help="a set: also render every track and check frequency fights "
                     "and mic phase between tracks (slower)")
     ap.add_argument("--devices", action="store_true", help="a Live set: also write a NEW set next to it with the "
-                    "hypnomix Max for Live devices on every track (probes, the review device and HypnomixMain on Main)")
+                    "HypnoMix Max for Live devices on every track (probes, the review device and HypnomixMain on Main)")
     ap.add_argument("--merge", metavar="DIR", help="only rebuild findings.json + REVIEW.md from DIR")
     ap.add_argument("--quick", action="store_true", help="only the checks that read the set itself (files, intent, "
                     "structure): no rendering or audio analysis, seconds")
@@ -1969,7 +1969,7 @@ def main():
     folder = als.is_dir() and not reaper
     # everything that can be refused is refused here, before a scan folder is made
     if not folder and daw is None:             # a single file that is neither a set nor a project
-        sys.exit(f"{als.name}: not something scan can read: give a Live set (.als), a REAPER project (.rpp), an Ardour "
+        sys.exit(f"{als.name}: not something scan can read: give a Live set (.als), a REAPER project (.rpp), a HypnoMix DAW "
                  "session (.ardour, or its folder) or a folder of recordings" + ("; to look at one audio file use `hypnomix measure`"
                                                          if als.suffix.lower() in AUDIO_EXT + (".mp3", ".m4a", ".aac", ".ogg") else ""))
     if a.since and (reaper or folder):
@@ -2011,7 +2011,7 @@ def main():
         a.mix = a.ref = a.backing = a.key = None
     alts = PJ.ardour_alternatives(als) if daw == "ardour" else []
     if alts:
-        print(f"note: {als.name} holds several Ardour snapshots and none is named like the folder: scanning the newest, "
+        print(f"note: {als.name} holds several HypnoMix DAW snapshots and none is named like the folder: scanning the newest, "
               f"{PJ.ardour_session(als).name} (the others: {', '.join(x.name for x in alts[:4])}); give a .ardour file to choose")
     od = scan_folder(a.out, als)
     from hypnomix.core import paths as _paths
@@ -2084,7 +2084,7 @@ def main():
 
 
 def add_devices(als, out=None):
-    """After the first pass: a NEW set next to the original with the hypnomix devices on every track (the probe on
+    """After the first pass: a NEW set next to the original with the HypnoMix devices on every track (the probe on
     every track and return, the review device and HypnomixMain on Main). The scanned set is not touched."""
     if Path(als).suffix.lower() != ".als":
         print("\n--devices: only for a Live set; skipped")

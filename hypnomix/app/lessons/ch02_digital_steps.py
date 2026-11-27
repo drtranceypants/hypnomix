@@ -190,7 +190,7 @@ STEPS = [
            "For backups, use the **3-2-1 rule**: keep **three** copies of the song, on **two** different kinds of storage "
            "(your computer and an external drive), with **one** copy somewhere else (a cloud folder, or a drive at another "
            "address). A drive that breaks takes everything on it, so the second copy has to be somewhere different. "
-           "hypnomix only ever writes new files and never replaces your original, so your versions stay safe."],
+           "HypnoMix only ever writes new files and never replaces your original, so your versions stay safe."],
       terms=[["Project folder", "the one folder that holds a song's project file and every recording it uses."],
              ["Collect and save", "copying every recording the song uses into the project folder, so the song stands alone."],
              ["Version", "a separate saved copy of the project at one moment, such as 'Song v2', that you can go back to."],
@@ -205,7 +205,7 @@ STEPS = [
            "reaper": ["Use File → **Save project as...** and give it the next version name.",
                       "In the Save dialog, choose the option to copy all media into the project directory, if it is offered, so the project is self-contained."],
            "ardour": ["Use the Session menu's Save As and Snapshot commands to keep a numbered version.",
-                      "An Ardour session is already a folder with its recordings inside, so copy that whole folder when you back up."]},
+                      "A HypnoMix DAW session is already a folder with its recordings inside, so copy that whole folder when you back up."]},
       listen="After copying the song to a second drive, open the copy from there and play it. Every clip should play, "
              "with no missing-file messages.",
       mistakes=["Saving only over the same file. One bad edit or crash and the earlier work is gone; save versions.",

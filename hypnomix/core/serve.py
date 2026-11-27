@@ -1,4 +1,4 @@
-"""The small web servers hypnomix runs on this computer (the app, the review page).
+"""The small web servers HypnoMix runs on this computer (the app, the review page).
 
     LocalServer(("127.0.0.1", port), handler)    a ThreadingHTTPServer that refuses a port someone else already holds
 

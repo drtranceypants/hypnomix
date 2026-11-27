@@ -72,7 +72,7 @@ def read(path, sr=None):
     try:
         y, s = dsp.load(p, sr)
     except Exception as e:
-        reason = str(e).split("as audio: ", 1)[-1] if isinstance(e, dsp.AudioReadError) else "not an audio file hypnomix can read"
+        reason = str(e).split("as audio: ", 1)[-1] if isinstance(e, dsp.AudioReadError) else "not an audio file HypnoMix can read"
         raise CompareError(f"can't read {p.name} as audio: {reason}")
     return dsp.stereo(y), s
 

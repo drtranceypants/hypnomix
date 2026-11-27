@@ -1,6 +1,6 @@
 """Read an Ableton Live set (.als) into the shared model (`model.Project`).
 
-Positions are converted from beats to seconds at the set's tempo (a constant tempo, as the rest of hypnomix
+Positions are converted from beats to seconds at the set's tempo (a constant tempo, as the rest of HypnoMix
 assumes for Live). Rendering is delegated to `hypnomix.session.render.render_track`, the renderer every Live
 tool already uses, so a track renders identically through the model and through `hypnomix render`.
 """

@@ -37,7 +37,7 @@ class ReadGz(unittest.TestCase):
         with self.assertRaises(ValueError) as cm:
             read_gz(p, cap=1 << 20)
         self.assertIn("this file unpacks to more than 1 MB", str(cm.exception))
-        self.assertIn("not a project hypnomix will open", str(cm.exception))
+        self.assertIn("not a project HypnoMix will open", str(cm.exception))
         self.assertEqual(len(read_gz(p, cap=8 << 20)), 6 << 20)   # a higher cap lets it through
 
     def test_a_file_past_the_cap_is_refused_without_holding_it_in_memory(self):

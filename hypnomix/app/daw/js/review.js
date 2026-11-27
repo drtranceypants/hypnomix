@@ -96,12 +96,13 @@
     R.confirm = null; R.err = ''; R.busy = 'scan'; R.job = null; R.log = []; draw();   /* busy at once: a double click starts one scan */
     Promise.resolve(HX.endAuditions && HX.endAuditions('scanning')).catch(() => {}).then(() => api.post('/api/dawreview/scan', { save: true })).then((r) => {   /* ended Hear it first: never saved, never bounced; only reached after "Save and scan" */
       R.busy = 'scan'; R.job = null; draw();
-      HX.log('mcp', 'hypnomix review · session_save, session_export_mix, hypnomix scan ' + r.session.split('/').pop() + ' --mix');
+      HX.log('mcp', 'HypnoMix review · session_save, session_export_mix, hypnomix scan ' + r.session.split('/').pop() + ' --mix');
       follow(r.job, async (ok) => {
         if (!ok) { R.err = 'The scan did not finish: ' + (R.log.slice(-3).join(' · ') || 'see the log'); return draw(); }
         R.st = await api.get('/api/dawreview/state').catch(() => R.st);
         await loadFindings(r.dir).catch((e) => (R.err = e.message));
         HX.toast(list().length + ' findings');
+        HX.emit('review', { what: 'scanned' });
         draw(); select(R.cur);
       });
     }).catch((e) => { R.busy = ''; R.err = e.status === 409 && e.body && e.body.error === 'unsaved' ? 'The session has changes that are not saved. Press Scan again and choose Save and scan.' : e.message; draw(); });
@@ -130,6 +131,7 @@
       if (same) delete R.data.decisions[f.id]; else R.data.decisions[f.id] = e;
     } catch (e) { return HX.toast(e.message, 3200); } finally { R.deciding = false; }
     markers();
+    if (!same) HX.emit('review', { what: 'decided', status: decision });
     const next = list().findIndex((g, k) => k > R.cur && statusOf(g) === 'open');
     if (!same && next >= 0) select(next); else draw();
   }
@@ -150,6 +152,7 @@
         if (!ok || !wrote) { R.err = (ok ? 'Nothing was written: ' : 'Apply failed: ') + (R.log.filter((l) => l.trim()).slice(-3).join(' · ') || 'see the log'); return draw(); }
         ids.forEach((id) => (R.applied[id] = true));
         R.lastOut = r.out; R.confirm = 'open';
+        HX.emit('review', { what: 'applied' });
         await loadFindings(R.data.dir).catch(() => {});
         draw();
       });
@@ -189,6 +192,7 @@
     if (from !== to && !from.paused) { to.currentTime = from.currentTime; from.pause(); to.play(); }
     else if (to.paused) to.play(); else { to.pause(); }
     p.side = side; draw();
+    HX.emit('review', { what: 'ab', side });
   }
 
   /* ── render ── */
@@ -203,7 +207,7 @@
       h('span.stat.mono', { 'data-info': 'The session the engine has open, and the scan folder' }, R.st && R.st.session ? R.st.session.split('/').pop() : ''),
       h('div.right', null,
         busyWord ? h('span.stat', null, busyWord) : null,
-        h('button.btn', { disabled: !!R.busy, onclick: () => scan(), 'data-info': 'Save the session, bounce the mix and run the hypnomix scan on it (asks first)' }, R.data ? 'Rescan' : 'Scan'),
+        h('button.btn', { disabled: !!R.busy, onclick: () => scan(), 'data-info': 'Save the session, bounce the mix and run the HypnoMix scan on it (asks first)' }, R.data ? 'Rescan' : 'Scan'),
         h('button.btn.primary', { disabled: !nApp || !!R.busy, onclick: () => { R.confirm = 'apply'; draw(); }, 'data-info': 'Write the approved fixes into ONE new snapshot beside the original (asks first)' }, 'Apply ' + nApp + ' → new snapshot'))));
 
     const err = R.err ? h('div.rv-confirm', { style: { borderColor: 'var(--bad)', background: 'transparent' } }, h('span', null, R.err), h('button.btn.ghost', { onclick: () => { R.err = ''; draw(); } }, 'Dismiss')) : null;
@@ -211,12 +215,12 @@
       const box = h('div.rv-empty', { style: { maxWidth: '440px' } });
       if (R.busy === 'scan') add(box, h('h3', null, 'Scanning ' + (R.st && R.st.session ? R.st.session.split('/').pop().replace(/\.ardour$/, '') : '')), h('div.scanbar', null, h('i', { style: { width: pct().toFixed(0) + '%' } })), h('span.scanstage', null, (R.job && R.job.step) || 'Starting…'),
         h('pre.rv-log.mono', { style: { textAlign: 'left', fontSize: '10.5px', color: 'var(--tx3)', whiteSpace: 'pre-wrap', margin: 0, maxWidth: '440px', minHeight: '6em' } }, R.log.slice(-6).join('\n')));
-      else if (R.confirm === 'scan') add(box, h('h3', null, 'Save and scan?'), h('p', null, 'The scan saves the session, bounces the mix into the scan folder, then runs the hypnomix scan on the saved session (a few minutes). Nothing in the session changes until you approve fixes and apply them to a new snapshot.'),
+      else if (R.confirm === 'scan') add(box, h('h3', null, 'Save and scan?'), h('p', null, 'The scan saves the session, bounces the mix into the scan folder, then runs the HypnoMix scan on the saved session (a few minutes). Nothing in the session changes until you approve fixes and apply them to a new snapshot.'),
         R.st && R.st.dirty ? h('p', { style: { color: 'var(--warn)' } }, 'The session has unsaved changes: they are saved first.') : null,
         h('div.rv-actions', null, h('button.btn.primary', { onclick: () => scan(true) }, 'Save and scan ', h('kbd', null, '⏎')), h('button.btn', { onclick: () => { R.confirm = null; draw(); } }, 'Cancel')));
       else if (R.opened && R.st && R.st.session && R.st.session.endsWith('/' + R.opened)) add(box, h('h3', null, R.opened.replace(/\.ardour$/, '') + ' is open'), h('p', null, 'The engine is on the new snapshot with your approved fixes; the original snapshot is unchanged. Scan this one to hear and check what is left.'),
         h('button.btn.ai', { onclick: () => scan() }, 'Scan session'));
-      else add(box, h('h3', null, 'Find what needs fixing'), h('p', null, 'Hypnomix scans the session the way an engineer would: track names and order, files, clicks and cuts, timing against the drums, vocal pitch with the chord, recordings (sibilance, breaths, noise), the mix and its stems.'),
+      else add(box, h('h3', null, 'Find what needs fixing'), h('p', null, 'HypnoMix scans the session the way an engineer would: track names and order, files, clicks and cuts, timing against the drums, vocal pitch with the chord, recordings (sibilance, breaths, noise), the mix and its stems.'),
         R.loading ? h('span.stat', null, 'Reading…') : h('button.btn.ai', { onclick: () => scan() }, 'Scan session'));
       if (err) box.prepend(err);
       el.append(h('div', { style: { flex: 1, display: 'flex' } }, box));
@@ -286,7 +290,7 @@
   }
   function abBox(f) {
     const row = abRow(f), box = h('div.rv-actions');
-    if (f.handling === 'written') return h('div.rv-actions', null, h('span.tool.mono', { style: { color: 'var(--tx3)', fontSize: 'var(--fs-xs)' } }, 'A/B is not available for Ardour sessions yet for clip and mixer fixes: apply to a new snapshot, then compare it with the original.'));
+    if (f.handling === 'written') return h('div.rv-actions', null, h('span.tool.mono', { style: { color: 'var(--tx3)', fontSize: 'var(--fs-xs)' } }, 'A/B is not available for HypnoMix DAW sessions yet for clip and mixer fixes: apply to a new snapshot, then compare it with the original.'));
     if (row && row.a) {
       const p = R.abPlay && R.abPlay.id === f.id ? R.abPlay : null, on = (s) => p && p.side === s && !(s === 'A' ? p.a : p.b).paused;
       add(box, h('div.seg', { 'data-info': 'A = as it is, B = with the fix (level-matched) · B' }, h('button.a' + (on('A') ? '.on' : ''), { onclick: () => playAB(f, 'A') }, 'A  original'), h('button.b' + (on('B') ? '.on' : ''), { onclick: () => playAB(f, 'B') }, 'B  fixed')),
@@ -388,6 +392,7 @@
     if (f.ab === ab) return;
     setABsilent(f, ab);
     HX.log('mock', 'A/B ' + ab + ' · ' + f.title + (f.fix.param === 'clipGain' || f.fix.param === 'device' ? '' : ' (bridge fix: evidence only)'));
+    HX.emit('review', { what: 'ab', side: ab });
     render();
   }
   function leave(f) { if (f && f.ab === 'B') setAB(f, 'A'); editing = false; }
@@ -409,6 +414,7 @@
     leave(f);
     f.status = f.status === st ? 'open' : st === 'approved' && f.fix.amount !== f.orig ? 'changed' : st;
     HX.emit('findings');
+    if (f.status !== 'open') HX.emit('review', { what: 'decided', status: f.status });
     const next = S.findings.findIndex((g, k) => k > cur && g.status === 'open');
     if (next >= 0) select(next); else render();
   }
@@ -431,7 +437,7 @@
       /* the findings are scripted for the mock song; on a real session only those whose track exists survive (normally none) */
       S.findings = HX.makeFindings().filter((f) => HX.track(f.track));
       HX.log('mock', 'hypnomix scan → ' + S.findings.length + ' findings (scripted)');
-      HX.emit('findings'); if (S.findings.length) select(0); else render();
+      HX.emit('findings'); HX.emit('review', { what: 'scanned' }); if (S.findings.length) select(0); else render();
     };
     tick();
   };
@@ -445,7 +451,7 @@
     const bar = h('div.rv-bar', null, h('span.t', null, 'Review'),
       S.findings.length ? h('div.stat', null, h('span', null, h('b', null, String(count('open'))), 'open'), h('span.a', null, h('b', null, String(count('approved'))), 'approved'), h('span.c', null, h('b', null, String(count('changed'))), 'changed'), h('span.s', null, h('b', null, String(count('skipped'))), 'skipped')) : h('span.stat', null, S.scanned ? 'No findings' : 'Not scanned yet'),
       h('div.right', null,
-        h('button.btn', { onclick: () => HX.runScan(), 'data-info': 'Run the hypnomix scan again (saves first, after asking)' }, S.scanned ? 'Rescan' : 'Scan'),
+        h('button.btn', { onclick: () => HX.runScan(), 'data-info': 'Run the HypnoMix scan again (saves first, after asking)' }, S.scanned ? 'Rescan' : 'Scan'),
         h('button.btn.primary', { disabled: !nApp, onclick: () => { confirm = 'apply'; render(); }, 'data-info': 'Write the approved fixes into ONE new snapshot; the original stays untouched' }, 'Apply ' + nApp + ' → new snapshot')));
     root.append(bar);
 
@@ -453,8 +459,8 @@
       const box = h('div.rv-empty');
       if (scanning) box.append(h('h3', null, 'Scanning'), h('div.scanbar', null, h('i')), h('span.scanstage', null, 'Starting…'));
       else if (confirm === 'scan') box.append(h('h3', null, 'Save and scan?'), h('p', null, 'The scan saves the session first, then listens to every track. Nothing in the session changes until you approve fixes and apply them to a new snapshot.'), h('div.rv-actions', null, h('button.btn.primary', { onclick: () => HX.runScan(true) }, 'Save and scan ', h('kbd', null, '⏎')), h('button.btn', { onclick: () => { confirm = null; render(); } }, 'Cancel')));
-      else if (S.scanned && HX.mcp.connected) box.append(h('h3', null, 'No findings to show'), h('p', null, 'The session was saved. The findings in this view are scripted for the practice song, so they do not apply to this session. Scan a real session from Songs in the hypnomix app.'));
-      else box.append(h('h3', null, 'Find what needs fixing'), h('p', null, 'Hypnomix scans the mix the way an engineer would: vocal level line to line, harmonies over the melody, comp edges, pitch against the chord, stack timing, masking, noise and true peak after AAC.'), h('button.btn.ai', { onclick: () => HX.runScan() }, 'Scan session'));
+      else if (S.scanned && HX.mcp.connected) box.append(h('h3', null, 'No findings to show'), h('p', null, 'The session was saved. The findings in this view are scripted for the practice song, so they do not apply to this session. Scan a real session from Songs in the HypnoMix app.'));
+      else box.append(h('h3', null, 'Find what needs fixing'), h('p', null, 'HypnoMix scans the mix the way an engineer would: vocal level line to line, harmonies over the melody, comp edges, pitch against the chord, stack timing, masking, noise and true peak after AAC.'), h('button.btn.ai', { onclick: () => HX.runScan() }, 'Scan session'));
       root.append(h('div', { style: { flex: 1, display: 'flex' } }, box));
       return;
     }
@@ -487,7 +493,7 @@
     det.append(cv);
     const ops = fixOps(f, f.fix.amount);
     const fx = h('div.rv-fix', null,
-      h('div.fx', null, h('span.label', null, 'Proposed fix'), h('span.what', null, f.fix.label + '  ', h('span.mono', { style: { color: 'var(--ai)' } }, fmtAmt(f))), h('span.tool', null, ops.length ? 'via ' + f.fix.tool : 'via hypnomix bridge → new snapshot')));
+      h('div.fx', null, h('span.label', null, 'Proposed fix'), h('span.what', null, f.fix.label + '  ', h('span.mono', { style: { color: 'var(--ai)' } }, fmtAmt(f))), h('span.tool', null, ops.length ? 'via ' + f.fix.tool : 'via HypnoMix bridge → new snapshot')));
     if (editing) {
       const num = h('span.mono', { style: { color: 'var(--tx0)', minWidth: '64px' } }, fmtAmt(f));
       const rng = h('input', { type: 'range', min: f.fix.min, max: f.fix.max, step: f.fix.step, value: f.fix.amount, oninput: (e) => { const wasB = f.ab === 'B'; if (wasB) setABsilent(f, 'A'); f.fix.amount = +e.target.value; if (wasB) setABsilent(f, 'B'); num.textContent = fmtAmt(f); drawEvidence(cv, f); } });
@@ -513,7 +519,7 @@
     HX.emit('preview');
   }
   function fmtAmt(f) { const a = f.fix.amount; return (a > 0 && f.fix.unit !== '%' && f.fix.param !== 'edge' && f.fix.param !== 'nudge' && f.fix.unit !== 'dBTP' ? '+' : '') + a + ' ' + f.fix.unit; }
-  function nextSnap() { return S.session.name + ' — hypnomix ' + (S.session.snapshots.filter((s) => /hypnomix/.test(s.name)).length + 1); }
+  function nextSnap() { return S.session.name + ' — HypnoMix ' + (S.session.snapshots.filter((s) => /hypnomix/i.test(s.name)).length + 1); }
 
   function apply() {
     leave(S.findings[cur]);
@@ -523,13 +529,14 @@
     S.session.snapshots.push({ name, when: 'just now', fixes: todo.length });
     S._lastSnap = name;
     todo.forEach((f) => (f.status = 'applied'));
-    HX.log('mock', 'hypnomix apply → snapshot "' + name + '" (' + todo.length + ' fixes, ' + S._pendingOps.length + ' engine edits, the rest via the bridge)' + (HX.mcp.connected ? ' · engine edits + session_save' : ''));
+    HX.log('mock', 'HypnoMix apply → snapshot "' + name + '" (' + todo.length + ' fixes, ' + S._pendingOps.length + ' engine edits, the rest via the bridge)' + (HX.mcp.connected ? ' · engine edits + session_save' : ''));
+    HX.emit('review', { what: 'applied' });
     if (HX.mcp.connected) return writeLive(name);
     confirm = 'open';
     HX.emit('snapshots'); HX.emit('findings'); render();
   }
   /* Connected: the engine edits go in as one undo step, then session_save writes the new snapshot and
-     switches to it, so the original file is left exactly as the scan saved it. hypnomix CLI fixes (comp
+     switches to it, so the original file is left exactly as the scan saved it. HypnoMix CLI fixes (comp
      edges, tuning, stack nudges, dehiss) need hypnomix-bridge.sh and are not sent from here yet. */
   async function writeLive(name) {
     confirm = null; render();

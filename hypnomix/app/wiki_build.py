@@ -103,7 +103,7 @@ def page(arts, built):
             'aria-label="Search the wiki"><div class="wlist" role="navigation" aria-label="Wiki articles">' + "".join(nav)
             + '<div class="none" hidden>Nothing matches. Try fewer words.</div></div></aside><div>'
             + "\n".join(out) + f'<p class="sub" style="text-align:left">Updated {esc(built)} · the same articles are in '
-            'the hypnomix app\'s Wiki tab.</p></div></div>\n' + SCRIPT + faq_jsonld(arts))
+            'the HypnoMix app\'s Wiki tab.</p></div></div>\n' + SCRIPT + faq_jsonld(arts))
 
 
 def plain(h):
@@ -220,7 +220,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--template", required=True, help="the site's page with <!--WIKI--> where the wiki goes")
     ap.add_argument("--out", required=True, help="the site's /wiki/ folder")
-    ap.add_argument("--src", default=str(W.HERE), help="the wiki source (default: this hypnomix's)")
+    ap.add_argument("--src", default=str(W.HERE), help="the wiki source (default: this HypnoMix's)")
     ap.add_argument("--page", action="append", default=[], help="another page whose <!--wiki:ID--> summaries to refresh")
     a = ap.parse_args()
     src, out = Path(a.src), Path(a.out)

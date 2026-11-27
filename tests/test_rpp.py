@@ -454,7 +454,7 @@ class Reaper(unittest.TestCase):
         self.assertIn("cross", skipped[0][1])
 
     def test_timing_fix_text_names_the_sessions_daw(self):
-        """A REAPER project gets stretch markers written; an Ardour / Hypnomix session or a Live set is told how to do
+        """A REAPER project gets stretch markers written; a HypnoMix DAW session or a Live set is told how to do
         it by hand in its own DAW, never 'in REAPER'."""
         from unittest import mock
         from hypnomix.session import timing as TM
@@ -474,7 +474,7 @@ class Reaper(unittest.TestCase):
             texts[daw] = f["fix"]
         self.assertIn("with stretch markers", texts["reaper"])
         self.assertNotIn("REAPER", texts["reaper"].split("(")[0])
-        self.assertIn("by hand in Hypnomix (Ardour)", texts["ardour"])
+        self.assertIn("by hand in HypnoMix DAW", texts["ardour"])
         self.assertIn("by hand in Live", texts["live"])
         for daw in ("ardour", "live"):
             self.assertNotIn("in REAPER", texts[daw])
@@ -482,8 +482,8 @@ class Reaper(unittest.TestCase):
         with mock.patch.object(TP, "fixable", return_value=None):
             tight = dict(issue, move=-0.2)                     # the hits either side are too close for it
             f = TP.findings(p, [(lead.name, lead, [hit])], [tight], notes)[0]
-        self.assertIn("nudge it by hand in Hypnomix (Ardour)", f["fix"])
-        self.assertEqual(TP.daw_name(p), "Hypnomix (Ardour)")
+        self.assertIn("nudge it by hand in HypnoMix DAW", f["fix"])
+        self.assertEqual(TP.daw_name(p), "HypnoMix DAW")
 
     def test_crlf_project_roundtrips_byte_for_byte(self):
         """REAPER writes CRLF line ends, on macOS too: a load + save must not change a single byte."""

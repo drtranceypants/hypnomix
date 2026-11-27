@@ -21,7 +21,7 @@ Usage:
     hypnomix tonal list
     hypnomix tonal show NAME
 
-Targets are saved in the hypnomix home (~/.hypnomix/tonal/NAME.json, or $HYPNOMIX_HOME). `--target` also takes
+Targets are saved in the HypnoMix home (~/.hypnomix/tonal/NAME.json, or $HYPNOMIX_HOME). `--target` also takes
 a path to a target .json. For a live meter: `target_bands(name)` gives the bands with their ranges and
 `measure(y, sr)` measures audio on the same scale.
 """

@@ -10,7 +10,7 @@ only partway and as an option.
 A fix (only approved items, into the new .rpp) puts stretch markers on the item's active take: one on the hit,
 moved part of the way to its reference, and one on the hit either side holding it, so only that short stretch of
 audio is stretched (REAPER keeps the pitch when the take keeps pitch). Everything stays editable in REAPER: drag a
-marker, or delete it to undo one fix. In an Ardour (Hypnomix) or Live project the same hits are found, but the nudge is
+marker, or delete it to undo one fix. In a HypnoMix DAW or Live project the same hits are found, but the nudge is
 never written: the finding is `applies: manual` with the how-to for that DAW, so it shows on the hand-off checklist
 once approved. Not moved (listed instead): items that already have stretch markers, items
 that loop past the end of their file, MIDI items, and moves the neighbouring hits leave too little room for.
@@ -22,21 +22,21 @@ import numpy as np
 
 from hypnomix.session import timing as TM
 
-DAW_NAMES = {"reaper": "REAPER", "ardour": "Hypnomix (Ardour)", "live": "Live"}
+DAW_NAMES = {"reaper": "REAPER", "ardour": "HypnoMix DAW", "live": "Live"}
 
 
 def daw_name(p):
-    """The DAW a project is for, in the words the fix text uses ("REAPER", "Hypnomix (Ardour)", "Live")."""
+    """The DAW a project is for, in the words the fix text uses ("REAPER", "HypnoMix DAW", "Live")."""
     return DAW_NAMES.get(str(getattr(p, "daw", "") or "reaper").lower(), str(getattr(p, "daw", "") or "your DAW"))
 
 
 def by_hand(p, ms, lock=False):
-    """The fix text for a nudge the project's own DAW gets by hand (hypnomix writes timing into REAPER projects only)."""
+    """The fix text for a nudge the project's own DAW gets by hand (HypnoMix writes timing into REAPER projects only)."""
     d = str(getattr(p, "daw", "") or "reaper").lower()
     how = {"ardour": "split the region around the hit and slide that piece, or stretch it with the Stretch tool",
            "live": "with a warp marker on the hit"}.get(d, "with stretch markers")
     return (f"nudge {ms:+.0f} ms by hand in {daw_name(p)}" + (" toward the drums" if lock else "") + f": {how} "
-            "(hypnomix writes timing nudges into REAPER projects only)")
+            "(HypnoMix writes timing nudges into REAPER projects only)")
 
 
 MELODIC_ROLES = {"guitar", "keys", "synth", "strings", "pad", "brass"}

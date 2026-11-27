@@ -1,0 +1,57 @@
+<!--
+title: Reporting a problem
+sub: a bug report or a crash record, written on your computer · you read it, you decide · nothing is ever sent for you
+group: Start here
+teaser: When something breaks, HypnoMix writes a report on your computer and shows you exactly what it says: your version and setup, the end of the last job's log, a crash record if there was one. Paths, names and keys are hidden first, as far as HypnoMix can tell, so read it before you share it. Copy it, save it, or open the project's issue page and paste it. HypnoMix never sends anything itself.
+-->
+<div class="prose paper">
+<p>HypnoMix has no server of its own and never phones home: no usage data, no automatic crash reports, no account. When something goes wrong it writes a <b>report</b> here, on your computer, shows it to you word for word, and helps you send it yourself to the project's public issue tracker (or anywhere else: it is plain text). If you do nothing, no report, song or setup leaves your computer. The app does ask the internet for two things, and only those: GitHub's list of releases (to tell you when a new version is out) and the website's list of Wiki articles (to keep the Wiki current); neither request carries a report, a song or your setup.</p>
+<h3>How to write one</h3>
+<ul>
+<li><b>In the app</b>: click <b>Report a problem</b> at the top right, or <b>Report this</b> on any error message, failed job or the crash notice. A window opens with two boxes (<b>What happened?</b> and <b>What did you expect?</b>), a few choices, and a live preview of the exact report; it changes as you type.</li>
+<li><b>In a terminal</b>: <code>hypnomix report</code> prints the report it would share and writes nothing. <code>--what "..."</code> and <code>--expected "..."</code> fill in the two parts only you can write.</li>
+</ul>
+<div class="term" data-label="report"><pre><span class="p">$</span> hypnomix report --what "the review page stayed empty after a scan" --expected "the findings"
+<span class="p">$</span> hypnomix report --crash                 <span class="c"># the newest crash record, as a report</span>
+<span class="p">$</span> hypnomix report --list                  <span class="c"># every crash record on this computer</span>
+<span class="p">$</span> hypnomix report --out report.md --copy    <span class="c"># save it as a new file, and copy it</span>
+<span class="p">$</span> hypnomix report --copy --open            <span class="c"># copy it, then open the issue page: paste it there</span></pre></div>
+<h3>What is in a report</h3>
+<ul>
+<li>The two parts you write, if you write them.</li>
+<li>The HypnoMix version, how it is installed (the Mac or Windows app, pip, or a source checkout), your operating system and version, the Python version, and the DAW you chose in Setup.</li>
+<li>The versions of three Python packages HypnoMix reads audio with (numpy, scipy and soundfile), or that one is not installed.</li>
+<li>Which helpers are there: ffmpeg and the stretch program (Rubber Band), present or not. Never where they are.</li>
+<li>The last command or job and how it ended (for a command, only when it ended with an error).</li>
+<li>Each of these is a separate choice you can switch off: the <b>end of the last job's log</b> (the last 60 lines), the <b>last crash record</b>, and <b>how many findings each tool made</b> in the open scan (counts only).</li>
+<li>Environment variables are never listed. The report names only a fixed list of HypnoMix's own switches (such as <code>HYPNOMIX_DEBUG</code>) and says whether each is set, never its value.</li>
+</ul>
+<h3>What is hidden from it</h3>
+<p>HypnoMix hides these <b>as far as it can tell</b>: it matches the shapes of paths and keys and the names the open scan knows, so it can miss one. Known misses: a folder name with an apostrophe, a quote, a question mark, a comma or a bracket in it can leave a piece of the name behind; a name is matched in the spelling the scan has (a different capital letter, or a space written as an underscore, is a different spelling); a track name in plain error text that the scan does not know stays in; and a secret written as <code>name=value</code> under a name that does not look like a secret's name is not hidden. <b>Read the report before you share it</b>, and change anything you do not want to show.</p>
+<ul>
+<li>Your <b>home folder</b> is written <code>~</code>. <b>Every other path</b> is cut down to a placeholder with the extension kept: <code>&lt;file 1&gt;.wav</code>. So is a bare file name with no folder in front of it (<code>'Lead Vocal.wav'</code> in an error message, the way Python quotes a file it could not open). The same name is always the same number inside one report.</li>
+<li><b>Song, project, track and clip names</b> that the open scan knows are replaced the same way: <code>&lt;track 3&gt;</code>. Turn on <b>Keep names</b> (<code>--names</code>) if you think the names help; then a path keeps its file name and known names stay. The default is off.</li>
+<li><b>API keys and tokens</b>: the keys saved for the Assistant, any secret in your environment, and anything shaped like a key (including web tokens, cloud key ids and <code>Authorization</code> headers), are replaced by <code>&lt;hidden&gt;</code>. Email addresses and the user name in an address such as <code>ssh://user@host</code> are hidden too. This holds even with Keep names on.</li>
+<li>No audio, no project files, no settings, no list of your folders.</li>
+</ul>
+<p>This is done by looking for paths, keys and the names it knows, so it can miss something it cannot recognise (a song title typed in a sentence, say). <b>Read the preview before you share it, and take out anything private.</b> The same scrubbing is applied to what you type in the two boxes.</p>
+<h3>How to send one</h3>
+<p>Reports go to the project's public issue tracker at github.com/drtranceypants/hypnomix/issues. Anything posted there is public. The three buttons:</p>
+<ul>
+<li><b>Copy the report</b>: puts the text on your clipboard.</li>
+<li><b>Save as a file</b>: writes a new file (<code>hypnomix-report-….md</code>) into the app's work folder, under <code>reports</code>, and can show it in its folder. An earlier file is never replaced.</li>
+<li><b>Copy it and open the issue page</b>: copies the report, then opens the new-issue page in your browser. <b>You paste it there</b> and press the button yourself. The page is opened with the template's name only: no word of the report is ever put into a web address.</li>
+</ul>
+<p>The issue form has matching sections, so a pasted report fits. Or send the file by any other way you like. HypnoMix never contacts the tracker, a DAW or any server while it writes a report.</p>
+<h3>Crash records</h3>
+<p>When HypnoMix hits a bug it did not expect, it saves a <b>crash record</b> and says so in one sentence; nothing is sent. In a terminal the command ends with that sentence and exit code 70, and <code>hypnomix report --crash</code> shows it and how to send it. In the app a quiet notice appears at the top (<b>See it</b>, <b>Report it</b>, <b>Dismiss</b>); it never takes the focus. A record from an earlier run is offered once, the next time the app starts. A mistake in the app's own page (including the DAW view, whose status bar has a <b>Report a problem</b> link that opens the dialog) is recorded the same way, a few a minute at most. In the app, an error in a request or a job, or a failure while the app starts, is a bug and leaves a record; an answer the app gives on purpose ("that file is not a Live set", a missing or wrong field in a request) is a plain sentence and does not.</p>
+<ul>
+<li><b>What a record holds</b>: the version, platform, the command's name, the <i>names</i> of the options you gave with each value replaced by its kind (<code>--mix &lt;path&gt;</code>, <code>--bpm &lt;number&gt;</code>), the kind of error and its message, and the steps of the traceback with file names inside HypnoMix only. Scrubbed the same way as a report.</li>
+<li><b>Where they live</b>: the <code>crashes</code> folder inside the HypnoMix home (<code>~/.hypnomix/crashes</code>, or <code>%USERPROFILE%\.hypnomix\crashes</code> on Windows; <code>HYPNOMIX_HOME</code> moves it). One small JSON file each.</li>
+<li><b>How many</b>: the newest 20 are kept; the older ones are removed. <a data-wiki="diskcare" href="#">Disk care</a> lists the folder with its size.</li>
+<li><b>How to delete them</b>: delete the files (or the whole folder) in a file manager. Nothing else needs them. <b>Dismiss</b> in the app only hides the notice.</li>
+<li>Seeing the traceback itself instead: run the command again with <code>HYPNOMIX_DEBUG=1</code>.</li>
+</ul>
+<h3>The Assistant</h3>
+<p>The <a data-wiki="assistant" href="#">Assistant</a> may run <code>hypnomix report</code> and <code>hypnomix report --crash</code> or <code>--list</code> on its own: they only read and print. Anything that saves a file, copies, or opens a page (<code>--out</code>, <code>--copy</code>, <code>--open</code>), or fills in the report's words, asks for your click like every other command that writes.</p>
+</div>

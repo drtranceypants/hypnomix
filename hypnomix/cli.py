@@ -1,4 +1,4 @@
-"""hypnomix: a mixing and mastering engineer for Ableton Live, REAPER and Ardour, driven by you or by Claude Code.
+"""HypnoMix: a mixing and mastering engineer for Ableton Live, REAPER and HypnoMix DAW, driven by you or by Claude Code.
 
 Run `hypnomix` for the command list, `hypnomix <command> -h` for each command's help.
 """
@@ -13,7 +13,7 @@ GROUPS = [
         ("balance", "hypnomix.engineer.balance", "stems folder → a first fader balance as proposals, with the measurement behind each move (faders only; --plan sends them to the review)"),
         ("master", "hypnomix.engineer.master", "stereo mix → release master at a loudness target (or a reference); options: tonal stabilizer, dynamic EQ, band width, limiter character, harshness, dither, amount"),
         ("rebalance", "hypnomix.engineer.rebalance", "turn vocals / drums / bass / other up or down in a finished stereo mix (separation + residual, true-peak safe)  [extra: ml, or --stems]"),
-        ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices, or in REAPER or Hypnomix (Ardour): no paid plug-ins"),
+        ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices, or in REAPER or HypnoMix DAW: no paid plug-ins"),
         ("devices", "hypnomix.engineer.devices", "check every Live device by what it does (compressors, gates, limiters, EQ low cut) and suggest settings (writes a new set)"),
         ("duck", "hypnomix.engineer.duck", "duck the vocal reverb and delay: tune the ducking you have, or add a sidechained Compressor fed by the vocals (writes a new set)"),
         ("sidechain", "hypnomix.engineer.sidechain", "sidechain compressors: measure the ducking (depth, recovery, timing) and suggest settings"),
@@ -64,11 +64,11 @@ GROUPS = [
         ("abset", "hypnomix.workflow.abset", "one new set with every proposed fix as a switched-off B next to yours: A / B / Blind inside Live or REAPER (`reaper review`), loudness-matched"),
         ("diagnose", "hypnomix.session.doctor", "solo every group in the loudest section: who owns the sub, bass, vocal band"),
     ]),
-    ("Projects: REAPER (.rpp), Ardour (.ardour) and Live (.als)", [
+    ("Projects: REAPER (.rpp), HypnoMix DAW (.ardour) and Live (.als)", [
         ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, probes, the A/B review panel, the Align panel"),
         ("preflight", "hypnomix.session.preflight", "sanity of the files before any work: mixed sample rates or bit depths, stems of different length, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel; report first"),
-        ("project", "hypnomix.project.show", "look inside a REAPER, Ardour or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
-        ("als2ardour", "hypnomix.project.als2ardour", "import a Live set into a NEW Hypnomix / Ardour session folder: tracks, colours, clips as regions (gain, fades, envelopes), faders, sends, groups, tempo; audio copied in; devices listed, never guessed (the set is only read)"),
+        ("project", "hypnomix.project.show", "look inside a REAPER, HypnoMix DAW or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
+        ("als2ardour", "hypnomix.project.als2ardour", "import a Live set into a NEW HypnoMix DAW session folder: tracks, colours, clips as regions (gain, fades, envelopes), faders, sends, groups, tempo; audio copied in; devices listed, never guessed (the set is only read)"),
     ]),
     ("Session files (.als, Live closed or open)", [
         ("render", "hypnomix.session.render", "render tracks from a .als to stems without opening Live (clip gain, fades, warps)"),
@@ -115,12 +115,14 @@ GROUPS = [
         ("app", "hypnomix.app.server", "the first pass in a window: choose a song, hear each fix, approve, apply (this computer only)"),
         ("device", "hypnomix.app.device", "make the Max for Live device: review from inside Live, and jump Live to each finding"),
         ("aligndevice", "hypnomix.app.aligndevice", "make the Hypnomix Align device: align a vocal stack from inside Live"),
-        ("store", "hypnomix.store.cli", "the Hypnomix store: search, install, update and uninstall free and open-source plug-ins, synths, drum kits and sample packs"),
+        ("store", "hypnomix.store.cli", "the HypnoMix store: search, install, update and uninstall free and open-source plug-ins, synths, drum kits and sample packs"),
+        ("engine", "hypnomix.app.engine_addon", "HypnoMix DAW, the add-on (not available yet: no archive is published): what is added, and (only with --yes) fetch it once, checked against a SHA-256 before it is used, or remove it; report first"),
     ]),
     ("Setup", [
         ("install", "hypnomix.install", "install the Live remote script into Live's User Library (--dry-run shows it first)"),
         ("doctor", "hypnomix.install", "check ffmpeg and the Python packages (and, if you use Live: AbletonOSC, BlackHole, plug-in parameter access)"),
-        ("plugins", "hypnomix.session.plugins", "list the plug-ins installed on this computer (VST3, Audio Units, CLAP, LV2), mark the free ones hypnomix knows, optionally load each safely; --save keeps the list in your preferences  [--check: extra plugins]"),
+        ("report", "hypnomix.workflow.report", "write a problem report on this computer (what happened, your setup, the last job's log, a crash record), with paths, names and keys hidden as far as it can tell; prints it, nothing is sent; --copy and --open help you send it yourself"),
+        ("plugins", "hypnomix.session.plugins", "list the plug-ins installed on this computer (VST3, Audio Units, CLAP, LV2), mark the free ones HypnoMix knows, optionally load each safely; --save keeps the list in your preferences  [--check: extra plugins]"),
     ]),
 ]
 COMMANDS = {name: (mod, desc) for _, cmds in GROUPS for name, mod, desc in cmds}
@@ -154,15 +156,63 @@ def _utf8_output():
 
 def main(argv=None):
     """Run a command. A file that cannot be read as audio ends with one plain line and exit code 2, no traceback
-    (set HYPNOMIX_DEBUG=1 to see the traceback)."""
+    (set HYPNOMIX_DEBUG=1 to see the traceback). An unexpected error (a bug) saves a crash record on this computer, ends with
+    one plain sentence and exit code 70 (HYPNOMIX_DEBUG=1 still shows the traceback); nothing is sent."""
+    argv = list(sys.argv[1:] if argv is None else argv)      # taken now: _main rewrites sys.argv, and a crash record needs the real command
     try:
         return _main(argv)
+    except SystemExit as e:
+        _remember_exit(argv, e)
+        raise
     except Exception as e:
         msg = None if os.environ.get("HYPNOMIX_DEBUG") else _audio_read_message(e)
         if msg is None:
-            raise
+            if os.environ.get("HYPNOMIX_DEBUG") or _quiet_error(e):
+                raise
+            _crashed(argv, e)
+        _remember_exit(argv, SystemExit(2), msg)
         print(msg, file=sys.stderr)
         sys.exit(2)
+
+
+def _quiet_error(e):
+    """An error that is not a bug: the reader of a pipe went away (`hypnomix scan | head`)."""
+    return isinstance(e, BrokenPipeError) or (isinstance(e, OSError) and e.errno == errno.EPIPE)
+
+
+def _command_of(argv):
+    args = list(sys.argv[1:] if argv is None else argv)
+    return (args[0] if args and args[0] in COMMANDS else "unknown"), args[1:]
+
+
+def _crashed(argv, e):
+    """An unexpected exception in a command: a crash record on this computer, ONE plain sentence, exit code 70 (set
+    HYPNOMIX_DEBUG=1 to get the traceback instead). Nothing is sent anywhere."""
+    from hypnomix.core import report
+    cmd, rest = _command_of(argv)
+    info = report.write_crash("cli", cmd, exc=e, argv=rest)
+    if cmd != "report":
+        report.record_last("cli", cmd, "crashed", reason=type(e).__name__, exit_code=70)
+    print(report.crash_sentence(info), file=sys.stderr)
+    sys.exit(70)
+
+
+def _remember_exit(argv, e, message=None):
+    """A command that ends with an error is remembered (one small private file) so a report can say how it ended.
+    Never raises."""
+    try:
+        code = e.code
+        if code in (None, 0):
+            return
+        cmd, _ = _command_of(argv)
+        if cmd in ("report", "unknown"):
+            return
+        from hypnomix.core import report
+        why = message or (code if isinstance(code, str) else "")
+        report.record_last("cli", cmd, "failed", reason=str(why).strip().splitlines()[0] if str(why).strip() else "",
+                           exit_code=code if isinstance(code, int) else 1)
+    except Exception:
+        pass
 
 
 def _raised_in_gzip(e):
@@ -184,11 +234,11 @@ def _audio_read_message(e):
         return f"{e.name}: {e}"
     if name == "LibsndfileError" and str(e).startswith("Error opening "):   # a command that opens the file itself
         path, _, why = str(e)[len("Error opening "):].partition(": ")
-        gone = "no such file" if not os.path.exists(path.strip("'\"")) else "not an audio file hypnomix can decode"
+        gone = "no such file" if not os.path.exists(path.strip("'\"")) else "not an audio file HypnoMix can decode"
         return f"can't read {path} as audio: {gone}"
     if name == "BadGzipFile":                   # a Live-set command was given a file that is not a gzipped Live set
         return ("can't read that file as a Live set (.als): it is not a gzip file. This command reads Live sets only; "
-                "for a REAPER project or an Ardour session use `hypnomix scan` on it.")
+                "for a REAPER project or a HypnoMix DAW session use `hypnomix scan` on it.")
     if isinstance(e, (FileNotFoundError, IsADirectoryError)) and _raised_in_gzip(e):    # a Live-set command, a typo or a folder
         fn = str(e.filename or "that path")
         if isinstance(e, IsADirectoryError):

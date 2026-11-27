@@ -145,8 +145,8 @@ jobs:
       - name: Stable names for the website's download buttons
         run: |
           cd dist
-          for f in *-mac-arm64.dmg;  do case "$f" in *-full-*) continue;; esac; cp "$f" Hypnomix-mac-arm64.dmg; done
-          for f in *-mac-x86_64.dmg; do case "$f" in *-full-*) continue;; esac; cp "$f" Hypnomix-mac-intel.dmg; done
+          for f in *-mac-arm64.dmg;  do cp "$f" Hypnomix-mac-arm64.dmg; done
+          for f in *-mac-x86_64.dmg; do cp "$f" Hypnomix-mac-intel.dmg; done
           for f in *-windows-x64-setup.exe; do cp "$f" Hypnomix-windows-setup.exe; done
           sha256sum Hypnomix-*.dmg Hypnomix-*.exe > SHA256SUMS.txt
           cat SHA256SUMS.txt
@@ -161,7 +161,7 @@ jobs:
           # a draft: nobody gets it (the download page and the app's updater follow the latest published release)
           # until scan-release finds every installer clean and publishes it
           gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
-            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft --title "hypnomix $GITHUB_REF_NAME" \
+            gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft --title "HypnoMix $GITHUB_REF_NAME" \
               --notes "Installers: Mac (Apple silicon or Intel) and Windows. See the README's Install section."
           gh release upload "$GITHUB_REF_NAME" dist/* -R "$GITHUB_REPOSITORY" --clobber
 

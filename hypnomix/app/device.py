@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Make the hypnomix Max for Live device: review from inside Live, and jump Live to each finding.
+"""Make the HypnoMix Max for Live device: review from inside Live, and jump Live to each finding.
 
   hypnomix device                 write Hypnomix.amxd + hypnomix_device.js into your Live User Library
   hypnomix device --out FOLDER    write them somewhere else
 
-Then drag "Hypnomix" from Live's browser (User Library → Presets → Audio Effects → Max Audio Effect → Hypnomix)
+Then drag the Hypnomix device from Live's browser (User Library → Presets → Audio Effects → Max Audio Effect → Hypnomix)
 onto ANY track; audio passes through it untouched. Needs Max for Live (Live Suite, or the add-on).
 
-With the hypnomix app running (`hypnomix app`, or the Mac app) and a review open in it, the device shows the
+With the HypnoMix app running (`hypnomix app`, or the Mac app) and a review open in it, the device shows the
 finding you are on and has these buttons:
 
   Prev / Next    step through the findings; Live jumps to each one
@@ -45,7 +45,7 @@ DEFAULT_PORT = 8791
 
 
 def app_port():
-    """The hypnomix app's port the device talks to: HYPNOMIX_PORT when it is set (read each time the device is made,
+    """The HypnoMix app's port the device talks to: HYPNOMIX_PORT when it is set (read each time the device is made,
     so `hypnomix app --port N` can be matched), else 8791."""
     try:
         n = int(os.environ.get("HYPNOMIX_PORT", "").strip() or DEFAULT_PORT)
@@ -56,7 +56,7 @@ def app_port():
 
 PORT = app_port()          # at import; the device is written with app_port() read again when it is made
 
-JS = r"""// hypnomix device (jsui): talks to the hypnomix app on this computer and moves Live to each finding.
+JS = r"""// HypnoMix device (jsui): talks to the HypnoMix app on this computer and moves Live to each finding.
 autowatch = 1;
 inlets = 1;
 outlets = 1;
@@ -293,14 +293,14 @@ function paint() {
     text("HYPNOMIX", 8, y, ink, 10, true);
     if (!connected()) {
         text("not connected", 78, y, mute, 10, false);
-        text("Start the hypnomix app (or run: hypnomix app)", 8, 44, ink, 11, false);
+        text("Start the HypnoMix app (or run: hypnomix app)", 8, 44, ink, 11, false);
         text("and open a review. This device then follows it.", 8, 60, mute, 11, false);
         button("Open app", 8, 70, false, "app");
         return;
     }
     if (!c || !c.of) {
         text("connected", 78, y, [0.5, 0.82, 0.64, 1], 10, false);
-        var l = wrap(c ? c.text : "Open a review in the hypnomix app.", W - 16, 3);
+        var l = wrap(c ? c.text : "Open a review in the HypnoMix app.", W - 16, 3);
         for (var k = 0; k < l.length; k++) text(l[k], 8, 44 + k * 15, ink, 11, false);
         button("Open app", 8, 70, false, "app");
         return;
@@ -418,7 +418,7 @@ def build_patch(patch):
                box("obj-4", "loadbang", [10.0, 240.0, 58.0, 22.0], 1, ["bang"]),
                {"box": {"id": "obj-5", "maxclass": "message", "numinlets": 2, "numoutlets": 1, "outlettype": [""],
                         "patching_rect": [10.0, 270.0, 400.0, 22.0],
-                        "text": "window flags float, window flags nogrow, window flags nozoom, window flags nominimize, title hypnomix, window exec"}},
+                        "text": "window flags float, window flags nogrow, window flags nozoom, window flags nominimize, title HypnoMix, window exec"}},
                box("obj-6", "thispatcher", [10.0, 300.0, 69.0, 22.0], 1, ["", ""], save=["#N", "thispatcher", ";", "#Q", "end", ";"]),
                {"box": {"id": "obj-7", "maxclass": "inlet", "comment": "", "index": 1, "numinlets": 0, "numoutlets": 1,
                         "outlettype": [""], "patching_rect": [240.0, 200.0, 30.0, 30.0]}}],
@@ -441,7 +441,7 @@ def build_patch(patch):
                                      line("obj-27", 0, "obj-29"), line("obj-28", 0, "obj-29"), line("obj-29", 0, "obj-30")]
     p["openinpresentation"] = 1
     p["devicewidth"] = float(W)
-    p["description"] = "hypnomix: review findings from inside Live and jump to each one"
+    p["description"] = "HypnoMix: review findings from inside Live and jump to each one"
     return patch
 
 
@@ -474,7 +474,7 @@ def main():
     except FileNotFoundError as e:
         sys.exit(str(e))
     print(f"wrote {od / 'Hypnomix.amxd'}\n      {od / 'hypnomix_device.js'}   (keep the two together)")
-    print("In Live: drag Hypnomix from the browser onto any track, start the hypnomix app, open a review.")
+    print("In Live: drag the Hypnomix device from the browser onto any track, start the HypnoMix app, open a review.")
 
 
 if __name__ == "__main__":

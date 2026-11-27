@@ -1,11 +1,11 @@
 ---
 title: Getting Started
-subtitle: What hypnomix is, how it thinks, and your first hour with it
+subtitle: What HypnoMix is, how it thinks, and your first hour with it
 ---
 
 # Welcome
 
-hypnomix is a free mixing and mastering engineer for people who record **real instruments and vocals**. It
+HypnoMix is a free mixing and mastering engineer for people who record **real instruments and vocals**. It
 does the slow, technical jobs (clicks, timing, tuning, lining up doubles, hiss, levels, sidechains, loudness)
 and explains every move in plain words. The playing, the sounds, the arrangement and every taste call stay
 yours.
@@ -14,7 +14,7 @@ yours.
 
 ## The promise: nothing changes without your yes
 
-Every part of hypnomix follows the same rules. They are why you can let it loose on a song you care about.
+Every part of HypnoMix follows the same rules. They are why you can let it loose on a song you care about.
 
 | rule | what it means for you |
 |---|---|
@@ -25,7 +25,7 @@ Every part of hypnomix follows the same rules. They are why you can let it loose
 | Refuses rather than guesses | if a fix wouldn't make things measurably better, it is left out and the report says why |
 | Your intent wins | automation, hard pans and effects you set are treated as choices; things you mark as deliberate are shown on every review |
 
-> Tip: keep the original until you have opened the new set or project in your DAW and listened. hypnomix checks
+> Tip: keep the original until you have opened the new set or project in your DAW and listened. HypnoMix checks
 > the structure of everything it writes, but only your DAW can confirm that it opens.
 
 ## Four ways to use it
@@ -33,24 +33,25 @@ Every part of hypnomix follows the same rules. They are why you can let it loose
 | you'd rather… | use | start with |
 |---|---|---|
 | click | **the app**: a page on your own computer with players, Approve / Skip buttons and forms for every tool | `hypnomix app` |
-| stay in Live | **the Live devices**: Hypnomix (steps through findings) and Hypnomix Align (vocal alignment) | `hypnomix device`, `hypnomix aligndevice` |
+| stay in Live | **the Live devices**: the Hypnomix device (steps through findings) and Hypnomix Align (vocal alignment) | `hypnomix device`, `hypnomix aligndevice` |
 | type | **the terminal**: every feature is a command | `hypnomix` |
 | talk | **an AI agent** (Claude Code): it runs the same commands and asks you about each item | "Do a first pass on my song" |
 
 They all drive the same commands and follow the same rules, so you can mix them: scan in the app, review
 from inside Live, apply in the app.
 
-What works where: Live sets (`.als`), REAPER projects (`.rpp`) and Ardour sessions (`.ardour`) can be scanned, and
+What works where: Live sets (`.als`), REAPER projects (`.rpp`) and HypnoMix DAW sessions (`.ardour`) can be scanned, and
 approved fixes are written into a new file of the same kind. Any other DAW works from exported tracks: see
 "Other DAWs" in guide 2.
 
 ## Install
 
-Most people should use the **Hypnomix Assistant installer** for Mac or Windows from hypnomix.bradfieldenterprises.org/download (the
-full Hypnomix, with its own DAW built in, is not released yet; there is no way to add it to the Assistant yet): no
+Most people should use the **HypnoMix installer** for Mac or Windows from hypnomix.bradfieldenterprises.org/download (one
+installer for everyone; HypnoMix DAW, HypnoMix's own DAW, is an add-on you can add from Setup once it is
+published, and it is not available yet): no
 terminal, and a guided setup on first open. The guide "Setting Up, and Choosing an AI" covers it. The steps below are the
-**source install**, for the terminal and for working on hypnomix itself. (The installed app also installs the
-optional extras from its setup, and gives Claude Code the hypnomix skills.)
+**source install**, for the terminal and for working on HypnoMix itself. (The installed app also installs the
+optional extras from its setup, and gives Claude Code the HypnoMix skills.)
 
 You need macOS, Python 3.9 or newer, ffmpeg, Rubber Band 3+ (for tuning and alignment) and, for the Live
 features, Ableton Live 11 or 12 (Max for Live for the devices). The file tools work without Live and with
@@ -83,7 +84,7 @@ scratch (nothing is downloaded, nothing is a recording; a second run makes "Hypn
 time and the command that finds it: a click, a level jump, hiss, clipped peaks, a harmony that drifts off pitch and
 drums that fall behind. Then follow `DEMO.md`: scan it, hear each fix, approve two, apply them. With `--kind reaper`
 a REAPER project plays the stems, so the scan sees all six; the plain folder shows the hiss and the clipping. That
-project was opened in REAPER 7.86 and read back (no offline media, matching what hypnomix wrote); REAPER does not need to be open to scan it. There is no Live set kind, because a set
+project was opened in REAPER 7.86 and read back (no offline media, matching what HypnoMix wrote); REAPER does not need to be open to scan it. There is no Live set kind, because a set
 written from scratch has not been opened in Live.
 
 ### 0b. Check the files before any work (optional, any song)
@@ -165,6 +166,6 @@ after.
 | 5 · Timing, Tempo & Motion | tightening a band, songs without a click, keeping loops alive |
 | 6 · Mixing, Mastering & Release | from stems to a master that survives every speaker, and from a master to the files you upload |
 | 7 · Inside Live, Faster Reviews | measuring while you play, hearing each fix inside Live, and deciding a long review quickly |
-| 8 · hypnomix in REAPER | the same loop on a REAPER project, from inside REAPER |
+| 8 · HypnoMix in REAPER | the same loop on a REAPER project, from inside REAPER |
 | 9 · Setting Up, and Choosing an AI | installing, and how to connect an AI, or none |
 | Command Reference | you need the one-line answer for any command |

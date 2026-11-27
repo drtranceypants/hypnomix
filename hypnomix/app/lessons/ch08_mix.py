@@ -30,7 +30,7 @@ CHAPTER = dict(id="mix", levels=("101", "az"), title="Mixing, one effect at a ti
                      "Band 1: click its type and choose the low cut, then drag its dot to about 100 Hz.", "Click a dot and drag up or down for gain; Alt+drag (Option+drag) changes Q."],
             "reaper": ["Click the track's **FX** button → Cockos → **ReaEQ**.", "Click band tab 1 and set its **Type** drop-down to High pass, with the frequency at about 100 Hz.",
                        "Drag the other bands' dots up or down; the scroll wheel on a dot changes its width."],
-            "ardour": ["Double-click in the strip's plug-in box → **ACE EQ** (a-EQ in older Ardour)."]},
+            "ardour": ["Double-click in the strip's plug-in box → **ACE EQ** (a-EQ in older versions)."]},
        fx={"live": dict(device="EQ Eight", set=[["disp", ["1 Frequency A"], 100], ["raw", ["1 Filter Type A"], 1], ["raw", ["1 Filter On A"], 1],
                                                ["raw", ["3 Filter Type A"], 3], ["disp", ["3 Frequency A"], 3500], ["disp", ["3 Gain A"], 1.5], ["disp", ["3 Resonance A", "3 Q A"], 0.8]]),
            "reaper": dict(device="ReaEQ (Cockos)", set=[["named", "BANDTYPE0", "4"], ["shown", 0, 100], ["named", "BANDTYPE2", "8"], ["shown", 6, 3500], ["shown", 7, 1.5]])},
@@ -57,7 +57,7 @@ CHAPTER = dict(id="mix", levels=("101", "az"), title="Mixing, one effect at a ti
   dict(id="deess", title="De-essing: soften the S's", daws=LR,
        say=["After EQ and compression, \"s\" and \"t\" sounds can get sharp. A **de-esser** is a compressor that only listens "
             "to that hissy range and turns it down just for those moments.",
-            "hypnomix's first pass also finds harsh S's and can soften them in a new copy of the recording, if you'd rather "
+            "HypnoMix's first pass also finds harsh S's and can soften them in a new copy of the recording, if you'd rather "
             "fix it at the source."],
        settings=[["Frequency", "5-8 kHz (find where the S's bite)", "female voices often higher, male lower"], ["Reduction", "3-6 dB, only on the S's", "more makes a lisp"]],
        how={"live": ["Live has no separate de-esser: use a **Compressor**, open its Sidechain section, turn on **EQ**, set its Freq to about 6 kHz and shape it (with the filter-type, Gain and Q controls) so the S range stands out in what the compressor listens to, and set the threshold so only the S's trigger it.",
@@ -109,8 +109,8 @@ CHAPTER = dict(id="mix", levels=("101", "az"), title="Mixing, one effect at a ti
             "Do it last, after the balance and effects are set, and keep the moves small."],
        how={"live": ["Press **A** in the Arrangement to show automation; choose the track's Volume in its lane menu, then click points in and drag them."],
             "reaper": ["Click the track's envelope button (trim/arm), tick Volume, then click points on the envelope lane."]}),
-  dict(id="mix-check", title="Let hypnomix check the mix", daws=ALL,
-       say=["When it sounds good to you, run hypnomix's **first pass** on the song. It looks for what's easy to miss: two parts "
+  dict(id="mix-check", title="Let HypnoMix check the mix", daws=ALL,
+       say=["When it sounds good to you, run HypnoMix's **first pass** on the song. It looks for what's easy to miss: two parts "
             "fighting over the same frequencies, a part much louder in one section, a plug-in left switched off, clipping. "
             "Every finding is a suggestion with a before and after to hear; you decide."],
        app=dict(view="home", label="Open the Songs tab")),

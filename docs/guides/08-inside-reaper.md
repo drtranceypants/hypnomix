@@ -1,21 +1,21 @@
 ---
-title: hypnomix in REAPER
+title: HypnoMix in REAPER
 subtitle: Scan a REAPER project, approve the fixes, align a vocal stack, and build a mastering chain from REAPER's own plug-ins
 wiki_id: reaper
 ---
 
-# hypnomix in REAPER
+# HypnoMix in REAPER
 
-hypnomix works with REAPER projects the same way it works with Live sets: it **reads** your project, lists
+HypnoMix works with REAPER projects the same way it works with Live sets: it **reads** your project, lists
 what it finds, and writes what you approve into a **new** project next to the original. REAPER can stay open
 the whole time. Nothing is installed into REAPER, and none of its settings are changed.
 
-Everything here was checked against REAPER 7.86 itself: hypnomix built test projects inside REAPER, had REAPER
+Everything here was checked against REAPER 7.86 itself: HypnoMix built test projects inside REAPER, had REAPER
 render them, and compared the result sample by sample with its own. The newest files were checked the same way on
 2026-11-26: the demo project (section 0), a project written by `fix` (an item fade and a volume-envelope dip), the
 frequency-fight cut written as a ReaEQ band (section 4), the hand-off project's marker (section 12) and the A/B project
 (section 8) were opened in REAPER 7.86 and read back through its API. All opened with no offline media and matched what
-hypnomix wrote; the ReaEQ band's frequency, gain and bandwidth read back exactly as written, and REAPER's own renders with
+HypnoMix wrote; the ReaEQ band's frequency, gain and bandwidth read back exactly as written, and REAPER's own renders with
 the effect on and bypassed show the cut. None of this was judged by ear and none has been run on a real song, so listen
 before you trust it. The list under "Not yet checked" repeats this.
 
@@ -24,11 +24,11 @@ before you trust it. The list under "Not yet checked" repeats this.
 ## What you need
 
 - REAPER (the free evaluation works for everything here).
-- hypnomix installed (`hypnomix doctor` checks it).
-- Your project saved as an `.rpp` with its audio files where REAPER put them. hypnomix finds files the way
+- HypnoMix installed (`hypnomix doctor` checks it).
+- Your project saved as an `.rpp` with its audio files where REAPER put them. HypnoMix finds files the way
   REAPER does: next to the project, in its recording folder, or anywhere below the project folder.
 
-Only REAPER's own plug-ins (ReaEQ, ReaComp, ReaLimit, the JS effects) are used when hypnomix builds anything.
+Only REAPER's own plug-ins (ReaEQ, ReaComp, ReaLimit, the JS effects) are used when HypnoMix builds anything.
 Your own plug-ins are read and listed, never needed.
 
 ## 0. Try it on a demo project
@@ -43,7 +43,7 @@ A 40-second synthetic song (nothing downloaded, nothing recorded) with six probl
 two take items meet, a level jump at a comp cut, hiss, clipped peaks, a harmony that drifts sharp and drums that fall
 behind. `DEMO.md` lists each with its time. The comps are separate items on separate takes, so the scan sees all six.
 Then run the loop of sections 3 and 4 on it: `ab` plays the de-hiss, and for a project the other fixes are applied into a
-new `.rpp` and heard there (or use `abset`, section 8). The project was opened in REAPER 7.86 and read back (no offline media, matching what hypnomix wrote), and REAPER does not need to be open to scan it.
+new `.rpp` and heard there (or use `abset`, section 8). The project was opened in REAPER 7.86 and read back (no offline media, matching what HypnoMix wrote), and REAPER does not need to be open to scan it.
 
 ## 1. Look inside a project
 
@@ -143,7 +143,7 @@ hypnomix reaper start
 hypnomix chain master "Song mix.wav" --reaper --verify
 ```
 
-`reaper start` runs a small hypnomix script inside the REAPER that is open, so hypnomix can add plug-ins and set
+`reaper start` runs a small HypnoMix script inside the REAPER that is open, so HypnoMix can add plug-ins and set
 them. It installs nothing; it stops when REAPER quits, or with `hypnomix reaper stop`. **Every change it makes is
 one undo step** named "hypnomix: ...", so Edit → Undo takes it back.
 
@@ -162,7 +162,7 @@ it on REAPER's master from stock plug-ins only:
 Values are set by what the plug-in shows, so a 30 ms attack reads 30.0 in REAPER. Master plug-ins that are already
 there are never removed: `--existing bypass` switches them off, `--existing keep` builds after them.
 
-With `--verify`, REAPER renders the loudest bars of the song, hypnomix measures them, and ReaLimit is trimmed
+With `--verify`, REAPER renders the loudest bars of the song, HypnoMix measures them, and ReaLimit is trimmed
 until they match the target. Then the **whole song** is rendered once more for true peak: ReaLimit limits the
 samples, and the signal between samples can still go over (on one finished song it reached -0.43 dBTP with a
 -1 dB ceiling). If it does, the ceiling is pulled down until the whole song is under. No routing through another
@@ -219,7 +219,7 @@ REAPER may ask to save the project once.
 ```bash
 hypnomix abset scan/Song                 # → "Song (A-B).rpp" next to your project
 hypnomix app                             # open the song's review
-hypnomix reaper review                   # the Hypnomix panel in REAPER
+hypnomix reaper review                   # the HypnoMix panel in REAPER
 ```
 
 `abset` builds **one new project** in which every proposed fix sits next to what you have, switched off, so the
@@ -229,7 +229,7 @@ project plays exactly like yours until you switch:
 - **Anything else** (fades, rides, edges, timing markers, a tuned take, moved items): the whole track is copied
   with the fix, named "*track* · B *id*", muted, right after yours, in the same folder and sending where yours sends.
 
-Open the A/B project in REAPER (your original is not touched), then `hypnomix reaper review`. The Hypnomix panel
+Open the A/B project in REAPER (your original is not touched), then `hypnomix reaper review`. The HypnoMix panel
 follows the review in the app:
 
 | button | what it does |
@@ -248,7 +248,7 @@ front, the first click only brings it forward.
 
 ## 9. Review before export
 
-With the probes in the project (section 7), the bridge running and the hypnomix app open, press **Record and review
+With the probes in the project (section 7), the bridge running and the HypnoMix app open, press **Record and review
 before export** on Hypnomix Main (open its window on the master), or run `hypnomix reaper record`.
 
 REAPER plays from the edit cursor (or carries on, if it is already playing) while every probe listens, and Main's
@@ -274,11 +274,11 @@ need the bridge running (`hypnomix reaper start`), not the app.
 
 | button | what it does |
 |---|---|
-| **Build chain** | puts REAPER's own plug-ins just before Hypnomix Main, each renamed "Hypnomix · ...": Tone (ReaEQ: high-pass 25 Hz, low shelf 90 Hz, bells at 300 Hz and 3 kHz, high shelf 10 kHz, all at 0 dB), Glue (ReaComp 2:1, attack 30 ms, threshold -12 dB, RMS, soft knee), Tame (ReaXcomp, bypassed until a band jumps out), Warmth (JS: Saturation, bypassed), Width (bass mono below 120 Hz: M/S encoder, side high-pass, mid all-pass, decoder) and Limiter (ReaLimit, ceiling from the card, gain 0 dB). If you have saved templates, a menu asks which to build. Building again asks before it replaces the Hypnomix plug-ins. |
+| **Build chain** | puts REAPER's own plug-ins just before Hypnomix Main, each renamed "Hypnomix · ...": Tone (ReaEQ: high-pass 25 Hz, low shelf 90 Hz, bells at 300 Hz and 3 kHz, high shelf 10 kHz, all at 0 dB), Glue (ReaComp 2:1, attack 30 ms, threshold -12 dB, RMS, soft knee), Tame (ReaXcomp, bypassed until a band jumps out), Warmth (JS: Saturation, bypassed), Width (bass mono below 120 Hz: M/S encoder, side high-pass, mid all-pass, decoder) and Limiter (ReaLimit, ceiling from the card, gain 0 dB). If you have saved templates, a menu asks which to build. Building again asks before it replaces the HypnoMix plug-ins. |
 | **Match target** | plays (or keeps playing) and listens to Main after the chain, then turns ReaLimit's threshold (its gain) until the master lands on the card's Target LUFS, the master fader included, in up to four rounds of about 8 seconds. Play the loudest part. If REAPER was stopped, it stops it again when it is done. It works with any chain before Main that has a ReaLimit. |
 | **Save chain** | asks for a name and keeps **everything before Hypnomix Main** as `FXChains/hypnomix/NAME.RfxChain` in REAPER's resource folder: your edited chain or a chain of your own, with every setting, third-party plug-ins included. REAPER's own Add FX chain opens these files too. |
 
-While the plug-ins are the ones hypnomix built (named "Hypnomix · ..."), they follow the song card: the Ceiling
+While the plug-ins are the ones HypnoMix built (named "Hypnomix · ..."), they follow the song card: the Ceiling
 sets ReaLimit's ceiling (its gain is kept) and the Limiter character sets ReaLimit's release (clean 120 ms, punch
 60 ms, loud 20 ms) and the Glue's attack (loud: 10 ms). Plug-ins of your own are never changed, except ReaLimit's
 gain by Match target. Every change is one undo step.
@@ -288,7 +288,7 @@ From a terminal: `hypnomix reaper chain build [NAME]`, `chain match`, `chain sav
 ReaLimit limits sample peaks, so the true peak can land a little over the ceiling: Record and review (section 9)
 measures true peak, or leave a little more room in the ceiling.
 
-## 11. Align a vocal stack: the Hypnomix Align panel
+## 11. Align a vocal stack: the HypnoMix Align panel
 
 The REAPER side of the Live **Hypnomix Align** device: doubles and harmonies that land together, with the same
 engine, presets and options (see the vocal alignment guide). Your project is never written: the result is a
@@ -296,7 +296,7 @@ engine, presets and options (see the vocal alignment guide). Your project is nev
 
 ```bash
 hypnomix app                     # leave it running
-hypnomix reaper align            # the Hypnomix Align panel in REAPER
+hypnomix reaper align            # the HypnoMix Align panel in REAPER
 ```
 
 Save the project first (Align reads the saved `.rpp`), then in the panel:
@@ -365,7 +365,7 @@ list. An item with no position (a whole part) is listed at the end, without a ma
 | stretch markers | timing within 0.0002 |
 | Align: stretch markers written for a vocal stack | exactly on the plan in varispeed; with pitch kept, moved words about 4 ms late (REAPER's stretch engine) |
 | Align: new takes for pitch / formant / timing | play the checked render within 0.4% |
-| volume rides written by `fix` | REAPER plays them within 0.001 of what hypnomix expects |
+| volume rides written by `fix` | REAPER plays them within 0.001 of what HypnoMix expects |
 | ReaEQ against the planned EQ | within 0.04 dB |
 | mono low end | under -68 dB of leak at 400 Hz, -94 dB at 2 kHz; the low end mono |
 
@@ -376,5 +376,5 @@ list. An item with no position (a whole part) is listed at the end, without a ma
   `hypnomix demo --kind reaper` (section 0), a project written by `fix` and the A/B project made by `abset` (section 8).
   None of these has been run on a real song.
 - Sidechain checks on compressors other than ReaComp (listed, not measured).
-- Where a stretch marker squeezes or stretches a segment, hypnomix's own render reads it at a slightly different
+- Where a stretch marker squeezes or stretches a segment, HypnoMix's own render reads it at a slightly different
   pitch than REAPER plays it (REAPER keeps the pitch). The timing is exact.

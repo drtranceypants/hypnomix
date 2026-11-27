@@ -2,11 +2,11 @@
 title: Run your own AI, free and offline
 sub: no data center, no subscription, no closed model: an open-weight model on your own computer
 group: AI: free and offline
-teaser: Run an open-weight model on your own computer with Ollama and drive hypnomix with the open-source OpenCode agent: free, offline, and nothing leaves your machine.
+teaser: Run an open-weight model on your own computer with Ollama and drive HypnoMix with the open-source OpenCode agent: free, offline, and nothing leaves your machine.
 -->
 <div class="prose paper">
-      <p><b>The quickest way:</b> in the app, <b>Setup → A model on this computer</b> connects the app's own Assistant to Ollama or LM Studio, with no agent to install (steps 1 to 3 below, then Test). This page goes further: an open-source <i>agent</i> that drives every hypnomix command. Both are compared in <a data-wiki="setup-ai" href="#">Setting Up, and Choosing an AI</a>.</p>
-      <p>Maybe you'd rather not feed the data-center boom. Maybe you want your music and your tools to stay open source, end to end. Maybe a monthly AI subscription just isn't in the budget. All good: hypnomix doesn't need any of it. You can run an <b>open-weight model on your own machine</b>, driven by an <b>open-source agent</b>, and nothing ever leaves your computer.</p>
+      <p><b>The quickest way:</b> in the app, <b>Setup → A model on this computer</b> connects the app's own Assistant to Ollama or LM Studio, with no agent to install (steps 1 to 3 below, then Test). This page goes further: an open-source <i>agent</i> that drives every HypnoMix command. Both are compared in <a data-wiki="setup-ai" href="#">Setting Up, and Choosing an AI</a>.</p>
+      <p>Maybe you'd rather not feed the data-center boom. Maybe you want your music and your tools to stay open source, end to end. Maybe a monthly AI subscription just isn't in the budget. All good: HypnoMix doesn't need any of it. You can run an <b>open-weight model on your own machine</b>, driven by an <b>open-source agent</b>, and nothing ever leaves your computer.</p>
       <p><b>Our recommendation:</b> <code>gpt-oss:20b</code>, an open-weight model under the Apache 2.0 licence that's built for tool use (running commands, reading reports, trying again), served by <b>Ollama</b> (free) and driven by <b>OpenCode</b> (free, open source). It runs on a computer with <b>16 GB of memory</b> or more, which covers most recent Macs with Apple silicon and many PCs. The download is about 14 GB.</p>
       <p><b>Only 8 GB?</b> Use a smaller model such as <code>qwen3:8b</code> in the same steps. It's lighter but less reliable on long jobs, so give it one command at a time.</p>
     </div>
@@ -19,12 +19,12 @@ teaser: Run an open-weight model on your own computer with Ollama and drive hypn
         <div class="term" data-label="terminal"><pre><span class="p">$</span> OLLAMA_CONTEXT_LENGTH=64000 ollama serve   <span class="c"># quit the Ollama app first if it's open</span></pre></div>
         <p>A longer context uses more memory. If things crawl, check <code>ollama ps</code>: the PROCESSOR column should say <b>100% GPU</b>.</p></li>
       <li><h4>Install OpenCode, the agent</h4><p>OpenCode is a free, open-source agent that runs in Terminal. Install it with the one-line command on <a target="_blank" rel="noopener" href="https://opencode.ai/docs">opencode.ai/docs</a>.</p></li>
-      <li><h4>Start it on hypnomix</h4>
+      <li><h4>Start it on HypnoMix</h4>
         <div class="term" data-label="terminal"><pre><span class="p">$</span> cd hypnomix
 <span class="p">$</span> source .venv/bin/activate
 <span class="p">$</span> ollama launch opencode --model gpt-oss:20b</pre></div>
-        <p>Then just ask: <em>"Run hypnomix doctor and tell me what's missing,"</em> or <em>"Master Song mix.wav to -14 LUFS and check it on a phone."</em> The agent reads <code>AGENTS.md</code>, runs the commands and reads the reports. (Already running OpenCode? Type <code>/models</code> and pick <code>gpt-oss:20b</code>; it finds Ollama by itself.)</p></li>
+        <p>Then just ask: <em>"Run <code>hypnomix doctor</code> and tell me what's missing,"</em> or <em>"Master Song mix.wav to -14 LUFS and check it on a phone."</em> The agent reads <code>AGENTS.md</code>, runs the commands and reads the reports. (Already running OpenCode? Type <code>/models</code> and pick <code>gpt-oss:20b</code>; it finds Ollama by itself.)</p></li>
     </ol>
     <div class="note-box">
-      <p><b>Honest expectations.</b> A local model is slower than a cloud one and makes more mistakes on long, multi-step jobs. hypnomix is built for that: every command writes a report, <code>scan</code> changes nothing, and <code>fix</code> only applies what you approve. A small model can take it one step at a time while <code>REVIEW.md</code> does the remembering. And you can always skip the AI and type the commands yourself; every one is on this page.</p>
+      <p><b>Honest expectations.</b> A local model is slower than a cloud one and makes more mistakes on long, multi-step jobs. HypnoMix is built for that: every command writes a report, <code>scan</code> changes nothing, and <code>fix</code> only applies what you approve. A small model can take it one step at a time while <code>REVIEW.md</code> does the remembering. And you can always skip the AI and type the commands yourself; every one is on this page.</p>
     </div>

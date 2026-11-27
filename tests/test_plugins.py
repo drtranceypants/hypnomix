@@ -70,7 +70,7 @@ class Finding(unittest.TestCase):
 
     def test_every_free_name_is_in_the_readme(self):
         readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
-        table = readme[readme.index("### Free plug-ins that work with hypnomix"):]
+        table = readme[readme.index("### Free plug-ins that work with HypnoMix"):]
         for f in P.FREE:
             self.assertIn(f["name"], table, f["name"])
 

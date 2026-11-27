@@ -25,7 +25,8 @@ What the workflow does with them:
                    AI agents and the Assistant, who follow them when they run the review with you
   taste.*          tuning / timing strictness and free-text taste notes (shown to the reviewer; tools stay gentle
                    by default and only go further when you say so)
-  tools.*          your DAW (live, reaper, ardour or other: the same choice as the app's Setup page, which is used
+  tools.*          your DAW (live = Ableton Live, reaper = REAPER, ardour = HypnoMix DAW, or other; `hypnomix daw` is
+                   accepted for ardour, which is only the stored word: the same choice as the app's Setup page, which is used
                    until you answer here) and the free plug-ins you have installed (proposals only name what you have)
   cleanup.*        the tidy steps of the first clean-up, all on by default: cleanup.order, cleanup.retire,
                    cleanup.consolidate (on or off)
@@ -40,13 +41,13 @@ from hypnomix.core.paths import HOME
 PREFS = HOME / "preferences.json"
 
 QUESTIONS = [
-    dict(key="tools.daw", ask="Which DAW do you work in?", options=["live", "reaper", "ardour", "other"],
+    dict(key="tools.daw", ask="Which DAW do you work in? (live = Ableton Live, reaper = REAPER, ardour = HypnoMix DAW, other)", options=["live", "reaper", "ardour", "other"],
          default="live", why="the same choice as the app's Setup page (until you answer here, Setup's answer is used); "
          "decides whether fixes can be written into a project or are handed over as audio and a to-do list"),
     dict(key="targets.delivery", ask="Where will the music be released first?",
          options=["streaming", "video", "cd", "vinyl", "demo"], default="streaming",
          why="read by AI agents and the Assistant (they see it in `hypnomix prefs`) to choose sensible targets for you; "
-         "the numbers hypnomix itself checks against are the two targets below"),
+         "the numbers HypnoMix itself checks against are the two targets below"),
     dict(key="targets.lufs", ask="Loudness target (integrated LUFS)?", options=[-14, -16, -11, -9], default=-14,
          why="-14 suits streaming and video; louder masters get turned down by the platforms (any number from -40 to -1)"),
     dict(key="targets.true_peak", ask="True-peak ceiling (dBTP)?", options=[-1.0, -2.0, -0.5], default=-1.0,
@@ -118,6 +119,7 @@ def put(prefs, key, value):
 # ---------------------------------------------------------------- the DAW: one choice, shared with Setup
 DAW_IDS = ("live", "reaper", "ardour", "other")
 _DAW_WORDS = {"live": "live", "ableton": "live", "ableton live": "live", "reaper": "reaper", "ardour": "ardour",
+              "hypnomix": "ardour", "hypnomix daw": "ardour",       # HypnoMix DAW is built on Ardour: its sessions are Ardour sessions
               "other": "other", "logic": "other", "pro tools": "other", "protools": "other", "studio one": "other"}
 
 
@@ -221,7 +223,8 @@ def parse(key, raw):
         else:
             got = next((o for o in opts if o.lower() == low), "")
         if not got:
-            raise PrefError(f"{key} must be one of: {', '.join(opts)}; got {raw!r}")
+            more = " (ardour is the stored word for HypnoMix DAW; \"hypnomix daw\" works too)" if key == "tools.daw" else ""
+            raise PrefError(f"{key} must be one of: {', '.join(opts)}{more}; got {raw!r}")
         return got
     if low in ("yes", "true", "no", "false"):
         return low in ("yes", "true")

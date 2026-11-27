@@ -4,6 +4,7 @@ path of anyone's computer. (The lessons have their own, stricter check in test_l
 Names are kept as fingerprints, never in plain text: the first 12 hex digits of the SHA-256 of the name in lower case.
 To add one:  python -c "import hashlib; print(hashlib.sha256('the name'.encode()).hexdigest()[:12])"
 """
+import ast
 import hashlib
 import os
 import re
@@ -170,6 +171,260 @@ class Paths(unittest.TestCase):
         self.assertEqual(home_paths_in(f"{users}x/y {users}you/y {home}<you>/y {win}<you>\\z {users}[username] {home}$USER"), [])
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# THE NAMING RULES (the owner's decisions of 2026-11-26). What a person READS says "HypnoMix" (capital H, capital M) and
+# "HypnoMix DAW"; the name of the program under that DAW is given in a few places, each named below, and nowhere else.
+# Both checks look at the text a person can read: for a Python file its string literals and docstrings (never comments);
+# for a script, a style sheet or a source file in a language with comments, the text without them; for every other file
+# (documents, wiki articles, data, shell scripts) the whole text. This file states the names it polices, so it is skipped.
+SELF = "tests/test_repo_rules.py"
+LINE_COMMENT = {".yml": "#", ".yaml": "#", ".ps1": "#", ".toml": "#", ".iss": ";", ".lua": "--", ".jsfx": "//"}
+NUL = "\x00"                                     # between two string literals of a Python file: a literal can be matched whole
+
+
+def strip_c_comments(text, line_comments=True):
+    """`text` of a JavaScript, CSS or Swift file without its comments. A quote that does not close on its line is taken for
+    an ordinary character (a regular expression's quote, an apostrophe), so a comment after one is still found."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if line_comments and text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+        elif c in "\"'`":
+            j = i + 1
+            while j < n and text[j] != c and not (text[j] == "\n" and c != "`"):
+                j += 2 if text[j] == "\\" else 1
+            if j < n and text[j] == c:
+                out.append(text[i:j + 1])
+                i = j + 1
+            else:
+                out.append(c)
+                i += 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def reader_text(rel, text):
+    """What a person can read in this file (see the note above)."""
+    ext = Path(rel).suffix.lower()
+    if ext in (".py", ".pyw"):
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return text
+        return NUL.join(n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str))
+    if ext in (".js", ".css", ".swift"):
+        return strip_c_comments(text, line_comments=ext != ".css")
+    if ext in LINE_COMMENT:
+        return "\n".join(l for l in text.splitlines() if not l.lstrip().startswith(LINE_COMMENT[ext]))
+    return text
+
+
+# (a) "Ardour" (capital A: the program's own name) in text a person reads. path -> (how many times, why). None: any number
+# of times, at least once. A NEW occurrence anywhere, or a changed count, or an entry that matches nothing, fails.
+ARDOUR_PLACES = {
+    # the disclosure: HypnoMix DAW is built on Ardour, a free open-source DAW under the GNU GPL
+    "README.md": (3, "the disclosure sentence near the top with the honesty line, and the licence paragraph"),
+    "THIRD_PARTY.md": (3, "the licence notice of the add-on: what it is built on, and its licence"),
+    "hypnomix/app/wiki/articles/28-ardour.html": (10, "the ONE wiki article about HypnoMix DAW: what it is built on, the .ardour format, the honesty line"),
+    "hypnomix/app/engine_addon.py": (1, "the Setup card of the add-on: 'built on Ardour, a free open-source DAW'"),
+    "hypnomix/app/teacher.py": (1, "HONESTY: the honesty line, shown in the first step of each HypnoMix DAW course"),
+    "packaging/README.md": (2, "the engine's licence notice in the packaging notes"),
+    "packaging/mac/build_dmg.sh": (1, "the engine's licence notice in the installer script"),
+    "packaging/mac/build_engine_archive.sh": (1, "the engine's licence notice in the engine-kit script"),
+    # developer documentation of the file format that the reader and the writer handle (no product text)
+    "hypnomix/project/ardour.py": (8, "docstrings of the reader of the session format"),
+    "hypnomix/project/ardour_edit.py": (7, "docstrings of the writer of new snapshots"),
+    "hypnomix/project/als2ardour.py": (4, "docstrings of helpers that write the session format"),
+    "hypnomix/project/__init__.py": (3, "the package docstring and the session-folder helper name the supported formats"),
+    "hypnomix/workflow/fix_ardour.py": (4, "docstrings of the module that writes fixes into a session snapshot"),
+    # tests: they pin the disclosure, assert that the name is absent elsewhere, or test the format reader
+    "tests/test_ardour.py": (3, "tests of the session reader"),
+    "tests/test_als2ardour.py": (2, "tests of the Live-set converter"),
+    "tests/test_lessons.py": (6, "pins the honesty line and checks that no lesson names the program otherwise"),
+    "tests/test_app.py": (3, "asserts that no app page names the program"),
+    "tests/test_release_gate.py": (1, "asserts that a roadmap row does not name it"),
+    "tests/test_engine_addon.py": (1, "pins the Setup card phrase"),
+    "tests/test_dawfix_packaging.py": (1, "asserts that the disclosure is in the packaging notes only"),
+    "tests/test_daw_assistant.py": (1, "a fixture copied from the engine's own plug-in list (its 'creator' field)"),
+}
+
+# (b) The old spelling "Hypnomix" (capital H, small m) in text a person reads. Only these literal names, which other
+# programs look up or which sit on people's disks, may carry it. (regular expression, why). A match is taken away before
+# the rest of the text is checked; an entry that matches nothing fails.
+OLD_NAMES = [
+    (r"(?<=HypnomixMain, )Hypnomix\b|(?<=HypnomixMain and )Hypnomix\b", "the review device, the third in a list of the three Max devices"),
+    (r"(?<![^\x00])Hypnomix(?![^\x00])", "a string that is exactly the name: the review device, the executable and the folders of the app"),
+    (r"(?<![^\x00])/Hypnomix(?![^\x00])", "the app's executable, tested by its path ending"),
+    (r"Hypnomix\.(?:app|amxd|swift|icns|iconset)", "the Mac app bundle, the review device file, the Swift source, the icon files"),
+    (r"Hypnomix-(?:\d|mac|windows|full|\$|<|\{|\*)[^\s\"'`)\]|,;]*|-Hypnomix-", "the installer file names, which the updater matches"),
+    (r"Hypnomix Library", "the folder in the person's Music folder that the Store fills"),
+    (r"X-Hypnomix", "the request header that proves a request comes from the app's own page"),
+    (r"Hypnomix Demo Song", "the demo project's folder and file names"),
+    (r"Hypnomix(?:Probe|Main)", "the Max for Live devices, found by this name in saved sets"),
+    (r"Hypnomix(?:Engine|Python)", "the engine kit's folder name and the app bundle's Info.plist key"),
+    (r"Hypnomix\s+(?:Probe|Main|Align|Master|Utility|Limiter|Tools)", "the devices, REAPER effects and plug-ins that code finds by name"),
+    (r"Hypnomix · ", "the tag in front of the plug-ins that the REAPER chain builds"),
+    (r"Max Audio Effect(?: -> | → |/)Hypnomix", "the Live browser folder that the device installer creates"),
+    (r"(?:Documents|Programs|LOCALAPPDATA%?)[/\\]+Hypnomix|Work\\Hypnomix|MacOS/Hypnomix", "the app's folders and executable on disk"),
+    (r"<string>Hypnomix</string>", "CFBundleExecutable and CFBundleIconFile in the app bundle's Info.plist"),
+    (r"Hypnomix\s+(?:review\s+)?devices?|Hypnomix panel", "the review device and the REAPER panel, named as they are in Live and REAPER"),
+    (r"\*\*Hypnomix\*\*|<b>Hypnomix</b>|Hypnomix \(the review device\)", "the review device's name in bold or in a command list"),
+    (r"type Hypnomix in", "the search term for the review device in REAPER's effect browser"),
+]
+OLD_NAMES = [(re.compile(p), why) for p, why in OLD_NAMES]
+# What is left of the old spelling after those names are taken away: only tests that must write it to assert that it is gone.
+OLD_SPELLING_IN_TESTS = {
+    "tests/test_app.py": (3, "the naming test of the app's pages: the patterns that find the old spelling"),
+    "tests/test_lessons.py": (1, "the lessons' naming test: the pattern that finds the old spelling"),
+    "tests/test_dawfix_packaging.py": (2, "asserts that two retired page texts are gone"),
+    "tests/test_release_gate.py": (1, "asserts that a retired page text is gone"),
+}
+
+
+def ardour_counts():
+    found = {}
+    for rel, text in FILES:
+        if rel != SELF:
+            n = reader_text(rel, text).count("Ardour")
+            if n:
+                found[rel] = n
+    return found
+
+
+def old_spelling_counts():
+    """({path: occurrences left after the allowed names are taken away}, {pattern: matches})."""
+    left, used = {}, {}
+    for rel, text in FILES:
+        if rel == SELF:
+            continue
+        v = reader_text(rel, text)
+        if "Hypnomix" not in v:
+            continue
+        for rx, _ in OLD_NAMES:
+            v, n = rx.subn("\x01", v)
+            used[rx.pattern] = used.get(rx.pattern, 0) + n
+        if "Hypnomix" in v:
+            left[rel] = v.count("Hypnomix")
+    return left, used
+
+
+HONESTY_LINE = "HypnoMix DAW is not released yet. Until it is, everything written here for it is written for Ardour 8 or 9, the free DAW it is built on, and has not yet been tried in either."
+DISCLOSURE_SENTENCE = "It is built on Ardour, a free open-source DAW under the GNU General Public License."
+WIKI = "hypnomix/app/wiki/articles"
+
+
+@unittest.skipIf(FILES is None, "needs git and a checkout (git ls-files)")
+class OldNames(unittest.TestCase):
+    """The old names cannot come back: 'Ardour' and the spelling 'Hypnomix' appear only in the places listed above."""
+
+    def test_ardour_is_named_only_in_the_places_the_owner_allowed(self):
+        found = ardour_counts()
+        bad = sorted(rel for rel in found if rel not in ARDOUR_PLACES)
+        self.assertEqual(bad, [], "'Ardour' is in text a person reads here: say HypnoMix DAW (the disclosure places are in ARDOUR_PLACES)")
+        wrong = {rel: (found.get(rel, 0), want) for rel, (want, _) in ARDOUR_PLACES.items()
+                 if (want is None and not found.get(rel)) or (want is not None and found.get(rel, 0) != want)}
+        self.assertEqual(wrong, {}, "path: (found, listed): a new mention, or an entry that matches less than it says (fix the entry)")
+
+    def test_every_ardour_entry_has_a_reason_and_names_a_file_that_exists(self):
+        for rel, (want, why) in ARDOUR_PLACES.items():
+            self.assertTrue((REPO / rel).is_file(), rel)
+            self.assertTrue(why.strip(), rel)
+
+    def test_the_old_spelling_is_left_only_in_the_names_that_must_not_change(self):
+        left, used = old_spelling_counts()
+        bad = {rel: n for rel, n in left.items() if rel not in OLD_SPELLING_IN_TESTS}
+        self.assertEqual(bad, {}, "path: how many. 'Hypnomix' (small m) is in text a person reads: write HypnoMix, or `hypnomix` "
+                                  "when it is the command. Only the names in OLD_NAMES keep the old spelling.")
+        wrong = {rel: (left.get(rel, 0), want) for rel, (want, _) in OLD_SPELLING_IN_TESTS.items() if left.get(rel, 0) != want}
+        self.assertEqual(wrong, {}, "path: (found, listed): a test entry that no longer matches what it lists")
+        stale = [p for p, n in used.items() if not n] + [rx.pattern for rx, _ in OLD_NAMES if rx.pattern not in used]
+        self.assertEqual(stale, [], "these OLD_NAMES entries match nothing any more: delete them")
+
+    def test_the_scanner_reads_what_a_person_reads(self):
+        py = 'import x\n# Hypnomix in a comment\n"""A docstring about Ardour."""\nname = "Hypnomix Align"   # trailing\n'
+        self.assertEqual(reader_text("a.py", py).count("Ardour"), 1)
+        self.assertEqual(reader_text("a.py", py).count("Hypnomix"), 1)
+        js = "/* Hypnomix · header, with Ardour */\nvar a = 'Ardour';  // Hypnomix\nvar b = \"//Hypnomix\"; /* Ardour */\nvar re = /[\"']/;  // Hypnomix\n"
+        seen = reader_text("a.js", js)
+        self.assertEqual((seen.count("Ardour"), seen.count("Hypnomix")), (1, 1), seen)
+        self.assertEqual(reader_text("a.css", "a { content: 'Ardour' } /* Ardour */").count("Ardour"), 1)
+        self.assertEqual(reader_text("a.yml", "# Hypnomix\nname: Hypnomix\n").count("Hypnomix"), 1)
+        self.assertEqual(reader_text("a.md", "<!-- Hypnomix -->\nArdour").count("Hypnomix"), 1)             # a document is read whole
+        left = old_names_left("The Hypnomix Align device, HypnomixMain, Hypnomix-mac-arm64.dmg and Hypnomix.app stay; the Hypnomix app does not.")
+        self.assertEqual(left, 1)
+        self.assertEqual(old_names_left("HypnoMix, hypnomix scan and HYPNOMIX are the new spellings"), 0)
+        self.assertEqual(old_names_left("Made HypnomixProbe, HypnomixMain and Hypnomix: in Live"), 0)
+        self.assertEqual(old_names_left("a bare Hypnomix in prose"), 1)
+
+    def test_no_command_help_names_the_program_or_uses_the_old_spelling(self):
+        """`hypnomix COMMAND -h` prints the module's docstring where the command has no option parser of its own."""
+        from hypnomix import cli
+        for name, (mod, _) in sorted(cli.COMMANDS.items()):
+            path = REPO / (mod.replace(".", "/") + ".py")
+            if not path.is_file():
+                path = REPO / mod.replace(".", "/") / "__init__.py"
+            doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8"))) or ""
+            self.assertNotIn("Ardour", doc, f"`hypnomix {name} -h` names the program")
+            self.assertEqual(old_names_left(doc), 0, f"`hypnomix {name} -h` uses the old spelling")
+
+
+def old_names_left(sentence):
+    v = sentence
+    for rx, _ in OLD_NAMES:
+        v = rx.sub("\x01", v)
+    return v.count("Hypnomix")
+
+
+@unittest.skipIf(FILES is None, "needs git and a checkout (git ls-files)")
+class Disclosure(unittest.TestCase):
+    """HypnoMix DAW is built on Ardour, and that is said plainly and once where the owner wants it said."""
+
+    def test_the_wiki_has_exactly_one_article_that_discloses_what_hypnomix_daw_is_built_on(self):
+        saying = [rel for rel, text in FILES if rel.startswith(WIKI + "/") and rel.endswith(".html") and "built on Ardour" in squash(text)]
+        self.assertEqual(saying, [WIKI + "/28-ardour.html"])
+        arts = [rel for rel, _ in FILES if rel.startswith(WIKI + "/") and rel.endswith(".html")]
+        self.assertEqual([rel for rel in arts if "Ardour" in read(rel)], [WIKI + "/28-ardour.html"], "no other article names the program")
+        head = read(WIKI + "/28-ardour.html").split("-->")[0]
+        self.assertRegex(head, r"(?m)^title: HypnoMix DAW$")
+        t = squash(read(WIKI + "/28-ardour.html"))
+        self.assertEqual(t.count(HONESTY_LINE), 1, "the honesty line, once, in the article")
+        self.assertIn("Ardour-format session folder", t)
+        self.assertIn(".ardour", t)
+        self.assertIn("Sessions saved by Ardour 3 to 9 open the same way", t)
+
+    def test_the_readme_has_the_disclosure_sentence_and_the_honesty_line_once_each(self):
+        t = squash(read("README.md"))
+        self.assertEqual(t.count(DISCLOSURE_SENTENCE), 1)
+        self.assertEqual(t.count(HONESTY_LINE), 1)
+        self.assertLess(t.index(DISCLOSURE_SENTENCE), 1500, "near the top, where the three DAWs are named")
+        self.assertRegex(t, r"GNU General Public License,? \(?(version )?2 or later")          # the licence paragraph, with its notice of the engine
+        self.assertIn("a rebranded fork of Ardour", t)
+
+    def test_third_party_names_what_it_gives_notice_of(self):
+        t = squash(read("THIRD_PARTY.md"))
+        self.assertIn("HypnoMix DAW: built on Ardour", t)
+        self.assertRegex(t, r"GNU General Public License, version 2 or later")
+
+    def test_the_honesty_line_is_said_in_these_places_and_no_others(self):
+        from hypnomix.app import teacher as T, engine_addon as EA
+        self.assertEqual(T.HONESTY, HONESTY_LINE)
+        self.assertIn("built on Ardour, a free open-source DAW", EA.WHAT)
+        places = sorted(rel for rel, text in FILES if not rel.startswith("tests/") and HONESTY_LINE in squash(text))
+        self.assertEqual(places, ["README.md", WIKI + "/28-ardour.html"], "teacher.py holds it as HONESTY (two string pieces)")
+        for level in T.LEVELS:
+            first = T.steps("ardour", level)[0]["steps"][0]
+            self.assertEqual(sum(HONESTY_LINE in h for h in first["how"]), 1, level)
+            for daw in ("live", "reaper"):
+                self.assertNotIn(HONESTY_LINE, " ".join(T.steps(daw, level)[0]["steps"][0]["how"]), (daw, level))
+
+
 def read(rel):
     return (REPO / rel).read_text(encoding="utf-8")
 
@@ -190,7 +445,7 @@ class Claims(unittest.TestCase):
     def test_the_engine_is_said_to_be_a_separate_gpl_program(self):
         for rel in ENGINE_DOCS:
             t = squash(read(rel))
-            self.assertIn("Ardour", t, rel)
+            self.assertIn("Ardour" if rel in ("README.md", "THIRD_PARTY.md", "packaging/README.md") else "HypnoMix DAW", t, rel)   # Ardour is named only where the disclosure belongs
             self.assertRegex(t, r"General Public License,? \(?(version )?2 or later",
                              rel + " must say the engine is under the GNU General Public License, version 2 or later")
             self.assertIn("separate program", t, rel + " must say the engine is a separate program")
@@ -203,10 +458,10 @@ class Claims(unittest.TestCase):
             for url in re.findall(r"https?://[^\s\"')<>]+", text):
                 self.assertNotRegex(url, r"(?i)hypnomix[-_]?(daw|engine)", f"{rel}: {url} is an address of the engine's source")
 
-    def test_als2ardour_is_said_to_be_unopened_in_ardour_wherever_it_is_described(self):
+    def test_als2ardour_is_said_to_be_unopened_in_a_released_daw_wherever_it_is_described(self):
         for rel in ("README.md", "AGENTS.md", "hypnomix/app/wiki/articles/26-features.html", "hypnomix/app/wiki/articles/25-chores.html"):
             t = squash(read(rel))
-            self.assertIn("not yet opened in Ardour", t, rel)
+            self.assertIn("not yet opened in a released DAW", t, rel)
 
     def test_the_engine_mcp_server_is_not_said_to_be_on_by_default(self):
         """It is a preference (Preferences, Control Surfaces, MCPHttp) that the person switches on; daw.py says so."""
@@ -222,11 +477,16 @@ class Claims(unittest.TestCase):
                 self.assertIn(word, t, f"{rel} must say that '{word}' was not tried")
             self.assertRegex(t, r"signing|signed|notaris", f"{rel} must say that signing was not tried")
 
-    def test_the_full_download_is_not_said_to_be_addable(self):
+    def test_hypnomix_daw_is_not_said_to_be_available_before_it_is(self):
+        """HypnoMix DAW is an add-on fetched from Setup, and the shipped manifest names no archive yet: a page that says it can
+        be added from Setup must say, in the same page, that it is not available yet; and none says it is."""
         for rel, text in FILES:
             if rel.endswith((".md", ".html", ".js", ".py")) and not rel.startswith(("tests/", "docs/launch/")):
-                self.assertNotRegex(squash(text), r"(?i)\b(can|will) be added (later )?(from|in) \**Setup|add it later from \**Setup",
-                                    f"{rel}: the full download cannot be added from Setup → Extras (nothing does that yet)")
+                t = squash(text)
+                self.assertNotRegex(t, r"(?i)\bHypnoMix DAW (is|are) (now )?(available|out|ready|released)\b(?! (yet|for))", f"{rel}: it is not out")
+                if re.search(r"(?i)added? (it |HypnoMix DAW )?(from|in|with) \**Setup", t):
+                    self.assertRegex(t, r"(?i)not available yet|no archive|nothing is published|no address|names no address|not out",
+                                     f"{rel}: says it can be added from Setup, and not that it is not available yet")
 
     def test_numbers_written_by_hand_match_the_code(self):
         from hypnomix import cli

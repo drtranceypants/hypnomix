@@ -240,9 +240,10 @@ class Cards(unittest.TestCase):
             F, m = P.master_findings(f, {"targets": {"lufs": -14, "true_peak": -1}})
         self.assertEqual({x["kind"] for x in F}, {"true-peak", "loudness"})
 
-    @unittest.skipUnless(Path("/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc").exists(), "macOS")
     def test_device_and_python_recognise_the_song_the_same_way(self):
         import subprocess
+        from tests import _jscheck
+        runner = _jscheck.need_runner(self)
         names = ["Lead Vox", "Bass", "Drüms", "Gtr · B smooth-2"]
         body = P.script()
         sig_fn = "function signature()" + body.split("function signature()")[1].split("function word")[0]
@@ -251,9 +252,8 @@ class Cards(unittest.TestCase):
                 + sig_fn + "\nprint(signature());")
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / "s.js"
-            f.write_text(prog)
-            out = subprocess.run(["/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc", str(f)],
-                                 capture_output=True, text=True).stdout.strip()
+            f.write_text(prog, encoding="utf-8")
+            out = subprocess.run(runner + [str(f)], capture_output=True, text=True, encoding="utf-8").stdout.strip()
         self.assertEqual(out, P.signature(names))
 
 

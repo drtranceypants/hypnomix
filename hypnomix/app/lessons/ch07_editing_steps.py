@@ -137,7 +137,7 @@ STEPS = [
            "reaper": ["Turn off snapping (the magnet button) and drag the item, or split (**S**) around the note and drag the piece.",
                       "For a stretch, use stretch markers on the item (right-click the item and look for the stretch marker entries, or run the action 'Item: Add stretch marker at cursor' from the Actions list), then drag the marker so only a small stretch changes."],
            "ardour": ["Set the grid mode to **No Grid**, then drag the region a little with the Grab tool.",
-                      "To change a phrase's length, use Ardour's stretch or time-stretch option on the region."]},
+                      "To change a phrase's length, use HypnoMix DAW's stretch or time-stretch option on the region."]},
       settings=[["Typical nudge", "1-20 ms", "enough to fix a flam; more starts to change the feel"],
                 ["Which hits to fix", "only the ones that bother you on the first listen", "the others are part of the feel"],
                 ["Compare against", "the kick and snare or the click", "they set the pulse; everyone else lines up to them"]],
@@ -163,7 +163,7 @@ STEPS = [
            "If you want it, use it on purpose.",
            "`hypnomix tune` is built for the gentle repair. It moves each note's centre toward the song's tuning and leaves vibrato, slides "
            "and scoops as they were sung. Its default pulls each note 0.35 of the way, and it only touches notes more than 20 cents off, never "
-           "more than 25 cents. It writes a new audio file; hypnomix proposes and you decide whether to use it."],
+           "more than 25 cents. It writes a new audio file; HypnoMix proposes and you decide whether to use it."],
       terms=[["Cent", "a hundredth of a semitone. 100 cents is one piano key. A note 20 cents off is quite subtle."],
              ["Pitch correction", "moving a sung note toward the nearest right note."],
              ["Key", "the set of notes a song is built on, and its home note."],
@@ -172,7 +172,7 @@ STEPS = [
                     "Use the **Tuner** device to read a note's pitch, but it doesn't correct anything."],
            "reaper": ["Click the track's **FX** button → Cockos → **ReaTune**, REAPER's stock pitch tool. Keep any correction gentle and check each note by ear.",
                       "Or use `hypnomix tune`, which makes a new file."],
-           "ardour": ["Ardour has no stock pitch corrector. Use `hypnomix tune`, which makes a new file, and import it."]},
+           "ardour": ["HypnoMix DAW has no stock pitch corrector. Use `hypnomix tune`, which makes a new file, and import it."]},
       settings=[["Correction amount", "about 35% (0.35 in `hypnomix tune`, the default)", "a nudge, not a fix: the note stays human"],
                 ["Notes to touch", "only those more than about 20 cents off", "smaller errors sound natural"],
                 ["Largest move", "about 25 cents", "no note becomes a different note"],
@@ -238,7 +238,7 @@ STEPS = [
            "the vocal is.",
            "Remove unused tracks only after you have saved an archive copy of the whole project. Nothing is lost then, and the clean "
            "project is easier to work in.",
-           "Three hypnomix commands help with a Live set. `hypnomix name` proposes a name for every track by how it sounds. `hypnomix order` "
+           "Three HypnoMix commands help with a Live set. `hypnomix name` proposes a name for every track by how it sounds. `hypnomix order` "
            "puts tracks in working order (drums, bass, keys and guitar, vocals, other) and puts vocal-stack clips on the track for their pitch. "
            "`hypnomix tidy` retires switched-off tracks, after writing an archive copy, and puts clips of one instrument on one track. "
            "Each of `order` and `tidy` writes a new set; the original stays as it was. `hypnomix name` only prints names unless you add `--apply`, which renames in the open set (and `--undo` puts them back)."],

@@ -1,4 +1,4 @@
-desc:Hypnomix Main (the song card, and the mix measured for the hypnomix app; audio passes through)
+desc:Hypnomix Main (the song card, and the mix measured for the HypnoMix app; audio passes through)
 //tags: analysis meter hypnomix
 //author: hypnomix
 // Put it LAST on the master track. The song card: genre, key and scale (tuning and harmony use them instead of
@@ -42,19 +42,19 @@ gfx_set(0.85, 0.8, 0.72, 1);
 gfx_x = rr_x; gfx_y = rr_y + rr_h + 9;
 rr_pressed > 0 && rr_state != rr_from ? (rr_pressed = 0);
 rr_pressed > 0 && time_precise() - rr_pressed > 1.5 ? (
-  gfx_drawstr("No answer: start the bridge (hypnomix reaper start) and the hypnomix app");
+  gfx_drawstr("No answer: start the bridge (hypnomix reaper start) and the HypnoMix app");
 ) : rr_state == 1 ? (
   gfx_drawstr("Recording the master: "); gfx_drawnumber(gmem[10], 1); gfx_drawstr(" s. Stop here or stop REAPER.");
 ) : rr_state == 2 ? (
-  gfx_drawstr("Rendering what played; the review then opens in the hypnomix app");
+  gfx_drawstr("Rendering what played; the review then opens in the HypnoMix app");
 ) : rr_state == 3 ? (
-  gfx_drawstr("The hypnomix app did not answer: open it (hypnomix app), then try again");
+  gfx_drawstr("The HypnoMix app did not answer: open it (hypnomix app), then try again");
 ) : rr_state == 4 ? (
-  gfx_drawstr("Reviewing in the hypnomix app");
+  gfx_drawstr("Reviewing in the HypnoMix app");
 ) : rr_state == 5 ? (
   gfx_drawstr("Under a second played: nothing to review. Press again to record");
 ) : rr_state == 6 ? (
-  gfx_drawstr("The review could not run: the hypnomix app says why");
+  gfx_drawstr("The review could not run: the HypnoMix app says why");
 ) : (
   gfx_drawstr("Plays from the edit cursor while every probe listens");
 );

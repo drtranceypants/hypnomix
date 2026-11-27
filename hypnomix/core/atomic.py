@@ -13,7 +13,7 @@ was there before is kept next to it as "<name>.bak".
     decisions_lock(folder)          one writer of a scan folder's decisions.json at a time, across programs
                                     (every read-then-write of that file happens inside it; it can be nested)
 
-    cache_root()                    where caches live: <hypnomix home>/cache (HYPNOMIX_HOME decides the home)
+    cache_root()                    where caches live: <HypnoMix home>/cache (HYPNOMIX_HOME decides the home)
 """
 import contextlib
 import errno
@@ -195,7 +195,7 @@ def decisions_lock(sd):
 
 
 def cache_root():
-    """<hypnomix home>/cache. The home is HYPNOMIX_HOME when it is set (read now, so a test or a second
+    """<HypnoMix home>/cache. The home is HYPNOMIX_HOME when it is set (read now, so a test or a second
     instance can set it after import), else the same default as hypnomix.core.paths."""
     env = os.environ.get("HYPNOMIX_HOME")
     if env:

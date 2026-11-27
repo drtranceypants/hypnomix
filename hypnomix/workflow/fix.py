@@ -18,7 +18,7 @@
   hypnomix fix SCAN_DIR --approve ID --from "Song (fixed 1).als" --out "Song (fixed 2).als"
                                                             one fix at a time, each on top of the last
   hypnomix fix SCAN_DIR --approved --out "Song (fixed).rpp"  a REAPER project: see workflow/fix_project.py
-  hypnomix fix SCAN_DIR --approved --out "Song (fixed).ardour"  an Ardour session: see workflow/fix_ardour.py
+  hypnomix fix SCAN_DIR --approved --out "Song (fixed).ardour"  a HypnoMix DAW session: see workflow/fix_ardour.py
   hypnomix fix SCAN_DIR --decide smooth-3=approve@60        approve 60% of the proposed move (default 100)
   hypnomix fix SCAN_DIR --decide-like smooth-3=approve@60 [--dry-run] [--band 50]
                                                             the same decision for every undecided finding like
@@ -46,13 +46,13 @@ scaled (renames, track order, tidy, plans, borrowed loops, motion moves) say so 
 above 0; amount 0 applies nothing. Every run that wrote something is logged for `hypnomix history` (versions,
 diff, undo); a run that wrote nothing is not a version.
 
-Ardour: the approved region fades (with their curve), region gain, gain-envelope dips over spikes, and the eased
+HypnoMix DAW: the approved region fades (with their curve), region gain, gain-envelope dips over spikes, and the eased
 level at a comp cut are written into ONE new .ardour snapshot, saved next to the original inside the same session
-folder (that is where Ardour keeps its own snapshots, and where it looks for the session's audio, so the new file
+folder (that is where HypnoMix DAW keeps its own snapshots, and where it looks for the session's audio, so the new file
 finds the same recordings; nothing is copied or moved). The original is never touched; the new file is read back and
 checked, and what changed is listed. Track names and order, vocal stacks, timing, sidechain and tuning stay by hand
 (harmony balance becomes balanced copies of the parts in SCAN_DIR/fixed/voices, not automation in the session).
-Written and re-read by hypnomix; NOT YET OPENED IN ARDOUR (see the Ardour wiki article for what to check there).
+Written and re-read by HypnoMix; NOT YET OPENED IN A RELEASED DAW (HypnoMix DAW is not released yet; see the HypnoMix DAW wiki article for what to check there).
 
 What happens to each approved finding (see REVIEW.md for the ids):
   set     written into ONE new set next to the original, in this order: distortion parameter fixes,
@@ -102,7 +102,7 @@ def hx(*args, timeout=7200):
         r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8", errors="replace",
                            timeout=timeout)
     except subprocess.TimeoutExpired:
-        return 1, f"timed out after {timeout} s: hypnomix {' '.join(map(str, args[:2]))}"
+        return 1, f"timed out after {timeout} s: HypnoMix {' '.join(map(str, args[:2]))}"
     out = (r.stdout or "") + (r.stderr or "")
     return r.returncode, "\n".join(l for l in out.splitlines() if "Warning" not in l and "warnings.warn" not in l)
 
@@ -493,7 +493,7 @@ def not_applied(sd, findings, dec, manual_items, skipped, zero, default_ids=(), 
     changed = [f for f in findings if decision_of(dec, f["id"]) == "change"]
     L = []
     if changed:
-        L += ["", f"  decided as \"change\" ({len(changed)}): hypnomix changes nothing for these until you decide again"]
+        L += ["", f"  decided as \"change\" ({len(changed)}): HypnoMix changes nothing for these until you decide again"]
         for f in changed:
             note = ((dec.get(f["id"]) or {}).get("note") or "").strip()
             L.append(f"  - {f['id']} {f.get('track') or ''} {f.get('where', '')}: "
@@ -503,7 +503,7 @@ def not_applied(sd, findings, dec, manual_items, skipped, zero, default_ids=(), 
     hand = [f for f in manual_items if f.get("applies") == "manual"]
     info = [f for f in manual_items if f.get("applies") != "manual"]
     if hand:
-        L += ["", f"  approved, but by hand ({len(hand)}): hypnomix cannot make these changes"]
+        L += ["", f"  approved, but by hand ({len(hand)}): HypnoMix cannot make these changes"]
         for f in hand:
             L.append(f"  - {f['id']} {f.get('track') or ''} {f.get('where', '')}: {str(f.get('fix'))[:300]}")
             L.append("      next: make this change yourself in your DAW, then re-scan to check it is gone"
@@ -519,7 +519,7 @@ def not_applied(sd, findings, dec, manual_items, skipped, zero, default_ids=(), 
                 # an on-by-default clean-up that an earlier clean-up already did: say so, not "no longer found"
                 why = "nothing left to change here after the earlier clean-ups in this run"
             L.append(f"  - {f['id']} {f.get('track') or ''} {f.get('where', '')}: {why}")
-        L.append(f"      next: re-scan the set (hypnomix scan ...), then decide again on what it finds now")
+        L.append(f"      next: re-scan the set (`hypnomix scan ...`), then decide again on what it finds now")
     if zero:
         L += ["", f"  approved at amount 0 ({len(zero)}): applies nothing"]
         for f in zero:
@@ -743,7 +743,7 @@ def main():
     reaper_ = orig is not None and orig.suffix.lower() == ".rpp"
     ardour_ = orig is not None and orig.suffix.lower() == ".ardour"
     if ardour_ and any(f.get("tool") == "tune" for f in audio_items):
-        sys.exit("tuning is not written into an Ardour session yet: untick the tune items (the other fixes can go ahead)")
+        sys.exit("tuning is not written into a HypnoMix DAW session yet: untick the tune items (the other fixes can go ahead)")
     # harmony balance is written as volume automation into a LIVE set only; in a REAPER project or an Ardour session
     # it is balanced copies of the parts (SCAN_DIR/fixed/voices) like in a folder of stems
     voices_in_set = bool(orig) and not reaper_ and not ardour_ and any(f.get("tool") == "voices" for f in audio_items)
@@ -774,7 +774,7 @@ def main():
     if out is not None and not reaper_ and not ardour_ and out.suffix.lower() != ".als":
         sys.exit("a Live set is written as a new .als: give --out \"<Song> (fixed).als\"")
     if ardour_ and out is not None and out.suffix.lower() != ".ardour":
-        sys.exit("an Ardour session is written as a new snapshot: give --out \"<Session> (fixed).ardour\" "
+        sys.exit("a HypnoMix DAW session is written as a new snapshot: give --out \"<Session> (fixed).ardour\" "
                  "(it is saved next to the original, inside the session folder)")
     if orig and not reaper_ and not ardour_ and (set_items or audio_items or name_items) and live_running():
         print("NOTE: Live is running. Changes not saved in Live are not in the file being read, and the set "
@@ -1238,7 +1238,7 @@ def main():
             LV.check_write(root_t)                # refuse before any take is tuned: no files are left behind
         except LV.NewerLive as e:
             failed.append(f"{f['id']}: not tuned: {e}")
-            print(f"tune       REFUSED  {f['track']}: this set was saved by a newer Live than hypnomix has been tested with")
+            print(f"tune       REFUSED  {f['track']}: this set was saved by a newer Live than HypnoMix has been tested with")
             continue
         tname = f["track"]
         if SRC.find_track(root_t, tname) is None:            # renamed earlier in this run
@@ -1349,9 +1349,9 @@ def main():
                           extra=dict(allow_protected=bool(a.allow_protected), key=a.key, by=O.reviewer(a.by)))
             log.append(f"history: logged as v{v} (`hypnomix history \"{sd}\"`)")
             if folder_mode:   # a folder of recordings has no set to compare or go back to: the repaired copies stay in fixed/
-                print(f"\nhistory: v{v} (hypnomix history \"{sd}\" lists every version)")
+                print(f"\nhistory: v{v} (`hypnomix history \"{sd}\"` lists every version)")
             else:
-                print(f"\nhistory: v{v} (hypnomix history \"{sd}\" lists every version; --undo N, --undo-item ID)")
+                print(f"\nhistory: v{v} (`hypnomix history \"{sd}\"` lists every version; --undo N, --undo-item ID)")
     except Exception as e:
         log.append(f"history: could not log this run ({e})")
         print(f"history: could not log this run ({e})")
@@ -1363,7 +1363,7 @@ def main():
         print("Open the new project in REAPER and A/B the changed spots against the original (tuned parts: switch "
               "takes on the items).")
     elif final and str(out).lower().endswith(".ardour"):
-        print("Written and re-read by hypnomix; not yet opened in Ardour. Open the new snapshot (Session > Open, or "
+        print("Written and re-read by HypnoMix; not yet opened in HypnoMix DAW. Open the new snapshot (Session > Open, or "
               "Session > Snapshot list) and check: it opens without a warning, the audio is found, fades and gain are "
               "as listed, the pan is the way round you expect, and the trim.")
     elif final:

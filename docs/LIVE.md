@@ -1,8 +1,8 @@
 # Working inside Live: the probe, the song card and A/B
 
-Everything in this guide happens in Ableton Live with three small Max for Live devices, while the hypnomix app
+Everything in this guide happens in Ableton Live with three small Max for Live devices, while the HypnoMix app
 runs in the background. Nothing is rendered or exported to make a measurement or a comparison, and the set you
-work in is never changed by hypnomix: every change still goes through the review and lands in a new set.
+work in is never changed by HypnoMix: every change still goes through the review and lands in a new set.
 
 | device | where | what it does |
 |---|---|---|
@@ -101,7 +101,7 @@ review and Apply writes the real new set from the original.
 
 You do not need Live to hear most fixes first: `hypnomix ab` writes level-matched before / after clips for clip fixes,
 tuning, timing nudges, frequency-fight cuts and changes to a Compressor, Glue Compressor, Gate, EQ Eight, Utility or
-Limiter. For a device those clips are hypnomix's **model of the device, not Live itself**, and say so. The A/B set above
+Limiter. For a device those clips are HypnoMix's **model of the device, not Live itself**, and say so. The A/B set above
 plays the real devices, so use it for anything `ab` could not preview (a Saturator or Reverb change, a plug-in, a return
 track) and to confirm the rest.
 
@@ -129,7 +129,7 @@ mastered sound. Open the rack and change anything: move, swap, add, remove or sw
   Hypnomix Master or a rack of your own, with every setting of Live's own devices and racks. Plug-ins, Max for
   Live devices and macro mappings cannot be rebuilt through Live's API, so they are listed as left out. Templates
   are files in `~/.hypnomix/master-chains/` (the app must be running); `hypnomix probe chains` lists and shows them.
-- While the rack is the one hypnomix built, it follows the song card: Ceiling sets the Limiter's ceiling, and the
+- While the rack is the one HypnoMix built, it follows the song card: Ceiling sets the Limiter's ceiling, and the
   Limiter character sets lookahead and release (clean 6 ms, punch 3 ms, loud 1.5 ms with manual release) and the
   Glue attack (loud: 10 ms). A rack of your own is never changed, except the Limiter Gain by Match target.
 
@@ -146,14 +146,14 @@ Live's own Export makes the final file: no device can start an export in Live.
 
 ## Limits (to verify on your machine)
 
-- hypnomix's list of tested versions is Live 11 and Live 12 (the checks on real sets so far were in Live 12). A set saved by a newer major version of Live is read with one warning line, and the tools that write a new set refuse it unless forced (`HYPNOMIX_FORCE_LIVE_VERSION=1`, or `--force-live-version` on a command that has it).
+- HypnoMix's list of tested versions is Live 11 and Live 12 (the checks on real sets so far were in Live 12). A set saved by a newer major version of Live is read with one warning line, and the tools that write a new set refuse it unless forced (`HYPNOMIX_FORCE_LIVE_VERSION=1`, or `--force-live-version` on a command that has it).
 - Tested in Live 12 Suite on a real set (2026-11-25): the probe and HypnomixMain measuring playback, the menus and song card reaching the app and `scan`, A / B / Blind and loudness matching on an A/B set, and Record and review before export. Not yet tested: the track-copy switch for clip fixes by ear, and Live 11 on a real set.
 - The mastering chain was tested in Live 12.4 (2026-11-25): Build, the song card's ceiling and character, Match
   target (it settled at -9.9 LUFS for a -10 target), Save, and building again from the saved template. Live loads
-  your own default presets when hypnomix adds a device or a rack: Build empties the rack first, and sets the values
+  your own default presets when HypnoMix adds a device or a rack: Build empties the rack first, and sets the values
   listed above on top of your default device presets (anything it does not list keeps your preset's value). Any
   control it cannot find is named in the device after Build, so you can set it by hand.
-- Written by hypnomix (and structure-checked by `fix`, `handoff` and `colour --apply`), but **not yet opened in Live**: the EQ Eight band that an approved
+- Written by HypnoMix (and structure-checked by `fix`, `handoff` and `colour --apply`), but **not yet opened in Live**: the EQ Eight band that an approved
   frequency-fight cut adds (`masking`, `fix`), the `Song (handoff).als` with locators (`handoff`), and the sets that
   `colour --apply` writes. Open each in Live and listen before you keep it.
 - The probe's loudness is measured on 100 ms blocks with the BS.1770 gate; short sections read slightly

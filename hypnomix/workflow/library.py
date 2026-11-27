@@ -7,7 +7,7 @@ next to them. Nothing is rendered, nothing is changed, nothing leaves the comput
 Which sets
   The folders you give, or by default your Ableton folders (~/Music/Ableton, ~/Documents) plus every set
   Spotlight knows about. Skipped, with the reason reported: Live's own content (Factory Packs, Core Library,
-  lessons and demo sets), templates, `Backup` folders, hypnomix output, and older copies: per project folder
+  lessons and demo sets), templates, `Backup` folders, HypnoMix output, and older copies: per project folder
   only the newest set counts (older version-named copies, and an older "Song v1 Project" next to a newer
   "Song v2 Project", are listed as skipped). Each set is read once and cached by path, size and time in
   ~/.hypnomix/cache/library/, so a re-run reads only the sets that changed. Reading runs in parallel.
@@ -18,7 +18,7 @@ What it learns per set (on top of what `hypnomix taste` reads: levels against th
               (ceiling, gain), Saturator, Utility (width, bass mono), Reverb and Delay on returns (decay,
               predelay, delay time against the tempo)
   plug-ins    third-party plug-ins per kind of track, by name and count only (their settings are an opaque
-              blob in the set: hypnomix cannot read them and never tries)
+              blob in the set: HypnoMix cannot read them and never tries)
   sounds      instruments, Drum Racks, the samples Simpler / Sampler play, the Live packs the set uses
   genre       a rough GUESS from tempo and instruments, saved only as a question for you to confirm
   bounces     the newest exported mix in or next to the project folder (named like the set, or with mix /
@@ -91,7 +91,7 @@ def skip_reason(p):
             any("template" in x for x in low[-3:-1]):
         return "a template, not a song"
     if any(x in (".trash", "hypnomix-out") for x in low) or "(BROKEN" in name:
-        return "hypnomix output or the Trash"
+        return "HypnoMix output or the Trash"
     if TESTY.search(Path(p).stem) or TESTY.search(project_dir(p).name) or any(x in ("_tests", "tests", "test") for x in low):
         return "a test or device-chain set (by its name), not a song"
     if Path(p).stem.lower() == "default":
@@ -934,7 +934,7 @@ def report(lib):
           f"- delays: {rt['delays']} on returns" + (f", {rt['delay_synced']:.0%} synced to the tempo" if rt["delay_synced"] is not None else "")
           + (f"; free-time ones at {fmt(rt['delay_free_beats'], ' beats', 2)}" if rt["delay_free_beats"] else "")
           + (f"; feedback {fmt(rt['delay_feedback'])}" if rt["delay_feedback"] else "")]
-    L += ["", "### Third-party plug-ins (by name only; their settings are opaque to hypnomix)", "",
+    L += ["", "### Third-party plug-ins (by name only; their settings are opaque to HypnoMix)", "",
           f"- sets using any: {st['plugin_share']['sets_with_plugins']}; stock devices only: {st['plugin_share']['stock_only']}"]
     for r, lst in st["plugins"].items():
         L.append(f"- {r}: " + ", ".join(f"{n} ({c} sets)" for n, c in lst))

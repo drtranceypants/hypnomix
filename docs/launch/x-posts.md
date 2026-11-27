@@ -1,4 +1,4 @@
-# hypnomix launch: posts for X
+# HypnoMix launch: posts for X
 
 Each post is under 280 characters
 (checked, a link counted as 23). Suggested media is in [brackets]: screen recordings at 1080p, 15–30 s, captions on.
@@ -8,11 +8,11 @@ Each post is under 280 characters
 ## Launch thread
 
 **1/**
-I built a mixing and mastering engineer for Ableton Live, REAPER and Ardour.
+I built a mixing and mastering engineer for Ableton Live and REAPER.
 
 Hand it raw stems → it cleans them, mixes them, masters the song, and writes down why it made every move.
 
-Free, open source, 96 commands, and it works with Claude Code.
+Free, open source, 98 commands, and it works with Claude Code.
 
 github.com/drtranceypants/hypnomix
 
@@ -21,7 +21,7 @@ github.com/drtranceypants/hypnomix
 **2/**
 Most AI music tools are built for MIDI.
 
-hypnomix is for people who record real things: vocals, guitars, drums, bass. The messy part. Clicks, plosives, hum, takes recorded on different days at different levels.
+HypnoMix is for people who record real things: vocals, guitars, drums, bass. The messy part. Clicks, plosives, hum, takes recorded on different days at different levels.
 
 **3/**
 Step 1 is the boring work an assistant engineer does before a mix:
@@ -87,7 +87,7 @@ With Claude Code you just ask:
 It drives Live (and REAPER) directly: faders in exact dB, any plug-in parameter, no screen clicking.
 
 **10/**
-MIT licensed. Mac and Windows installers. Live 11/12, REAPER, Ardour.
+MIT licensed. Mac and Windows installers. Live 11/12 and REAPER.
 
 It measures. An optional Listener (cloud model, your own key) adds notes by ear, only when you say so. A sharp assistant, not a replacement for your ears.
 
@@ -96,7 +96,7 @@ Tell me what it got wrong.
 github.com/drtranceypants/hypnomix
 
 **11/**
-New: a free course is built in. The app's Teacher tab teaches the loop in your own DAW (Live, REAPER or Ardour): a tour, a 101 crash course and a complete course A to Z. No AI needed.
+New: a free course is built in. The app's Teacher tab teaches the loop in your own DAW (Live, REAPER, and HypnoMix DAW, which is not released yet): a tour, a 101 crash course and a complete course A to Z. No AI needed.
 
 Or practise on a 40-second demo song with six planted problems: hypnomix demo
 
@@ -107,9 +107,9 @@ Or practise on a 40-second demo song with six planted problems: hypnomix demo
 **Before/after**
 Raw stems in. Mastered song out. Every EQ cut, compressor setting and level explained in plain English.
 
-This is hypnomix, a free open-source mix engineer for Ableton Live, REAPER and Ardour.
+This is HypnoMix, a free open-source mix engineer for Ableton Live and REAPER, with a HypnoMix DAW add-on on the way.
 
-[video: 10 s raw rough mix → 10 s hypnomix master, same section, level-matched]
+[video: 10 s raw rough mix → 10 s HypnoMix master, same section, level-matched]
 
 github.com/drtranceypants/hypnomix
 
@@ -132,7 +132,7 @@ github.com/drtranceypants/hypnomix
 **No plug-ins**
 You don't need an expensive mastering plug-in.
 
-hypnomix builds a full mastering chain from Live's stock devices (or REAPER's own), sets every knob from an analysis of your mix, and checks the result by measuring what Live actually plays.
+HypnoMix builds a full mastering chain from Live's stock devices (or REAPER's own), sets every knob from an analysis of your mix, and checks the result by measuring what Live actually plays.
 
 github.com/drtranceypants/hypnomix
 
@@ -146,7 +146,7 @@ github.com/drtranceypants/hypnomix
 **Learning**
 I wanted a tool that makes you a better engineer instead of hiding the work.
 
-Every move hypnomix makes comes with a reason: why that frequency, why that ratio, why that level. Read the notes, try your own version, compare.
+Every move HypnoMix makes comes with a reason: why that frequency, why that ratio, why that level. Read the notes, try your own version, compare.
 
 github.com/drtranceypants/hypnomix
 
@@ -164,7 +164,7 @@ No. Every tool is a plain command-line program, and the app lets you click throu
 There are installers for Mac and Windows. Windows is newer and less tested; recording what Live plays is set up for BlackHole on Mac for now.
 
 **"What about Live Lite / Intro?"**
-The offline tools work with any version, and so do REAPER and Ardour. Building the chain in Live needs Glue Compressor and Limiter (Live Standard or Suite).
+The offline tools work with any version, and so does REAPER. Building the chain in Live needs Glue Compressor and Limiter (Live Standard or Suite).
 
 ---
 

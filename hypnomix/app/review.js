@@ -11,7 +11,7 @@ const DONE = {approve: 'Approved', skip: 'Skipped', change: 'Marked to change'};
 const SEVWORD = {high: 'High', medium: 'Medium', low: 'Low', info: 'Info'};
 const NEWTHING = {als: 'set', rpp: 'project', ardour: 'session snapshot'};
 const NOUN_ = {als: 'set', rpp: 'project', ardour: 'session', folder: 'folder'};
-const DAWWORD = {als: 'Live', rpp: 'REAPER', ardour: 'Ardour'};
+const DAWWORD = {als: 'Live', rpp: 'REAPER', ardour: 'HypnoMix DAW'};
 const dawOf = R => DAWWORD[R && R.kind] || 'your DAW';              // the DAW of the song on screen: never tell a REAPER project to do something in Live
 const STATUSES = [['all', 'All'], ['undecided', 'Undecided'], ['approved', 'Approved'], ['skipped', 'Skipped'], ['change', 'To change'], ['hand', 'By hand']];
 
@@ -78,7 +78,7 @@ function playersHTML(f) {
 function labelOf(x, dflt) { return dflt && x === 'approve' ? 'On by default' : dflt && x === 'skip' ? 'Turn off' : x[0].toUpperCase() + x.slice(1); }
 function actHTML(f) {
   const e = entryOf(f.id), dflt = isDflt(f), d = dOf(f);
-  const jump = f.jump ? `<button type="button" data-jump="${esc(f.id)}" title="${esc(S.review.kind === 'rpp' ? 'Needs the Hypnomix panel open in REAPER (hypnomix reaper review)' : 'Needs the hypnomix device in your Live set')}">Show in ${esc(dawOf(S.review))}</button>` : '';
+  const jump = f.jump ? `<button type="button" data-jump="${esc(f.id)}" title="${esc(S.review.kind === 'rpp' ? 'Needs the HypnoMix panel open in REAPER (hypnomix reaper review)' : 'Needs the HypnoMix device in your Live set')}">Show in ${esc(dawOf(S.review))}</button>` : '';
   if (f.applies === 'answer') {                                        // a question: the answer is sent with Apply (fix --answer), not decided here
     const nt = (f.notes || []).filter(x => x), v = (S.rv.answers || {})[f.id] || '';
     return `<div class="act"><label for="ans-${esc(f.id)}">Your answer</label><input type="text" id="ans-${esc(f.id)}" data-answer="${esc(f.id)}" list="ansl-${esc(f.id)}" value="${esc(v)}" placeholder="${esc('for example ' + (nt[1] || nt[0] || 'F#') + ', or both')}">
@@ -120,7 +120,7 @@ function cardHTML(f) {
   const fix = f.applies === 'answer' ? String(f.fix || '').replace(/^ask:\s*/i, '').replace(/\s*Then tune with the answer:[\s\S]*$/, '') : String(f.fix || '');   // the question, without the command that answers it
   const st = stOf(f), id = esc(f.id);
   const note = ab.note ? `<p class="note">${esc(noteWords(R, ab.note))}</p>` : ((f.applies === 'set' || f.applies === 'audio') && !ab.a ? '<p class="note">No before / after clip yet: run <code>hypnomix ab</code> (clip fixes, tuning, timing nudges and device changes it can model). Where it cannot play a fix offline it says why here: then apply that one fix into a new set and listen.</p>' : '');
-  const hand = (f.applies_here || f.applies) === 'manual' ? '<p class="note">By hand: hypnomix will not change this itself, even if you approve it. It goes on the handoff list (a checklist with a marker at each spot).</p>' : '';
+  const hand = (f.applies_here || f.applies) === 'manual' ? '<p class="note">By hand: HypnoMix will not change this itself, even if you approve it. It goes on the handoff list (a checklist with a marker at each spot).</p>' : '';
   return `<article class="card item${st !== 'open' ? ' done' : ''} st-${st}${S.rv.cur === f.id ? ' cur' : ''}" id="f-${id}" data-id="${id}" data-state="${st}" data-liken="${likeN(f)}" role="listitem" tabindex="-1" aria-labelledby="h-${id}">
     <div class="head"><span class="sev ${esc(f.severity)}">${esc(f.severity)}</span>
       <h4 class="title" id="h-${id}">${esc(f.track || f.tool)}</h4><span class="where">${esc(f.where || '')}</span>
@@ -232,7 +232,7 @@ function handHTML(list, total) {
   const marked = R.findings.filter(f => byHand(f) && dOf(f) === 'approve').length;
   const open = S.rv.filter.status === 'hand' || S.rv.handOpen;
   return `<details class="byhand" id="byhand"${open ? ' open' : ''}><summary>By hand in your DAW (${total})<span class="note" id="handmarked">${marked ? ' · ' + marked + ' marked for the list' : ''}</span></summary>
-    <p class="note">hypnomix cannot make these changes itself, even if you approve them. They are outside the approve / skip flow above: the handoff list is a checklist in your DAW's words with a marker at each spot.</p>
+    <p class="note">HypnoMix cannot make these changes itself, even if you approve them. They are outside the approve / skip flow above: the handoff list is a checklist in your DAW's words with a marker at each spot.</p>
     <div class="row"><button type="button" data-handoff="${esc(R.dir)}">Make the handoff list</button></div>
     ${S.rv.lazy ? handList(list, open) : `<div role="list" aria-label="Items to do by hand">${list.map(cardHTML).join('') || '<p class="note">None match this filter.</p>'}</div>`}</details>`;
 }
@@ -256,7 +256,7 @@ function planOf(R) {
   });
   return {auto, defs, explicit: auto.filter(f => !defs.includes(f)), manual, zero, blocked, defManual};
 }
-// harmony balance is automation in a Live set, but balanced copies of the parts (no project) in REAPER and Ardour
+// harmony balance is automation in a Live set, but balanced copies of the parts (no project) in REAPER and HypnoMix DAW
 function writesSetOf(f, kind) { return f.applies === 'set' || (f.applies === 'audio' && (f.tool === 'tune' || (f.tool === 'voices' && kind === 'als'))); }
 function stepWords(f, R) {
   const first = String(f.fix || '').split('\n')[0].replace(/\. ON BY DEFAULT.*$/, '');
@@ -290,11 +290,11 @@ function applyHTML(R) {
       <ul class="plain">${pl.defs.map(f => `<li><span class="tag">${esc(f.id)}</span> ${stepWords(f, R)}</li>`).join('')}</ul>`;
   }
   if (pl.manual.length) {
-    t += `<p class="banner"><b>${pl.manual.length} approved item${pl.manual.length === 1 ? ' is' : 's are'} by hand and will NOT be applied:</b> ${pl.manual.map(f => esc(f.id)).join(', ')}. hypnomix cannot make these changes itself: the handoff list is a checklist in your DAW's words with a marker at each spot.
+    t += `<p class="banner"><b>${pl.manual.length} approved item${pl.manual.length === 1 ? ' is' : 's are'} by hand and will NOT be applied:</b> ${pl.manual.map(f => esc(f.id)).join(', ')}. HypnoMix cannot make these changes itself: the handoff list is a checklist in your DAW's words with a marker at each spot.
       <button type="button" ${nAuto ? '' : 'class="primary" '}data-handoff="${esc(R.dir)}">Make the handoff list</button></p>`;
   }
-  if (pl.defManual.length) t += `<p class="banner"><b>${pl.defManual.length} on-by-default step${pl.defManual.length === 1 ? '' : 's'} cannot be written into ${R.kind === 'ardour' ? 'an Ardour session' : 'this kind of project'} and will not run:</b> ${pl.defManual.map(f => esc(f.id)).join(', ')}. Do ${pl.defManual.length === 1 ? 'it' : 'them'} by hand (see the handoff list).</p>`;
-  if (pl.blocked.length) t += `<p class="banner bad"><b>${pl.blocked.map(f => esc(f.id)).join(', ')}: tuning is not written into an Ardour session yet.</b> Turn ${pl.blocked.length === 1 ? 'it' : 'them'} off (Skip) before applying; the other fixes can go ahead.</p>`;
+  if (pl.defManual.length) t += `<p class="banner"><b>${pl.defManual.length} on-by-default step${pl.defManual.length === 1 ? '' : 's'} cannot be written into ${R.kind === 'ardour' ? 'a HypnoMix DAW session' : 'this kind of project'} and will not run:</b> ${pl.defManual.map(f => esc(f.id)).join(', ')}. Do ${pl.defManual.length === 1 ? 'it' : 'them'} by hand (see the handoff list).</p>`;
+  if (pl.blocked.length) t += `<p class="banner bad"><b>${pl.blocked.map(f => esc(f.id)).join(', ')}: tuning is not written into a HypnoMix DAW session yet.</b> Turn ${pl.blocked.length === 1 ? 'it' : 'them'} off (Skip) before applying; the other fixes can go ahead. <button type="button" data-report="banner">Report this</button></p>`;
   if (pl.zero.length) t += `<p class="note">${pl.zero.length} item(s) are approved at 0%, so nothing is applied for them: ${pl.zero.map(f => esc(f.id)).join(', ')}.</p>`;
   if (!nAuto) t += `<p><b>Nothing here can be applied automatically.</b>${pl.manual.length ? ' Use the handoff list above.' : ' Approve a fix above (or leave an on-by-default step on).'}</p>`;
   const given = answersGiven();
@@ -332,11 +332,11 @@ function historyHTML(R) {
 function damageHTML(R) {
   const m = R.damaged;
   if (m.file === 'findings.json') {
-    return `<div class="banner bad"><h2>This scan's results file is damaged</h2><p>${esc(m.message)}. The findings of this scan cannot be shown, and nothing was applied because of it.</p>
+    return `<div class="banner bad"><h2>This scan's results file is damaged</h2><p>${esc(m.message)}. The findings of this scan cannot be shown, and nothing was applied because of it. <button type="button" data-report="banner">Report this</button></p>
       <p>${R.can_rescan ? `<button type="button" class="primary" data-rescan="${esc(R.dir)}" data-kind="${esc(R.kind)}">Re-scan this song</button> makes a fresh scan in this folder.` : 'The original song is not where it was, so it cannot be scanned again from here: choose it again on the Songs tab.'}</p></div>`;
   }
   return `<div class="banner bad"><h2>This song's decisions file is damaged</h2>
-    <p>hypnomix cannot read <code>decisions.json</code> (${m.size} bytes, last saved ${esc(m.when)}), so it cannot tell which fixes you approved or skipped. Nothing was applied because of it, and the scan's findings are fine.</p>
+    <p>HypnoMix cannot read <code>decisions.json</code> (${m.size} bytes, last saved ${esc(m.when)}), so it cannot tell which fixes you approved or skipped. Nothing was applied because of it, and the scan's findings are fine. <button type="button" data-report="banner">Report this</button></p>
     ${m.backup ? `<p>A backup is there: your decisions as they were before the last change you saved (made ${esc(m.backup_when)}), so that one change may need doing again. <button type="button" class="primary" data-restore="${esc(R.dir)}">Restore the backup</button> The damaged file is kept next to it as decisions.damaged.json.</p>`
       : `<p><b>There is no backup, so what was in the file is lost:</b> every approve, skip and change you saved for this song, and your notes on them. The scan itself is intact, so you can decide again.
         <button type="button" class="primary" data-restore="${esc(R.dir)}" data-fresh="1">Start the decisions again</button> The damaged file is kept as decisions.damaged.json in case it can be repaired by hand.</p>`}</div>`;
@@ -344,8 +344,8 @@ function damageHTML(R) {
 function abLiveCard(R) {
   if (!R.is_set) return '';
   const daw = dawOf(R), noun = R.kind === 'rpp' ? 'project' : 'set';
-  const how = R.kind === 'rpp' ? `open this project, then run <code>hypnomix reaper review</code> to open the Hypnomix panel in REAPER, then use <b>A · now</b>, <b>B · fix</b> and <b>Blind</b> on each finding`
-    : `open this set, put the hypnomix device on any track, then use <b>A · now</b>, <b>B · fix</b> and <b>Blind</b> on each finding`;
+  const how = R.kind === 'rpp' ? `open this project, then run <code>hypnomix reaper review</code> to open the HypnoMix panel in REAPER, then use <b>A · now</b>, <b>B · fix</b> and <b>Blind</b> on each finding`
+    : `open this set, put the HypnoMix device on any track, then use <b>A · now</b>, <b>B · fix</b> and <b>Blind</b> on each finding`;
   const ready = R.ab_live ? `<p style="margin-top:0"><b>Ready:</b> ${esc(R.ab_live.set.split(/[\\/]/).pop())}. Close the original in ${daw}, ${how}. Every plug-in plays; nothing is rendered.</p>` : '';
   return `<div class="card">${ready || `<p style="margin-top:0">Hear every fix inside ${daw}, with all your plug-ins, by switching A and B instantly.</p>`}
     <div class="row"><button type="button" id="abbuild">${R.ab_live ? 'Build it again' : `Build A/B ${noun} for ${daw}`}</button><span class="note">Writes one new ${noun} next to the original; the original is not changed.</span></div></div>`;
@@ -768,8 +768,8 @@ function reviewView() {
   rvState().built = {};                                // the screen is drawn again: a long list starts with its first page
   const stale = R.stale && R.stale.newer, missing = R.stale && R.stale.missing;
   const top = (stale ? `<div class="banner bad"><b>This ${NOUN_[R.kind] || 'song'} was saved after the scan: re-scan before applying.</b> The findings may no longer match it.
-      ${R.can_rescan ? `<button type="button" class="primary" data-rescan="${esc(R.dir)}" data-kind="${esc(R.kind)}">Re-scan</button>` : ''}</div>` : '')
-    + (missing ? `<div class="banner bad"><b>The original is not where the scan found it:</b> ${esc(R.source)}. You can look through the review, but applying needs it back.</div>` : '')
+      ${R.can_rescan ? `<button type="button" class="primary" data-rescan="${esc(R.dir)}" data-kind="${esc(R.kind)}">Re-scan</button>` : ''} <button type="button" data-report="banner">Report this</button></div>` : '')
+    + (missing ? `<div class="banner bad"><b>The original is not where the scan found it:</b> ${esc(R.source)}. You can look through the review, but applying needs it back. <button type="button" data-report="banner">Report this</button></div>` : '')
     + (R.broken.length ? '<div class="warn"><b>Checks that did NOT run</b> (no findings there means nothing):<br>' + R.broken.map(esc).join('<br>') + '</div>' : '')
     + (R.prefs.length ? '<div class="prefs">' + R.prefs.map(esc).join('<br>') + '</div>' : '');
   const handed = R.handoff && R.handoff.length ? ` <span class="note">Already made: ${R.handoff.map(esc).join(', ')}.</span><button type="button" data-reveal="${esc(R.dir)}/handoff">Show</button>` : '';

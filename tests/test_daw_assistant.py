@@ -1,4 +1,4 @@
-"""The Assistant on the Hypnomix engine (hypnomix/app/daw_assist.py + chat.py's engine tools): which tools run
+"""The Assistant on the HypnoMix engine (hypnomix/app/daw_assist.py + chat.py's engine tools): which tools run
 without asking (an explicit list), arguments fixed before a call, the proposal card's before -> after, replies trimmed
 for the model, plain errors, and the approval flow (approve, cancel, expiry, a failure after Approve, an engine
 restart, scan_session), with a stand-in engine and a stand-in model."""
@@ -1274,18 +1274,18 @@ class Attached(unittest.TestCase):
         with mock.patch.object(DW, "ENGINE", e):
             self.assertEqual(CH.engine_tools(), [])
             self.assertEqual(CH._load_daw_tools(), [])
-        self.assertTrue(any("does not say it is the Hypnomix engine" in i["text"] for i in CH.CHAT["items"]))
+        self.assertTrue(any("does not say it is the HypnoMix DAW engine" in i["text"] for i in CH.CHAT["items"]))
         self.assertNotIn("IGNORE", json.dumps(CH.CHAT["items"]))
         with mock.patch.object(DW, "ENGINE", e):                                     # swapped in after the tools were read
             CH.CHAT["daw_tools"] = {"daw_tracks_list": dict(name="daw_tracks_list", engine="tracks_list", read_only=True, input_schema=S())}
-            self.assertIn("not the Hypnomix engine", CH.daw_tool("daw_tracks_list", {}))
+            self.assertIn("not the HypnoMix DAW engine", CH.daw_tool("daw_tracks_list", {}))
         self.assertEqual(e.calls, [])                                               # nothing was sent to it
 
     def test_the_overview_is_read_from_the_engine_only_after_the_handshake_again(self):
         stranger = self.make("some-other-server", [dict(name="tracks_list", description="x", inputSchema=S())])
         with mock.patch.object(DW, "ENGINE", stranger):
             CH.CHAT["daw_tools"] = {"daw_session_overview": dict(CH.OVERVIEW)}
-            self.assertIn("not the Hypnomix engine", CH.daw_tool("daw_session_overview", {}))
+            self.assertIn("not the HypnoMix DAW engine", CH.daw_tool("daw_session_overview", {}))
         self.assertEqual(stranger.calls, [])                                        # not one read went to it
 
     def test_a_listener_that_copies_the_engines_name_gets_none_of_its_words_to_the_model(self):
@@ -1338,18 +1338,16 @@ class Attached(unittest.TestCase):
 
 # ---------------------------------------------------------------------------------------------------------------------
 # The page script (hypnomix/app/daw/js/assistant.js, and the card of hypnomix/app/chat.js), run with stand-ins for the
-# page: node when it is installed, else the JavaScript engine macOS ships (jsc). Neither: the tests say so and skip.
+# page: node when it is installed, else the JavaScript engine macOS ships (jsc). Neither: the tests say so and skip
+# (tests/_jscheck.py).
 import shutil, subprocess
+from tests import _jscheck
 
-JSC = "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
 ROOT = Path(__file__).resolve().parent.parent / "hypnomix" / "app"
 
 
 def js_runner():
-    node = shutil.which("node")
-    if node:
-        return [node]
-    return [JSC] if os.path.exists(JSC) else None
+    return _jscheck.runner()
 
 
 PAGE_STANDINS = r"""
@@ -1366,7 +1364,9 @@ var HX = window.HX = {
   h: function (sel, attrs) {
     var n = { sel: sel, attrs: attrs || {}, kids: [], append: function () { var add = Array.prototype.slice.call(arguments); n.kids = n.kids.concat.apply(n.kids, add.map(function (k) { return Array.isArray(k) ? k : [k]; }).map(function (a) { return a.filter(function (x) { return x != null && x !== false; }); })); } };
     n.append.apply(null, Array.prototype.slice.call(arguments, 2)); return n; },
-  api: { inApp: true, get: function () { return Promise.resolve({}); }, post: function (u, b) { posts.push([u, b]); return Promise.resolve({ live: true }); } },
+  /* the server never answers a poll: the polling is not under test here, and a made-up answer of the wrong shape would throw
+     inside it, which ends a Node.js process (an unhandled rejection) where the Mac's engine says nothing */
+  api: { inApp: true, get: function () { return new Promise(function () {}); }, post: function (u, b) { posts.push([u, b]); return Promise.resolve({ live: true }); } },
   mcp: { connected: true }, on: function () {}, emit: function () {}, toast: function (t) { toasts.push(t); }, log: function () {},
   esc: function (s) { return String(s); }, $: function () { return null; }, $$: function () { return []; }, arrange: {},
   getVal: function (o) { return o.param === 'fader' ? -1.5 : 0; },
@@ -1384,7 +1384,7 @@ class PageScripts(unittest.TestCase):
     def run_js(self, body):
         cmd = js_runner()
         if not cmd:
-            self.skipTest("SKIPPED: neither node nor macOS's jsc is available, so the page scripts were not run")
+            self.skipTest(_jscheck.NO_RUNNER)
         src = PAGE_STANDINS + (ROOT / "daw" / "js" / "assistant.js").read_text(encoding="utf-8") + "\n" + body
         with tempfile.TemporaryDirectory() as td:
             f = Path(td) / "t.js"
@@ -1543,7 +1543,7 @@ class TabScript(unittest.TestCase):
     def run_js(self, body):
         cmd = js_runner()
         if not cmd:
-            self.skipTest("SKIPPED: neither node nor macOS's jsc is available, so the page scripts were not run")
+            self.skipTest(_jscheck.NO_RUNNER)
         stand_ins = r"""
 var print = (typeof print === 'function') ? print : function (s) { console.log(s); };
 var window = (typeof globalThis !== 'undefined') ? globalThis : this;

@@ -138,9 +138,9 @@ class Names(Base):
         self.assertEqual(list(UP._clean_assets({"assets": a})), [NAME])
 
 
-class Editions(unittest.TestCase):
-    def test_the_full_app_only_takes_the_full_download(self):
-        """The full Hypnomix (the engine kit inside the app) never updates to the Assistant-only image."""
+class OneInstaller(unittest.TestCase):
+    """There is one installer per platform for everyone: no edition changes its name, and HypnoMix DAW is not inside it."""
+    def test_the_names_are_the_ordinary_ones_whatever_is_inside_the_app(self):
         import tempfile
         from pathlib import Path
         with tempfile.TemporaryDirectory() as td:
@@ -149,14 +149,21 @@ class Editions(unittest.TestCase):
             with mock.patch.object(UP.sys, "executable", str(py)), mock.patch.object(UP.sys, "platform", "darwin"), \
                     mock.patch.object(UP.platform, "machine", lambda: "arm64"):
                 self.assertEqual(UP.asset_name(), "Hypnomix-mac-arm64.dmg")
-                kit = app / "Contents" / "Resources" / "engine" / "bin" / "hypnomix-engine"
+                kit = app / "Contents" / "Resources" / "engine" / "bin" / "hypnomix-engine"     # an old test build that carried the engine
                 kit.parent.mkdir(parents=True)
                 kit.write_text("#!/bin/sh\n")
                 kit.chmod(0o755)
-                self.assertEqual(UP.asset_name(), "Hypnomix-full-mac-arm64.dmg")
-                self.assertIn(UP.asset_name(), UP.ASSETS)
+                self.assertEqual(UP.asset_name(), "Hypnomix-mac-arm64.dmg")                    # it updates to the ordinary app
                 with mock.patch.object(UP.platform, "machine", lambda: "x86_64"):
-                    self.assertEqual(UP.asset_name(), "Hypnomix-full-mac-intel.dmg")
+                    self.assertEqual(UP.asset_name(), "Hypnomix-mac-intel.dmg")
+        self.assertEqual(sorted(UP.ASSETS), ["Hypnomix-mac-arm64.dmg", "Hypnomix-mac-intel.dmg", "Hypnomix-windows-setup.exe", "SHA256SUMS.txt"])
+
+    def test_the_edition_idea_is_gone(self):
+        self.assertFalse(hasattr(UP, "edition"))
+        self.assertNotIn("edition", UP.view())
+        self.assertNotIn("no_full_download", UP.view())
+        src = (Path(__file__).resolve().parents[1] / "hypnomix" / "app" / "update.py").read_text()
+        self.assertNotRegex(src, r"full-|app_edition")
 
 
 class Addresses(unittest.TestCase):
@@ -495,19 +502,19 @@ class PrivateFolders(unittest.TestCase):
 
 
 
-FULL = "Hypnomix-full-mac-arm64.dmg"
-FULL_BLOB = b"the full image" * 100
+OLD_FULL = "Hypnomix-full-mac-arm64.dmg"          # a name an earlier plan used: it is not an installer any more
+OLD_BLOB = b"the old full image" * 100
 
 
-class EditionReleases(Base):
-    """The two Mac editions against every kind of release: each only ever takes its own download."""
+class OneNamePerPlatform(Base):
+    """The updater offers one installer name per platform, and says plainly when a release does not carry it."""
     def setUp(self):
         super().setUp()
         self.extra = [mock.patch.object(UP, "asset_name", REAL_ASSET_NAME),
                       mock.patch.object(UP.platform, "machine", lambda: "arm64")]
         for p in self.extra:
             p.start()
-        Feed.sums = SUMS_OK + f"{hashlib.sha256(FULL_BLOB).hexdigest()}  {FULL}\n"
+        Feed.sums = SUMS_OK + f"{hashlib.sha256(OLD_BLOB).hexdigest()}  {OLD_FULL}\n"
 
     def tearDown(self):
         for p in self.extra:
@@ -522,86 +529,65 @@ class EditionReleases(Base):
         UP.save({})
         return UP.check(True)
 
-    def edition(self, name):
-        return mock.patch.object(UP, "edition", lambda: name)
+    def test_the_ordinary_installer_is_offered_whatever_else_the_release_holds(self):
+        for names in ((NAME,), (NAME, OLD_FULL)):
+            v = self.release(*names)
+            self.assertEqual(UP.asset_name(), NAME)
+            self.assertEqual((v["one_click"], v["no_download"]), (True, False), names)
+            self.assertNotIn(OLD_FULL, UP.load()["assets"])                 # a file with another name is not kept at all
 
-    def test_the_assistant_never_takes_the_full_download(self):
-        with self.edition("assistant"):
-            for names, want in (((NAME,), True), ((NAME, FULL), True), ((FULL,), False)):
-                v = self.release(*names)
-                self.assertEqual(UP.asset_name(), NAME)
-                self.assertEqual((v["one_click"], v["no_full_download"]), (want, False), names)
-
-    def test_the_full_app_never_takes_the_assistant_download(self):
-        with self.edition("full"):
-            for names, want in (((NAME,), False), ((NAME, FULL), True), ((FULL,), True)):
-                v = self.release(*names)
-                self.assertEqual(UP.asset_name(), FULL)
-                self.assertEqual(v["one_click"], want, names)
-                self.assertEqual(v["no_full_download"], not want, names)      # said plainly, and nothing is offered
-                self.assertTrue(v["newer"])
-                self.assertEqual(v["edition"], "full")
-
-    def test_the_full_app_on_a_release_without_it_downloads_and_installs_nothing(self):
-        with self.edition("full"):
-            self.release(NAME)
+    def test_a_release_without_this_computers_installer_is_said_plainly_and_nothing_is_offered(self):
+        for names in ((), (OLD_FULL,), ("Hypnomix-mac-intel.dmg",)):
+            v = self.release(*names)
+            self.assertTrue(v["newer"])
+            self.assertEqual((v["one_click"], v["no_download"]), (False, True), names)
             with self.assertRaises(ValueError):
                 UP.download()
             self.assertEqual(UP.JOB["status"], "idle")
             with self.assertRaises(ValueError):
                 UP.install()
-            # even a stray state file naming the Assistant image does not make _download fetch it
+            # even a stray state file naming an image does not make _download fetch anything
             UP._download()
             self.assertEqual(UP.JOB["status"], "error")
             self.assertEqual(list(UP.DIR.glob("*.dmg")) + list(UP.DIR.glob("*.part")), [])
+            UP.JOB.update(status="idle", error="")
+        js = (Path(__file__).resolve().parents[1] / "hypnomix" / "app" / "update.js").read_text()
+        self.assertIn("U.no_download", js)
+        self.assertIn("has no installer for this computer yet", js)
 
-    def test_the_full_download_is_fetched_and_checked_by_its_own_name(self):
-        Feed.blob = FULL_BLOB
-        with self.edition("full"):
-            self.release(NAME, FULL)
-            UP._download()
-            self.assertEqual(UP.JOB["status"], "ready", UP.JOB)
-            self.assertEqual(Path(UP.JOB["file"]).name, f"9.9.9-{FULL}")
-            self.assertEqual(UP.JOB["sha"], hashlib.sha256(FULL_BLOB).hexdigest())
+    def test_the_installer_is_fetched_and_checked_by_its_own_name(self):
+        self.release(NAME)
+        UP._download()
+        self.assertEqual(UP.JOB["status"], "ready", UP.JOB)
+        self.assertEqual(Path(UP.JOB["file"]).name, f"9.9.9-{NAME}")
+        self.assertEqual(UP.JOB["sha"], hashlib.sha256(BLOB).hexdigest())
 
-    def test_a_release_with_no_checksum_line_for_the_full_file_installs_nothing(self):
-        Feed.blob = FULL_BLOB
-        Feed.sums = SUMS_OK                                       # a line for the Assistant image only
-        with self.edition("full"):
-            self.release(NAME, FULL)
-            UP._download()
-            self.assertEqual(UP.JOB["status"], "error")
-            self.assertIn("no checksum", UP.JOB["error"])
-            self.assertEqual(list(UP.DIR.glob("*.dmg")), [])
+    def test_a_release_with_no_checksum_line_for_the_installer_installs_nothing(self):
+        Feed.sums = f"{hashlib.sha256(OLD_BLOB).hexdigest()}  {OLD_FULL}\n"       # a line for another file only
+        self.release(NAME)
+        UP._download()
+        self.assertEqual(UP.JOB["status"], "error")
+        self.assertIn("no checksum", UP.JOB["error"])
+        self.assertEqual(list(UP.DIR.glob("*.dmg")), [])
 
-    def test_one_definition_of_the_edition(self):
-        """update.edition() is daw.app_edition(): a kit anywhere but Resources/engine/bin does not make the full app."""
+    def test_an_app_that_was_a_test_build_with_the_engine_inside_updates_like_any_other(self):
+        """Its bundle is replaced by the ordinary app; HypnoMix DAW is then found at the add-on's place or offered from Setup."""
         from hypnomix.app import daw
-        self.assertIs(UP.edition.__module__, UP.__name__)
         with tempfile.TemporaryDirectory() as td:
             app = Path(td).resolve() / "Hypnomix.app"
             py = app / "Contents" / "Resources" / "python" / "bin" / "python3"
-            other = app / "Contents" / "MacOS" / "hypnomix-engine"
-            other.parent.mkdir(parents=True)
-            other.write_text("#!/bin/sh\n")
-            other.chmod(0o755)
+            kit = app / "Contents" / "Resources" / "engine" / "bin" / "hypnomix-engine"
+            kit.parent.mkdir(parents=True)
+            kit.write_text("#!/bin/sh\n")
+            kit.chmod(0o755)
             with mock.patch.object(UP.sys, "executable", str(py)), mock.patch.object(UP.sys, "platform", "darwin"), \
-                    mock.patch.object(daw.sys, "executable", str(py)):
-                self.assertEqual((UP.edition(), daw.app_edition()), ("assistant", "assistant"))
-                self.assertEqual(REAL_ASSET_NAME(), NAME)
-                kit = app / "Contents" / "Resources" / "engine" / "bin" / "hypnomix-engine"
-                kit.parent.mkdir(parents=True)
-                kit.write_text("#!/bin/sh\n")
-                self.assertEqual(UP.edition(), "assistant")           # not executable: the same answer as the DAW tab's
-                kit.chmod(0o755)
-                self.assertEqual((UP.edition(), daw.app_edition(), REAL_ASSET_NAME()), ("full", "full", FULL))
-
-    def test_the_swift_app_and_the_updater_look_at_the_same_file(self):
-        swift = (Path(__file__).resolve().parents[1] / "macapp" / "Hypnomix.swift").read_text()
-        start = swift.index("var dawMode: Bool")
-        block = swift[start:swift.index("func serverEnv", start)]
-        self.assertIn("Resources/engine/bin/hypnomix-engine", block)
-        self.assertNotIn("/MacOS/", block)                            # no second place that makes it the full app
+                    mock.patch.object(daw.sys, "executable", str(py)), mock.patch.dict(os.environ, {"HYPNOMIX_ENGINE": ""}), \
+                    mock.patch.object(daw, "_conf", lambda: {}):
+                v = self.release(NAME)
+                self.assertEqual((UP.asset_name(), v["one_click"]), (NAME, True))
+                self.assertEqual(daw.find_engine(), kit)                    # until the swap, it keeps working from its own bundle
+                kit.unlink()                                                # after the swap there is no bundled engine
+                self.assertIsNone(daw.find_engine())                        # ...and Setup offers HypnoMix DAW as the add-on
 
 
 class UnsavedSession(Base):

@@ -10,9 +10,9 @@ STEPS = [
            "change five things at once and the sound returns, you never learn which one it was, and it will happen again.",
            "Work from the ends toward the middle. Is the speaker plugged in and turned up? Is the DAW sending to the right device? "
            "Is the meter on the master moving? If the meter moves, the problem is after the DAW. If it stays still, it is before.",
-           "hypnomix has a command for its own setup: `hypnomix doctor` checks Python packages, ffmpeg, the Live remote script, the Live connection, "
-           "BlackHole, plug-in parameter access, your profile and the optional extras, and changes nothing. It checks hypnomix's tools, not your "
-           "interface's volume knob, so use it when a hypnomix feature is silent, not when the whole DAW is."],
+           "HypnoMix has a command for its own setup: `hypnomix doctor` checks Python packages, ffmpeg, the Live remote script, the Live connection, "
+           "BlackHole, plug-in parameter access, your profile and the optional extras, and changes nothing. It checks HypnoMix's tools, not your "
+           "interface's volume knob, so use it when a HypnoMix feature is silent, not when the whole DAW is."],
       terms=[["Audio engine", "the part of the DAW that talks to your interface. Switching it off and on again restarts it."],
              ["Output device", "the interface (or the computer's own speakers) that the DAW sends its sound to."],
              ["Meter", "a moving bar that shows the level of a signal. If it moves, there is sound at that point."]],
@@ -87,7 +87,7 @@ STEPS = [
            "**In the edit**: you cut or joined clips and the waveform jumps from one value to another at the cut. The ear hears the jump as a tick. "
            "These come and go as you move edits. A short fade at each cut removes them.",
            "To tell them apart: play the audio file on its own. If the click is in the raw file, it came from the recording. If it appears only at an edit, it is a missing fade.",
-           "Two hypnomix commands help you find them. `hypnomix clicks` finds clicks and crackle in renders and processed files: it looks for samples where the waveform "
+           "Two HypnoMix commands help you find them. `hypnomix clicks` finds clicks and crackle in renders and processed files: it looks for samples where the waveform "
            "jumps far more than the sound around it, then prints the count and the worst times. `hypnomix smooth` reads a saved Live set and reports clicks at clip edges "
            "with no fade, level jumps at cuts and short spikes; it changes nothing unless you ask it to write a new set, and never touches the original."],
       terms=[["Dropout", "a gap or glitch where the computer failed to deliver audio in time."],
@@ -124,7 +124,7 @@ STEPS = [
            "unbalanced or long cables, light dimmers and other electrical gear nearby, and single-coil guitar pickups placed near a computer screen.",
            "Fix it at the source. Hum that is in the recording stays in the recording, and removing it later always costs some of the sound. "
            "Find it by elimination: unplug things one at a time until it goes.",
-           "If a recording already has hum and you can't record it again, two hypnomix commands are there to rescue it. `hypnomix cleanup` is for a rough demo or a noisy "
+           "If a recording already has hum and you can't record it again, two HypnoMix commands are there to rescue it. `hypnomix cleanup` is for a rough demo or a noisy "
            "recording: it deals with DC, rumble, mains hum, steady background noise and the silence at the start and end, and is conservative by default. `hypnomix dehiss` "
            "is a spectral de-noiser plus a gentle gate for one track. Both write new files; your original is not changed. Listen to the result before you use it."],
       terms=[["Hum", "a steady low tone at the mains frequency, 50 or 60 Hz, with harmonics above it."],
@@ -268,7 +268,7 @@ STEPS = [
            "Before anything else, **don't panic and don't overwrite**. Copy the whole project folder to a safe place. Then work on the copy. If you save over the project while files are missing, you can lose track of where they were.",
            "Find the files by elimination: where did the project last find them? Look in the project's own folder, in any folder you moved, and on drives that may be unplugged. "
            "Then point the DAW to the right place with its locate or search tool. Plug-ins that are missing show as offline: install or replace them, or remove them.",
-           "Two hypnomix commands check sets without opening them in Live. `hypnomix refs` checks that every audio file a Live set uses can be found, the way Live looks (the saved path first, "
+           "Two HypnoMix commands check sets without opening them in Live. `hypnomix refs` checks that every audio file a Live set uses can be found, the way Live looks (the saved path first, "
            "then the path relative to the set's folder), and lists the missing ones per track. `hypnomix check` is a structural check of a set that a tool wrote, before anyone opens it in Live: "
            "file format, duplicate ids, automation, clips, and that audio files are found. It can't prove Live will open the set; only Live can."],
       terms=[["Missing file", "an audio file that the project points to but the DAW can't find."],
@@ -286,7 +286,7 @@ STEPS = [
                     "Live keeps older copies of the set in the project's **Backup** folder."],
            "reaper": ["If REAPER can't find media, it offers a dialog to find or resolve the missing files: point it to the folder that holds them.",
                       "REAPER keeps backup copies of the project next to it (files with a **.rpp-bak** ending): rename one to .rpp to open it."],
-           "ardour": ["Ardour keeps backup copies of the session file in the session folder; use one if the session won't open.",
+           "ardour": ["HypnoMix DAW keeps backup copies of the session file in the session folder; use one if the session won't open.",
                       "Keep the session's **interchange** folder with it, because that is where its audio is stored."]},
       listen="When you reopen the project, play each track from the start. A track that is silent or shows an offline plug-in still needs attention.",
       mistakes=["Saving over the project while files are missing. Copy first, then work on the copy.",

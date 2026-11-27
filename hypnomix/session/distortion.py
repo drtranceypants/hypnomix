@@ -349,7 +349,7 @@ def pointees(root):
 
 
 class ParamMissing(Exception):
-    """A device in the set has no stored value for a parameter hypnomix needs (args[0] is the parameter's name)."""
+    """A device in the set has no stored value for a parameter HypnoMix needs (args[0] is the parameter's name)."""
 
 
 class Param:

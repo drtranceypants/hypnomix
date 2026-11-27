@@ -6,7 +6,7 @@ from unittest import mock
 from hypnomix.app import masterchain as MC
 from hypnomix.app import probe as P
 
-JSC = "/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc"
+from tests import _jscheck
 
 # A small Live: Main with HypnomixMain on it; insert_device makes devices with the parameter names Live uses.
 FAKE = r"""
@@ -103,16 +103,16 @@ function said() { for (var i = OUT.length - 1; i >= 0; i--) if (OUT[i][0] == 0 &
 def run(script, body):
     with tempfile.TemporaryDirectory() as d:
         f = Path(d) / "t.js"
-        f.write_text(FAKE + "\n" + script + "\n" + body)
-        r = subprocess.run([JSC, str(f)], capture_output=True, text=True)
+        f.write_text(FAKE + "\n" + script + "\n" + body, encoding="utf-8")
+        r = subprocess.run(_jscheck.runner() + [str(f)], capture_output=True, text=True, encoding="utf-8")
     if r.returncode or "Exception" in r.stdout or "Error" in r.stderr:
         raise AssertionError(r.stdout + r.stderr)
     return [json.loads(l) for l in r.stdout.splitlines() if l.strip()]
 
 
-@unittest.skipUnless(Path(JSC).exists(), "macOS")
 class Script(unittest.TestCase):
     def setUp(self):
+        _jscheck.need_runner(self)
         self.js = MC.script()
 
     def test_builds_the_stock_chain_in_a_rack_before_the_device(self):
@@ -255,6 +255,7 @@ class Patch(unittest.TestCase):
 class DefaultRackPreset(unittest.TestCase):
     """Live loads the user's default rack preset into a new rack: Build must start from an empty rack."""
     def test_preset_chains_are_removed_or_emptied(self):
+        _jscheck.need_runner(self)
         js = MC.script()
         for no_delete in ("false", "true"):
             out = run(js, """

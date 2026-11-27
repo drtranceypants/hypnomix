@@ -282,7 +282,7 @@ class GuiServer(unittest.TestCase):
         (self.music / "Sess.ardour").write_text("<Session/>")
         with self.assertRaises(RuntimeError) as cm:
             abset.build(d)
-        self.assertIn("Ardour has no A/B build yet", str(cm.exception))
+        self.assertIn("HypnoMix DAW has no A/B build yet", str(cm.exception))
         self.assertNotIn("Live", str(cm.exception))
         text = (Path(abset.__file__).with_name("ab.py")).read_text()
         self.assertIn("build the A/B project with `hypnomix abset`", text)                    # the REAPER note points at the build

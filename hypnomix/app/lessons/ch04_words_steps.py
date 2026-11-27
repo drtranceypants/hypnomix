@@ -67,7 +67,7 @@ STEPS = [
                       "Use File → Project templates → **Save project as template...** and give it a name.",
                       "For a new song, use File → Project templates and choose your template."],
            "ardour": ["Set up a session with your tracks, buses and click.",
-                      "Ardour can save a session as a template (look in the Session menu), and offers your templates when you create a new session."]},
+                      "HypnoMix DAW can save a session as a template (look in the Session menu), and offers your templates when you create a new session."]},
       listen="Open a new song from the template and press play. The click should sound, the vocal track should meter when you sing, "
              "and the reverb return should be ready but quiet.",
       mistakes=["Saving over the template while working on a song. Save as the song's name first.",
@@ -88,14 +88,14 @@ STEPS = [
            "Then give related tracks the **same colour**. Drums are all one colour, vocals another, guitars a third, bass "
            "its own. On a screen with thirty tracks you can find the vocals at a glance, and a track that is the wrong "
            "colour for its group stands out.",
-           "hypnomix has a command that helps with the naming. `hypnomix name SET.als` is a dry run on a Live set: it proposes a "
+           "HypnoMix has a command that helps with the naming. `hypnomix name SET.als` is a dry run on a Live set: it proposes a "
            "name for every track that still has a default-style name (\"Audio 2\", \"4-MIDI\", \"7-Group\") by what it sounds "
            "like, using clues in the existing names, clip file names, devices and presets, and the audio itself. It "
            "also names groups after what their tracks mostly are, and in a vocal group the part that sings most is "
            "'Lead Vocal' and the others are 'Harmony 1' upward from low to high. A low-confidence guess is called "
            "'Instrument' and listed for you to name. It changes nothing until you add `--apply`, which renames the tracks in the open "
            "Live set, and `--undo` puts the previous names back. It leaves names you chose yourself alone unless you add `--all`. "
-           "hypnomix proposes; you decide."],
+           "HypnoMix proposes; you decide."],
       terms=[["Track name", "the label on a track. A clear one saves time and prevents mistakes."],
              ["Track colour", "a colour you give a track, so related tracks are easy to find at a glance."],
              ["Group", "several tracks combined so you can control them together, such as all the drums. Colour a group the same as its tracks."]],

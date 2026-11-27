@@ -2,7 +2,7 @@
    JSON-RPC 2.0 over HTTP POST to /mcp. Tool names are the underscore aliases from tools_json.inc
    (tracks_list, transport_play, track_set_fader_db, ...); the server canonicalises them to slash form.
 
-   The surface sends no CORS headers, so a page opened from file:// cannot read its replies. The hypnomix app
+   The surface sends no CORS headers, so a page opened from file:// cannot read its replies. The HypnoMix app
    serves this page at /daw/ and forwards POST /mcp to the engine it runs (hypnomix/app/daw.py), on the same
    origin, with the page's token (window.HX_TOKEN). Opened from file://, it can only show the mock session. */
 (function () {
@@ -41,12 +41,12 @@
           signal: ctl.signal,
         });
       } catch (e) {
-        throw new Error(e.name === 'AbortError' ? 'timed out after ' + mcp.timeoutMs + ' ms' : 'cannot reach ' + mcp.endpoint + (location.protocol === 'file:' ? ' (from file:// the browser blocks it: open it from the hypnomix app, /daw/)' : ''));
+        throw new Error(e.name === 'AbortError' ? 'timed out after ' + mcp.timeoutMs + ' ms' : 'cannot reach ' + mcp.endpoint + (location.protocol === 'file:' ? ' (from file:// the browser blocks it: open it from the HypnoMix app, /daw/)' : ''));
       } finally {
         clearTimeout(timer);
       }
       if (isNotification) return null;
-      if (res.status === 403) throw new Error('the app refused the call: reload the page from the hypnomix app');
+      if (res.status === 403) throw new Error('the app refused the call: reload the page from the HypnoMix app');
       const text = await res.text();
       let msg;
       try { msg = JSON.parse(text); } catch (e) { throw new Error(res.ok ? 'reply is not JSON' : 'HTTP ' + res.status + ' from ' + mcp.endpoint); }

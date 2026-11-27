@@ -12,11 +12,17 @@ where it is downloaded from:
 Optional fields: "size" ("190 MB", "3 GB": about how big the download is; it sets the store's download limit and its
 free-space check) and "credit" (the credit line a licence REQUIRES, e.g. CC-BY; it is shown in the item's details and
 is mandatory for the CC-BY licences). Personal names appear only there; elsewhere use the project or organisation.
+Also optional: "note" (one or two plain sentences a person should know BEFORE installing: an old nightly build, an
+unsigned build that needs approval in System Settings, an installer that installs for all users and asks for a password;
+shown in the item's details), "mpe" (true only where the maker documents MPE, per-note pitch bend, pressure and slide from
+controllers that send them; leave it out otherwise) and "mpe_note" (one sentence: what the maker documents and how MPE is
+switched on in that instrument; required when "mpe" is true).
 
 A catalogue is checked when it is loaded (validate below): a bad one is refused, not used.
 """
 import json
 import re
+import unicodedata
 import urllib.parse
 from pathlib import Path
 
@@ -32,6 +38,7 @@ LICENCES = ("GPL-2.0", "GPL-2.0-or-later", "GPL-3.0", "AGPL-3.0", "LGPL-2.1", "L
             "CC-BY-SA-4.0", "freeware")
 OPEN = {"GPL-2.0", "GPL-2.0-or-later", "GPL-3.0", "AGPL-3.0", "LGPL-2.1", "LGPL-3.0", "MIT", "BSD-2-Clause",
         "BSD-3-Clause", "ISC", "Apache-2.0", "MPL-2.0", "CC0-1.0", "CC-BY-3.0", "CC-BY-4.0", "CC-BY-SA-3.0", "CC-BY-SA-4.0"}
+TEXT_MAX = {"note": 500, "mpe_note": 400}        # longest optional free text, in characters
 REQUIRED = ("id", "name", "kind", "vendor", "licence", "open_source", "formats", "macos_arm64", "homepage", "about",
             "source", "method")
 
@@ -65,10 +72,13 @@ def get(item_id, path=None):
 
 
 def safe_part(name):
-    """True when name is fine as one file or folder name: not empty, not . or .., no slash, backslash, colon or
-    control character."""
+    """True when name is fine as one file or folder name: not empty, not . or .., not a hidden name (nor just an
+    extension such as ".pkg"), no slash, backslash, colon, and no control or invisible formatting character (the kind
+    that can make a name display backwards)."""
     name = str(name)
-    return bool(name.strip()) and name.strip() not in (".", "..") and not re.search(r"[/\\:\x00-\x1f]", name) and name == name.strip()
+    return (bool(name.strip()) and name.strip() not in (".", "..") and not name.startswith(".")
+            and not re.search(r"[/\\:\x00-\x1f]", name) and name == name.strip()
+            and not any(unicodedata.category(ch) in ("Cc", "Cf") for ch in name))
 
 
 def url_filename(url):
@@ -140,6 +150,15 @@ def validate(data):
             errs.append(f"{where}: size must look like '190 MB' or '3 GB'")
         if "credit" in it and not (isinstance(it["credit"], str) and it["credit"].strip()):
             errs.append(f"{where}: credit must be a non-empty line of text")
+        for k, most in TEXT_MAX.items():
+            if k in it and not (isinstance(it[k], str) and it[k].strip() and len(it[k]) <= most and "\n" not in it[k]):
+                errs.append(f"{where}: {k} must be one short paragraph of text (1 to {most} characters)")
+        if "mpe" in it and it["mpe"] is not True:
+            errs.append(f"{where}: mpe must be true (leave it out when the maker does not document MPE)")
+        if it.get("mpe") is True and not isinstance(it.get("mpe_note"), str):
+            errs.append(f"{where}: an item with mpe true needs an mpe_note (what the maker documents, and how it is switched on)")
+        if "mpe_note" in it and it.get("mpe") is not True:
+            errs.append(f"{where}: mpe_note is only for items with mpe true")
         if str(it["licence"]).startswith("CC-BY") and not str(it.get("credit", "")).strip():
             errs.append(f"{where}: the licence {it['licence']} requires a credit: add a 'credit' field")
         if it["id"] in seen:
@@ -193,8 +212,9 @@ def validate(data):
     return errs
 
 
-def search(its, q="", kind="", fmt="", licence="", open_source=None):
-    """Filter items. q matches name, vendor, about, kind and formats; licence 'open' / 'freeware' or an exact id."""
+def search(its, q="", kind="", fmt="", licence="", open_source=None, mpe=None):
+    """Filter items. q matches name, vendor, about, kind and formats; licence 'open' / 'freeware' or an exact id;
+    mpe=True keeps only the items whose maker documents MPE."""
     words = [w for w in q.lower().split() if w]
     out = []
     for it in its:
@@ -210,6 +230,8 @@ def search(its, q="", kind="", fmt="", licence="", open_source=None):
         if licence not in ("", "open", "freeware") and it["licence"] != licence:
             continue
         if open_source is not None and it["open_source"] != open_source:
+            continue
+        if mpe and not it.get("mpe"):
             continue
         out.append(it)
     return out

@@ -1,0 +1,6 @@
+{
+  "format": 1,
+  "about": "Which HypnoMix DAW engine this version of the app works with, and where each platform's archive is. A platform with no 'url' has nothing to download. To publish one: see packaging/README.md.",
+  "engine": "0.1.0",
+  "platforms": {}
+}

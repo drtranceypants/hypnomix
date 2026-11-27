@@ -1,11 +1,11 @@
-"""Updates: tell people when a new hypnomix is out, and install it with one click.
+"""Updates: tell people when a new HypnoMix is out, and install it with one click.
 
 Check   at most once a day (and on demand), ask GitHub for the latest release; cached in ~/.hypnomix/update.json
 Get     download this computer's installer from the release into ~/.hypnomix/updates/, then check its SHA-256
         against the release's SHA256SUMS.txt; a mismatch is deleted and never installed
 Install Mac: a helper quits the app, swaps the new Hypnomix.app in place of this one and reopens it.
         Windows: a helper runs the new setup silently over this install (settings and songs are untouched) and
-        starts hypnomix again. The page reloads itself when the new version answers.
+        starts HypnoMix again. The page reloads itself when the new version answers.
 
 What the check protects against, and what it does not
   It protects against a damaged or half-finished download, and against a file on GitHub's download servers (the CDN)
@@ -22,12 +22,12 @@ What the check protects against, and what it does not
   app, which only shows the bundle is whole and unmodified since it was signed (ad hoc or not): it does not show who
   made it. If that matters to you, download from the website and check the release's published fingerprints yourself.
 
-Which Hypnomix is installed (edition()): the Mac app carries the engine program in Contents/Resources/engine/bin when it
-is the full Hypnomix, and daw.app_edition() is the one place that looks. The full app only ever takes the full
-download (Hypnomix-full-mac-<arch>.dmg); on a release that has none, view() says no_full_download and nothing is offered
-or installed: the Assistant app is never put over the full one. Install and restart is refused (HTTP 409) while the
-DAW session has unsaved changes (daw.dirty()), and the Mac helper waits for the app, the server and the engine to be
-gone, well past the engine's own stop time, before it swaps the app.
+One installer per platform, the same for everyone (asset_name()): there are no editions. HypnoMix DAW is not inside the
+app; it is an add-on fetched from Setup (hypnomix/app/engine_addon.py), so an update swaps the app and leaves the engine
+where it is. A release that does not carry this computer's installer is reported plainly (no_download) and nothing is
+offered. Install and restart is refused (HTTP 409) while the DAW session has unsaved changes (daw.dirty()), and the Mac
+helper waits for the app, the server and the engine to be gone, well past the engine's own stop time, before it swaps
+the app.
 
 Only the installed app (the Mac .dmg or the Windows setup) updates itself. A source checkout is told about the new
 version and how to update (git pull). Nothing is downloaded or installed without a click; the daily check can be
@@ -44,11 +44,10 @@ from hypnomix.core import paths
 
 REPO = "drtranceypants/hypnomix"
 API = os.environ.get("HYPNOMIX_UPDATE_URL") or f"https://api.github.com/repos/{REPO}/releases/latest"
-STATE = paths.HOME / "update.json"       # the same home as the rest of hypnomix: HYPNOMIX_HOME moves these (default ~/.hypnomix)
+STATE = paths.HOME / "update.json"       # the same home as the rest of HypnoMix: HYPNOMIX_HOME moves these (default ~/.hypnomix)
 DIR = paths.HOME / "updates"
 TAG = re.compile(r"v?[0-9]{1,6}(?:\.[0-9]{1,6}){0,3}", re.ASCII)  # a release name must be a plain version: ASCII digits and dots only
-ASSETS = {"Hypnomix-windows-setup.exe", "Hypnomix-mac-arm64.dmg", "Hypnomix-mac-intel.dmg", "SHA256SUMS.txt",
-          "Hypnomix-full-mac-arm64.dmg", "Hypnomix-full-mac-intel.dmg"}   # the full download (its own DAW): not released yet
+ASSETS = {"Hypnomix-windows-setup.exe", "Hypnomix-mac-arm64.dmg", "Hypnomix-mac-intel.dmg", "SHA256SUMS.txt"}
 RELEASES = f"/{REPO}/releases/"
 DAY = 24 * 3600
 LOCK = threading.Lock()
@@ -92,20 +91,8 @@ def asset_name():
     if k == "windows":
         return "Hypnomix-windows-setup.exe"
     if k == "mac":
-        # the full Hypnomix (the engine inside the app) only ever updates from the full download, so an update never
-        # swaps it for the Assistant-only app; until a release carries that file, it is told there is nothing to install
-        full = "full-" if edition() == "full" else ""
-        return f"Hypnomix-{full}mac-arm64.dmg" if platform.machine() in ("arm64", "aarch64") else f"Hypnomix-{full}mac-intel.dmg"
+        return "Hypnomix-mac-arm64.dmg" if platform.machine() in ("arm64", "aarch64") else "Hypnomix-mac-intel.dmg"
     return ""
-
-
-def edition():
-    """Which Hypnomix this app is: 'full' (the engine program is inside the app), 'assistant' (the installed app
-    without it) or '' (a source checkout, or Windows). The ONE definition of it is daw.app_edition(): Setup's "Your
-    download" step, the DAW tab and this updater all ask it. Nothing else decides: no Info.plist key and no setting a
-    person can edit."""
-    from hypnomix.app import daw
-    return daw.app_edition()
 
 
 def app_root():
@@ -173,7 +160,7 @@ def check_url(url, role):
     host = (u.hostname or "").lower()
     ok = _gh_host(host) if role in ("api", "hop") else host == "github.com" and _release_path(u.path)
     if not ok:
-        raise RuntimeError("the update address isn't the hypnomix project's release on github.com, so it was ignored")
+        raise RuntimeError("the update address isn't the HypnoMix project's release on github.com, so it was ignored")
     return u
 
 
@@ -246,7 +233,7 @@ def check(force=False):
         rel = json.loads(_get(API))
         tag = rel.get("tag_name", "")
         if not good_tag(tag) or rel.get("draft") or rel.get("prerelease"):
-            s.update(checked=time.time(), error="the newest release has a name hypnomix doesn't recognise, so it was ignored",
+            s.update(checked=time.time(), error="the newest release has a name HypnoMix doesn't recognise, so it was ignored",
                      latest="", assets={})
             save(s)
             return view()
@@ -276,11 +263,10 @@ def view():
     except (RuntimeError, ValueError, TypeError, KeyError):
         page = ""
     size = a.get("size", 0) if a else 0
-    ed = edition() if name else ""
-    # the full app on a release that carries no full download: say so plainly; the Assistant app is never offered for it
-    no_full = bool(newer and ed == "full" and not a)
+    # an installed app on a release that carries no installer for this computer: said plainly, and nothing is offered
+    no_download = bool(newer and name and not a)
     return dict(current=cur, latest=latest, newer=newer, skipped=s.get("skip") == latest, auto=bool(s.get("auto", True)),
-                kind=kind(), edition=ed, no_full_download=no_full,
+                kind=kind(), no_download=no_download,
                 one_click=bool(newer and a), size=size if isinstance(size, int) else 0, page=page,
                 notes=str(s.get("notes", "")), published=str(s.get("published", "")), checked=s.get("checked", 0),
                 error=str(s.get("error", "")), job=dict(JOB))
@@ -330,7 +316,7 @@ def _download():
     try:
         latest = s.get("latest", "")
         if not good_tag(latest) or name not in ASSETS or name != os.path.basename(name):
-            raise RuntimeError("the release isn't one hypnomix recognises, so nothing was downloaded")
+            raise RuntimeError("the release isn't one HypnoMix recognises, so nothing was downloaded")
         if vkey(latest) <= vkey(current()):
             raise RuntimeError("that isn't a newer version than the one you have, so nothing was downloaded")
         have = _assets(s)                                       # checked again here: the state file is only a cache
@@ -439,7 +425,7 @@ if [ -n "$HYPNOMIX_PORT" ]; then    # a test copy: reopen it the same way, besid
 else open "$APP"; fi
 '''
 
-WIN_HELPER = r'''# hypnomix update helper: run the new setup silently over this install, then start hypnomix again.
+WIN_HELPER = r'''# HypnoMix update helper: run the new setup silently over this install, then start HypnoMix again.
 param([string]$Setup, [string]$App, [string]$Log, [string]$Sha)
 Start-Transcript -Path $Log -Append | Out-Null
 if (-not $Sha -or (Get-FileHash -Algorithm SHA256 -LiteralPath $Setup).Hash.ToLower() -ne $Sha.ToLower()) {

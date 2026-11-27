@@ -1,6 +1,6 @@
 ---
 name: live-mixing
-description: Mix inside the open Ableton Live set with hypnomix through AbletonOSC: exact fader dB, sends, pans, any device or plug-in parameter (VST/AU, no mouse or screen control), looped A/B captures measured against the person's profile. Use when someone wants changes made in their Live session rather than on exported files.
+description: Mix inside the open Ableton Live set with HypnoMix through AbletonOSC: exact fader dB, sends, pans, any device or plug-in parameter (VST/AU, no mouse or screen control), looped A/B captures measured against the person's profile. Use when someone wants changes made in their Live session rather than on exported files.
 ---
 
 # Mixing in Live

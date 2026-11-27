@@ -11,8 +11,8 @@
 Each `fix` run that wrote something is logged in SCAN_DIR/history/history.json (a run that wrote nothing is not a
 version): the scan folder, the set it started from and the new set it wrote, the approved ids with their amounts,
 the plain-words list of changes (`hypnomix diff`, Live sets), and the time. A copy of both sets is kept next to
-the log (history/vN-input.als, history/vN-output.als; .rpp for a REAPER project, .ardour for an Ardour session), so
-`--diff` and `--undo` still work after the files were saved again in the DAW. For a REAPER or Ardour version
+the log (history/vN-input.als, history/vN-output.als; .rpp for a REAPER project, .ardour for a HypnoMix DAW session), so
+`--diff` and `--undo` still work after the files were saved again in the DAW. For a REAPER or HypnoMix DAW version
 `--diff` shows the changed lines of the project file. A folder of recordings has no set to go back to: `fix` wrote
 repaired copies into SCAN_DIR/fixed (a taken name gets a number), so there `--undo` and `--undo-item` say so.
 Undo and undo-item are logged as versions too. New sets go next to the original set (its samples are found
@@ -140,7 +140,7 @@ def listing(sd, h):
 
 
 def xml_lines(path):
-    """An XML project (Ardour) as one line per element, attributes sorted and indentation, quotes and the XML declaration
+    """An XML project (HypnoMix DAW) as one line per element, attributes sorted and indentation, quotes and the XML declaration
     left out, so that writing the file out again is not a change. None if it does not parse."""
     import xml.etree.ElementTree as ET
     try:
@@ -160,7 +160,7 @@ def xml_lines(path):
 
 
 def text_diff(x, y, limit=200):
-    """The changed lines between two project files (REAPER .rpp, Ardour .ardour), as plain text. An Ardour session is
+    """The changed lines between two project files (REAPER .rpp, HypnoMix DAW .ardour), as plain text. A HypnoMix DAW session is
     compared element by element, so only real edits show."""
     a = b = None
     if str(x).lower().endswith(".ardour") and str(y).lower().endswith(".ardour"):
@@ -265,7 +265,7 @@ def main():
         return
     if a.undo is not None:
         dest, m = undo(sd, h, a.undo)
-        daw = {".als": "Live", ".rpp": "REAPER", ".ardour": "Ardour"}.get(dest.suffix.lower(), "your DAW")
+        daw = {".als": "Live", ".rpp": "REAPER", ".ardour": "HypnoMix DAW"}.get(dest.suffix.lower(), "your DAW")
         print(f"wrote {dest}\n  equal to what v{a.undo} started from; logged as v{m}. Nothing was deleted or "
               f"overwritten. Close the other one in {daw} before opening this one.")
         return

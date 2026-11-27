@@ -30,7 +30,7 @@ Skipped, each with the reason in the report:
 - downloaded packs and preset projects (a project folder with `Lessons` or `Presets` folders, or names like
   "presets", "drum kit", "demo set")
 - test and device-chain sets ("test", "mastering chain" in the name)
-- hypnomix output, the Trash, sets marked `(BROKEN, do not open)`
+- HypnoMix output, the Trash, sets marked `(BROKEN, do not open)`
 - **older versions**: each song counts once. Versions are recognised by their name without version words
   (`Song`, `Song v2`, `Song (final review 3)` and `Song v2 Project/Song v2` are one song); the newest file wins,
   wherever it is. An `Untitled` set counts as a version of its project's song.
@@ -48,7 +48,7 @@ From each set (read as XML; nothing is rendered):
 | main chain | Limiter ceiling and gain, Glue / Compressor, Utility on Main |
 | saturation, width | Saturator drive and dry/wet; Utility width and bass mono |
 | returns | Reverb decay and predelay; Delay / Echo synced or free, free times as a fraction of a beat, feedback |
-| plug-ins | third-party plug-ins per kind of track, **by name and count only**. Their settings are an opaque blob in the set: hypnomix cannot read them and never tries |
+| plug-ins | third-party plug-ins per kind of track, **by name and count only**. Their settings are an opaque blob in the set: HypnoMix cannot read them and never tries |
 | sounds | Live and plug-in instruments, Drum Racks, the samples Simpler / Sampler play, the Live packs the set uses |
 | genre | a rough guess from tempo and instruments, saved only as a **question** (see below) |
 

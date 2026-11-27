@@ -1640,5 +1640,41 @@ def RawGet(base, path):
     return out
 
 
+class Naming(unittest.TestCase):
+    """The words a person reads in the app: the product is HypnoMix, the third DAW is HypnoMix DAW, and the name of the
+    program under it appears in the one place the app discloses it (the add-on's card). Names that other programs look
+    up (the devices, the REAPER effects) and the X-Hypnomix header are identifiers and stay as they are."""
+    ROOT = Path(__file__).resolve().parent.parent / "hypnomix"
+    KEEP = r"X-Hypnomix|Hypnomix (?:Main|Probe|Align|Master|Library)\b|Hypnomix\.(?:app|amxd)"
+
+    def code_lines(self, path):
+        inside = False                                    # between /* and */ (a comment that runs over several lines)
+        for n, line in enumerate(path.read_text(encoding="utf-8").split("\n"), 1):
+            was = inside
+            if line.lstrip().startswith("/*") or inside:
+                inside = "*/" not in line
+            if not was and not line.lstrip().startswith(("//", "/*", "#")):
+                yield n, line
+
+    def test_the_screens_say_hypnomix_with_a_capital_m_and_never_ardour(self):
+        import re
+        files = sorted((self.ROOT / "app").glob("*.js")) + sorted((self.ROOT / "app" / "daw" / "js").glob("*.js")) + [
+            self.ROOT / "app" / "daw" / "index.html", self.ROOT / "app" / "ui.py"]
+        files = [f for f in files if not f.name.startswith(("teacher", "wiki"))]
+        for f in files:
+            for n, line in self.code_lines(f):
+                self.assertNotRegex(line, r"\bArdour\b", f"{f.name}:{n}")
+                bare = re.sub(self.KEEP, "", line)
+                self.assertNotRegex(bare, r"\bHypnomix\b(?!\.)", f"{f.name}:{n}")
+
+    def test_the_daw_question_and_the_prompt_use_the_three_names(self):
+        from hypnomix.app import chat as CH, setup as SU
+        self.assertEqual([d["title"] for d in SU.DAWS], ["Ableton Live", "REAPER", "HypnoMix DAW", "Something else"])
+        self.assertNotIn("Ardour", " ".join(d["note"] for d in SU.DAWS))
+        prompt = CH.system_prompt().split("Reference (written for terminal agents")[0]
+        self.assertIn("HypnoMix DAW", prompt)
+        self.assertNotRegex(prompt, r"\bArdour\b")
+
+
 if __name__ == "__main__":
     unittest.main()

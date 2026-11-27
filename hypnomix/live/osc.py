@@ -431,7 +431,7 @@ class Live:
         try:
             r = self.query("/live/track/load_browser_item", self.tid(track), category, name, timeout=4.0)
         except LiveError:
-            raise LiveError("Live's AbletonOSC script is older than this hypnomix: run Setup → Ableton Live (or "
+            raise LiveError("Live's AbletonOSC script is older than this HypnoMix: run Setup → Ableton Live (or "
                             "`hypnomix install`), then restart Live")
         if not r[1]:
             raise LiveError(f"Live's browser has no {category[:-1] if category.endswith('s') else category} called {name or 'Kit'!r}")
@@ -446,7 +446,7 @@ class Live:
         try:
             r = self.query("/live/track/load_stock_device", tid, name, timeout=3.0)
         except LiveError:
-            raise LiveError("Live's AbletonOSC script is missing hypnomix's device loader: run `hypnomix install`, "
+            raise LiveError("Live's AbletonOSC script is missing HypnoMix's device loader: run `hypnomix install`, "
                             "then restart Live")
         if not r[1]:
             raise LiveError(f"Live has no stock device called {name!r} (Live Lite/Intro lack some devices)")
@@ -459,7 +459,7 @@ class Live:
         raise LiveError(f"{name} didn't appear on {self.name(tid)}")
 
     def set_send_db(self, track, ret, db):
-        """Set a send to an exact dB by bisecting Live's own display (needs hypnomix's AbletonOSC patch)."""
+        """Set a send to an exact dB by bisecting Live's own display (needs HypnoMix's AbletonOSC patch)."""
         tid, sid = self.tid(track), self._send_id(ret)
         lo, hi = 0.0, 1.0
         for _ in range(20):

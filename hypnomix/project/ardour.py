@@ -354,10 +354,10 @@ def read(path):
         path = found[0]
     root = ET.parse(path).getroot()
     if root.tag != "Session":
-        raise SystemExit(f"{path.name}: not an Ardour session")
+        raise SystemExit(f"{path.name}: not a HypnoMix DAW session")
     version = session_version(root)
     if version < 3000:
-        raise SystemExit(f"{path.name}: an Ardour 2 session; open and save it in a newer Ardour first")
+        raise SystemExit(f"{path.name}: a session in an old format (version 2) that is not read; save it in a newer session format first")
     sr = int(num(root.get("sample-rate"), 48000)) or 48000
     warn = []
     clock, bpm, bpb, tpoints = tempo_map(root, sr, version, warn)

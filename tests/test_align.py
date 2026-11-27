@@ -227,8 +227,9 @@ class AppAndDevice(unittest.TestCase):
             js = (out / "hypnomix_align.js").read_text()
             self.assertNotIn("__", js)
 
-    @unittest.skipUnless(sys.platform == "darwin", "runs the device script in macOS's JavaScript engine")
     def test_device_script_in_a_simulated_live(self):
+        from tests import _jscheck
+        runner = _jscheck.need_runner(self)
         from hypnomix.app import aligndevice as AD
         js = AD.JS.replace("__PORT__", "8791").replace("__W__", str(AD.W)).replace("__H__", str(AD.H))
         stubs = r"""
@@ -275,14 +276,14 @@ act("protect"); act("sync"); act("preset"); act("write");
 st.pitch = 0.3;
 act("align"); paint(); act("place"); paint();
 var run = SENT.filter(function (x) { return x[1] == "/api/align/run"; })[0];
-JSON.stringify({run: run && run[2], calls: CALLS.filter(function (c) { return c[0] == "call"; })});
+print(JSON.stringify({run: run && run[2], calls: CALLS.filter(function (c) { return c[0] == "call"; })}));
 """
         with tempfile.TemporaryDirectory() as td:
             f = Path(td) / "sim.js"
-            f.write_text(stubs + js + driver)
-            r = subprocess.run(["osascript", "-l", "JavaScript", str(f)], capture_output=True, text=True)
+            f.write_text(stubs + js + driver, encoding="utf-8")
+            r = subprocess.run(runner + [str(f)], capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stderr)
-        res = json.loads(r.stdout)
+        res = json.loads(r.stdout.strip().splitlines()[-1])
         body = res["run"]
         self.assertEqual(body["guide"], "Lead")
         self.assertEqual(body["parts"], ["Double", "Harmony"])          # the guide is never a part

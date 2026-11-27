@@ -1,8 +1,8 @@
-"""Align a vocal stack from inside REAPER: the Hypnomix Align panel. The REAPER side of the Live Align device.
+"""Align a vocal stack from inside REAPER: the HypnoMix Align panel. The REAPER side of the Live Align device.
 
-  hypnomix reaper align           open the Hypnomix Align panel in REAPER (and keep it in step with the app)
+  hypnomix reaper align           open the HypnoMix Align panel in REAPER (and keep it in step with the app)
 
-Needs the hypnomix app running (`hypnomix app`; for an app on another port give --port N, or set HYPNOMIX_PORT):
+Needs the HypnoMix app running (`hypnomix app`; for an app on another port give --port N, or set HYPNOMIX_PORT):
 it runs `hypnomix alignset` on the SAVED project, the same way the Live device does (through /api/align/*). Save
 the project first (alignset reads the saved .rpp). In the panel:
 
@@ -164,7 +164,7 @@ class Panel:
             app("/api/align/choose", {"path": path})
             d = app("/api/align/run", self.body())
         except OSError as e:
-            return self.flash(f"The hypnomix app is not answering ({e}): start `hypnomix app`")
+            return self.flash(f"The HypnoMix app is not answering ({e}): start `hypnomix app`")
         if d.get("error"):
             return self.flash(d["error"])
         self.job, self.busy, self.result = d.get("job", 0), True, None
@@ -231,7 +231,7 @@ def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(prog="hypnomix reaper align", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", type=int, default=None, help="the hypnomix app's port (default: HYPNOMIX_PORT, else "
+    ap.add_argument("--port", type=int, default=None, help="the HypnoMix app's port (default: HYPNOMIX_PORT, else "
                     f"{DEFAULT_PORT})")
     a = ap.parse_args(argv)
     global APP
@@ -239,12 +239,12 @@ def main(argv=None):
     try:
         app("/api/align/state", timeout=2)
     except OSError:
-        sys.exit("the hypnomix app is not running: start it (`hypnomix app`)")
+        sys.exit("the HypnoMix app is not running: start it (`hypnomix app`)")
     r = Reaper()
     r.start()
     p = Panel(r)
     r.call("panel_open", mode="align")
-    print("The Hypnomix Align panel is open in REAPER. Ctrl-C (or close the panel) to stop.")
+    print("The HypnoMix Align panel is open in REAPER. Ctrl-C (or close the panel) to stop.")
     try:
         while True:
             for e in (r.call("panel_events") or {}).get("events") or []:

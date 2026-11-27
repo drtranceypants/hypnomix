@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Which Live saved this set, and has hypnomix been tested with it?
+"""Which Live saved this set, and has HypnoMix been tested with it?
 
 A Live set is a gzipped XML file whose first element, <Ableton>, says which Live saved it (Creator="Ableton Live
-12.0.5", MinorVersion="12.0_12049"). hypnomix has been tested with Live 11 and Live 12. A later major version may
+12.0.5", MinorVersion="12.0_12049"). HypnoMix has been tested with Live 11 and Live 12. A later major version may
 change the file format, so a tool that writes a NEW set from a set saved by a later major version refuses, unless
 you say it may. Reading and scanning are never refused; they print one warning line.
 
@@ -34,7 +34,7 @@ _warned = set()
 
 
 class NewerLive(Exception):
-    """A set saved by a later major version of Live than hypnomix has been tested with (the message says what to do)."""
+    """A set saved by a later major version of Live than HypnoMix has been tested with (the message says what to do)."""
 
 
 def parse(creator=None, minor=None):
@@ -101,14 +101,14 @@ def allow():
 
 
 def refusal_text(ver):
-    return (f"this set was saved by Live {ver[3]}; hypnomix has been tested up to {tested_text()}: it will not write "
+    return (f"this set was saved by Live {ver[3]}; HypnoMix has been tested up to {tested_text()}: it will not write "
             f"a new set from it unless you set {ENV_FORCE}=1 (or pass --force-live-version, in a command that has "
             f"that flag), because the format may have changed. Reading and scanning still work.")
 
 
 def _decide(ver, force):
     if ver is None:
-        _warn_once("unreadable", "warning: hypnomix could not read which version of Live saved this set, so it cannot "
+        _warn_once("unreadable", "warning: HypnoMix could not read which version of Live saved this set, so it cannot "
                    "tell whether the format is one it has been tested with; writing the new set anyway.")
     elif is_newer(ver) and not (forced() if force is None else force):
         raise NewerLive(refusal_text(ver))
@@ -156,7 +156,7 @@ def warn_read(src):
     except Exception:
         return None
     if is_newer(ver):
-        _warn_once(("read", ver[3]), f"warning: this set was saved by Live {ver[3]}; hypnomix has been tested up to "
+        _warn_once(("read", ver[3]), f"warning: this set was saved by Live {ver[3]}; HypnoMix has been tested up to "
                    f"{tested_text()}. Reading and scanning work, but a new set written from it may not open in Live.")
     return ver
 
@@ -181,7 +181,7 @@ class ForceAction(argparse.Action):
 def add_force_flag(parser):
     parser.add_argument("--force-live-version", action=ForceAction, dest="force_live_version",
                         help=f"write a new set even though it was saved by a Live newer than {tested_text()}, "
-                             "the newest hypnomix has been tested with (the format may have changed)")
+                             "the newest HypnoMix has been tested with (the format may have changed)")
 
 
 def main():

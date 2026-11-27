@@ -1,6 +1,8 @@
 """`chain --reaper`: which stock plug-ins, in which order, set to what (a fake REAPER records every call)."""
 import math
+import re
 import unittest
+from pathlib import Path
 
 from hypnomix.engineer import chain_reaper as CR
 
@@ -73,6 +75,22 @@ class ChainReaper(unittest.TestCase):
                 return [{"name": "VST: Something"}]
         with self.assertRaises(SystemExit):
             CR.build_master(Busy(), [dict(s) for s in PLAN], existing="refuse")
+
+
+class UndoStepNames(unittest.TestCase):
+    """The docs say REAPER's undo steps are named "hypnomix: ...": the scripts must write exactly that (the lower-case form)."""
+
+    def test_every_undo_step_the_scripts_write_is_named_the_way_the_docs_say(self):
+        root = Path(__file__).resolve().parent.parent
+        names = []
+        for f in (root / "hypnomix" / "reaper").glob("*.lua"):
+            names += re.findall(r'Undo_EndBlock\("([^"]*)"', f.read_text(encoding="utf-8"))
+        self.assertGreaterEqual(len(names), 3)
+        self.assertEqual([n for n in names if not n.startswith("hypnomix: ")], [])
+        for doc in (root / "docs" / "guides" / "08-inside-reaper.md", root / "hypnomix" / "engineer" / "chain_reaper.py"):
+            text = doc.read_text(encoding="utf-8")
+            self.assertIn('"hypnomix: ..."', text, doc.name)
+            self.assertNotIn('"HypnoMix: ..."', text, doc.name)
 
 
 if __name__ == "__main__":

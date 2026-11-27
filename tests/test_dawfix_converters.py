@@ -1,4 +1,4 @@
-"""Converters group (review of the DAW branch): the timing fix for Ardour and Live projects is by hand, not an edit."""
+"""Converters group (review of the DAW branch): the timing fix for HypnoMix DAW and Live projects is by hand, not an edit."""
 import unittest
 from unittest import mock
 
@@ -7,7 +7,7 @@ from tests import test_rpp
 
 
 class TimingByHand(unittest.TestCase):
-    """A nudge hypnomix writes only into REAPER projects: in an Ardour or Live project the finding is `applies:
+    """A nudge hypnomix writes only into REAPER projects: in a HypnoMix DAW or Live project the finding is `applies:
     manual` with no edit attached (fix skips edits; the hand-off checklist lists approved manual items)."""
 
     def setUp(self):                      # the same small REAPER project the REAPER tests use

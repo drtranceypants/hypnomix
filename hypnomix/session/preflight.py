@@ -7,7 +7,7 @@ Usage:
                        [--recursive] [--length-tolerance 0.05] [--max-lag 5]
 
 For a FOLDER it reads every audio file in it. For a set or project it reads every source file the project
-plays (through the shared project model, so Live, REAPER and Ardour work the same way).
+plays (through the shared project model, so Live, REAPER and HypnoMix DAW work the same way).
 
 What it looks for, each as a finding with what to do:
   sample rate / bit depth   files that differ from the rest, and which ones are the odd ones out
@@ -176,11 +176,29 @@ def lags(envs, max_s=5.0):
 
 
 # ---------------------------------------------------------------- names
+def shown(s):
+    """Text that can be printed and written as UTF-8. When this computer's language setting cannot decode a file name (a
+    bare "C" locale on Linux, a name made on another system), Python holds the bytes it could not read as lone surrogate
+    characters, which no UTF-8 file can hold: decode those bytes as UTF-8 when they are UTF-8, else show them as \\xNN."""
+    if not any("\ud800" <= c <= "\udfff" for c in s):
+        return s
+    try:
+        raw = s.encode("utf-8", "surrogateescape")
+    except UnicodeEncodeError:                          # a lone surrogate that is not a held byte (a Windows name)
+        raw = s.encode("utf-8", "surrogatepass")
+    return raw.decode("utf-8", "backslashreplace")
+
+
 def name_problems(path):
     """The reasons a file or folder name would not survive another system, in plain words."""
     p = Path(path)
     name = p.name
+    odd = shown(name) != name
+    name = shown(name)
     out = []
+    if odd:
+        out.append(("encoding", "has bytes in its name that this computer's language setting cannot read as text (shown here as "
+                    "they were decoded as UTF-8; set a UTF-8 language setting, or rename the file)"))
     bad = sorted({c for c in name if c in BAD_CHARS})
     if bad:
         out.append(("chars", "has " + " ".join(repr(c) for c in bad) + " in its name (Windows refuses these, and some tools and "
@@ -206,6 +224,7 @@ def name_problems(path):
 
 
 def safe_name(name):
+    name = shown(name)
     stem, dot, ext = name.rpartition(".")
     if not dot:
         stem, ext = name, ""
@@ -362,7 +381,7 @@ def check_files(files, proj_sr=None, folder=True, tol=0.05, max_lag=5.0, uses=No
                            "export it again from the DAW (an effect in the chain probably produced them); nothing was changed",
                            where=f"{int(at // 60)}:{at % 60:04.1f}"))
         if f.get("channels", 0) > 5:
-            out.append(fnd("channels", "medium", n, f"has {f['channels']} channels; hypnomix's measuring tools read up to five",
+            out.append(fnd("channels", "medium", n, f"has {f['channels']} channels; HypnoMix's measuring tools read up to five",
                            "export it as stereo or mono (or one file per channel); nothing was changed"))
         if f.get("empty"):
             out.append(fnd("silent", "medium", n, "has no audio in it (zero length)", "export it again; check the track and the range"))
@@ -410,7 +429,8 @@ def check_files(files, proj_sr=None, folder=True, tol=0.05, max_lag=5.0, uses=No
 
 KIND_TEXT = {"chars": "characters other systems refuse in their names", "reserved": "a name Windows keeps for itself",
              "trailing": "a space or dot at the start or end of the name", "long": "a very long name",
-             "path": "a very long path", "accents": "accents or symbols in the name"}
+             "path": "a very long path", "accents": "accents or symbols in the name",
+             "encoding": "bytes in the name this computer cannot read as text"}
 
 
 def check_names(paths, project_path=None):
@@ -419,14 +439,17 @@ def check_names(paths, project_path=None):
     groups = collections.defaultdict(list)
     for p in paths:
         for kind, why in name_problems(p):
-            groups[kind].append((Path(p).name, why))
-    sev = {"chars": "medium", "reserved": "medium", "trailing": "medium", "long": "medium", "path": "medium", "accents": "info"}
+            groups[kind].append((shown(Path(p).name), why))
+    sev = {"chars": "medium", "reserved": "medium", "trailing": "medium", "long": "medium", "path": "medium", "accents": "info", "encoding": "medium"}
     where = (". In a project, rename in the DAW's media list (or collect the files) so the links follow; nothing was renamed"
              if project_path else ". Nothing was renamed")
     for kind, rows in groups.items():
         names = sorted({r[0] for r in rows})
         if kind == "path":
             fix = "move the folder somewhere with a shorter path" + where
+        elif kind == "encoding":
+            fix = ("set a UTF-8 language setting for the program (LANG or LC_ALL to a UTF-8 one, such as C.UTF-8), or rename the files "
+                   "with letters this computer can read" + where)
         elif kind == "accents":
             fix = "nothing to do unless the files will travel to older systems; then rename them" + where
         else:
@@ -436,7 +459,7 @@ def check_names(paths, project_path=None):
         out.append(fnd(f"name-{kind}", sev[kind], names[0] if len(names) == 1 else f"{len(names)} names", problem, fix, files=names))
     low = collections.defaultdict(set)
     for p in paths:
-        low[Path(p).name.lower()].add(Path(p).name)
+        low[shown(Path(p).name).lower()].add(shown(Path(p).name))
     for v in low.values():
         if len(v) > 1:
             c = sorted(v)
@@ -477,7 +500,7 @@ def report(source, files, findings, notes, kind):
             L.append(f"- with `--plan` this becomes a `prep` step ({f['plan']['step']}) you can approve")
         L.append("")
     L += ["## Every file", ""] + files_table(files) + [""]
-    return "\n".join(L)
+    return shown("\n".join(L))
 
 
 def analyse(source, recursive=False, tol=0.05, max_lag=5.0, progress=True):
@@ -497,12 +520,12 @@ def analyse(source, recursive=False, tol=0.05, max_lag=5.0, progress=True):
         try:
             proj, uses, missing = project_sources(src)
         except Exception as e:
-            what = {"reaper": "a REAPER project", "live": "an Ableton Live set", "ardour": "an Ardour session"}.get(PJ.daw_of(src), "a project")
+            what = {"reaper": "a REAPER project", "live": "an Ableton Live set", "ardour": "a HypnoMix DAW session"}.get(PJ.daw_of(src), "a project")
             why = str(e).strip().splitlines()[-1][:100] if str(e).strip() else type(e).__name__
             raise SystemExit(f"{src.name}: not {what} I can read" if why.startswith("not a") else f"{src.name}: cannot be read as {what} ({why})")
         present = [Path(p) for p in uses if Path(p).exists()]
         paths = sorted(present, key=lambda p: str(p))
-        kind, proj_sr, folder = {"reaper": "REAPER project", "live": "Live set", "ardour": "Ardour session"}[PJ.daw_of(src)], proj.sample_rate, False
+        kind, proj_sr, folder = {"reaper": "REAPER project", "live": "Live set", "ardour": "HypnoMix DAW session"}[PJ.daw_of(src)], proj.sample_rate, False
         notes.append(f"{len(uses)} source file(s) used by the project, {len(missing)} place(s) where one is missing")
         notes.append("lengths and starts are not compared: the clips of a project are placed by their positions")
         names_to_check = list(uses) + [str(src)]
@@ -521,7 +544,7 @@ def analyse(source, recursive=False, tol=0.05, max_lag=5.0, progress=True):
         seen.add(pth)
         users = uses.get(pth, [track])
         findings.append(fnd("missing", "high", Path(pth).name, f"is used by {listing(users)} and is not there: {pth}",
-                            "find the file again before anything else (REAPER and Ardour offer to search when the project opens; "
+                            "find the file again before anything else (REAPER and HypnoMix DAW offer to search when the project opens; "
                             "in Live use Manage Files or Locate); nothing was searched for or changed", where=where))
     findings += check_names([Path(p) for p in names_to_check], project_path=None if folder else src)
     findings.sort(key=lambda f: (SEV.get(f["severity"], 9), f["kind"], f["track"]))

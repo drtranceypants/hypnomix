@@ -1,6 +1,6 @@
 ---
 name: tracking-session
-description: Run a recording session for real instruments and vocals in Ableton Live with hypnomix: set input gain, route and arm tracks, punch-record takes, pick and comp the best take, align doubles, even out clip levels. Use when someone is about to record, is recording, or has raw takes to sort out.
+description: Run a recording session for real instruments and vocals in Ableton Live with HypnoMix: set input gain, route and arm tracks, punch-record takes, pick and comp the best take, align doubles, even out clip levels. Use when someone is about to record, is recording, or has raw takes to sort out.
 ---
 
 # Tracking session

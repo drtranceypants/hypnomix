@@ -1,21 +1,23 @@
-"""DAW mode: the Hypnomix engine under the app, and the DAW view on top of it.
+"""DAW mode: the HypnoMix DAW engine under the app, and the DAW view on top of it.
 
   hypnomix app --daw                    open the DAW view first, and start (or find) the engine on the session
                                         it had open last time (daw.json "last"; none: File → New / Open Session)
   hypnomix app --daw --session S.ardour  ... and open that session in it
 
-The engine is the Hypnomix DAW's audio engine (Ardour's, headless) with its MCP surface. The app finds it:
+The engine is the HypnoMix DAW's audio engine (headless) with its MCP surface. The app finds it:
 
-  1. HYPNOMIX_ENGINE, or "engine" in daw.json in the hypnomix home (~/.hypnomix, or HYPNOMIX_HOME): the path of a `hypnomix-engine` program
-  2. `hypnomix-engine` inside the app: the full Hypnomix.app carries the engine kit in Contents/Resources/engine
-     (bin/hypnomix-engine, built by the DAW's `osx_build --hypnomix`; packaging/mac/build_dmg.sh --daw KIT), or
-     next to Python
-  3. for developers only: a source build of the engine, named by HYPNOMIX_ENGINE_SRC (the folder of the checkout;
+  1. HYPNOMIX_ENGINE, or "engine" in daw.json in the HypnoMix home (~/.hypnomix, or HYPNOMIX_HOME): the path of a `hypnomix-engine` program
+  2. the add-on: <HypnoMix home>/engine/<the version engine_addon.json names>/bin/hypnomix-engine, put there from Setup
+     (hypnomix/app/engine_addon.py: fetched once, on a click, checked against a SHA-256 before it is used). There is one
+     app for everyone; the engine is not inside it
+  3. `hypnomix-engine` inside the app bundle (Contents/Resources/engine, a test build made with the old --daw option:
+     found for one more version so such a build still works; nothing depends on it), or next to Python
+  4. for developers only: a source build of the engine, named by HYPNOMIX_ENGINE_SRC (the folder of the checkout;
      hypnomix/engine/engine-dev there, once build/hypnomix/engine/hypnomix-engine is built). Nothing is guessed.
 
 and runs it as `hypnomix-engine --port N [ARGS] -- SESSION_DIR SNAPSHOT` (or `--new -- SESSION_DIR/NAME NAME` for a
 new session; after the `--` a name can never be taken for an option) on a free port N, so it never collides with a
-Hypnomix window on 4820, in a minimal environment (none of the app's own keys or tokens) and with the session's
+HypnoMix DAW window on 4820, in a minimal environment (none of the app's own keys or tokens) and with the session's
 folder as its working folder. ARGS: HYPNOMIX_ENGINE_ARGS, or
 "args" in daw.json (e.g. `-b "None (Dummy)"` with no audio interface). Without a `-b` there, the engine uses CoreAudio
 (on a Mac); if it cannot start any audio device, the supervisor starts it once more on the Dummy backend (no sound:
@@ -38,7 +40,7 @@ HTTP 409 {"error": "unsaved", "dirty": true} while dirty, unless the body says "
 saving) or "save": true (save, then go on). `dirty()` and `save()` are the same for the updater and the native app.
 One program is started, stopped or replaced at a time: a second request meanwhile is answered "busy" (409).
 
-Until the engine program exists, the app **attaches** to a Hypnomix (or Ardour) window that is already running
+Until the engine program exists, the app **attaches** to a HypnoMix DAW window that is already running
 with its MCP surface on (http://127.0.0.1:4820/mcp, HYPNOMIX_ENGINE_URL to change it). Attached, the app never
 stops or restarts that window, and opening a session is done in its own window.
 
@@ -63,7 +65,7 @@ RPC_TIMEOUT = 8.0
 
 
 def conf_path():
-    """daw.json in the hypnomix home (HYPNOMIX_HOME, read now so a test or a second copy has its own)."""
+    """daw.json in the HypnoMix home (HYPNOMIX_HOME, read now so a test or a second copy has its own)."""
     return Path(os.environ.get("HYPNOMIX_HOME") or "~/.hypnomix").expanduser() / "daw.json"
 
 
@@ -79,10 +81,17 @@ def candidates():
     env = os.environ.get("HYPNOMIX_ENGINE") or _conf().get("engine")
     if env:
         out.append(Path(env).expanduser())
+    try:
+        from hypnomix.app import engine_addon
+        add = engine_addon.find()                        # the version this app names (else the newest other one, kept until the new one ran)
+        if add:
+            out.append(add)
+    except Exception:
+        pass
     exe = Path(sys.executable).resolve()
     contents = app_contents()
     if contents:                                         # inside Hypnomix.app: …/Contents/Resources/python/bin/python3
-        out.append(contents / "Resources" / "engine" / "bin" / NAME)      # the only place a build puts it (update.edition() counts the same)
+        out.append(contents / "Resources" / "engine" / "bin" / NAME)      # a test build's kit: found for one more version, then this line goes
     if not contents:                                                     # a venv or install: next to Python (never inside an app)
         out.append(exe.parent / NAME)
     src = os.environ.get("HYPNOMIX_ENGINE_SRC")                          # a developer's source build: run it with its env script
@@ -97,21 +106,6 @@ def app_contents():
         if p.name == "Contents" and p.parent.suffix == ".app":
             return p
     return None
-
-
-def embedded_engine():
-    """The engine kit's program inside this app (the full download), or None."""
-    c = app_contents()
-    e = c / "Resources" / "engine" / "bin" / NAME if c else None
-    return e if e and e.is_file() and os.access(e, os.X_OK) else None
-
-
-def app_edition():
-    """'full' (this app carries the engine: the full Hypnomix), 'assistant' (the installed app without it) or ''
-    (a source checkout)."""
-    if embedded_engine():
-        return "full"
-    return "assistant" if app_contents() else ""
 
 
 # The engine's own words when it cannot start an audio device (hypnomix_engine.cc start_backend): then the supervisor
@@ -225,7 +219,7 @@ def snapshot(path):
             snaps = sorted(p.glob("*.ardour"))
             p = next((s for s in snaps if s.stem == p.name), snaps[0] if snaps else p)
         if p.suffix != ".ardour" or not p.is_file():
-            raise ValueError(f"not an Ardour / Hypnomix session: {p}")
+            raise ValueError(f"not a HypnoMix DAW session: {p}")
     except (OSError, RuntimeError) as e:                        # a name too long for the disk, a home that cannot be found
         raise ValueError(f"not a usable session path ({getattr(e, 'strerror', None) or e})") from None
     return p
@@ -495,6 +489,11 @@ class Engine:
             self._gen += 1
             self._want = port
             gen, proc = self._gen, self.proc
+            try:
+                from hypnomix.app import engine_addon
+                engine_addon.mark_running(b, proc.pid)   # so another process (the command line, the Assistant) can see it runs
+            except Exception:
+                pass
         for target in (self._read, self._drain, self._deadline):
             threading.Thread(target=target, args=(proc, gen), daemon=True).start()
         return gen, proc
@@ -530,7 +529,9 @@ class Engine:
                                "work. Choose another output in System Settings → Sound, then press Restart.")
                 self._say("(the audio device did not answer: starting the engine again on the Dummy backend)")
             else:
-                self.state, self.mode, self.port = "failed", None, None
+                # no process is the engine's any more in the same moment the state says "failed" (the status of a start that
+                # was waiting would otherwise name the pid of a process that is being killed); it is killed just below
+                self.state, self.mode, self.port, self.proc = "failed", None, None, None
                 self.error = (f"the engine was not ready within {READY_TIMEOUT:.0f} s, so it was stopped: press Restart "
                               "to try again (a different audio device or backend may help)")
                 self._say("(the engine was not ready in time: stopped)")
@@ -546,7 +547,7 @@ class Engine:
             self.start(wait=False, _restart_gen=new_gen)
 
     def attach(self):
-        """Use a Hypnomix window that is already running (its MCP surface on), without owning it."""
+        """Use a HypnoMix DAW window that is already running (its MCP surface on), without owning it."""
         with self.lock:
             if self.mode == "engine" and self.proc and self.proc.poll() is None:
                 return self.status()
@@ -556,9 +557,9 @@ class Engine:
                 self.mode, self.state, self.error = "attached", "attached", ""
             else:
                 self.mode, self.state = None, "stopped"
-                self.error = (f"no engine program found ({NAME}), and no Hypnomix engine answers at {self.attach_url} "
+                self.error = (f"no engine program found ({NAME}), and no HypnoMix DAW engine answers at {self.attach_url} "
                               + ("(something else does, and it was left alone)" if answers(self.attach_url, timeout=0.4) else "")
-                              + ": open Hypnomix and switch on Preferences → Control Surfaces → MCPHttp, or install the engine")
+                              + ": open a HypnoMix DAW window and switch on Preferences → Control Surfaces → MCPHttp, or add HypnoMix DAW in Setup")
             return self.status()
 
     def stop(self, timeout=8.0):
@@ -594,6 +595,12 @@ class Engine:
                     pass
         if p and os.name != "nt":                      # whatever of its group is still there (a launcher script ended
             self._signal(p, getattr(signal, "SIGKILL", 9))   # first, an engine hung while shutting down) goes too
+        if p:
+            try:
+                from hypnomix.app import engine_addon
+                engine_addon.clear_running(p.pid)
+            except Exception:
+                pass
         with self.lock:
             if self.proc is p:                         # (not a newer one: only the process that was signalled is let go)
                 self.proc, self.mode, self.port, self.state = None, None, None, "stopped"
@@ -612,7 +619,7 @@ class Engine:
 
     def restart(self):
         if self.mode == "attached":
-            raise RuntimeError("attached to a Hypnomix window the app did not start: restart it there")
+            raise RuntimeError("attached to a HypnoMix DAW window the app did not start: restart it there")
         with self._transition():
             self._stop()
             self.dummy, self.notice = False, ""        # Restart tries the audio device again
@@ -624,7 +631,7 @@ class Engine:
         p = snapshot(path)
         if self.binary() is None:
             self.attach()
-            raise RuntimeError("attached to a Hypnomix window: open the session in that window (Session → Open)")
+            raise RuntimeError("attached to a HypnoMix DAW window: open the session in that window (Session → Open)")
         prev = self.session if self.mode == "engine" else None
         with self._transition():
             self._stop()
@@ -666,9 +673,15 @@ class Engine:
         if self.binary() is None:
             self.attach()
             if self.mode != "attached":              # nothing answered either: there is no engine at all, so say that
+                try:
+                    from hypnomix.app import engine_addon
+                    s = engine_addon.state()
+                    how = "the Add HypnoMix DAW button is in Setup" if s["available"] else s["message"]
+                except Exception:
+                    how = "see Setup"
                 raise RuntimeError("no engine is installed on this computer, so there is nothing to make a new session in "
-                                   "(the engine comes with the full Hypnomix, which is not released yet)")
-            raise RuntimeError("attached to a Hypnomix window: make the new session in that window (Session → New)")
+                                   f"(HypnoMix DAW: {how})")
+            raise RuntimeError("attached to a HypnoMix DAW window: make the new session in that window (Session → New)")
         with self._transition():
             self._stop()
             spawned = self._spawn(new=new)
@@ -738,11 +751,13 @@ class Engine:
                 m, e = READY.match(line), ERROR.match(line)
                 if not (m or e):
                     continue
+                ran = None
                 with self.lock:
                     if gen != self._gen or self.state != "starting":
                         continue                       # only the first READY (or ERROR) of this process counts
                     if m and int(m.group(1)) == self._want:   # the port it was told to use, nothing else
                         self.port, self.state = int(m.group(1)), "running"
+                        ran = proc.args[0] if isinstance(proc.args, (list, tuple)) and proc.args else None
                         b = re.search(r'backend="([^"]*)"', line)
                         self.backend = b.group(1) if b else ""
                         if self.new:                   # made: from now on (a restart too) it is opened, not made again
@@ -753,6 +768,12 @@ class Engine:
                             remember(self.session)
                     elif e:
                         self._failed = e.group(1).strip()
+                if ran:                                # the add-on's engine has run: its older versions are not needed any more
+                    try:
+                        from hypnomix.app import engine_addon
+                        threading.Thread(target=engine_addon.note_ran, args=(ran,), daemon=True).start()   # removing old versions can take a moment
+                    except Exception:
+                        pass
         except Exception as ex:                        # whatever happens to the pipe, the exit below is still handled
             self._say(f"(reading the engine's output stopped: {ex})")
             try:
@@ -761,6 +782,11 @@ class Engine:
             except Exception:
                 pass
         code = proc.wait()
+        try:
+            from hypnomix.app import engine_addon
+            engine_addon.clear_running(proc.pid)
+        except Exception:
+            pass
         try:
             proc.stdout.close()
         except Exception:
@@ -833,7 +859,7 @@ class Engine:
                 self._track(payload, edits0, None, None)
             if self.mode == "attached":
                 self.mode, self.state = None, "stopped"
-                self.error = f"the Hypnomix window at {url} stopped answering"
+                self.error = f"the HypnoMix DAW window at {url} stopped answering"
             return 502, _err(None, -32000, f"engine unreachable at {url}: {e}")
         self._track(payload, edits0, code, raw)
         return code, raw
@@ -914,8 +940,8 @@ def static(rel):
 
 def available(probe=False):
     """Is DAW mode usable here: the app was started with --daw, or an engine program is found, or one is running or
-    attached? (With probe, a Hypnomix window answering on the attach address counts too: a short look.) An ordinary
-    install with no engine says no, so its page shows no DAW tab."""
+    attached? (With probe, a HypnoMix DAW window answering on the attach address counts too: a short look.) An app
+    that has not added HypnoMix DAW (Setup → Extras) and has no engine says no, so its page shows no DAW tab."""
     if STATE["daw"] or ENGINE.mode in ("engine", "attached") or find_engine() is not None:
         return True
     return bool(probe and is_engine(ENGINE.attach_url, timeout=0.4))
@@ -945,7 +971,12 @@ def handle_get(path, q, token):
         st = ENGINE.status()
         if st["mode"] is None and not st["binary"] and st["state"] == "stopped":
             st = ENGINE.attach()                          # a window may have been opened since: look again
-        return 200, dict(st, daw_mode=STATE["daw"], available=available())
+        try:
+            from hypnomix.app import engine_addon
+            addon = engine_addon.brief()                  # the add-on: added, or a newer one wanted (the view says so)
+        except Exception:
+            addon = {}
+        return 200, dict(st, daw_mode=STATE["daw"], available=available(), addon=addon)
     return None
 
 

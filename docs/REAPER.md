@@ -1,7 +1,7 @@
-# REAPER: how hypnomix reads, writes and drives it
+# REAPER: how HypnoMix reads, writes and drives it
 
-For people and agents changing hypnomix's REAPER code. The user guide is `docs/guides/08-inside-reaper.md`.
-Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER" at the end). That includes the files hypnomix's newest code writes: on 2026-11-26 the demo project, a project written by `fix`, the masking cut as a ReaEQ band, the hand-off project's marker and the A/B project were opened in REAPER 7.86 and read back through its API (see "Opened and read back in REAPER 7.86" at the end). None of that has been run on a real song, and none has been judged by ear.
+For people and agents changing HypnoMix's REAPER code. The user guide is `docs/guides/08-inside-reaper.md`.
+Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER" at the end). That includes the files HypnoMix's newest code writes: on 2026-11-26 the demo project, a project written by `fix`, the masking cut as a ReaEQ band, the hand-off project's marker and the A/B project were opened in REAPER 7.86 and read back through its API (see "Opened and read back in REAPER 7.86" at the end). None of that has been run on a real song, and none has been judged by ear.
 
 ## Where the code is
 
@@ -11,7 +11,7 @@ Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER"
 | `hypnomix/project/model.py` | the DAW-neutral model (seconds), the renderer, fade curves, stretch-marker map, envelope interpolation |
 | `hypnomix/project/reaper.py` | `.rpp` → model |
 | `hypnomix/project/rpp_edit.py` | edits on the parsed chunks (fades, item volume, volume dips and eases, new takes, reorder, rename) and the structure check |
-| `hypnomix/workflow/scan_project.py` | `scan` on an `.rpp` (and Ardour) |
+| `hypnomix/workflow/scan_project.py` | `scan` on an `.rpp` (and a HypnoMix DAW session) |
 | `hypnomix/workflow/scan_project.py` `stack_moves` | vocal stacks: Live's `order.assign_stack` on the model; `rpp_edit.move_item` moves the ITEM chunk (takes and take envelopes go with it); `check(moved=IGUIDs)` |
 | `hypnomix/workflow/timing_project.py` | Live's timing judgement (`session/timing.judge`) on hits read from items; nudges written as stretch markers (`SM`), anchored on every onset either side |
 | `hypnomix/workflow/sidechain_project.py` | sidechained ReaComps: found by their detector channel and the sends landing there, simulated with Live's `sidechain` model, suggestions written as ReaComp floats |
@@ -25,7 +25,7 @@ Every fact below was measured in REAPER 7.86 (how: see "Checking against REAPER"
 | `hypnomix/reaper/bridge.lua`, `client.py`, `cli.py` | the bridge into the open REAPER, and `hypnomix reaper` |
 | `hypnomix/engineer/chain_reaper.py` | `chain --reaper` |
 | `hypnomix/workflow/abset_project.py` | `abset` on an `.rpp`: each fix built alone (`fix` on a throwaway scan copy), compared track by track (by GUID); plug-in-only changes copy the FX block after the original with `BYPASS 1` and a new `FXID`; other changes copy the whole track (`fresh_ids`, `MUTESOLO 1`) via `rpp_edit.insert_copies`, which keeps folders (`_layout` rebuilds ISBUS) and mirrors the original's sends (`AUXRECV` lives on the receiving track); writes `ab_live.json` with `daw: reaper` |
-| `hypnomix/studio/alignset_rpp.py`, `hypnomix/reaper/align.py` | `alignset` on an `.rpp` (stretch markers via `rpp_edit.set_stretch`, pitch / formant / `--takes` as new takes via `add_take(offset=0, rate=1)` on per-item files that sum back to the checked render) and `hypnomix reaper align`: the Hypnomix Align panel (`panel_open mode=align`, `align_where`, `align_draw`) sending the Live device's request to `/api/align/*` |
+| `hypnomix/studio/alignset_rpp.py`, `hypnomix/reaper/align.py` | `alignset` on an `.rpp` (stretch markers via `rpp_edit.set_stretch`, pitch / formant / `--takes` as new takes via `add_take(offset=0, rate=1)` on per-item files that sum back to the checked render) and `hypnomix reaper align`: the HypnoMix Align panel (`panel_open mode=align`, `align_where`, `align_draw`) sending the Live device's request to `/api/align/*` |
 | `hypnomix/reaper/review.py` | `hypnomix reaper review`: polls the app's `/api/live/*`, drives the bridge's gfx panel (`panel_open/set/events/close`), switches plug-ins (`fx_enable`) or mutes, jumps (`jump`: beats × 60/tempo), and sets Main's hidden `match` slider from the app's matching gain |
 
 New tools that should work in every DAW belong on the model (`project.load(path)`), not on raw `.rpp` or `.als`.
@@ -76,7 +76,7 @@ New tools that should work in every DAW belong on the model (`project.load(path)
   21.0 dB (model 20.7), the suggested one 4.0 dB (model 3.0) and was fully back by the next kick (model 99%).
   ReaComp's release recovers more slowly than Live's model at long settings (6% back vs 36% modelled).
 - **JSFX variable names are case-insensitive**: `N` and `n` are one variable (it made every sample a "block"), and so
-  are `BASE` and `base`. A test checks the hypnomix JSFX for names that differ only in case.
+  are `BASE` and `base`. A test checks the HypnoMix JSFX for names that differ only in case.
 - Probe shared memory (gmem `hypnomix`): `gmem[0]` = layout version; slot k at `64 + k·194`: count of blocks, sample
   rate, then a ring of 8 records of (beat, playing, play position, block number, the 20 values). The block count is
   written last, so the bridge only reads a record once it is complete. A new JSFX needs no REAPER restart when added by
@@ -102,12 +102,12 @@ New tools that should work in every DAW belong on the model (`project.load(path)
 - **ReaComp**: Threshold, Ratio (shows "inf" at the top), Attack, Release, RMS size, Knee.
 - **ReaLimit**: Threshold, Ceiling, Release. The level goes up by `ceiling - threshold`. It limits SAMPLE peaks: the
   true peak can be over the ceiling, so `--verify` checks the whole song and lowers the ceiling.
-- **JS: Bass Manager/Booster** "Mono" makes the WHOLE signal mono: not a bass-mono. hypnomix uses JS Mid/Side
+- **JS: Bass Manager/Booster** "Mono" makes the WHOLE signal mono: not a bass-mono. HypnoMix uses JS Mid/Side
   Encoder → ReaEQ (two high passes, pins on channel 2 only) → ReaEQ (all pass, pins on channel 1 only) → JS Mid/Side
   Decoder: leak under -68 dB at 400 Hz and -94 dB at 2 kHz.
 - Plug-in pins: `TrackFX_SetPinMappings`; a channel no output pin writes passes through unchanged.
 - Item lanes (REAPER 7): the track has `FREEMODE 2` (fixed lanes) or `1` (free positioning) and items carry `YPOS`;
-  hypnomix never moves items off or onto such tracks.
+  HypnoMix never moves items off or onto such tracks.
 
 ## The mastering chain on Hypnomix Main
 
@@ -160,14 +160,14 @@ change is one undo step. Things that bit:
 
 Make REAPER the reference: a Lua script given on REAPER's command line builds a test project through the API,
 saves it (`Main_SaveProjectEx`), renders stems (`RENDER_SETTINGS` 3, action 42230) and closes its tab. Then
-compare REAPER's saved file with what the reader reads, and REAPER's render with hypnomix's. A **ramp** source
+compare REAPER's saved file with what the reader reads, and REAPER's render with HypnoMix's. A **ramp** source
 (each sample's value is its own position in the file) shows exactly which source position REAPER plays at
 every moment, through stretches, loops and playrate. The tests in `tests/test_rpp.py` and
 `tests/test_chain_reaper.py` hold the measured values.
 
 ## Opened and read back in REAPER 7.86
 
-On 2026-11-26 these files, written by hypnomix's newest code, were opened in REAPER 7.86 and read back through its API. Each opened with no offline media and matched what hypnomix wrote:
+On 2026-11-26 these files, written by HypnoMix's newest code, were opened in REAPER 7.86 and read back through its API. Each opened with no offline media and matched what HypnoMix wrote:
 
 - the demo project (`hypnomix demo --kind reaper`);
 - a project written by `fix`, with an item fade and a volume-envelope dip;

@@ -13,7 +13,7 @@ compared with the original, then written into ONE new set like this:
                      copied with the fix, named "<track> · B <id>", and muted. A/B swaps which one is muted.
   new or removed     a track the fix adds is muted (B unmutes it); a track it removes is muted in B.
 
-The set opens and plays exactly like the original (every B is off). The hypnomix device in Live then switches
+The set opens and plays exactly like the original (every B is off). The HypnoMix device in Live then switches
 each finding: **A**, **B**, and **Blind** (it picks at random which is X and which is Y, you choose the one
 you like, and only then hear which was which; your choices are kept in blind.json). With the probe on Main,
 the louder of A and B is turned down to match while you listen, so you judge the change, not the level.
@@ -344,7 +344,7 @@ def build(sd, ids=None, out=None, extra=()):
         from hypnomix.workflow import abset_project as AP
         return AP.build(sd, ids, out, extra)
     if orig.suffix.lower() == ".ardour" or (orig.is_dir() and any(orig.glob("*.ardour"))):
-        raise RuntimeError("Ardour has no A/B build yet: use `hypnomix ab` for a before / after clip of each fix it can model")
+        raise RuntimeError("HypnoMix DAW has no A/B build yet: use `hypnomix ab` for a before / after clip of each fix it can model")
     if not str(orig).endswith(".als") or not orig.exists():
         raise RuntimeError("this scan has no Live set to build an A/B set from (folder scans: use `hypnomix ab`)")
     cands = candidates(data["findings"], ids)
@@ -396,7 +396,7 @@ def main():
         for fid, it in spec["items"].items():
             if it.get("note"):
                 print(f"  {fid}: {it['note']}")
-        print("Open the A/B project in REAPER, then `hypnomix reaper review`: the Hypnomix panel switches A / B / Blind.")
+        print("Open the A/B project in REAPER, then `hypnomix reaper review`: the HypnoMix panel switches A / B / Blind.")
         return
     from hypnomix.session import check as C
     err, warn, _ = C.check(str(out), against=spec["original"],
@@ -410,7 +410,7 @@ def main():
         print(f"  CHECK ERROR: {e}")
     for w in warn[:8]:
         print(f"  check: {w}")
-    print("Close the original in Live, open the A/B set, put the hypnomix device on any track, and use A / B / Blind.")
+    print("Close the original in Live, open the A/B set, put the HypnoMix device on any track, and use A / B / Blind.")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
-# AGENTS.md: hypnomix for AI agents
+# AGENTS.md: HypnoMix for AI agents
 
 Read this first if you are an AI agent (any model, any harness: Claude Code, Codex, Cursor, Aider…) working
-with hypnomix, either to use it on someone's music or to change its code. Humans: see `README.md` and `GUIDE.md`.
+with HypnoMix, either to use it on someone's music or to change its code. Humans: see `README.md` and `GUIDE.md`.
 
 Your job is to be a fast, careful assistant engineer to a musician. **You find and propose; the person decides;
 the tools apply only what was approved, into new files.** Everything below serves that sentence.
@@ -13,13 +13,13 @@ A command-line mixing and mastering toolkit (`hypnomix <command>`; `hypnomix` al
 - **File tools:** read audio files (stems, takes, mixes). Work with any DAW. Never need Live.
 - **Session tools:** read a saved Ableton Live set (`.als`, gzipped XML) plus the audio its clips play. Live can
   be closed. Tools that change a set always write a **new** `.als` next to the original.
-- **Project tools (REAPER, Ardour):** read a REAPER project (`.rpp`, plain text) or an Ardour session (`.ardour`
-  XML, or the session folder) through the shared model in `hypnomix/project/` (`project`, and `scan` on either).
+- **Project tools (REAPER, HypnoMix DAW):** read a REAPER project (`.rpp`, plain text) or a HypnoMix DAW session
+  (`.ardour` XML, or the session folder; what that format is: the wiki article "HypnoMix DAW", `28-ardour.html`) through the shared model in `hypnomix/project/` (`project`, and `scan` on either).
   Times are in seconds. The DAW can stay open: `scan` writes nothing next to the project, and `fix` on a REAPER
   scan writes ONE new `.rpp` (`workflow/fix_project.py`, edits in `project/rpp_edit.py`; tuned vocals become new
-  takes on the person's own items, never a rendered copy); on an Ardour scan it writes ONE new `.ardour` snapshot beside the
+  takes on the person's own items, never a rendered copy); on a HypnoMix DAW scan it writes ONE new `.ardour` snapshot beside the
   original (`workflow/fix_ardour.py`, edits in `project/ardour_edit.py`: region fades and gain, gain-envelope dips, fader, pan,
-  mute; names, order, stacks, timing, sidechain, tuning stay by hand; written and re-read by hypnomix, NOT YET OPENED in Ardour). The same model also reads `.als` sets; new tools that should work in both DAWs
+  mute; names, order, stacks, timing, sidechain, tuning stay by hand; written and re-read by HypnoMix, NOT YET OPENED in a released DAW). The same model also reads `.als` sets; new tools that should work in both DAWs
   belong there (`project.load(path)`), not on raw XML.
 - **REAPER tools:** `hypnomix reaper start|status|tracks|fx|params` talk to the open REAPER through
   `hypnomix/reaper/bridge.lua` (request files in `~/.hypnomix/reaper-bridge`, a fixed list of commands, never code;
@@ -29,8 +29,8 @@ A command-line mixing and mastering toolkit (`hypnomix <command>`; `hypnomix` al
   The last resort, not the first: they need Live running, a remote script, and a person at the screen.
 - **The app:** `hypnomix app` is the first pass in a window (scan, hear each fix, approve, apply), with an
   Assistant tab (chat with the person's own AI key), an optional Listener (a cloud model hears a bounce, only on
-  their click) and **teacher mode**: free courses in their own DAW (Live, REAPER or Ardour), from the complete course
-  A to Z to a 101 crash course and a tour of hypnomix. Point a newcomer at the Teacher tab; it is theirs to use, not
+  their click) and **teacher mode**: free courses in their own DAW (Live, REAPER or HypnoMix DAW), from the complete course
+  A to Z to a 101 crash course and a tour of HypnoMix. Point a newcomer at the Teacher tab; it is theirs to use, not
   something for an agent to drive.
 
 ## Setup
@@ -40,7 +40,7 @@ uv venv && uv pip install -e .     # Python 3.9+
 hypnomix doctor                    # checks ffmpeg, Rubber Band, Live, AbletonOSC, BlackHole
 ```
 
-`tune` needs Rubber Band 3+, and so do `vocalign`'s formant and transpose options (`brew install rubberband`; on Windows and Linux hypnomix says how to get it). Run commands with `hypnomix …` or
+`tune` needs Rubber Band 3+, and so do `vocalign`'s formant and transpose options (`brew install rubberband`; on Windows and Linux HypnoMix says how to get it). Run commands with `hypnomix …` or
 `python -m hypnomix.cli …`. `hypnomix` with no arguments lists every command; `hypnomix <command> -h` gives full
 help (the module docstring). Output goes to `hypnomix-out/` unless `--out`.
 
@@ -51,9 +51,11 @@ them bare either (`--out FOLDER`, or `install --dry-run`, shows the result witho
 `~/Music/Hypnomix Library` (Mac only): ask first, and in a test run set `HYPNOMIX_STORE_ROOT` to a scratch folder.
 `store check` is offline and read-only (it only validates the catalogue), and `store list`, `search` and `info` read it too.
 `als2ardour SET.als OUTDIR` writes a whole new session folder (OUTDIR must not exist yet or be empty); give it a
-folder you made for the purpose. `app --daw` and `chain … --ardour` start, or talk to, the Hypnomix engine (a separate
-program, GPL-2.0-or-later, in the full download only): ask first, never start it from a test run, and an `app --daw`
-session that was changed must be saved or discarded on purpose (the engine never saves by itself). In a test run,
+folder you made for the purpose. `app --daw` and `chain … --ardour` start, or talk to, the HypnoMix engine (a separate
+program, GPL-2.0-or-later, an add-on that is not in the installer and not available yet): ask first, never start it from
+a test run, and an `app --daw` session that was changed must be saved or discarded on purpose (the engine never saves by
+itself). `engine install --yes` downloads that add-on (and `engine remove --yes` deletes it): only when the person asked,
+never from a test run (the report-first forms, `engine` and `engine status`, change nothing and are always fine). In a test run,
 point `HOME`, `HYPNOMIX_HOME`, `HYPNOMIX_APP_HOME` and `HYPNOMIX_USER_HOME` at scratch folders that exist (see
 CONTRIBUTING.md); the unit tests move themselves onto temporary folders when you leave these unset
 (`tests/_isolate.py`).
@@ -91,7 +93,7 @@ Preferences shape proposals. They never replace asking: taste calls are always a
 | the person has | run |
 |---|---|
 | a Live set | `hypnomix scan "Song.als" --mix mix.wav --ref instrumental.wav --key "F# major"` |
-| a REAPER project or an Ardour session | `hypnomix scan "Song.rpp"`, `hypnomix scan "Song/"` (or its `.ardour`); the DAW can stay open |
+| a REAPER project or a HypnoMix DAW session | `hypnomix scan "Song.rpp"`, `hypnomix scan "Song/"` (or its `.ardour`); the DAW can stay open |
 | raw recordings or exported stems (any DAW) | `hypnomix scan "folder/"` |
 | stems to clean up, mix or master | `hypnomix prep FOLDER --plan`, `automix FOLDER --plan`, `master MIX.wav --plan` |
 | a finished stereo mix only | `hypnomix measure`, `translate`, `qc`, `sections --bpm N`, `match MIX REF` on it; `separate` if stems would help |
@@ -123,7 +125,7 @@ only the approved moves.
 **Previews.** After any scan or plan, run `hypnomix ab "<SCAN_DIR>"`. It builds a before / after pair for each
 fix it can render offline (clip fixes, tuning, repaired recordings, timing nudges, masking cuts, and changes to a
 Compressor, Glue Compressor, Gate, EQ Eight, Utility or Limiter), level-matched, in `<SCAN_DIR>/ab/`, and says
-in `ab.json` which fixes it cannot preview and why (a device hypnomix has no model of, a MIDI note, a return
+in `ab.json` which fixes it cannot preview and why (a device HypnoMix has no model of, a MIDI note, a return
 track: those are heard by applying that one fix into a new set). Say what a pair is: the track alone without
 effects (clip fixes, timing, tuning); a nudge stretched along its warp markers with Rubber Band, not Live's
 warp engine; and for device changes **a model of the device, not Live itself** (the pair says so).
@@ -223,7 +225,9 @@ which spots to compare between the old and new set. When the review is finished,
     rough cost). `critique` asks y/N itself in a terminal and refuses elsewhere: never pass `--yes` until the person
     has said yes to what `--estimate` printed (for a song over 12 minutes it prints a warning: pass `--minutes 12`
     unless the person chose the whole file). Nothing else leaves the computer. Its notes are an opinion by ear:
-    measurements win on numbers.
+    measurements win on numbers. Bug and crash reports are written on the computer too (`hypnomix report`, the app's
+    "Report a problem", crash records in `~/.hypnomix/crashes`) and only the person copies, saves or posts them: never
+    send one for them, never put a report's text in an address.
 14. **Free tools only.** Code and docs here use free, open-source or the DAW's stock devices. Don't add or name
     paid plug-ins anywhere in this repo, and only propose plug-ins the person said they have.
 15. **Small steps.** One kind of change per pass, then listen. Stop and check in after a review round; don't
@@ -243,13 +247,14 @@ which spots to compare between the old and new set. When the review is finished,
 | Listen by ear (an extra; sends a reduced mono copy to a cloud model, so ask first every time) | `critique MIX` (the Listener: a cloud model's notes by ear; `--estimate` says what would be sent first) | nothing (notes only; the numbers stay measurements) |
 | Plan many moves for review | `prep --plan`, `automix --plan`, `master --plan`, `balance --plan` (a first fader balance of stems, faders only), `colour --plan`, `album --plan` | nothing (findings) |
 | Hear and review | `ab` (before/after clips), `review` (the page; `--serve` saves clicks) | the scan folder only |
-| Hand the by-hand list to the DAW | `handoff SCAN_DIR` (`HANDOFF.md`, a marker at every spot; `--daw` picks the wording: live, reaper, ardour or generic) | files in `SCAN_DIR/handoff/`; a new set with locators (Live) or a new project with markers (REAPER) |
+| Hand the by-hand list to the DAW | `handoff SCAN_DIR` (`HANDOFF.md`, a marker at every spot; `--daw` picks the wording: `live`, `reaper`, `ardour` or `generic`) | files in `SCAN_DIR/handoff/`; a new set with locators (Live) or a new project with markers (REAPER) |
 | Fix a set | `fix` (approved findings); or `order --apply` (track order, vocal stacks), `smooth --apply`, `timing --apply`, `distortion --apply`, `sidechain --apply`, `automation offset/dip` | a new `.als` |
 | Keep it moving (last step before mixdown; see `docs/WORKFLOW.md` §5) | `motion --learn` (your moves from finished songs), `motion SET --mix MIX --plan` (riser, dip, drift, swell, throw, outro, stutter, gate, drop-out: all options), `borrow SET --mix MIX --plan` (unused loops from the song's original project, on switched-off tracks) | a scan folder; `fix` writes a new `.als` |
 | Tempo and variety (see `docs/TEMPO.md`) | `tempomap` (free-played take: `--click` check, then `--conform` or `--follow`), `loops`, `tighten`, `breathe`, `variations`, `colour` (new timbres where a part repeats itself: Live-device chains on switched-off copies, `--plan` for the review; Live sets only) | a new `.als`, or preview files |
-| Clicking, not typing (see `docs/APP.md`) | `app` (the first pass in a window; decisions land in the same `decisions.json`; its Teacher tab is the free course in the person's DAW; `app --daw`: the Hypnomix DAW's window on its engine, the Assistant asking before each engine change), `device` (Max for Live: step through findings in Live, jump to each) | scans in `~/Documents/Hypnomix`; a new `.als` on Apply |
-| Free plug-ins and sounds (Mac only; see `docs/APP.md`) | `store` (`search`, `info`, `install`, `uninstall`, `updates`, with `--kind`, `--format`, `--open`, `--licence`, `--replace`; `--unverified` only after the person has confirmed that the download cannot be checked against a SHA-256) | files under `~/Library/Audio/Plug-Ins` and `~/Music/Hypnomix Library`; its own manifest |
-| Live set into Ardour, and mastering in Hypnomix (Ardour) | `als2ardour SET.als OUTDIR [--sr N]` (a new session folder plus `IMPORT-REPORT.md`; the set is only read), `chain master --ardour [--mcp-url URL] [--existing bypass|keep]` (builds the chain in the open session over MCP; `chain strips --ardour` is not built; not together with `--reaper`) | a new session folder; the open Hypnomix session |
+| Clicking, not typing (see `docs/APP.md`) | `app` (the first pass in a window; decisions land in the same `decisions.json`; its Teacher tab is the free course in the person's DAW; `app --daw`: HypnoMix DAW's window on its engine, the Assistant asking before each engine change), `device` (Max for Live: step through findings in Live, jump to each) | scans in `~/Documents/Hypnomix`; a new `.als` on Apply |
+| Free plug-ins and sounds (Mac only; see `docs/APP.md`) | `store` (`search`, `info`, `install`, `uninstall`, `updates`, with `--kind`, `--format`, `--open`, `--licence`, `--mpe`, `--replace`; the catalogue holds 69 items, 12 with `mpe` true; `--unverified` only after the person has confirmed that the download cannot be checked against a SHA-256) | files under `~/Library/Audio/Plug-Ins` and `~/Music/Hypnomix Library`; its own manifest |
+| HypnoMix DAW, the add-on (HypnoMix's own DAW; not available yet; see `docs/APP.md` and the wiki article `28-ardour.html`) | `engine` (status, `where`; `install` and `remove` report first and change nothing until `--yes`) | the engine under `<hypnomix home>/engine/<version>/` only; the address and SHA-256 come from the manifest shipped in the app |
+| Live set into HypnoMix DAW, and mastering in it | `als2ardour SET.als OUTDIR [--sr N]` (a new session folder plus `IMPORT-REPORT.md`; the set is only read), `chain master --ardour [--mcp-url URL] [--existing bypass|keep]` (builds the chain in the open session over MCP; `chain strips --ardour` is not built; not together with `--reaper`) | a new session folder; the open HypnoMix DAW session |
 | Inside Live without renders (see `docs/LIVE.md`) | `probe device`, `probe insert SET.als` (new set with every device, no manual placing; also `scan --devices`), `probe listen` / `status` / `report` / `cards SET.als`, `abset SCAN_DIR` (every fix as a switched-off B for A / B / Blind on the device) | a new `.als`; captures in the app folder |
 | Learn the person's style first | `taste --library` (every set on the computer: standards, taste calls, where to improve), `tonal build` (a tone target from their releases) | `~/.hypnomix/` only |
 | Decide faster, stay in charge (see `docs/WORKFLOW.md` 4b) | `fix --decide ID=approve@60`, `--decide-like ID=approve --dry-run`, `review --export / --merge / --settle`, `history` (`--diff`, `--undo`, `--undo-item`) | decisions; undo writes a new `.als` |
@@ -267,6 +272,7 @@ which spots to compare between the old and new set. When the review is finished,
 | Release (see the wiki articles on each) | `release MASTER.wav --check` first, then without it (the upload folder: WAV 24-bit and 16-bit, MP3, AAC, tags, cover); `versions --stems DIR --vocals "…" --check` (instrumental, a cappella, TV mix, radio edit from the person's own stems); `compare OLD.wav NEW.wav`; `album SONGS` (level, tone and gaps across a record) | a new folder or new files; the reports are read-only |
 | Inside Live | `live`, `loop`, `diagnose`, `chain`, `name --apply`, `clipmatch --als --apply`, `midi`, `soundcheck` (audio input) | the open set |
 | Setup | `doctor` (checks), `install` (ask first) | Live's remote scripts |
+| Report a problem (see the wiki article "Reporting a problem") | `report` (prints the report it would share: version, setup, last job and its log, the last crash record, finding counts; paths, names and keys hidden as far as it can tell, so read it before you share it; `--crash`, `--list`, `--what`, `--expected`, `--names`; `--out`, `--copy`, `--open` are the person's own choices) | nothing; `--out` writes a new file |
 
 Every tool prints a human report. Most analysis tools also take `--json OUT.json`; `smooth`, `timing` and
 `distortion` give each finding an `id`, and `--apply OUT.als --ids id1,id2` fixes only those. Those ids are
@@ -293,17 +299,17 @@ needs the tempo (`--bpm`; a set scan passes it): without it the bar lines, and s
 Present their output as "measured, please check by ear", and prefer `--report` before writing a file.
 
 **The newest release: checked on synthetic data, and its REAPER files in REAPER 7.86** (say exactly this, never more): the Live devices and the Live
-fix paths were tested in Live 12, and REAPER support in REAPER 7.86. Everything newer passes unit tests and hypnomix's
+fix paths were tested in Live 12, and REAPER support in REAPER 7.86. Everything newer passes unit tests and HypnoMix's
 own structure checks on synthetic data: `balance`, `handoff`, `plugins`, `colour`, `release`, `compare`,
 `versions`, `album`, `preflight`, `demo`; masking cuts written as an EQ Eight or ReaEQ band; `ab` previews of timing
-nudges and device changes (models of the devices, not Live); and `fix` on an Ardour scan (the snapshot is written and
-re-read by hypnomix and has NOT been opened in Ardour). On 2026-11-26 the REAPER files this code writes were opened in
+nudges and device changes (models of the devices, not Live); and `fix` on a HypnoMix DAW scan (the snapshot is written and
+re-read by HypnoMix and has NOT been opened in a released DAW). On 2026-11-26 the REAPER files this code writes were opened in
 REAPER 7.86 and read back through its API: the demo project (`demo --kind reaper`), a project written by `fix` (an item
 fade and a volume-envelope dip), masking cuts as ReaEQ bands (frequency, gain and bandwidth read back exactly; REAPER's
 own renders with the effect on and bypassed show the cut), the handoff project's marker (position and name) and the
-A/B project (`abset`): all opened with no offline media and matched what hypnomix wrote. Still unchecked, and to be
-said: the new Live sets (handoff locators, the EQ Eight band, colour chains) have not been opened in Live, the Ardour
-snapshots have not been opened in Ardour, none of the new tools has been run on real songs, and nothing new has been
+A/B project (`abset`): all opened with no offline media and matched what HypnoMix wrote. Still unchecked, and to be
+said: the new Live sets (handoff locators, the EQ Eight band, colour chains) have not been opened in Live, the HypnoMix DAW
+snapshots have not been opened in a released DAW, none of the new tools has been run on real songs, and nothing new has been
 judged by ear. Tell the person to keep their original and listen.
 
 **Which tool for which job** (several overlap on purpose):
@@ -349,11 +355,11 @@ judged by ear. Tell the person to keep their original and listen.
 - After the fixes: `fix` makes the changes it can, into new files. `handoff` turns what `fix` lists as by hand into a
   checklist and markers in the person's DAW's own words. It changes nothing in place.
 
-## Other DAWs (anything but Live, REAPER and Ardour)
+## Other DAWs (anything but Live, REAPER and HypnoMix DAW)
 
 REAPER is supported directly (`scan`/`fix` on the `.rpp`, the bridge, `chain --reaper`: `docs/REAPER.md`), and
-Ardour sessions can be scanned and fixed into a new `.ardour` snapshot (fades, gain, dips, fader, pan and mute; the
-rest stays by hand; not yet opened in Ardour). There is NO reader for the sessions of any other DAW. For those:
+HypnoMix DAW sessions (`.ardour`) can be scanned and fixed into a new `.ardour` snapshot (fades, gain, dips, fader, pan and mute; the
+rest stays by hand; not yet opened in a released DAW). There is NO reader for the sessions of any other DAW. For those:
 
 Today: the file tools and `scan FOLDER`. Ask the person to export each track as a full-length file from the
 same start point, with processing off. Scan the folder, review as above, and `fix` writes repaired copies to
@@ -374,12 +380,12 @@ don't drive those apps. The plan for deeper support (later) is in `docs/ROADMAP.
 - Facts about the `.als` format that the code relies on (checked in Live 12.4): arrangement clips live in
   `DeviceChain/MainSequencer/Sample/ArrangerAutomation/Events`; take lanes are separate; clip fade lengths
   are in **beats**; mixer volume is linear gain (1.0 = 0 dB, max 1.995 = +6 dB); a track is off when
-  `Mixer/Speaker/Manual` is `false`. hypnomix's list of tested versions is Live 11 and Live 12 (the checks on real sets so far were in Live 12): a set saved by a newer major version is read with one warning, and the tools that write a new set refuse it unless forced (`HYPNOMIX_FORCE_LIVE_VERSION=1`; `session/liveversion.py`). Never touch plug-in state blobs; address parameters by name, not index.
+  `Mixer/Speaker/Manual` is `false`. HypnoMix's list of tested versions is Live 11 and Live 12 (the checks on real sets so far were in Live 12): a set saved by a newer major version is read with one warning, and the tools that write a new set refuse it unless forced (`HYPNOMIX_FORCE_LIVE_VERSION=1`; `session/liveversion.py`). Never touch plug-in state blobs; address parameters by name, not index.
 - New checks plug into `scan` (`hypnomix/workflow/scan.py`): add a group function returning normalised findings
   `{id, tool, kind, severity, track, where, problem, fix, applies}` and, if it writes a set, a step in
   `hypnomix/workflow/fix.py`. `fix` re-finds each approved finding by `(tool, track, kind, where, device)`, so
   those fields must be stable for the same problem across runs. A finding that repairs one audio file can carry
-  `run` (a hypnomix command with `{out}` for the output folder) and `applies: "audio"`.
+  `run` (a HypnoMix command with `{out}` for the output folder) and `applies: "audio"`.
 - Every writer: refuse to overwrite, write only into its own output folder or next to the original set, undo
   everything it touched if it offers a revert, and say which method ran when it has a fallback.
 - Read-only commands write only into their report folder. A check that fails must say so in its notes with the
@@ -404,11 +410,17 @@ don't drive those apps. The plan for deeper support (later) is in `docs/ROADMAP.
   checks every tracked file (the names as fingerprints, never in plain text; a short list of older mentions that
   cannot be reworded is kept in that file and can only shrink). Other agents may be committing here too: commit only
   the files you changed.
+- Names: text a person reads says "HypnoMix" (capital H, capital M) and "HypnoMix DAW" (the third DAW, after Ableton
+  Live and REAPER). What a program looks up or a person types stays as it is: `hypnomix scan`, `~/.hypnomix`, `.ardour`,
+  `als2ardour`, `--ardour`, `Hypnomix.app`, the installer file names. The name of the underlying engine appears in text people read only
+  where the origin of HypnoMix DAW is disclosed: `README.md`, `THIRD_PARTY.md`, the wiki article "HypnoMix DAW"
+  (`28-ardour.html`), the Setup card for the add-on, the engine's licence notices in `packaging/` and the first step of
+  the HypnoMix DAW courses. Everywhere else write "HypnoMix DAW", and "HypnoMix DAW sessions (`.ardour`)" for the files.
 
 ## Keep the wiki current (every change)
 
-The app's Wiki tab and the website's wiki (https://hypnomix.bradfieldenterprises.org/wiki/) are built from the
-files in this repo, so **every change that alters what a person sees or does updates its article in the same
+The app's Wiki tab, the website's wiki (https://hypnomix.bradfieldenterprises.org/wiki/) and the repository's GitHub wiki
+are built from the files in this repo, so **every change that alters what a person sees or does updates its article in the same
 commit**: a new command, option, check, fix, default or workflow, a renamed thing, a limit that is lifted.
 
 | what changed | edit |
@@ -419,12 +431,14 @@ commit**: a new command, option, check, fix, default or workflow, a renamed thin
 | a skill or a subagent | `skills/<name>/SKILL.md`, `agents/<name>.md` |
 | lessons, install, the FAQ, how-to pages | `hypnomix/app/wiki/articles/NN-id.html` (`teaser:` is its home page summary) |
 | a command's one-line description | `hypnomix/cli.py` (the command reference article is built from it) |
-| the list of what hypnomix does | the chores table (`README.md` and `25-chores.html`, the same rows), `26-features.html`, "Commands by job" above |
+| the list of what HypnoMix does | the chores table (`README.md` and `25-chores.html`, the same rows), `26-features.html`, "Commands by job" above |
 | what comes next, which DAWs can do what | `docs/ROADMAP.md`, then `27-next.html`, `28-faq.html`, `28-ardour.html`, `28-other-daws.html`, `18-setup.html` |
 
 The tests hold the line: a command with no hand-written article, or a new top-level `.md` that the wiki does not
 read, fails `python -m unittest discover -s tests`. Pushing to `main` publishes: the website rebuilds within
 about 10 minutes and every copy of the app shows the newer articles. Never edit the website's wiki pages by hand.
+The repository's GitHub wiki is a third copy of the same articles, built by `hypnomix/app/wiki_github.py` and pushed by
+`.github/workflows/wiki.yml` on the same push: never edit it by hand either (the next build replaces every page).
 
 More: `docs/WORKFLOW.md` (the loop in detail), `docs/LESSONS.md` (the mistakes these rules come from),
 `docs/ROADMAP.md` (what to build next, other DAWs).

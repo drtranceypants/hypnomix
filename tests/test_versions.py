@@ -363,7 +363,7 @@ class CheckAndRefusals(unittest.TestCase):
         junk.write_text("not audio")
         code, text = run(["--stems", self.dir, "--vocals", "Lead*,Harm*", "--mix", junk, "--check"])
         self.assertEqual(code, 1)
-        self.assertIn("can't read junk.wav as audio: not an audio file hypnomix can", text)
+        self.assertIn("can't read junk.wav as audio: not an audio file HypnoMix can", text)
         self.assertEqual(text.count("as audio"), 1)
         self.assertNotIn(str(self.root), text)
         self.assertNotIn("Traceback", text)

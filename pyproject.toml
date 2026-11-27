@@ -1,7 +1,7 @@
 [project]
 name = "hypnomix"
-version = "0.3.0"
-description = "A mixing and mastering engineer for Ableton Live, REAPER and Ardour: automix stems, master, align vocals, match clips, check releases. Built to be driven by Claude Code."
+version = "0.3.1"
+description = "A mixing and mastering engineer for Ableton Live, REAPER and HypnoMix DAW: automix stems, master, align vocals, match clips, check releases. Built to be driven by Claude Code."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
@@ -24,7 +24,8 @@ ml = ["audio-separator>=0.30", "basic-pitch>=0.4"]
 # `critique` and the Assistant's Listening: Gemini or OpenRouter, both through the OpenAI-compatible client
 critique = ["openai>=1.0"]
 # the app's Assistant tab: bring your own key from Anthropic or any OpenAI-compatible provider
-assistant = ["anthropic>=1.0", "openai>=1.0"]
+# (Anthropic's library needs Python 3.10 or newer: on 3.9 the Assistant has the OpenAI-compatible providers only)
+assistant = ["anthropic>=1.0; python_version >= '3.10'", "openai>=1.0"]
 # GPL-3.0: kept optional so hypnomix itself stays MIT. Hosts VST3 / AU plug-ins for `hypnomix plugrender`
 plugins = ["pedalboard>=0.9"]
 

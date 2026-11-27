@@ -9,7 +9,7 @@ def _q(q, options, answer, why):
 
 ENRICH = {
  "hm-loop": {
-     "mistakes": ["Expecting hypnomix to change your original. It never does: Apply writes a new set, project or files next to yours.",
+     "mistakes": ["Expecting HypnoMix to change your original. It never does: Apply writes a new set, project or files next to yours.",
                   "Skipping the Preferences tab. Every proposal starts from it, so answer it once and honestly."],
      "try": dict(do="Open the Preferences tab and answer it. Say out loud, in order, the five words of the loop.",
                  success="You can say: preferences, scan, review, apply, listen, and you know the scan changes nothing."),
@@ -18,7 +18,7 @@ ENRICH = {
      "more": ["step:hm-scan", "step:hm-apply"]},
  "hm-connect-live": {
      "mistakes": ["Forgetting to restart Live after the AbletonOSC script is copied.",
-                  "Closing the hypnomix app while the devices are open: the devices talk to it, so keep it open while you work."],
+                  "Closing the HypnoMix app while the devices are open: the devices talk to it, so keep it open while you work."],
      "try": dict(do="Open Live's settings window, go to the Link, Tempo and MIDI tab and look at the Control Surface list.",
                  success="AbletonOSC is chosen as a control surface, and you know the Max for Live devices need Max for Live."),
      "quiz": [_q("Which of the two links is needed to scan a saved set?", ["Neither: both are optional", "AbletonOSC", "The Max for Live devices"], 0,
@@ -27,17 +27,17 @@ ENRICH = {
  "hm-connect-reaper": {
      "mistakes": ["Thinking the bridge installs something in REAPER. It is a script that runs inside the open REAPER; nothing is installed and no setting changes.",
                   "Forgetting to install the JSFX. `hypnomix reaper probes install` copies them into REAPER's Effects/hypnomix."],
-     "try": dict(do="Start the bridge with `hypnomix reaper start` (or Setup → REAPER). Then make a small change through hypnomix and look at REAPER's Undo menu.",
+     "try": dict(do="Start the bridge with `hypnomix reaper start` (or Setup → REAPER). Then make a small change through HypnoMix and look at REAPER's Undo menu.",
                  success="The change shows as a single undo step named \"hypnomix: …\"."),
      "quiz": [_q("How does an action made by the bridge appear in REAPER's undo history?", ["It can't be undone", "As one undo step named \"hypnomix: …\"", "As many small steps"], 1,
                  "Every change the bridge makes is one undo step named \"hypnomix: …\".")],
      "more": ["step:hm-devices-reaper"]},
  "hm-connect-ardour": {
-     "mistakes": ["Expecting hypnomix to change everything in an Ardour session, or to drive the open Ardour. It writes a new snapshot for fades, region gain, dips and fader, pan and mute moves only. Names, order, stacks, timing and sidechain come back as a list for you to make by hand.",
+     "mistakes": ["Expecting HypnoMix to change everything in a HypnoMix DAW session, or, in these lessons, to click in the open DAW for you. It writes a new snapshot for fades, region gain, dips and fader, pan and mute moves only. Names, order, stacks, timing and sidechain come back as a list for you to make by hand.",
                   "Forgetting to save the session before you scan it."],
      "try": dict(do="Save your session, choose the session folder on the Songs tab and press Start the first pass.",
                  success="You get a review, your session is unchanged, and any audio fixes arrive as repaired files to import."),
-     "quiz": [_q("How do fixes come back for Ardour?", ["Everything is written into your own session file", "Fades, gain, dips and fader, pan and mute moves go into a new snapshot; the rest is a list to do by hand, and audio fixes are repaired files", "They don't"], 1,
+     "quiz": [_q("How do fixes come back for HypnoMix DAW?", ["Everything is written into your own session file", "Fades, gain, dips and fader, pan and mute moves go into a new snapshot; the rest is a list to do by hand, and audio fixes are repaired files", "They don't"], 1,
                  "Apply writes a new snapshot beside your session for fades, region gain, dips and fader, pan and mute moves. Track names and order, stacks, timing and sidechain stay a list for you, and audio fixes (tuning, de-hiss, de-ess) are repaired files to bring in. Your own session file is never changed.")],
      "more": ["step:hm-scan"]},
  "hm-devices-live": {
@@ -114,11 +114,11 @@ ENRICH = {
                  "The review is the last check, so fix every FAIL before you deliver the file.")],
      "more": ["mastering"]},
  "hm-ai": {
-     "mistakes": ["Thinking you need an AI to use hypnomix. Everything works with none.",
+     "mistakes": ["Thinking you need an AI to use HypnoMix. Everything works with none.",
                   "Letting an assistant write without checking. It asks before anything writes: read what it asks."],
      "try": dict(do="Open the Assistant tab and ask it to explain one finding in a review, without applying anything.",
                  success="You get an explanation and nothing in your song or set changed."),
-     "quiz": [_q("Is an AI required to use hypnomix?", ["No: everything works without one", "Yes, for the review", "Yes, for Apply"], 0,
+     "quiz": [_q("Is an AI required to use HypnoMix?", ["No: everything works without one", "Yes, for the review", "Yes, for Apply"], 0,
                  "The step says everything works with no AI. An AI assistant is optional and asks before anything writes.")],
      "more": ["step:hm-loop"]},
 }

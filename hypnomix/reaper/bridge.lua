@@ -362,7 +362,7 @@ end
 
 function C.close_tab()
   local proj = reaper.EnumProjects(-1, "")
-  if not opened_tabs()[tostring(proj)] then return nil, "the open tab was not made by hypnomix: not closing it" end
+  if not opened_tabs()[tostring(proj)] then return nil, "the open tab was not made by HypnoMix: not closing it" end
   -- closing a changed tab asks "save?" (a dialog the bridge would wait on): save a throwaway copy, reload it into
   -- this tab without a prompt (now unchanged), then close
   local scratch = DIR .. "/scratch.rpp"
@@ -570,7 +570,7 @@ function C.panel_open(a)                -- mode=align: the Hypnomix Align panel 
   local mode = (a and a.mode) or "review"
   if panel.open and panel.mode ~= mode then gfx.quit(); panel.open = false end
   if not panel.open then
-    if mode == "align" then gfx.init("Hypnomix Align", AW, AH) else gfx.init("Hypnomix", PW, PH) end
+    if mode == "align" then gfx.init("HypnoMix Align", AW, AH) else gfx.init("HypnoMix", PW, PH) end
     panel.open, panel.mode, panel.st, panel.events = true, mode, {}, {}
   end
   return { open = true, mode = panel.mode }

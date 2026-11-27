@@ -1,0 +1,83 @@
+/* HypnoMix DAW · the guided tours (js/tour.js): the spotlight, the pointer card, the first offer, the list of tours.
+   Same tokens as app.css, so both themes work. Nothing here is inline in a page. */
+
+/* hidden from the eye, read by a screen reader (the polite live region) */
+.tour-sr { position: fixed; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* the soft spotlight: everything else is dimmed by a huge shadow, and nothing here catches a click, so the lit control
+   (and the rest of the page) is fully usable */
+.tour-spot { position: fixed; z-index: 70; pointer-events: none; border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--acc), 0 0 0 100vmax rgba(8, 6, 4, .48); transition: left .22s var(--ease), top .22s var(--ease), width .22s var(--ease), height .22s var(--ease); }
+[data-theme="light"] .tour-spot { box-shadow: 0 0 0 2px var(--acc), 0 0 0 100vmax rgba(40, 30, 20, .34); }
+.tour-spot.flat { box-shadow: inset 0 0 0 2px var(--acc); }          /* a target that is most of the window: an outline, no dimming */
+.tour-spot[hidden] { display: none; }
+
+/* the pointer card */
+.tour-card { position: fixed; z-index: 80; width: min(340px, calc(100vw - 20px)); max-height: calc(100vh - 20px); overflow: auto;
+  background: var(--bg2); color: var(--tx1); border: 1px solid var(--line2); border-radius: var(--r3); box-shadow: var(--shadow);
+  padding: var(--s5) var(--s6) var(--s5); display: flex; flex-direction: column; gap: var(--s4); user-select: text; font-size: var(--fs-m); line-height: 1.5; outline: none; }
+.tour-card[hidden] { display: none; }
+.tour-card.dock { left: 8px; right: 8px; bottom: 8px; top: auto; width: auto; max-height: 52vh; }
+.tour-card.dock.top { top: 8px; bottom: auto; }                /* the target is low on a narrow screen: the card goes to the top, so it does not cover it */
+.tour-top { display: flex; align-items: center; gap: var(--s4); font-size: var(--fs-xs); color: var(--tx2); }
+.tour-name { font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--acc); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tour-count { margin-left: auto; font-family: var(--mono); white-space: nowrap; }
+.tour-x { border: 0; background: transparent; color: var(--tx2); font-size: 18px; line-height: 1; padding: 0 var(--s2); cursor: pointer; border-radius: var(--r2); }
+.tour-x:hover { color: var(--tx0); background: var(--bg3); }
+.tour-title { margin: 0; font-family: var(--serif); font-weight: 500; font-size: var(--fs-xl); line-height: 1.2; color: var(--tx0); }
+.tour-say p { margin: 0 0 var(--s3); color: var(--tx1); }
+.tour-say p:last-child { margin-bottom: 0; }
+.tour-say b, .tour-doing b { color: var(--tx0); font-weight: 600; }
+.tour-doing { margin: 0; padding: var(--s3) var(--s4); border-radius: var(--r2); background: var(--acc-2); color: var(--tx0); }
+.tour-card[data-status="done"] .tour-doing { background: color-mix(in srgb, var(--ok) 16%, transparent); }
+.tour-note { margin: 0; color: var(--tx2); font-size: var(--fs-s); }
+.tour-note.warn { color: var(--warn); }
+.tour-note[hidden], .tour-doing[hidden] { display: none; }
+.tour-btns { display: flex; flex-wrap: wrap; gap: var(--s3); align-items: center; }
+.tour-btns .btn { height: 26px; padding: 0 var(--s5); }
+.tour-btns .tour-next { margin-left: auto; }
+.tour-btns .tour-next.later { background: var(--bg3); border-color: var(--line2); color: var(--tx1); }
+.tour-btns .tour-skip { padding: 0 var(--s3); }
+.tour-card button:focus-visible, .tour-offer button:focus-visible, .tour-list button:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+
+/* the first offer: small, at the bottom left, never takes focus */
+.tour-offer { position: fixed; z-index: 45; left: 16px; bottom: 34px; width: min(300px, calc(100vw - 32px)); background: var(--bg2); color: var(--tx1);
+  border: 1px solid var(--line2); border-radius: var(--r3); box-shadow: var(--shadow); padding: var(--s5) var(--s6); display: flex; flex-direction: column; gap: var(--s3); font-size: var(--fs-m); line-height: 1.5; }
+.tour-offer b { font-family: var(--serif); font-weight: 500; font-size: var(--fs-l); color: var(--tx0); }
+.tour-offer p { margin: 0; color: var(--tx2); }
+.tour-offer .row { display: flex; gap: var(--s3); flex-wrap: wrap; }
+
+/* the list of tours (a dialog; the page's own keys are off while it is open) */
+.tour-ov { z-index: 90; }
+.hx-confirm .confirm.tour-list { width: min(560px, 94vw); max-height: 86vh; overflow: auto; gap: var(--s4); }
+.tour-intro { margin: 0; color: var(--tx2); }
+.tour-row { display: flex; gap: var(--s5); align-items: center; justify-content: space-between; padding: var(--s3) 0; border-top: 1px solid var(--line); }
+.tour-info { min-width: 0; display: flex; flex-direction: column; gap: var(--s1); }
+.tour-info b { color: var(--tx0); font-weight: 600; font-size: var(--fs-l); }
+.tour-info p { margin: 0; color: var(--tx2); }
+.tour-state { font-size: var(--fs-xs); font-family: var(--mono); color: var(--tx3); }
+.tour-row.done .tour-state { color: var(--ok); }
+.tour-acts { display: flex; gap: var(--s3); flex: none; flex-wrap: wrap; justify-content: flex-end; }
+.tour-helpline { margin: var(--s5) 0 0; }
+.tour-btn { margin-right: var(--s2); }
+
+@media (max-width: 700px) {
+  .tour-offer { left: 8px; right: 8px; bottom: 8px; width: auto; }
+  .tour-row { flex-direction: column; align-items: stretch; }
+  .tour-acts { justify-content: flex-start; }
+  .tour-title { font-size: var(--fs-l); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot { transition: none; }
+}
+
+/* a window narrower than the whole top bar: the less used readouts give way (the DSP meter, the clock, the time signature), the
+   name block may shrink a little, and what still does not fit scrolls sideways (the tour scrolls a button it points at into view),
+   so Save, Engine and Tour can still be reached. The ? key opens the shortcuts list, which has a "Take a tour" button too. */
+@media (max-width: 1320px) {
+  .topbar { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+  .topbar::-webkit-scrollbar { display: none; }
+  .topbar > *:not(.brand) { flex-shrink: 0; }
+  .topbar .brand { min-width: 150px; }
+  .topbar .cpu, .topbar .field.pos:last-child, .topbar .field[data-info="Time signature"] { display: none; }
+}

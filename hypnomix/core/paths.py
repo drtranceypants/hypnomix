@@ -1,4 +1,4 @@
-"""Where hypnomix writes things. Override with HYPNOMIX_OUT / HYPNOMIX_HOME."""
+"""Where HypnoMix writes things. Override with HYPNOMIX_OUT / HYPNOMIX_HOME."""
 import os
 import sys
 from pathlib import Path
@@ -89,7 +89,7 @@ def private_dir(d):
 
 
 def write_private(path, text, mode=0o600, encoding="utf-8"):
-    """Write a small file of hypnomix's own (state, settings, helper scripts) readable by you alone (default 0600), in
+    """Write a small file of HypnoMix's own (state, settings, helper scripts) readable by you alone (default 0600), in
     a folder made private by private_dir(). An existing file with a looser mode is tightened too."""
     p = Path(path).expanduser()
     private_dir(p.parent)
@@ -106,7 +106,7 @@ def write_private(path, text, mode=0o600, encoding="utf-8"):
 
 
 def tighten_home():
-    """At app start: the hypnomix home folder (~/.hypnomix) is made 0700 if it exists and is yours. Not done when
+    """At app start: the HypnoMix home folder (~/.hypnomix) is made 0700 if it exists and is yours. Not done when
     HYPNOMIX_HOME points at your own home folder or above it, so a mistaken setting never locks you out of something."""
     try:
         if HOME.is_dir() and HOME != Path.home() and HOME not in Path.home().parents:

@@ -16,7 +16,7 @@ What it checks (errors make the exit code 1; warnings don't):
 
 It cannot prove Live will open the set: only Live can. It catches the ways a script usually breaks one.
 `hypnomix fix` runs it on every set it writes.
-It reads Live sets (.als) only. Given a REAPER project or an Ardour session it says so in one sentence: `fix` reads
+It reads Live sets (.als) only. Given a REAPER project or a HypnoMix DAW session it says so in one sentence: `fix` reads
 those back itself after writing them and lists any problem in fix-log.md.
 """
 import argparse, gzip, json, math, sys

@@ -261,5 +261,5 @@ def commands_article():
     from hypnomix.app.wiki import SITE
     return {"id": "commands", "group": "Reference", "title": "Command reference",
             "sub": f"all {n} commands, by group, in one line each", "no": "",
-            "teaser": f"All {n} hypnomix commands, by group, in one line each.", "html": body, "text": plain,
+            "teaser": f"All {n} HypnoMix commands, by group, in one line each.", "html": body, "text": plain,
             "url": f"{SITE}/wiki/#commands", "file": "", "generated": True}

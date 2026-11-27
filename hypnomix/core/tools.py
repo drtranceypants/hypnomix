@@ -1,4 +1,4 @@
-"""Programs hypnomix calls that are not Python packages, and the one plain sentence for when one is missing.
+"""Programs HypnoMix calls that are not Python packages, and the one plain sentence for when one is missing.
 
     rubberband_path()       the `rubberband` program on this computer, or None
     need_rubberband()       its path; raises MissingToolError (cli.main() prints the sentence, exit code 2) when it is missing
@@ -8,7 +8,7 @@ import shutil
 
 
 class MissingToolError(RuntimeError):
-    """A program hypnomix needs is not installed: the message says how to get it on this computer."""
+    """A program HypnoMix needs is not installed: the message says how to get it on this computer."""
 
 
 def rubberband_how():

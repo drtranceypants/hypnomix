@@ -20,7 +20,7 @@ skipped and reported. The new file is read back and checked (see ardour_edit.che
 positions and lengths; ids unique; fade and envelope times well-formed; regions inside their files; and nothing
 outside the approved edits differs. A failing file is renamed "(BROKEN, do not open)".
 
-Written and re-read by hypnomix; not yet opened in Ardour.
+Written and re-read by HypnoMix; not yet opened in Ardour.
 """
 from hypnomix import project as PJ
 from hypnomix.project import ardour_edit as E
@@ -33,7 +33,7 @@ def apply_edits(p, items, dec, log, failed, skipped):
     for f in sorted(items, key=lambda f: (rank.get((f.get("edit") or {}).get("op"), 9), f["id"])):
         ed = f.get("edit")
         if not ed or ed.get("op") not in rank:
-            skipped.append((f, "an Ardour session is written for fades, cuts, spikes and mixer moves only: do this one by hand"))
+            skipped.append((f, "a HypnoMix DAW session is written for fades, cuts, spikes and mixer moves only: do this one by hand"))
             continue
         kv = _kv(dec, f)
         try:

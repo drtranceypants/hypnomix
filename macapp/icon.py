@@ -3,7 +3,7 @@ import subprocess, sys, tempfile
 from pathlib import Path
 
 import numpy as np
-import soundfile  # noqa: F401  (proves the hypnomix environment is the one running this)
+import soundfile  # noqa: F401  (proves the HypnoMix environment is the one running this)
 
 try:
     from PIL import Image, ImageDraw

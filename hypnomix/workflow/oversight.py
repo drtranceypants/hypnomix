@@ -580,7 +580,7 @@ def merge(sd, path):
     ids = {f["id"] for f in data["findings"]}
     doc = json.loads(Path(path).expanduser().read_text(encoding="utf-8", errors="replace"))
     if doc.get("format") != "hypnomix-review":
-        raise ValueError("not a hypnomix review export (review DIR --export FILE makes one)")
+        raise ValueError("not a HypnoMix review export (review DIR --export FILE makes one)")
     their_fp = {k: tuple(v) for k, v in (doc.get("findings") or {}).items()}
     dec = load_decisions(sd)
     res = dict(adopted=[], same=[], conflicts=[], notes=0, unknown=[])

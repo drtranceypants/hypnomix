@@ -679,7 +679,7 @@
   /* ── 7. the browser's plug-in lists from the engine ── */
   let mockItems = null, mockCounts = null;
   const MOCK_ONLY = ['sounds', 'drums', 'mfx', 'clips', 'samples', 'proj', 'user'];
-  const isHx = (p) => /^hypnomix\b/i.test(p.name) || /hypnomix/i.test(p.creator || '');
+  const isHx = (p) => /^HypnoMix\b/i.test(p.name) || /hypnomix/i.test(p.creator || '');
   async function loadPlugins() {
     try {
       const r = await quiet('plugin_list_available', {});

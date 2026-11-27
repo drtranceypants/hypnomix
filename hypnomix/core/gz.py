@@ -24,7 +24,7 @@ def _size_text(n):
 
 def read_gz(path, cap=CAP):
     """The unpacked bytes of a gzip file, read in chunks. Raises ValueError ("this file unpacks to more than N: it is
-    not a project hypnomix will open") past `cap` bytes; a file that is not gzip raises what gzip raises (OSError).
+    not a project HypnoMix will open") past `cap` bytes; a file that is not gzip raises what gzip raises (OSError).
 
     Memory: up to SOFT (128 MB) the chunks are kept as they come. Past that the chunks are dropped and the rest is only
     counted, so a file that unpacks past the cap is refused with a small footprint; a big but allowed file is read
@@ -49,6 +49,6 @@ def read_gz(path, cap=CAP):
             if total > cap:
                 break
     if total > cap:
-        raise ValueError(f"this file unpacks to more than {_size_text(cap)}: it is not a project hypnomix will open")
+        raise ValueError(f"this file unpacks to more than {_size_text(cap)}: it is not a project HypnoMix will open")
     with gzip.open(path, "rb") as fh:                       # allowed and large: read it again, keeping it
         return fh.read()

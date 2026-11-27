@@ -1,5 +1,5 @@
-"""`chain --ardour`: which ACE / Hypnomix plug-ins, in which order, set to what. A fake Hypnomix MCP server (real
-HTTP, JSON-RPC tools/call, the tool names and replies of Hypnomix's mcp_http surface) records every call."""
+"""`chain --ardour`: which ACE / HypnoMix plug-ins, in which order, set to what. A fake HypnoMix MCP server (real
+HTTP, JSON-RPC tools/call, the tool names and replies of HypnoMix's mcp_http surface) records every call."""
 import json
 import threading
 import unittest
@@ -242,7 +242,7 @@ class ChainArdour(unittest.TestCase):
             m.ping()
 
     def test_master_is_the_bus_named_master(self):
-        """Hypnomix's real tracks_list reports the master as type "bus" (route_type_string has no "master")."""
+        """HypnoMix's real tracks_list reports the master as type "bus" (route_type_string has no "master")."""
         class Stub:
             def __init__(self, tracks):
                 self.tracks = tracks

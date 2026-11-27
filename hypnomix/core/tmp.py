@@ -9,7 +9,7 @@ removed it: a 60-track, five-minute set left about 3 GB behind on every run. Now
 
   * The name starts with "hypnomix-" (hypnomix-render-k3j2h1g0), so a person can find it, and Disk care can tell it
     from someone else's folder. A folder inside it called .hypnomix-tmp says who made it and when.
-  * A big one (the default) is made under the hypnomix home, in cache/tmp, because the system temp folder is often
+  * A big one (the default) is made under the HypnoMix home, in cache/tmp, because the system temp folder is often
     on the small start-up disk. A small one (`big=False`) goes in the system temp folder.
   * It is removed when the block ends: normally, on an error, on Ctrl-C and on "kill" (SIGTERM). If the computer
     loses power or the process is killed outright, the folder stays: Disk care removes the ones older than a day.
@@ -41,7 +41,7 @@ OLD_TIDY = re.compile(r"^tidy-%s$" % SUFFIX)                  # older tidy
 
 
 def base_dir():
-    """Where big temporary folders go: <hypnomix home>/cache/tmp (HYPNOMIX_HOME read now, like the other caches)."""
+    """Where big temporary folders go: <HypnoMix home>/cache/tmp (HYPNOMIX_HOME read now, like the other caches)."""
     from hypnomix.core.atomic import cache_root
     return cache_root() / "tmp"
 
@@ -70,7 +70,7 @@ def announce(nbytes, where, what="temporary audio", out=None):
     if not nbytes or nbytes <= BIG_BYTES:
         return None
     free = _free(where)
-    line = (f"hypnomix: about {gb(nbytes)} of {what} will be written to {where} and removed when this command ends"
+    line = (f"HypnoMix: about {gb(nbytes)} of {what} will be written to {where} and removed when this command ends"
             + (f" ({gb(free)} free there)" if free is not None else "") + ".")
     print(line, file=out or sys.stderr, flush=True)
     return line
@@ -90,7 +90,7 @@ def render_bytes(root, n_tracks, sr=44100):
 
 def make(kind="work", big=False, parent=None):
     """A new empty folder named hypnomix-<kind>-XXXXXXXX with the marker inside. The caller removes it (see `remove`);
-    most callers want `workdir`. A big one that cannot be made under the hypnomix home goes in the system temp folder."""
+    most callers want `workdir`. A big one that cannot be made under the HypnoMix home goes in the system temp folder."""
     assert kind in KINDS, kind
     where = Path(parent) if parent else None
     if where is None and big:
@@ -106,7 +106,7 @@ def make(kind="work", big=False, parent=None):
     except OSError:
         p = Path(tempfile.mkdtemp(prefix=f"{PREFIX}{kind}-"))
     try:
-        (p / MARKER).write_text(f"made by hypnomix (pid {os.getpid()}) at {time.strftime('%Y-%m-%d %H:%M:%S')}\n",
+        (p / MARKER).write_text(f"made by HypnoMix (pid {os.getpid()}) at {time.strftime('%Y-%m-%d %H:%M:%S')}\n",
                                 encoding="utf-8")
     except OSError:
         pass
@@ -226,7 +226,7 @@ def looks_like_old_render(p):
     """True for a folder in the system temp folder that has the name and the content of what older versions of
     devices, duck, cliplevel and tidy left: a random "tmpXXXXXXXX" (or "tidy-XXXXXXXX") holding only .wav files, plus at
     most a names.json; or, from duck and cliplevel run without --names, a folder holding nothing but a small
-    names.json. NOT proof that hypnomix made it (another program can leave the same), so it is only ever offered
+    names.json. NOT proof that HypnoMix made it (another program can leave the same), so it is only ever offered
     to the person, never removed on its own."""
     p = Path(p)
     if not (OLD_RENDER.match(p.name) or OLD_TIDY.match(p.name)):

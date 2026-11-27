@@ -30,7 +30,7 @@ STEPS = [
            "reaper": ["Click the track's **FX** button and add, in this order: **ReaEQ**, **ReaComp**, **ReaXcomp** (as the de-esser), then a second **ReaEQ**.",
                       "Make a track for the reverb (**ReaVerbate**) and one for the delay (**ReaDelay**), each with a **ReaEQ** after it, and send the vocal to both.",
                       "Clip gain is the item volume (right-click the item → Item properties, or its volume handle); drawn moves are Volume envelopes."],
-           "ardour": ["Add an **ACE EQ**, an **ACE Compressor** and a second **ACE EQ** to the vocal strip's plug-in box. For the de-esser, use whatever de-esser or multiband compressor your Ardour has, or de-ess by hand on the clip.",
+           "ardour": ["Add an **ACE EQ**, an **ACE Compressor** and a second **ACE EQ** to the vocal strip's plug-in box. For the de-esser, use whatever de-esser or multiband compressor your HypnoMix DAW has, or de-ess by hand on the clip.",
                       "Make buses for the reverb (**ACE Reverb**) and the delay (**ACE Delay**), and add aux sends from the vocal to each.",
                       "Level moves are fader automation (set the track's automation mode to Write or Touch and move the fader)."]},
       listen="After each step, switch the new effect off and on at the same loudness. Ask one question: does the voice sound clearer and "
@@ -59,7 +59,7 @@ STEPS = [
            "No part should be louder than the part below it unless you chose that on purpose, because the ear follows the highest, "
            "loudest line and will start to hear it as the tune.",
            "Keep it human. Gentle timing and tuning work on the stack is fine, but leave a little looseness: tuned and aligned "
-           "to perfection, a stack turns thin and robotic. hypnomix proposes, you decide, and every tool writes a new file."],
+           "to perfection, a stack turns thin and robotic. HypnoMix proposes, you decide, and every tool writes a new file."],
       terms=[["Double", "the lead line sung a second time, panned out to the side to thicken it."],
              ["Harmony", "a part sung at another pitch, usually a third, a fifth or an octave away, to support the lead."],
              ["Stack", "all the vocal parts of a song together: the lead, doubles and harmonies."],

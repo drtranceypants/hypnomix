@@ -243,7 +243,7 @@ STEPS = [
            "fixes cost the sound the least.",
            "Two classic pairs are kick and bass, which share the lows, and vocal and guitar, which share the midrange. "
            "Decide which one leads and let the other give way. Carve a small cut in the part that gives way, at the frequency the leader needs.",
-           "hypnomix can help find the fights. `hypnomix masking` reads a folder of stems and reports which stems fight over which "
+           "HypnoMix can help find the fights. `hypnomix masking` reads a folder of stems and reports which stems fight over which "
            "frequencies, how often they collide while both play, which one should give way, and a cut you can make in EQ Eight. "
            "It only proposes. You listen and you decide."],
       terms=[["Masking", "when one sound hides another because they share the same frequencies."],
@@ -270,7 +270,7 @@ STEPS = [
             dict(q="What does carving mean?", options=["Cutting one part where another part needs room", "Cutting the whole song's low end", "Boosting both parts"], answer=0,
                  why="Carving makes a small gap in one part, at the frequency the other needs, so both can be heard."),
             dict(q="What does `hypnomix masking` do with its findings?", options=["Applies the cuts automatically", "Reports where stems fight and a cut to try; you decide", "Mutes the quieter stem"], answer=1,
-                 why="hypnomix proposes and you decide. It reports the clash and a concrete cut to make in EQ Eight.")],
+                 why="HypnoMix proposes and you decide. It reports the clash and a concrete cut to make in EQ Eight.")],
       hear=["kick-bass"],
       more=["step:mix-lowcuts", "step:mix-cut-first", "hypnomix masking"]),
 ]

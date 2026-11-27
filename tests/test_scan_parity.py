@@ -1,4 +1,4 @@
-"""REAPER and Ardour scans (and a few readers) brought level with the Live and folder scans: a re-scan keeps each
+"""REAPER and HypnoMix DAW scans (and a few readers) brought level with the Live and folder scans: a re-scan keeps each
 decision on ITS finding, two different projects never share a scan folder, a check that did not run says so in one
 plain sentence, the review stays short, the tuning / timing preferences are honoured; decisions are read with the
 backup fallback; plans are written whole or not at all; the voices / taste caches follow HYPNOMIX_HOME; the REAPER

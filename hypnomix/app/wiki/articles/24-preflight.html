@@ -2,15 +2,15 @@
 title: Check the files before you start
 sub: preflight · are the files fit to work on? · report first, nothing is changed
 group: How-to
-teaser: Point it at a folder of stems or at a Live set, REAPER project or Ardour session. Before any work begins it tells you what is wrong with the files: mixed sample rates, stems that do not line up, fake stereo, silent or clipped files, missing files, names other systems refuse.
+teaser: Point it at a folder of stems or at a Live set, REAPER project or HypnoMix DAW session. Before any work begins it tells you what is wrong with the files: mixed sample rates, stems that do not line up, fake stereo, silent or clipped files, missing files, names other systems refuse.
 -->
 <div class="prose paper">
       <p>Half of "my mix sounds wrong" is a file problem: one stem at 48 kHz in a 44.1 kHz session, a stem exported a second late, a vocal that is really an mp3, a file the project cannot find. <code>preflight</code> checks all of that first. It only reads.</p>
     </div>
     <div class="term" data-label="preflight"><pre><span class="p">$</span> hypnomix preflight "Song stems/"
-<span class="p">$</span> hypnomix preflight "Song.rpp"                <span class="c"># or Song.als, Song.ardour, an Ardour session folder</span>
+<span class="p">$</span> hypnomix preflight "Song.rpp"                <span class="c"># or Song.als, Song.ardour, a HypnoMix DAW session folder</span>
 <span class="p">$</span> hypnomix preflight "Song stems/" --plan   <span class="c"># the same findings, in a scan folder for the normal review</span></pre></div>
-    <p class="lead">For a folder it reads every audio file in it (<code>--recursive</code> for the folders inside). For a set or project it reads every source file the project plays, through the shared project model, so Live, REAPER and Ardour work the same way.</p>
+    <p class="lead">For a folder it reads every audio file in it (<code>--recursive</code> for the folders inside). For a set or project it reads every source file the project plays, through the shared project model, so Live, REAPER and HypnoMix DAW work the same way.</p>
     <h3 class="sub-h">What it looks for</h3>
     <ul>
       <li><b>Sample rate and bit depth</b> that differ from the rest, and which files are the odd ones out (with no clear majority it says so).</li>

@@ -6,7 +6,7 @@ subtitle: Doubles and harmonies that land together, sit with the guide, and fill
 # Tight stacks, human feel
 
 Tight stacks are what make a vocal production sound expensive, but a stack snapped onto one lead sounds like
-a machine. hypnomix aligns gently by default: only words clearly out of time move, and the original audio
+a machine. HypnoMix aligns gently by default: only words clearly out of time move, and the original audio
 stays sample for sample wherever nothing needs to change.
 
 <!--toc-->
@@ -19,7 +19,7 @@ stays sample for sample wherever nothing needs to change.
 | a saved Live set | `hypnomix alignset` | a new set where the timing is **warp markers on your own clips** |
 | Live open, and you'd rather click | the **Hypnomix Align** device | the same as alignset, from inside Live |
 | a saved REAPER project | `hypnomix alignset Song.rpp` | a new project where the timing is **stretch markers on your own items** |
-| REAPER open, and you'd rather click | the **Hypnomix Align** panel (`hypnomix reaper align`) | the same, from inside REAPER (see the REAPER guide) |
+| REAPER open, and you'd rather click | the **HypnoMix Align** panel (`hypnomix reaper align`) | the same, from inside REAPER (see the REAPER guide) |
 
 All of them use one engine, and every result is checked by a second, independent measurement. A part that
 would not end up closer to the others is left exactly as it was.
@@ -221,7 +221,7 @@ passes through it untouched.
 > is tested on real sets, but it has not been loaded in Live yet. If something misbehaves, right-click the
 > device's title → Open Max Window to see which line.
 
-## Inside REAPER: alignset on a .rpp and the Hypnomix Align panel
+## Inside REAPER: alignset on a .rpp and the HypnoMix Align panel
 
 ```bash
 hypnomix alignset "Song.rpp" --guide "Lead Vox" --parts "Harmony 1" "Harmony 2" --bars 11-21 --apply

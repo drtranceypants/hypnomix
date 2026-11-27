@@ -22,7 +22,8 @@ const live = document.getElementById('live'); live.parentNode.insertBefore(btn, 
 const ban = document.createElement('div'); ban.id = 'dcban';
 document.querySelector('header').after(ban);
 
-const RULE = { cache: 'Render cache', temp: "hypnomix's own temporary folders (hypnomix-render-…) left by a stopped command", scans: 'Audio in old scans (A/B clips, renders)', out: 'Audio in hypnomix-out',
+const RULE = { cache: 'Render cache', temp: "HypnoMix's own temporary folders (hypnomix-render-…) left by a stopped command", scans: 'Audio in old scans (A/B clips, renders)', out: 'Audio in hypnomix-out',
+  crashes: 'Crash records beyond the newest 20',
   bounces: 'Old master bounces', store: 'Store leftovers (old downloads, kept installers, replaced plug-ins)', wavs: 'Old WAVs on Desktop / Downloads (moved to holding)', holding: 'Holding area, past 14 days' };
 const gb = n => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : (n / 1e6).toFixed(0) + ' MB';
 let D = null, P = null, later = false;
@@ -41,7 +42,7 @@ function draw() {
   if (show) {
     const L = D.last;
     ban.innerHTML = `<b>The disk is nearly full: ${gb(D.free)} free.</b>
-      <span class="small">${L && Date.now() / 1000 - L.when < 3600 ? `hypnomix just freed ${gb(L.freed)}.` : 'hypnomix can clear its old renders and caches.'}</span>
+      <span class="small">${L && Date.now() / 1000 - L.when < 3600 ? `HypnoMix just freed ${gb(L.freed)}.` : 'HypnoMix can clear its old renders and caches.'}</span>
       <button class="go" data-dc="pop">See what can go</button><button class="alt" data-dc="later" style="background:transparent;border:1px solid var(--line);color:var(--mute)">Later</button>`;
   }
 }
@@ -58,7 +59,7 @@ function leftHtml() {
   const L = D && D.leftovers;
   if (!L || !L.count) return '';
   return `<div id="dcold" style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px"><b>Older versions left ${L.count} temporary folder${L.count === 1 ? '' : 's'}</b>: ${gb(L.bytes)}.
-    <div class="small">They hold only WAV files (or a small track-name list) and are a day or more old, so they look like renders hypnomix made (devices, duck, cliplevel, tidy), but nothing proves it, so they are never removed on their own.</div>
+    <div class="small">They hold only WAV files (or a small track-name list) and are a day or more old, so they look like renders HypnoMix made (devices, duck, cliplevel, tidy), but nothing proves it, so they are never removed on their own.</div>
     <ul>${L.items.slice(0, 5).map(d => `<li><code>${esc(d.path)}</code> ${gb(d.bytes)}<div class="small">${d.wavs ? `${d.wavs} WAV file${d.wavs === 1 ? '' : 's'}: ${d.sample.map(esc).join(', ')}` : 'only a track-name list'}</div></li>`).join('')}</ul>
     ${L.count > 5 ? `<div class="small">…and ${L.count - 5} more.</div>` : ''}
     <div class="row"><button class="alt" id="dcoldgo">Clear ${L.count === 1 ? 'it' : 'them'} (${gb(L.bytes)})</button></div></div>`;
@@ -73,13 +74,14 @@ function popup() {
     <div class="small" style="margin-top:4px">${gb(D.free)} free of ${gb(D.total)}. ${L ? `Last clean ${esc(new Date(L.when * 1000).toLocaleString())}: freed ${gb(L.freed)}${L.held ? `, moved ${gb(L.held)} of WAVs to holding` : ''}.` : 'Not cleaned yet.'}</div>
     <label><input type="checkbox" id="dcauto" ${D.auto ? 'checked' : ''}> <span>Clean automatically: weekly, and straight away when the disk is nearly full</span></label>
     <label><input type="checkbox" id="dcwavs" ${D.wavs ? 'checked' : ''}> <span>Also old WAVs on the Desktop and in Downloads (30+ days, not used by a project, not named final or master). They're moved to a holding folder for 14 days first.</span></label>
-    <div class="small" style="margin-top:10px">Also look for hypnomix scans and hypnomix-out folders in (one folder per line):</div>
+    <div class="small" style="margin-top:10px">Also look for HypnoMix scans and hypnomix-out folders in (one folder per line):</div>
     <textarea id="dcwatch" placeholder="~/Music/Projects">${esc((D.watch || []).join('\n'))}</textarea>
     <div class="row"><button class="go" id="dcprev">Preview</button><button class="alt" id="dcrun">Clean now</button>
     ${D.holding && D.holding.batches ? `<button class="alt" id="dcback">Restore moved WAVs (${gb(D.holding.bytes)})</button>` : ''}<button class="alt" id="dcclose">Close</button></div>
     <div id="dcplan">${P ? planHtml(P.plan) : ''}</div>
     ${leftHtml()}
-    <div class="small" style="margin-top:8px">Never removed: audio a Live, REAPER or Ardour project uses, findings and reports, anything changed in the last hour. <a href="#" data-wiki="diskcare">How it works</a></div>`;
+    ${D.crashes && D.crashes.count ? `<div class="small" style="margin-top:10px">Crash records: ${D.crashes.count} file${D.crashes.count === 1 ? '' : 's'}, ${D.crashes.bytes >= 1e6 ? (D.crashes.bytes / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(D.crashes.bytes / 1e3)) + ' KB'} in <code>${esc(D.crashes.path)}</code>. The newest ${D.crashes.keeps} are kept; they are never sent anywhere. <a href="#" data-wiki="reporting">About reports</a></div>` : ''}
+    <div class="small" style="margin-top:8px">Never removed: audio a Live, REAPER or HypnoMix DAW project uses, findings and reports, anything changed in the last hour. <a href="#" data-wiki="diskcare">How it works</a></div>`;
   p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Disk care'); p.tabIndex = -1;
   document.body.appendChild(p);
   p.focus({preventScroll: true});                       // the keyboard goes into the popup; Escape or Close gives it back to the button
@@ -95,7 +97,7 @@ function popup() {
     p.querySelector('#dcplan').innerHTML = '<div class="small" style="margin-top:8px">Looking…</div>';
     P = await post('/api/diskcare/preview', {});
     p.querySelector('#dcplan').innerHTML = planHtml(P.plan) + (P.blocked && P.blocked.length
-      ? `<div class="small" style="margin-top:6px">Couldn't read: ${P.blocked.map(esc).join(', ')}. Allow hypnomix in System Settings → Privacy &amp; Security → Files and Folders.</div>` : '');
+      ? `<div class="small" style="margin-top:6px">Couldn't read: ${P.blocked.map(esc).join(', ')}. Allow HypnoMix in System Settings → Privacy &amp; Security → Files and Folders.</div>` : '');
   });
   p.querySelector('#dcrun').addEventListener('click', async () => {
     if (!confirm('Clear the old renders and caches now? Moved WAVs can be restored for 14 days; the rest is deleted.')) return;

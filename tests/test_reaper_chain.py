@@ -41,7 +41,7 @@ class Chain(unittest.TestCase):
         """On macOS a menu from a 0x0 window opened in the same pass closed by itself, so Build (with templates) could
         not be used from the button (measured in REAPER 7.86): a 1x1 window at the mouse, the menu from menu_poll."""
         self.assertNotIn('gfx.init("", 0, 0', CHAIN)
-        self.assertIn('gfx.init("Hypnomix", 1, 1, 0, x, y)', CHAIN)
+        self.assertIn('gfx.init("HypnoMix", 1, 1, 0, x, y)', CHAIN)
         self.assertIn("if menu then menu_poll() end", CHAIN)
         self.assertIn("if m.passes < 3 then return end", CHAIN)
 

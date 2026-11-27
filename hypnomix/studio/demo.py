@@ -5,7 +5,7 @@ Usage:
     hypnomix demo [--out DIR] [--kind folder|reaper] [--seed N]
 
 It writes a short song of about 40 seconds (96 BPM, A minor): drums, bass, keys, a sung-like lead and a harmony
-a third above it, all made from scratch (no recordings, nothing downloaded, nothing shipped with hypnomix; the
+a third above it, all made from scratch (no recordings, nothing downloaded, nothing shipped with HypnoMix; the
 same seed always gives the same audio). On purpose, six things are wrong with it, each in one place you can look up:
 
   1  a click          the keys are comped from two takes and the cut has no fade

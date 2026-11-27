@@ -700,11 +700,7 @@ class Page(unittest.TestCase):
 
     def test_new_session_path_is_split_without_cutting_the_name(self):
         from tests import _jscheck
-        eng = _jscheck.engine()
-        jsc = "/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc"
-        runner = [shutil.which("node")] if shutil.which("node") else [jsc] if os.path.exists(jsc) else None
-        if not runner:
-            self.skipTest("SKIPPED: neither node nor macOS's jsc is available, so the page script was not run")
+        runner = _jscheck.need_runner(self)
         app = self.js("app.js")
         fn = app[app.index("HX.splitNewPath = function"):app.index("/* the Mac app's File")]
         prog = "var HX = {};\n" + fn + """
@@ -755,6 +751,19 @@ class Parse(unittest.TestCase):
                 _jscheck.parse({})
         self.assertIn("Node.js", str(cm.exception))
         self.assertIn("osascript", str(cm.exception))
+
+    def test_a_script_runner_is_node_with_print_else_jsc_else_a_named_skip(self):
+        from tests import _jscheck
+        with mock.patch.object(_jscheck.shutil, "which", lambda n: "/x/node" if n == "node" else None):
+            self.assertEqual(_jscheck.runner(), ["/x/node", "--require", str(_jscheck.PRINT_SHIM)])
+        self.assertIn("globalThis.print", _jscheck.PRINT_SHIM.read_text(encoding="utf-8"))
+        with mock.patch.object(_jscheck.shutil, "which", lambda n: None), mock.patch.object(_jscheck.os.path, "exists", lambda p: False):
+            self.assertIsNone(_jscheck.runner())
+            with self.assertRaises(unittest.SkipTest) as cm:
+                _jscheck.need_runner(self)
+        self.assertIn("Node.js", str(cm.exception))
+        self.assertIn("JavaScriptCore", str(cm.exception))
+        self.assertIn("NOT run", str(cm.exception))
 
     def test_every_page_script_is_found(self):
         from tests import _jscheck

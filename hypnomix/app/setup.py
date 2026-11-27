@@ -1,14 +1,15 @@
 """Guided setup: what the app shows the first time it opens (and again from the Setup button).
 
-It asks which download you want (DOWNLOADS: the Hypnomix Assistant you have now, for Live, REAPER and Ardour, or the
-full Hypnomix with its own DAW built in, an Ardour fork: not out yet, a separate Mac download that will replace this app),
-how you want to work, which DAW you use (and whether you'd like teacher mode: hypnomix/app/teacher.py, a
-guided course: a tour of hypnomix in your DAW for people who already engineer, or a 101 crash course for people new to
-audio), and sets that up:
+It asks how you want to work, which DAW you use (Ableton Live, REAPER, HypnoMix DAW or something else; and
+whether you'd like teacher mode: hypnomix/app/teacher.py, a guided course: a tour of HypnoMix in your DAW for people who
+already engineer, or a 101 crash course for people new to audio), and sets that up. There is one app and one installer for
+everyone. HypnoMix DAW (HypnoMix's own DAW) is an add-on: choosing it shows what it is, and only the
+button "Add HypnoMix DAW" fetches it (hypnomix/app/engine_addon.py; the address and the SHA-256 come from the manifest
+shipped inside the app, never from a request). Until the first archive is published it says so and the choice is remembered:
   app       just the app: you click through scan → review → apply. No AI, no account, free
   key       the app's Assistant with an AI service's key (Google Gemini's free tier, Claude, OpenRouter, OpenAI…)
   local     the Assistant with an open-source model on this computer (Ollama or LM Studio): free and private
-  desktop   a desktop AI app runs hypnomix for you (Claude Code in the Claude app or a terminal, Codex, Cursor…)
+  desktop   a desktop AI app runs HypnoMix for you (Claude Code in the Claude app or a terminal, Codex, Cursor…)
 
 Then the connection to your DAW (Live: `hypnomix install`; REAPER: the bridge; only on a click), and for desktop AI apps a `hypnomix`
 command and a folder with the agent guide and the Claude Code skills; then the optional extras (hypnomix/extras.py),
@@ -24,7 +25,7 @@ from pathlib import Path
 
 from hypnomix.core import paths, prices
 
-STATE = paths.HOME / "setup.json"       # the same home as the rest of hypnomix: HYPNOMIX_HOME moves it (default ~/.hypnomix)
+STATE = paths.HOME / "setup.json"       # the same home as the rest of HypnoMix: HYPNOMIX_HOME moves it (default ~/.hypnomix)
 VERSION = 3                      # bump when the setup gains a step people who finished it should see
 
 # one typical song through the Assistant: what the cost estimates assume
@@ -90,11 +91,11 @@ def modes():
              pros=["Free and fully private, works offline", "No account, no key, no usage limits"],
              cons=["Needs a recent computer: 16 GB of memory for a good model (8 GB for a small one)", "Slower, and small models make more mistakes when running tools",
                    "A few GB download per model"]),
-        dict(id="desktop", title="A desktop AI app drives hypnomix", tag="most capable · subscription",
+        dict(id="desktop", title="A desktop AI app drives HypnoMix", tag="most capable · subscription",
              cost="Claude Pro $20 / month (includes Claude Code); Max $100 or $200 / month for heavy use. Other agents: their own plans",
-             what="Claude Code (in the Claude desktop app's Code tab, or in a terminal) or another agent like Codex or Cursor runs hypnomix commands, reads the reports and works through a whole song with you. This sets up a `hypnomix` command and a folder with the instructions the agent reads.",
+             what="Claude Code (in the Claude desktop app's Code tab, or in a terminal) or another agent like Codex or Cursor runs HypnoMix commands, reads the reports and works through a whole song with you. This sets up a `hypnomix` command and a folder with the instructions the agent reads.",
              pros=["The strongest option for long, many-step work: whole songs, batches, your own requests", "A flat monthly price instead of paying per use",
-                   "Comes with the hypnomix skills for Claude Code (the first-pass workflow) and works with every optional extra"],
+                   "Comes with the HypnoMix skills for Claude Code (the first-pass workflow) and works with every optional extra"],
              cons=["A monthly subscription, with usage limits", "Happens in a chat with the agent, beside the app rather than inside it",
                    "Each change still waits for your OK, so expect to read and approve as it goes"]),
     ]
@@ -175,45 +176,26 @@ def live_status():
     return dict(installed=ok, where=str(dest), ableton=lib.exists(), teach_ready=teach)
 
 
-# The download choice. Today there is ONE download, the Hypnomix Assistant: the website's /download/ page offers only that
-# one, and will offer the full one when it is released. The full one isn't out yet, and it will be a
-# SEPARATE download that replaces the Assistant app (the same Hypnomix.app, Mac only at first): nothing in this app adds
-# it, so nothing here promises that. Choosing it only records that you want it; the Extras step explains what it is.
-DOWNLOADS = [
-    dict(id="assistant", title="Hypnomix Assistant", tag="what you have now",
-         what="The app and every hypnomix tool, for people who keep their own DAW: Ableton Live, REAPER or Ardour "
-              "(or any DAW, from exported tracks)."),
-    dict(id="full", title="Hypnomix", tag="coming soon", soon=True,
-         what="The full app with its own DAW built in (based on Ardour), with the engineer and the Assistant inside it. "
-              "It isn't out yet. When it is, it will be a separate download that replaces this app, for the Mac at first; "
-              "it isn't added from here. Choosing it now only notes that you want it: nothing changes, and setup carries on "
-              "with the Assistant and the DAW you use now."),
-]
-
-
-def downloads(installed, plat="darwin"):
-    """DOWNLOADS as this app sees them: in the full Hypnomix (the engine inside the app) the full one is what you have;
-    off a Mac the full one says plainly that it is for the Mac only for now (the engine is built for macOS only)."""
-    if installed != "full":
-        if plat == "darwin":
-            return DOWNLOADS
-        return [DOWNLOADS[0], dict(DOWNLOADS[1], tag="Mac only for now",
-                                   what="The full app with its own DAW built in (based on Ardour). It isn't out yet, and it is "
-                                        "being made for the Mac only, so there is nothing for this computer: keep using the "
-                                        "Assistant and your own DAW. Choosing it only notes that you want it.")]
-    return [dict(DOWNLOADS[0], tag="for your own DAW"),
-            dict(id="full", title="Hypnomix", tag="what you have now", soon=False,
-                 what="This app: its own DAW built in (based on Ardour; the DAW tab, File → New Session and Open "
-                      "Session), with the engineer and the Assistant inside it. Everything the Assistant does with "
-                      "Live, REAPER or Ardour works here too.")]
-
-
 DAWS = [
-    dict(id="live", title="Ableton Live", note="the most depth: hypnomix reads, fixes and drives Live 11 and 12"),
+    dict(id="live", title="Ableton Live", note="the most depth: HypnoMix reads, fixes and drives Live 11 and 12"),
     dict(id="reaper", title="REAPER", note="reads and writes projects, and drives the open REAPER through its bridge"),
-    dict(id="ardour", title="Ardour", note="reads and scans sessions; you make the changes in Ardour (the least tested)"),
+    dict(id="hypnomix", title="HypnoMix DAW", note="HypnoMix's own DAW, an optional add-on (Extras says whether it can be added yet)"),
     dict(id="other", title="Something else", note="any other DAW: export your tracks and scan the folder"),
 ]
+
+
+DAW_IDS = {d["id"] for d in DAWS} | {"ardour"}       # "ardour" is no longer asked, but a choice saved earlier keeps working
+
+
+def _daw_id(v):
+    """The DAW id a request names, "" when it is not one of the ids. A list or a number is a plain 400 (the wrong kind of
+    field), as it was before DAW_IDS became a set: testing it with `in` raised TypeError out of this file, which is a bug."""
+    if v is None:
+        return ""
+    if not isinstance(v, str):
+        from hypnomix.app.server import WRONG_KIND
+        raise ValueError(WRONG_KIND)
+    return v if v in DAW_IDS else ""
 
 
 def reaper_status():
@@ -279,7 +261,7 @@ def windows_shim_text(py, bin_dir):
 
 def make_cli():
     """A `hypnomix` command that runs this app's own Python, and a folder an AI agent can be opened in."""
-    py = Path(sys.executable).absolute()          # not resolved: a venv's python is a link to a Python without hypnomix
+    py = Path(sys.executable).absolute()          # not resolved: a venv's python is a link to a Python without HypnoMix
     if sys.platform == "win32":
         py = py.with_name("python.exe") if py.name.lower() == "pythonw.exe" else py
     shim = shim_path()
@@ -309,12 +291,12 @@ def make_cli():
     skills, agents = copy_skills(d, here)
     cmd = str(shim)
     (d / "CLAUDE.md").write_text(
-        "# hypnomix (installed app)\n\n"
-        "This folder is for an AI agent (Claude Code, Codex, Cursor…) working with hypnomix, a mixing and mastering\n"
-        "assistant for Ableton Live, REAPER and Ardour. Read AGENTS.md first: the loop every job follows, the safety rules\n"
+        "# HypnoMix (installed app)\n\n"
+        "This folder is for an AI agent (Claude Code, Codex, Cursor…) working with HypnoMix, a mixing and mastering\n"
+        "assistant for Ableton Live, REAPER and HypnoMix DAW. Read AGENTS.md first: the loop every job follows, the safety rules\n"
         "and the command map. GUIDE.md is the user's guide.\n\n"
-        f"Run hypnomix as `hypnomix <command>` (or by its full path, `{cmd}`). Start with `hypnomix doctor`.\n"
-        "Every change that writes a set needs the person's OK first; hypnomix never overwrites the original.\n"
+        f"Run HypnoMix as `hypnomix <command>` (or by its full path, `{cmd}`). Start with `hypnomix doctor`.\n"
+        "Every change that writes a set needs the person's OK first; HypnoMix never overwrites the original.\n"
         "The songs' scans are in the folder above this one.\n"
         + (f"\nClaude Code skills (in .claude/skills): {', '.join(skills)}. For a whole new song, use first-pass.\n" if skills else "")
         + (f"Subagents (in .claude/agents): {', '.join(agents)}.\n" if agents else ""), encoding="utf-8")
@@ -360,13 +342,9 @@ def _set_level(s, lv):
     s["teach"] = bool(s["teach_level"])
 
 
-def _set_edition(s, e):
-    s["edition"] = e if e in {d["id"] for d in DOWNLOADS} else ""
-
-
 def is_done():
-    """True once the guided setup was finished or skipped (the same test as state_view's "done"). The full app opens on
-    the DAW view only after that, so a first launch shows the setup instead of skipping past it."""
+    """True once the guided setup was finished or skipped (the same test as state_view's "done"). An app opened in DAW mode
+    shows the DAW view only after that, so a first launch shows the setup instead of skipping past it."""
     s = load()
     return bool(s.get("done")) and s.get("version", 0) >= VERSION
 
@@ -374,13 +352,10 @@ def is_done():
 def state_view():
     from hypnomix.app import chat as CH
     from hypnomix import extras as X
-    from hypnomix.app import daw as DW
+    from hypnomix.app import engine_addon as EA
     s = load()
-    installed = DW.app_edition()                     # 'full', 'assistant' (the installed app) or '' (a source checkout)
     return dict(done=bool(s.get("done")) and s.get("version", 0) >= VERSION, mode=s.get("mode", ""),
-                daw=s.get("daw", ""), teach_level=_level(s), daws=DAWS,
-                edition=s.get("edition") if s.get("edition") in {d["id"] for d in DOWNLOADS} else "",
-                downloads=downloads(installed, sys.platform), installed=installed,
+                daw=s.get("daw", ""), teach_level=_level(s), daws=DAWS, engine=EA.state(),
                 reaper=reaper_status(),
                 platform="windows" if sys.platform == "win32" else "mac" if sys.platform == "darwin" else "linux",
                 bundled=bundled(), modes=modes(), providers=PROVIDER_GUIDES, local=LOCAL_GUIDES,
@@ -434,12 +409,30 @@ def setup_live():
     return dict(log=log, live=live_status())
 
 
+def engine_post(what, body):
+    """Add or remove HypnoMix DAW, on the page's click. The request carries nothing: the address and the SHA-256 are the
+    manifest's (shipped inside the app), and the folder is the HypnoMix home's, so a request that names any is refused."""
+    from hypnomix.app import engine_addon as EA
+    if body:
+        return 400, dict(error="this request takes nothing: the address and fingerprint come from the app itself, never from a request",
+                         engine=EA.state())
+    try:
+        if what == "install":
+            return 200, EA.start_install()
+        return 200, EA.remove()
+    except EA.AddonError as e:
+        return 400, dict(error=str(e), engine=EA.state())
+
+
 def handle_get(path, q):
     if path == "/api/setup/state":
         return 200, state_view()
     if path == "/api/setup/extras":
         from hypnomix import extras as X
         return 200, X.status()
+    if path == "/api/setup/engine":                   # HypnoMix DAW: what is added, what could be, the job's progress
+        from hypnomix.app import engine_addon as EA
+        return 200, EA.state()
     if path == "/setup.js":
         return 200, Path(__file__).with_name("setup.js").read_bytes(), "text/javascript; charset=utf-8"
     return None
@@ -459,13 +452,13 @@ def handle_post(path, body):
     if path == "/api/setup/daw":                      # saved at once, so the Wiki and the Teacher tab follow it
         s = load()
         if "daw" in body:
-            s["daw"] = str(body["daw"]) if body["daw"] in {d["id"] for d in DAWS} else ""
+            s["daw"] = _daw_id(body["daw"])
         if "teach_level" in body:
             _set_level(s, body["teach_level"])
-        if "edition" in body:
-            _set_edition(s, body["edition"])
         save(s)
-        return 200, dict(daw=s.get("daw", ""), teach_level=_level(s), edition=s.get("edition", ""))
+        return 200, dict(daw=s.get("daw", ""), teach_level=_level(s))
+    if path in ("/api/setup/engine/install", "/api/setup/engine/remove"):
+        return engine_post(path.rsplit("/", 1)[1], body)
     if path == "/api/setup/cli":
         return 200, make_cli()
     if path == "/api/setup/extra":
@@ -478,12 +471,10 @@ def handle_post(path, body):
         s = load()
         s.update(done=bool(body.get("done", True)), mode=str(body.get("mode") or s.get("mode") or ""), version=VERSION,
                  at=time.strftime("%Y-%m-%d %H:%M"))
-        if body.get("daw") in {d["id"] for d in DAWS}:
+        if _daw_id(body.get("daw")):
             s["daw"] = body["daw"]
         if "teach_level" in body:
             _set_level(s, body["teach_level"])
-        if "edition" in body:
-            _set_edition(s, body["edition"])
         save(s)
         return 200, state_view()
     return None

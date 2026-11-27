@@ -99,7 +99,7 @@
     btnSave.setAttribute('aria-label', dirty ? 'Save (there are unsaved changes)' : 'Save');
     btnSave.dataset.info = !on ? 'Save needs a session open in the engine' : dirty ? 'Save the session: it has changes that are not saved · ⌘S' : 'Save the session · ⌘S (nothing has changed since the last save)';
     HX.$('#sessionName').classList.toggle('dirty', dirty);
-    document.title = (dirty ? '● ' : '') + 'Hypnomix';
+    document.title = (dirty ? '● ' : '') + 'HypnoMix DAW';
   }
   /* a change reached the engine (mcp.js calls this): show "unsaved" now, and ask the app for its count soon */
   HX.markDirty = function () {
@@ -118,6 +118,7 @@
       if (HX.api.inApp) await HX.api.post('/api/daw/save', {}); else await HX.mcp.save();
       HX.dirty = false; dirtyAt = performance.now();
       HX.toast('Saved ' + S.session.name);
+      HX.emit('saved');
       return true;
     } catch (e) {
       HX.toast('Not saved: ' + e.message, 5000); HX.log('err', 'save · ' + e.message);
@@ -198,6 +199,7 @@
     HX.$('#noEngine').hidden = m !== 'noengine';
     ['#browser', '#main', '#devices', '#assistant', '#transport', '#viewTabs'].forEach((s) => { const el = HX.$(s); if (el) el.toggleAttribute('inert', m === 'noengine'); });
     syncSave();
+    HX.emit('mode', m);                            // 'noengine' | 'demo' | 'engine' (the guided tours wait for a session)
   }
   function setConn(state, label) {
     btnC.classList.remove('on', 'busy', 'err'); if (state) btnC.classList.add(state);
@@ -206,7 +208,7 @@
     es.classList.toggle('on', state === 'on');
     es.textContent = state === 'on' ? 'MCP · ' + (HX.mcp.serverInfo ? HX.mcp.serverInfo.name + ' ' + HX.mcp.serverInfo.version : 'engine') + ' · ' + HX.mcp.tools.length + ' tools · ' + S.session.sampleRate / 1000 + ' kHz · ' + (HX.liveEngine.metersLive ? 'meters live' : 'meters simulated (no meters_get)')
       : HX.mode === 'demo' ? 'Demo song · made up: it plays no sound, saves nothing and sends nothing to an engine'
-      : HX.mode === 'noengine' ? (HX.api.inApp ? 'No engine connected' : 'Opened outside the hypnomix app: only the demo song')
+      : HX.mode === 'noengine' ? (HX.api.inApp ? 'No engine connected' : 'Opened outside the HypnoMix app: only the demo song')
       : es.textContent;
     const tf = HX.$('#tempo').parentElement;
     tf.classList.toggle('locked', !!HX.mcp.connected);
@@ -218,7 +220,7 @@
   /* the no-engine screen: what is missing, and the ways on (look again, start the engine, the demo song by choice) */
   let noEngSig = '';
   function renderNoEngine(st) {
-    const sig = st ? [!!st.binary, st.state, st.error, !!st.connected].join('|') : 'looking';
+    const sig = st ? [!!st.binary, st.state, st.error, !!st.connected, JSON.stringify(st.addon || {})].join('|') : 'looking';
     if (sig === noEngSig) return;
     noEngSig = sig;
     const title = HX.$('#noEngineTitle'), body = HX.$('#noEngineBody'), err = HX.$('#noEngineErr'), btns = HX.$('#noEngineBtns');
@@ -227,12 +229,19 @@
     const again = mkBtn('Look again', '', async () => { noEngSig = ''; await watchEngine(); HX.toast('Looked again'); });
     if (st.binary) {
       title.textContent = 'The engine is not running';
-      body.textContent = 'The DAW view shows and edits what the Hypnomix engine has open: it plays, records and saves nothing by itself. Start the engine, then open or make a session. The demo song is made up: it plays no sound, saves nothing and sends nothing.';
+      body.textContent = 'The DAW view shows and edits what the HypnoMix DAW engine has open: it plays, records and saves nothing by itself. Start the engine, then open or make a session. The demo song is made up: it plays no sound, saves nothing and sends nothing.';
       btns.replaceChildren(mkBtn('Start the engine', 'primary', () => startAgain()), again, demo);
     } else {
       title.textContent = 'There is no engine on this computer';
-      body.textContent = 'The DAW view drives the Hypnomix engine, a separate audio program that only the full Hypnomix download carries, and that download is not available yet. Without it there is nothing here to play, edit or save. If you run it in a window of its own, switch on Preferences → Control Surfaces → MCPHttp there and press Look again. The demo song is made up: it plays no sound, saves nothing and sends nothing.';
-      btns.replaceChildren(again, demo);
+      const ad = st.addon || {};
+      body.textContent = 'The DAW view drives the HypnoMix DAW engine, a separate audio program (under the GNU General Public License) that is not part of the app: it is added from Setup, only when you choose to. '
+        + (ad.available ? 'It is ready to add: press Add HypnoMix DAW (about 100 MB, fetched once and checked against a fingerprint), or use Setup → Extras. ' : 'HypnoMix DAW is not available yet, so there is nothing here to play, edit or save. ')
+        + 'If you run an engine in a window of its own, switch on Preferences → Control Surfaces → MCPHttp there and press Look again. The demo song is made up: it plays no sound, saves nothing and sends nothing.';
+      const add = ad.available ? mkBtn('Add HypnoMix DAW', 'primary', async () => {
+        try { await HX.api.post('/api/setup/engine/install', {}); HX.toast('Adding HypnoMix DAW: the progress is in Setup → Extras', 6000); }
+        catch (e) { HX.toast(e.message, 6000); }
+      }) : null;
+      btns.replaceChildren(...[add, again, demo].filter(Boolean));
     }
     err.textContent = st.error || '';
   }
@@ -265,7 +274,7 @@
     setTimeout(() => watchEngine(), 300);          // the app's own count of unsaved changes
   }
   HX.connectEngine = connectNow;
-  const engLine = (st) => !st ? '' : ({ running: 'Engine running', attached: 'Attached to a Hypnomix window', starting: 'Engine starting…',
+  const engLine = (st) => !st ? '' : ({ running: 'Engine running', attached: 'Attached to a HypnoMix DAW window', starting: 'Engine starting…',
     crashed: 'Engine stopped: starting it again', exited: 'Engine stopped unexpectedly', failed: 'Engine failed', stopped: 'Engine stopped' }[st.state] || st.state)
     + (st.session ? ' · ' + st.session.split('/').pop() : '') + (st.pid ? ' · pid ' + st.pid : '') + (st.url ? '\n' + st.url : '')
     + (st.backend ? '\nbackend: ' + st.backend : '') + (st.error ? '\n' + st.error : '') + (st.notice ? '\n' + st.notice : '');
@@ -344,7 +353,7 @@
     const connected = HX.mcp.connected;
     const r = btnC.getBoundingClientRect();
     const err = h('p.err');
-    const stEl = h('pre.eng', null, HX.api.inApp ? 'Asking the app…' : 'Opened outside the hypnomix app: only the demo song.');
+    const stEl = h('pre.eng', null, HX.api.inApp ? 'Asking the app…' : 'Opened outside the HypnoMix app: only the demo song.');
     const go = h('button.btn.primary', { type: 'button' }, 'Connect');
     const sess = h('input', { placeholder: '/path/to/Song/Song.ardour', spellcheck: 'false', 'aria-label': 'Session path' });
     const btn = (label, fn, info) => h('button.btn', { type: 'button', onclick: () => act(fn), 'data-info': info }, label);
@@ -354,14 +363,14 @@
       catch (e) { err.textContent = e.message; }
     };
     const ctl = HX.api.inApp ? h('div.row.left', null,
-      btn('Start', () => HX.api.post('/api/daw/start', {}).then((st) => { if (st.connected) HX.engineLost = false; return st; }), 'Start the Hypnomix engine (or use a Hypnomix window that is already running)'),
+      btn('Start', () => HX.api.post('/api/daw/start', {}).then((st) => { if (st.connected) HX.engineLost = false; return st; }), 'Start the HypnoMix DAW engine (or use a HypnoMix DAW window that is already running)'),
       btn('Restart', () => HX.guardedPost('/api/daw/restart', {}, 'Restarting the engine closes the open session; it opens again from its saved file.'), 'Stop the engine and start it again on the same session'),
-      btn('Stop', stopEngine, 'Stop the engine the app started (a Hypnomix window is only let go of)'),
+      btn('Stop', stopEngine, 'Stop the engine the app started (a HypnoMix DAW window is only let go of)'),
       btn('Open', () => HX.guardedPost('/api/daw/open', { path: sess.value.trim() }, 'Opening another session closes this one.'), 'Open this session in the engine'),
       btn('New', () => { const f = HX.splitNewPath(sess.value); return HX.guardedPost('/api/daw/new', f, 'Making a new session closes this one.'); }, 'Make a new session: type the folder and the new name, e.g. ~/Music/New Song')) : null;
-    pop = h('div.connect-pop', { role: 'dialog', 'aria-label': 'The Hypnomix engine', style: { top: r.bottom + 6 + 'px', right: (innerWidth - r.right) + 'px' } },
-      h('b', { style: { color: 'var(--tx0)' } }, 'The Hypnomix engine'),
-      h('p', null, 'The app runs the engine and passes this page’s calls to it (POST /mcp). Without the engine program, it uses a Hypnomix window that is already open with Preferences → Control Surfaces → MCPHttp on.'),
+    pop = h('div.connect-pop', { role: 'dialog', 'aria-label': 'The HypnoMix DAW engine', style: { top: r.bottom + 6 + 'px', right: (innerWidth - r.right) + 'px' } },
+      h('b', { style: { color: 'var(--tx0)' } }, 'The HypnoMix DAW engine'),
+      h('p', null, 'The app runs the engine and passes this page’s calls to it (POST /mcp). Without the engine program, it uses a HypnoMix DAW window that is already open with Preferences → Control Surfaces → MCPHttp on.'),
       stEl, HX.api.inApp ? sess : null, ctl, err,
       h('div.row', null, h('button.btn', { type: 'button', onclick: closePop }, 'Close'),
         connected ? h('button.btn', { type: 'button', onclick: showDemoInstead, 'data-info': 'Leave the engine’s session and show the made-up demo song (asks first)' }, 'Show the demo song') : null,
@@ -383,11 +392,15 @@
     try {
       const st = await HX.api.get('/api/daw/state');
       HX.engineState = st;
+      if (st.addon && st.addon.needs_update && !watchEngine.toldUpdate) {      /* a newer engine is wanted by this version of the app */
+        watchEngine.toldUpdate = true;
+        HX.toast(st.addon.message + ' Setup → Extras has the button.', 12000);
+      }
       if (typeof st.dirty === 'boolean' && t0 > dirtyAt && HX.mcp.connected) { HX.dirty = st.dirty; syncSave(); }   // the app's count, unless an edit was made since this was asked
       if (watchEngine.busy) return;           /* a connect (or File → Open / New Session) is under way */
       if (HX.mode === 'noengine') renderNoEngine(st);
       if (!st.connected && st.state === 'stopped' && /no session is open yet/.test(st.error || '') && !watchEngine.toldNoSession) {
-        watchEngine.toldNoSession = true;     /* the full app's first start: nothing to open yet */
+        watchEngine.toldNoSession = true;     /* the first start with the engine: nothing to open yet */
         HX.toast('No session open yet: File → New Session… or Open Session… (or Engine, top right)', 8000);
       }
       if (HX.reopening) { watchEngine.pid = null; return; }   /* Review is opening a new snapshot: it reconnects by itself */
@@ -407,7 +420,7 @@
         engineLost(st);                       /* stopped by itself (or failed): keep the session, offer Start */
       }
       HX.emit('engine-app', st);
-    } catch (e) { if (HX.mode === 'noengine') renderNoEngine({ state: 'stopped', binary: null, error: 'The hypnomix app did not answer: ' + e.message }); }
+    } catch (e) { if (HX.mode === 'noengine') renderNoEngine({ state: 'stopped', binary: null, error: 'The HypnoMix app did not answer: ' + e.message }); }
   }
   setInterval(watchEngine, 3000);
   setTimeout(watchEngine, 300);
@@ -429,6 +442,7 @@
     KEYS.forEach((k) => cols.append(k.length === 1 ? h('div.grp.label', null, k[0]) : h('div.k', null, h('span', null, k[0]), h('kbd', null, k[1]))));
     o.append(h('div.help', { role: 'dialog', 'aria-label': 'Keyboard shortcuts' }, h('h3', null, 'Keyboard', h('small', null, 'Esc to close')), cols));
     o.hidden = false;
+    HX.emit('help', o);                            // the guided tours add their button to this list
     o.onclick = (e) => { if (e.target === o) o.hidden = true; };
   };
   HX.$('#btnHelp').addEventListener('click', HX.showHelp);

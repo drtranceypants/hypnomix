@@ -38,7 +38,7 @@ In the app: **Songs → choose a set → Start the first pass**. In the terminal
 ```bash
 hypnomix scan "Song.als" --mix "Song mix.wav" --ref "Song instrumental.wav" --key "F# major"
 hypnomix scan "Song.rpp"            # a REAPER project: the same loop (guide 8)
-hypnomix scan "Song.ardour"         # an Ardour session (or its folder)
+hypnomix scan "Song.ardour"         # a HypnoMix DAW session (or its folder)
 hypnomix scan "raw takes/"          # recordings or stems from any DAW: no Live set needed
 ```
 
@@ -71,7 +71,7 @@ nothing.
 follow their findings by what they are (same tool, track, kind and place), never by their number. "smooth-1 =
 approve" cannot end up on a different clip because the list got shorter. Decisions that no longer match anything
 are counted ("3 earlier decisions no longer match a finding and were set aside"), kept in
-`decisions-orphaned.json` and never applied. Two songs with the same name ("Song.als" and an Ardour session also
+`decisions-orphaned.json` and never applied. Two songs with the same name ("Song.als" and a HypnoMix DAW session also
 called "Song") get separate folders, "Song" and "Song (2)".
 
 ## 1b. Hear it first
@@ -94,7 +94,7 @@ a project with each fix switched off next to yours (guide 8), or apply one fix a
 When `--deep` finds two parts fighting over a band, the fix is a bell cut on the part that should give way (2-3 dB
 by default, adjustable per decision with the amount, e.g. approve at 50%). Approved, it is written as one band on
 the track's own EQ in a new file: an EQ Eight in Live, a ReaEQ in REAPER. An EQ that is already there and has a
-free band is reused; nothing else on the track changes. `fix` runs hypnomix's structure check on these new sets and
+free band is reused; nothing else on the track changes. `fix` runs HypnoMix's structure check on these new sets and
 projects. The ReaEQ band was opened in REAPER 7.86 and read back as written, but the EQ Eight band has not yet been opened in Live, and neither has been judged by ear: open one and listen before you keep it. On a folder of
 stems there is no set to write into, so the cut stays on the by-hand list (section 5).
 
@@ -162,11 +162,11 @@ What fix checks, and stops on:
 | after writing: what changed | every change in plain words in `fix-log.md` (`hypnomix diff OLD NEW`) |
 | after writing: result | measured again: "N of M approved problems no longer measured" |
 
-Ardour: the same command with `--out "Song (fixed).ardour"` writes the approved region fades (with their curve),
+HypnoMix DAW: the same command with `--out "Song (fixed).ardour"` writes the approved region fades (with their curve),
 region gain, gain dips over spikes and the eased level at a comp cut into **one new snapshot**, saved next to your
-session file inside the same session folder (where Ardour keeps its own snapshots, so the new file finds the same
+session file inside the same session folder (where the DAW keeps its own snapshots, so the new file finds the same
 recordings). Track names and order, vocal stacks, timing, sidechain and tuning stay by hand. The new file is read
-back and checked by hypnomix, and has not yet been opened in Ardour.
+back and checked by HypnoMix, and has not yet been opened in a released DAW.
 
 ## 4. Listen, then teach it
 
@@ -194,14 +194,14 @@ It collects every approved finding that `fix` cannot make itself, and every one 
 `handoff/` in the scan folder and never over anything:
 
 - `HANDOFF.md`: a checklist in song order. Each line has the track, the bar.beat and m:ss, what to do in your DAW's
-  own words (Live, REAPER, Ardour or plain wording: `--daw`, or your `tools.daw` preference) and what to listen for.
+  own words (Live, REAPER, HypnoMix DAW or plain wording: `--daw`, or your `tools.daw` preference) and what to listen for.
 - when at least one item has a position, a marker at every such spot: a new `Song (handoff).als` with a locator at each
   (Live scan), a new `Song (handoff).rpp` with a marker at each (REAPER scan), and `markers.mid` and `markers.csv` for
   DAWs that import them. If no item has a position, only `HANDOFF.md` is written. `--no-markers` writes the checklist
   only.
 
 An item with no position (a whole part) is listed at the end, without a marker. The new Live set is checked with
-`hypnomix check` and the new REAPER project is read back and compared with yours; the REAPER project's marker was opened in REAPER 7.86 and read back as written, and the Live set has not yet been opened in Live. `handoff` itself is new: it passes unit tests and hypnomix's own checks on synthetic data and has not yet been run on a
+`hypnomix check` and the new REAPER project is read back and compared with yours; the REAPER project's marker was opened in REAPER 7.86 and read back as written, and the Live set has not yet been opened in Live. `handoff` itself is new: it passes unit tests and HypnoMix's own checks on synthetic data and has not yet been run on a
 real song. The checklist is measured, not heard: your ears decide each line.
 
 ## Plans: tools that make many moves

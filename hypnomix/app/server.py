@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""The hypnomix app: the whole first pass in a window, no terminal and no AI needed.
+"""The HypnoMix app: the whole first pass in a window, no terminal and no AI needed.
 
   hypnomix app                 start it and open it in your browser (http://127.0.0.1:8791)
   hypnomix app --no-open       just start it (the Mac app and the Max for Live device use this)
 
 What you can do in it:
-  first pass    choose a Live set, REAPER project, Ardour session (or a folder of recordings from any DAW), optionally a bounce of the mix and
+  first pass    choose a Live set, REAPER project, HypnoMix DAW session (or a folder of recordings from any DAW), optionally a bounce of the mix and
                 the key; it runs every check, builds the before / after clips and shows the review
   review        the fixes you can hear first, each with one player and A / B buttons, and Approve / Skip / Change with the mouse or
                 the keyboard (j k a s c b space [ ] ?); decisions are saved as you act, a card at a time; the clips you played are
@@ -15,24 +15,26 @@ What you can do in it:
   apply        says what it will do (including any on-by-default steps), writes only what you approved into ONE new
                 file next to the original (.als, .rpp or .ardour), then shows what was applied, what was not and why
   preferences   the questions asked once: targets, protected tracks, what is deliberate
-  tools         run any hypnomix command with a form, and read its report
+  tools         run any HypnoMix command with a form, and read its report
   store         free and open-source plug-ins, synths, instruments, drum kits and sample packs: search, install,
                 update, uninstall (hypnomix/store/; nothing from a download is run, installer packages open for you)
   wiki          lessons, how-to guides, every command and the FAQ, offline and searchable: the same articles as the
                 website's /wiki/ (source: hypnomix/app/wiki/articles/; Edit and Publish in a git checkout)
   assistant     chat with an AI (your own key: Claude, OpenAI, Gemini, OpenRouter, Groq, Mistral, or a free model
-                in Ollama on this computer) that runs hypnomix for you; anything that writes a set waits for your
+                in Ollama on this computer) that runs HypnoMix for you; anything that writes a set waits for your
                 click. Included in the installers; from source, run
-                `uv pip install -e ".[assistant]"` in the hypnomix folder
-  DAW mode      `hypnomix app --daw`: the Hypnomix DAW's window (Arrangement, Session, Mixer, Review, the
-                Assistant) on the Hypnomix engine, which the app starts, watches and stops (hypnomix/app/daw.py);
+                `uv pip install -e ".[assistant]"` in the HypnoMix folder
+  DAW mode      `hypnomix app --daw`: the HypnoMix DAW's window (Arrangement, Session, Mixer, Review, the
+                Assistant) on the HypnoMix DAW engine, which the app starts, watches and stops (hypnomix/app/daw.py);
                 the browser reaches the engine only through this server (POST /mcp)
   Live          with the Max for Live device (`hypnomix device`) loaded in your set, "Show in Live" jumps Live
                 to the finding: the track is selected, the playhead and the loop brace move to the spot, and
                 the clip opens. The device also steps through the open questions from inside Live.
 
-It is a small web server on this computer only (127.0.0.1). Nothing is sent anywhere. Songs you scan are kept
-in ~/Documents/Hypnomix (change with --home or HYPNOMIX_APP_HOME). Everything it does is a hypnomix command
+It is a small web server on this computer only (127.0.0.1). Nothing is sent anywhere: a bug in the app writes a crash
+record on this computer (<HypnoMix home>/crashes), the page offers it quietly, and "Report a problem" shows exactly what a
+report would say; copying it, saving it or opening the issue page is always the person's own click. Songs you scan are kept
+in ~/Documents/Hypnomix (change with --home or HYPNOMIX_APP_HOME). Everything it does is a HypnoMix command
 you could also type; the log shows each one (a long command's log keeps its newest 4,000 lines and says how many
 older ones it left out).
 """
@@ -108,9 +110,9 @@ def whole(v, what, lo=None, hi=None):
 
 # ---------------------------------------------------------------- jobs
 def cli_env():
-    """The environment for a command the app starts: it runs THIS copy of hypnomix. The app's own commands run from
-    the work folder, where a relative PYTHONPATH (`PYTHONPATH=.` in a checkout) would find another hypnomix, or
-    none: the folder this app's own hypnomix came from goes first, and every other entry is made absolute."""
+    """The environment for a command the app starts: it runs THIS copy of HypnoMix. The app's own commands run from
+    the work folder, where a relative PYTHONPATH (`PYTHONPATH=.` in a checkout) would find another HypnoMix, or
+    none: the folder this app's own HypnoMix came from goes first, and every other entry is made absolute."""
     env = dict(os.environ)
     root = str(Path(__file__).resolve().parents[2])
     rest = [str(Path(x).resolve()) for x in env.get("PYTHONPATH", "").split(os.pathsep) if x]
@@ -321,14 +323,23 @@ def run_job(kind, title, steps, sdir="", watch=()):
         JOB["reason"] = "" if ok else ("Stopped by you." if JOB["stopped"] else (app_words if kind == "fix" else str)(job_reason(JOB["log"])))
         JOB["status"] = "done" if ok else "failed"
 
-    threading.Thread(target=go, daemon=True).start()
+    def guarded():
+        from hypnomix.app import reporting as RP
+        try:
+            go()
+        except Exception as e:                          # a bug in the job's own thread: a crash record, and the job ends as failed
+            RP.job_crash(sys.modules[__name__], kind, e)
+        finally:
+            RP.job_ended(sys.modules[__name__])
+
+    threading.Thread(target=guarded, daemon=True).start()
     return JOB["id"]
 
 
 # ---------------------------------------------------------------- scans and reviews
 SET_KINDS = {".als": "als", ".rpp": "rpp", ".ardour": "ardour"}
 SUFFIX = {"als": ".als", "rpp": ".rpp", "ardour": ".ardour", "folder": ""}
-NO_UNDO = {"rpp": "REAPER projects", "ardour": "Ardour sessions", "folder": "folders of recordings"}
+NO_UNDO = {"rpp": "REAPER projects", "ardour": "HypnoMix DAW sessions", "folder": "folders of recordings"}
 
 
 def read_json(path, default=None):
@@ -350,7 +361,7 @@ def when_of(p):
 
 
 def source_kind(source, mode=""):
-    """What a scan is of: 'als' (a Live set), 'rpp' (REAPER), 'ardour' (Ardour) or 'folder' (recordings from any DAW)."""
+    """What a scan is of: 'als' (a Live set), 'rpp' (REAPER), 'ardour' (HypnoMix DAW) or 'folder' (recordings from any DAW)."""
     m = {"set": "als", "reaper": "rpp", "ardour": "ardour", "folder": "folder", "file": "folder"}.get(mode or "")
     return m or SET_KINDS.get(Path(str(source)).suffix.lower(), "folder")
 
@@ -601,7 +612,7 @@ ARDOUR_OPS = ("fade", "cut", "dip", "mixer")        # what fix writes into an Ar
 
 
 def applies_here(kind, f):
-    """How `fix` treats this finding for this kind of project, where that differs from what the finding says: an Ardour
+    """How `fix` treats this finding for this kind of project, where that differs from what the finding says: a HypnoMix DAW
     session takes fades, cuts, spikes and mixer moves only (the rest stays by hand), and tuning is refused outright."""
     a = f.get("applies")
     if kind == "ardour":
@@ -643,7 +654,7 @@ def apply_plan(findings, dec):
 
 def writes_set(f, kind="als"):
     """Does applying this finding write a new set? Harmony balance is volume automation in a Live set, but balanced copies
-    of the parts (no project) in REAPER and Ardour."""
+    of the parts (no project) in REAPER and HypnoMix DAW."""
     if f.get("applies") == "audio" and f.get("tool") == "voices":
         return kind == "als"
     return f.get("applies") == "set" or (f.get("applies") == "audio" and f.get("tool") == "tune")
@@ -890,7 +901,7 @@ def hist_entries(d, h, kind, source):
             name, why = H.free_name(orig.with_name(f"{orig.stem} (back to v{v['n']} input).als")).name, ""
         elif kind != "als":
             name = ""
-            why = (f"hypnomix keeps no snapshot of {NO_UNDO.get(kind, 'this')} to go back to, so there is no Undo button here. "
+            why = (f"HypnoMix keeps no snapshot of {NO_UNDO.get(kind, 'this')} to go back to, so there is no Undo button here. "
                    "Your original was never changed: keep using it, or open it again; the new file is a separate copy.")
         elif not wrote:
             name = ""
@@ -1275,7 +1286,7 @@ def live_send(cmd):
 def live_current():
     """The finding the Live device is looking at (for its display), or a short status."""
     if not LIVE["dir"]:
-        return dict(text="Open a review in the hypnomix app first.", n=0, of=0)
+        return dict(text="Open a review in the HypnoMix app first.", n=0, of=0)
     try:
         d = scan_dir(LIVE["dir"])
         act, dec = actionable(d)
@@ -1500,8 +1511,8 @@ try:
     elif kind == "set":
         p = filedialog.askopenfilename(title="Choose a Live set", filetypes=[("Live set", "*.als")])
     else:
-        p = filedialog.askopenfilename(title="Choose a Live set, REAPER project or Ardour session",
-                                       filetypes=[("Live set, REAPER project or Ardour session", "*.als *.rpp *.ardour"), ("All files", "*.*")])
+        p = filedialog.askopenfilename(title="Choose a Live set, REAPER project or HypnoMix DAW session",
+                                       filetypes=[("Live set, REAPER project or HypnoMix DAW session", "*.als *.rpp *.ardour"), ("All files", "*.*")])
 except Exception as e:
     sys.stderr.write("no window could be opened (%s)" % e)
     sys.exit(4)
@@ -1528,7 +1539,7 @@ def pick(kind):
         raise ValueError("kind must be one of: " + ", ".join(PICK_KINDS))
     if sys.platform == "darwin":
         script = {"set": 'POSIX path of (choose file with prompt "Choose a Live set" of type {"als"})',
-                  "song": 'POSIX path of (choose file with prompt "Choose a Live set, REAPER project or Ardour session" of type {"als","rpp","ardour"})',
+                  "song": 'POSIX path of (choose file with prompt "Choose a Live set, REAPER project or HypnoMix DAW session" of type {"als","rpp","ardour"})',
                   "audio": 'POSIX path of (choose file with prompt "Choose an audio file" of type {"wav","aif","aiff","flac","mp3","m4a"})',
                   "folder": 'POSIX path of (choose folder with prompt "Choose a folder of recordings or stems")'}[kind]
         try:
@@ -1580,6 +1591,32 @@ def reveal(path):
     except OSError as e:
         return False, f"the file manager could not be opened ({e}). It is in: {t if t.is_dir() else t.parent}"
     return ok, "" if ok else f"the file manager did not open. It is in: {t if t.is_dir() else t.parent}"
+
+
+def open_web(url):
+    """Open a web page in the person's browser (the one place the app does this for a page: the startup page, and the
+    problem report's new-issue page, whose address is fixed in hypnomix/core/report.py). -> True when it was taken."""
+    import webbrowser
+    return bool(webbrowser.open(url))
+
+
+def test_hook(path):
+    """TESTS ONLY: reached only when HYPNOMIX_TEST_HOOKS=1 is in the environment of the app under test (never set in a normal
+    run; the route does not exist otherwise). It makes a real crash on demand: in a request handler, or in a job's own thread."""
+    if path == "/api/test/crash":
+        raise ZeroDivisionError("a test crash in a request handler")      # not a RuntimeError: those are the app's plain sentences
+    if path == "/api/test/jobcrash":
+        class Flaky:                                     # the first look at the folders works, the second one (when the job ends) breaks
+            n = 0
+
+            def __iter__(self):
+                Flaky.n += 1
+                if Flaky.n > 1:
+                    raise RuntimeError("a test crash in a job thread")
+                return iter(())
+        run_job("test", "A test job", [("Waiting", lambda: None, True)], watch=Flaky())
+        return {"job": JOB["id"]}
+    raise ValueError("no such test hook")
 
 
 # ---------------------------------------------------------------- starting the commands the pages ask for
@@ -1636,7 +1673,7 @@ def scan_steps(src, d, opts, reused):
     steps.append(("Building before / after clips", ["ab", str(d)], False))
     steps.append(("Keeping the times of the clips", lambda: save_times(d), False))
     if opts.get("devices") and src.suffix.lower() == ".als":
-        steps.append(("A copy of the set with the hypnomix devices on every track", ["probe", "insert", str(src)], False))
+        steps.append(("A copy of the set with the HypnoMix devices on every track", ["probe", "insert", str(src)], False))
     return steps
 
 
@@ -1655,7 +1692,7 @@ def bare_path(raw):
 
 
 def start_scan(body, title="First pass", folder=None):
-    """Scan a Live set, REAPER project, Ardour session or folder. The same path always goes back to its own scan folder
+    """Scan a Live set, REAPER project, HypnoMix DAW session or folder. The same path always goes back to its own scan folder
     (that is a re-scan); a different path never shares one, even with the same name."""
     body = dict(body, **{k: bare_path(body[k]) for k in ("source", "mix", "ref", "like", "backing") if isinstance(body.get(k), str)})
     src = Path(need(body, "source")).expanduser()
@@ -1663,7 +1700,7 @@ def start_scan(body, title="First pass", folder=None):
         raise ValueError(f"not found: {src}")
     src = src.resolve()
     if src.is_file() and src.suffix.lower() not in SET_KINDS:
-        raise ValueError(f"{src.name} is not a Live set (.als), a REAPER project (.rpp) or an Ardour session (.ardour): "
+        raise ValueError(f"{src.name} is not a Live set (.als), a REAPER project (.rpp) or a HypnoMix DAW session (.ardour): "
                          "choose one of those, or a folder of recordings")
     for k in SCAN_OPTS:
         if body.get(k) is not None and not isinstance(body[k], str):
@@ -1701,7 +1738,7 @@ def start_fix(body):
     p = review_payload(d)
     plan = apply_plan(p["findings"], p["decisions"])
     if plan["blocked"]:
-        raise RuntimeError("Tuning is not written into an Ardour session yet, so fix would stop: turn off " + ", ".join(f["id"] for f in plan["blocked"])
+        raise RuntimeError("Tuning is not written into a HypnoMix DAW session yet, so fix would stop: turn off " + ", ".join(f["id"] for f in plan["blocked"])
                            + " first (the other fixes can go ahead).")
     if not plan["auto"]:
         by_hand = len(plan["manual"])
@@ -1750,7 +1787,7 @@ def demo_available():
 def start_demo():
     """A short demo song with planted problems, made in the app's own folder, then scanned."""
     if not demo_available():
-        raise ValueError("this version of hypnomix has no demo song")
+        raise ValueError("this version of HypnoMix has no demo song")
     if JOB["status"] == "running":
         raise RuntimeError("something is already running: wait for it to finish")
     root = work() / "demo"
@@ -2043,6 +2080,11 @@ def make_handler(port):
                     r = ST.handle_get(u.path, q)
                     if r:
                         return self.send(*r)
+                if u.path in ("/report.js", "/api/report/preview", "/api/crashes"):   # reporting a problem (nothing is sent by the app)
+                    from hypnomix.app import reporting as RP
+                    r = RP.handle_get(sys.modules[__name__], u.path, q)
+                    if r:
+                        return self.send(*r)
                 if u.path in ("/diskcare.js", "/api/diskcare/state"):   # disk care: old renders and caches cleared
                     from hypnomix.app import diskcare as DC
                     r = DC.handle_get(u.path, q)
@@ -2053,7 +2095,7 @@ def make_handler(port):
                     r = UP.handle_get(u.path, q)
                     if r:
                         return self.send(*r)
-                if u.path in ("/setup.js", "/api/setup/state", "/api/setup/extras"):    # the guided setup (first run, the Setup button)
+                if u.path in ("/setup.js", "/api/setup/state", "/api/setup/extras", "/api/setup/engine"):    # the guided setup (first run, the Setup button)
                     from hypnomix.app import setup as SU
                     r = SU.handle_get(u.path, q)
                     if r:
@@ -2107,15 +2149,40 @@ def make_handler(port):
             except RuntimeError as e:
                 self.send(409, {"error": str(e)})
             except KeyError as e:                         # a field the request did not carry: say so, not the Python word for it
+                if self.own_bug(e):                       # ... unless it came out of HypnoMix's own code: that is a bug
+                    return self.crashed("GET", e)
                 self.send(400, {"error": f"this request is missing {e.args[0] if e.args else 'something it needs'}"})
             except ValueError as e:
                 self.send(400, {"error": str(e)})
-            except (TypeError, AttributeError):           # a field of the wrong kind (a list where text belongs): a sentence, not a dropped connection
+            except (TypeError, AttributeError) as e:      # a field of the wrong kind (a list where text belongs): a sentence, not a dropped connection
+                if self.own_bug(e):
+                    return self.crashed("GET", e)
                 self.send(400, {"error": WRONG_KIND})
+            except (ConnectionError, TimeoutError, socket.timeout):
+                raise                                     # the browser went away: not a bug
             except OSError as e:                          # a name longer than the file system allows: a sentence, not a dropped connection
-                if not name_too_long(e):
-                    raise
-                self.send(400, {"error": NAME_TOO_LONG})
+                if name_too_long(e):
+                    self.send(400, {"error": NAME_TOO_LONG})
+                else:                                     # any other: a bug, recorded like the rest
+                    self.crashed("GET", e)
+            except Exception as e:                        # a bug: a crash record on this computer, a plain sentence to the page
+                self.crashed("GET", e)
+
+        @staticmethod
+        def own_bug(exc):
+            """A KeyError / TypeError / AttributeError raised inside HypnoMix's own helper code is a bug (recorded); one raised by
+            the handler reading the request's fields is a plain 400. ValueError and RuntimeError are the app's plain sentences."""
+            from hypnomix.app import reporting as RP
+            return RP.own_bug(exc)
+
+        def crashed(self, method, exc):
+            """An unhandled exception in a request: write the record, answer with one sentence (the page shows its banner)."""
+            from hypnomix.app import reporting as RP
+            code, body = RP.request_crash("app-request", f"{method} {urlparse(self.path).path}", exc)
+            try:
+                self.send(code, body)
+            except OSError:
+                pass
 
         def do_POST(self):
             u = urlparse(self.path)
@@ -2126,7 +2193,12 @@ def make_handler(port):
                     return self.send(400, {"error": "bad request: send the body with a Content-Length (chunked bodies are not taken)"}, close=True)
                 if self.headers.get("X-Hypnomix") != TOKEN:  # checked before a byte of the body is read
                     return self.send(403, {"error": "open the app's own page to do this"}, close=True)
-                return self.mcp_proxy() if u.path == "/mcp" else self.daw_upload(u)
+                try:
+                    return self.mcp_proxy() if u.path == "/mcp" else self.daw_upload(u)
+                except (ConnectionError, TimeoutError, socket.timeout):
+                    raise
+                except Exception as e:
+                    return self.crashed("POST", e)
             cl = self.headers.get("Content-Length")
             cl = "0" if cl is None else cl.strip()                 # no header: no body; a blank one is not a number
             if self.headers.get("Transfer-Encoding"):
@@ -2219,6 +2291,13 @@ def make_handler(port):
                     r = ST.handle_post(u.path, body)
                     if r:
                         return self.send(*r)
+                if u.path.startswith("/api/report/") or u.path.startswith("/api/crashes/"):   # reporting a problem: save, open the issue page, dismiss
+                    from hypnomix.app import reporting as RP
+                    r = RP.handle_post(sys.modules[__name__], u.path, body)
+                    if r:
+                        return self.send(*r)
+                if u.path.startswith("/api/test/") and os.environ.get("HYPNOMIX_TEST_HOOKS") == "1":   # tests only: a real crash on demand
+                    return self.send(200, test_hook(u.path))
                 if u.path.startswith("/api/diskcare/"):    # disk care: preview, clean now, settings, restore
                     from hypnomix.app import diskcare as DC
                     r = DC.handle_post(u.path, body, lambda: JOB["status"] == "running")
@@ -2366,15 +2445,24 @@ def make_handler(port):
             except RuntimeError as e:
                 self.send(409, {"error": str(e)})
             except KeyError as e:
+                if self.own_bug(e):
+                    return self.crashed("POST", e)
                 self.send(400, {"error": f"this request is missing {e.args[0] if e.args else 'something it needs'}"})
             except ValueError as e:
                 self.send(400, {"error": str(e)})
-            except (TypeError, AttributeError):
+            except (TypeError, AttributeError) as e:
+                if self.own_bug(e):
+                    return self.crashed("POST", e)
                 self.send(400, {"error": WRONG_KIND})
-            except OSError as e:
-                if not name_too_long(e):
-                    raise
-                self.send(400, {"error": NAME_TOO_LONG})
+            except (ConnectionError, TimeoutError, socket.timeout):
+                raise                                     # the browser went away: not a bug
+            except OSError as e:                          # a name longer than the file system allows: a sentence, not a dropped connection
+                if name_too_long(e):
+                    self.send(400, {"error": NAME_TOO_LONG})
+                else:                                     # any other: a bug, recorded like the rest
+                    self.crashed("POST", e)
+            except Exception as e:                        # a bug: a crash record on this computer, a plain sentence to the page
+                self.crashed("POST", e)
 
         def content_length(self, limit):
             """The request's Content-Length as a number within limit, or None once a refusal has been sent."""
@@ -2446,7 +2534,7 @@ def main():
     ap.add_argument("--no-open", action="store_true", help="do not open the browser")
     ap.add_argument("--home", help="where scans are kept (default ~/Documents/Hypnomix)")
     ap.add_argument("--daw", action="store_true", default=os.environ.get("HYPNOMIX_DAW") == "1",
-                    help="DAW mode: open the DAW view first and start the Hypnomix engine (or use a running Hypnomix window)")
+                    help="DAW mode: open the DAW view first and start the HypnoMix DAW engine (or use a running HypnoMix DAW window); HypnoMix DAW is an add-on that is not available yet, so this needs an engine you already have")
     ap.add_argument("--session", help="DAW mode: the session (.ardour, or its folder) to open in the engine")
     a = ap.parse_args()
     if a.home:
@@ -2458,7 +2546,9 @@ def main():
     try:
         srv = LocalServer(("127.0.0.1", a.port), make_handler(a.port))
     except OSError:
-        sys.exit(f"port {a.port} is in use: is the hypnomix app already running? (http://127.0.0.1:{a.port})")
+        sys.exit(f"port {a.port} is in use: is the HypnoMix app already running? (http://127.0.0.1:{a.port})")
+    from hypnomix.app import reporting as RP
+    RP.install_hooks()                        # a thread that dies with an unhandled error leaves a crash record on this computer
     start_probe_hub()
     from hypnomix.app import update as UP
     UP.check_in_background()                  # at most once a day, and only if it's switched on
@@ -2473,14 +2563,16 @@ def main():
     if a.daw or a.session:
         DW.start_for_app(a.session)
     url = f"http://127.0.0.1:{a.port}/" + ("daw/" if a.daw or a.session else "")
-    print(f"hypnomix app: {url}   (this computer only; Ctrl-C to stop)\nsongs are kept in {work()}", flush=True)
+    print(f"HypnoMix app: {url}   (this computer only; Ctrl-C to stop)\nsongs are kept in {work()}", flush=True)
     if not a.no_open:
-        import webbrowser
-        threading.Timer(0.4, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.4, lambda: open_web(url)).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         print("\nstopped")
+    except Exception as e:                    # the server itself died: the record is offered when the app starts again
+        RP.request_crash("app-server", "serve", e)
+        raise
 
 
 if __name__ == "__main__":

@@ -81,7 +81,7 @@ def _read_events(alist, ctx):
         if len(parts) < 2:
             continue
         if parts[0][:1] == "b":
-            raise ValueError("this envelope is written in music time; edit it by hand in Ardour")
+            raise ValueError("this envelope is written in music time; edit it by hand in HypnoMix DAW")
         out.append((ctx.clock.pos(parts[0]), float(parts[1]), parts[0]))
     return out
 

@@ -1,5 +1,5 @@
 name: Feature idea
-description: A chore you'd like hypnomix to take on, or a way to make it easier to use.
+description: A chore you'd like HypnoMix to take on, or a way to make it easier to use.
 labels: ["enhancement"]
 body:
   - type: markdown
@@ -16,7 +16,7 @@ body:
   - type: textarea
     id: idea
     attributes:
-      label: What you'd like hypnomix to do
+      label: What you'd like HypnoMix to do
       description: Which parts you'd want to decide yourself, and which could be automatic.
     validations:
       required: true
@@ -24,7 +24,7 @@ body:
     id: daw
     attributes:
       label: DAW
-      placeholder: "Ableton Live, REAPER, Ardour, any (folder of stems)"
+      placeholder: "Ableton Live, REAPER, HypnoMix DAW, any (folder of stems)"
   - type: dropdown
     id: build
     attributes:

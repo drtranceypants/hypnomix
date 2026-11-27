@@ -139,7 +139,7 @@ function wikiBanner() {
 }
 
 // The DAW chosen in Setup comes first (after Start here); the other DAWs' pages move to the end of the list.
-const WDAW = {live: 'DAW: Ableton Live', reaper: 'DAW: REAPER', ardour: 'DAW: Ardour', other: 'DAW: any other'};
+const WDAW = {live: 'DAW: Ableton Live', reaper: 'DAW: REAPER', ardour: 'DAW: HypnoMix DAW', hypnomix: 'DAW: HypnoMix DAW', other: 'DAW: any other'};
 function wikiOrdered() {
   const all = W.index.articles, mine = WDAW[W.index.about.daw];
   if (!mine) return all;
@@ -175,7 +175,7 @@ async function wikiView() {
   if (!(W.keep && W.index)) await wikiLoad();       // the list of articles (2 MB with their text) is fetched when the Wiki is opened, not again for each article opened from it
   W.keep = false;
   const all = W.index.articles;
-  if (!all.length) return `<h1>Wiki</h1><p class="sub">No articles yet. From the hypnomix folder run
+  if (!all.length) return `<h1>Wiki</h1><p class="sub">No articles yet. From the HypnoMix folder run
     <code>python -m hypnomix.app.wiki_sync</code> to copy them from the website.</p>`;
   if (!W.id || !all.some(a => a.id === W.id)) W.id = all[0].id;
   W.art = await get('/api/wiki/article?id=' + encodeURIComponent(W.id));

@@ -1,4 +1,4 @@
-"""The Assistant on the Hypnomix engine: which engine tools may run without asking, the arguments models get
+"""The Assistant on the HypnoMix DAW engine: which engine tools may run without asking, the arguments models get
 wrong, what a proposed change will do (before -> after), and engine replies trimmed before they go to the model.
 
 Kept apart from chat.py (the conversation loop) so each rule here is small and testable on its own.
@@ -75,7 +75,7 @@ def schema(t):
     for k, p in (s.get("properties") or {}).items():
         if isinstance(p, dict) and not p.get("description") and k in HINTS:
             if k == "position" and t.get("name") == "track_set_pan":
-                p["description"] = "0.0 = right, 0.5 = centre, 1.0 = left (Ardour's convention)"
+                p["description"] = "0.0 = right, 0.5 = centre, 1.0 = left (the engine's convention)"
             elif k == "position" and str(t.get("name", "")).startswith("plugin_add"):
                 p["description"] = "insert at this plug-in index (omit to add at the end)"
             elif k != "position":

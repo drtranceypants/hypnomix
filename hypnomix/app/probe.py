@@ -3,7 +3,7 @@
 
   hypnomix probe device                write HypnomixProbe.amxd, HypnomixMain.amxd + hypnomix_probe.js into your Live
                                        User Library
-  hypnomix probe cards SET.als         what you told hypnomix in Live (track roles, the song card), read from the set
+  hypnomix probe cards SET.als         what you told HypnoMix in Live (track roles, the song card), read from the set
   hypnomix probe insert SET.als        a NEW set with the probe on every track and return, and the review device and
                                        HypnomixMain on Main (no need to place one first; --probes-only for probes alone)
   hypnomix probe status                which tracks are sending, with their loudness right now
@@ -11,7 +11,7 @@
   hypnomix probe report CAPTURE.json   turn a capture into a review: findings.json + REVIEW.md
   hypnomix probe chains [show NAME]    the mastering chain templates HypnomixMain builds on Main (masterchain.py)
 
-Telling hypnomix what things are. Each track's probe has three menus: what it is (lead vocal, harmony, kick, bass,
+Telling HypnoMix what things are. Each track's probe has three menus: what it is (lead vocal, harmony, kick, bass,
 guitar …, or "auto" to let the scan work it out by sound), its priority (focus: others give way to it; background:
 it gives way) and Protect (ask before any change). HypnomixMain, on Main, is the song card: genre, key and scale
 (the tuning and harmony tools use it instead of guessing; a mode becomes the major key with the same notes),
@@ -31,7 +31,7 @@ Live's own Export is still how you make the final file: no Live API can start an
 
 How it works. The probe is a small Max for Live audio effect. Put it LAST on a track: it hears the track after
 all of its devices and plug-ins (before the fader; the fader and pan are read and added). Ten times a second it
-sends what it measured to the hypnomix app on this computer (UDP, 127.0.0.1 only, port 8792; a second copy of
+sends what it measured to the HypnoMix app on this computer (UDP, 127.0.0.1 only, port 8792; a second copy of
 the app sets HYPNOMIX_PROBE_PORT to its own port before it makes its devices and starts):
 
   loudness   K-weighted mean square per channel (BS.1770 filters at Live's sample rate): momentary,
@@ -81,7 +81,7 @@ def probe_port():
 
 
 def app_port():
-    """The port of the hypnomix app the devices talk to: HYPNOMIX_PORT, default 8791 (what `app --port N` uses)."""
+    """The port of the HypnoMix app the devices talk to: HYPNOMIX_PORT, default 8791 (what `app --port N` uses)."""
     return _port("HYPNOMIX_PORT", DEFAULT_APP)
 
 
@@ -122,7 +122,7 @@ CONTROLS = {   # name: (label, kind, items or (min, max, default, unitstyle), x,
 
 
 # ---------------------------------------------------------------- the device's script
-JS = r"""// hypnomix probe (jsui): measures this track and sends it to the hypnomix app. Audio passes through.
+JS = r"""// hypnomix probe (jsui): measures this track and sends it to the HypnoMix app. Audio passes through.
 autowatch = 1;
 inlets = 1;
 outlets = 2;            // 0: OSC to udpsend   1: filter coefficients and gain
@@ -192,7 +192,7 @@ function refresh() {
     redraw();
 }
 
-function signature() {                    // the song, recognised by its track names (the same rule as hypnomix's own)
+function signature() {                    // the song, recognised by its track names (the same rule as HypnoMix's own)
     var song = new LiveAPI("live_set"), n = song.getcount("tracks"), names = [];
     for (var i = 0; i < n; i++) names.push(str(new LiveAPI("live_set tracks " + i).get("name")));
     names.sort();
@@ -255,7 +255,7 @@ function record() {                       // Main: record the master as it plays
     if (MODE != "main" || !st.ready) return;
     if (!st.rec) {
         post("/api/master/record", {state: "start", sig: st.sig, params: st.params, chords: st.chords}, function (d) {
-            if (!d || !d.path) { flash(d && d.error ? d.error : "Start the hypnomix app first"); return; }
+            if (!d || !d.path) { flash(d && d.error ? d.error : "Start the HypnoMix app first"); return; }
             st.recPath = d.path;
             outlet(1, "rec", "samptype", "float32");
             outlet(1, "rec", "open", d.path);
@@ -269,7 +269,7 @@ function record() {                       // Main: record the master as it plays
         outlet(1, "rec", 0);
         st.rec = false;
         post("/api/master/record", {state: "stop", path: st.recPath, sig: st.sig, params: st.params, chords: st.chords}, function (d) {
-            flash(d && d.job ? "Reviewing in the hypnomix app…" : "Stopped (the app did not answer)");
+            flash(d && d.job ? "Reviewing in the HypnoMix app…" : "Stopped (the app did not answer)");
         });
     }
     redraw();
@@ -339,7 +339,7 @@ function paint() {
     mgraphics.select_font_face("Arial"); mgraphics.set_font_size(10);
     var on = now() - st.ok < 2500;
     mgraphics.set_source_rgba(on ? 0.5 : 0.63, on ? 0.82 : 0.6, on ? 0.64 : 0.56, 1);
-    mgraphics.move_to(104, 14); mgraphics.show_text(on ? "app connected" : "app not running: start hypnomix app");
+    mgraphics.move_to(104, 14); mgraphics.show_text(on ? "app connected" : "app not running: start the HypnoMix app");
     mgraphics.set_source_rgba(0.63, 0.6, 0.56, 1);
     mgraphics.move_to(6, 30);
     mgraphics.show_text(st.name + "   " + (st.lk > -100 ? st.lk.toFixed(1) + " LUFS-M" : "silent") +
@@ -350,7 +350,7 @@ function paint() {
     mgraphics.set_source_rgba(0.63, 0.6, 0.56, 1);
     mgraphics.move_to(6, 66);
     if (MODE == "track") {
-        mgraphics.show_text("Tell hypnomix what this is (right). Saved in the set;");
+        mgraphics.show_text("Tell HypnoMix what this is (right). Saved in the set;");
         mgraphics.move_to(6, 80); mgraphics.show_text("'auto' lets the scan work it out by sound.");
     } else {
         mgraphics.show_text("Song card: genre, key, chords and loudness for every tool.");
@@ -570,9 +570,9 @@ def build_patch(patch, mode="track"):
     p["lines"] = P.lines                   # plugin~ → gain → plugout~ replaces the direct wires
     p["openinpresentation"] = 1
     p["devicewidth"] = float(W[mode])
-    p["description"] = ("hypnomix main: the song card (genre, key, chords, loudness), a mastering chain of Live's own devices "
+    p["description"] = ("HypnoMix main: the song card (genre, key, chords, loudness), a mastering chain of Live's own devices "
                         "(built, saved and loudness-matched from here) and record-and-review before export; audio passes through" if mode == "main" else
-                        "hypnomix probe: measures this track (after its devices) and says what it is; audio passes through")
+                        "HypnoMix probe: measures this track (after its devices) and says what it is; audio passes through")
     return patch
 
 
@@ -613,7 +613,7 @@ def signature(names):
 
 
 def read_cards(set_path, cards_file=None):
-    """What the person told hypnomix in Live, read from the saved set: per track (role, priority, protect) and the
+    """What the person told HypnoMix in Live, read from the saved set: per track (role, priority, protect) and the
     song card on Main (genre, key, scale, limiter, target, ceiling, amount), plus chords kept by the app."""
     if str(set_path).lower().endswith(".rpp"):    # REAPER: the Hypnomix Probe / Main JSFX menus in the project
         from hypnomix.reaper.probes import read_cards as rpp_cards
@@ -735,7 +735,7 @@ class Hub:
             raise OSError(f"{e.strerror or e} on port {port}; the environment variable HYPNOMIX_PROBE_PORT "
                           "changes the port (the devices made afterwards send to it)") from e
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
-        try:                              # REAPER's probes (JSFX) arrive through the hypnomix bridge, not UDP
+        try:                              # REAPER's probes (JSFX) arrive through the HypnoMix bridge, not UDP
             from hypnomix.reaper.probes import feed
             feed(self)
         except Exception:
@@ -1159,7 +1159,7 @@ MX_TEMPLATE = """<MxDeviceAudioEffect Id="0"><LomId Value="0" /><LomIdView Value
 
 
 def device_element(name, library=None):
-    """A fresh Live device entry for one of the hypnomix devices (HypnomixProbe, HypnomixMain, Hypnomix), pointing at
+    """A fresh Live device entry for one of the HypnoMix devices (HypnomixProbe, HypnomixMain, Hypnomix), pointing at
     the .amxd in the User Library. Raises FileNotFoundError when the device isn't installed there."""
     import xml.etree.ElementTree as ET
     from xml.sax.saxutils import quoteattr
@@ -1178,7 +1178,7 @@ def device_element(name, library=None):
 def insert(set_path, out=None, include_returns=True, main=False, review=False, library=None):
     """A NEW set with HypnomixProbe on every track and return. The probe is copied from one you already put in the set,
     or made fresh from the installed device when there is none. main=True puts HypnomixMain on Main (instead of a
-    probe), review=True the Hypnomix review device on Main too. Tracks that already have one are left as they are."""
+    probe), review=True the HypnoMix review device on Main too. Tracks that already have one are left as they are."""
     import copy, gzip
     import xml.etree.ElementTree as ET
     from hypnomix.session import automation as A
@@ -1303,7 +1303,7 @@ def main():
     d = sub.add_parser("device", help="write the probe device into your Live User Library")
     d.add_argument("--out")
     d.add_argument("--template")
-    i = sub.add_parser("insert", help="a new set with the hypnomix devices on every track (no need to place one first)")
+    i = sub.add_parser("insert", help="a new set with the HypnoMix devices on every track (no need to place one first)")
     i.add_argument("set")
     i.add_argument("--out")
     i.add_argument("--no-returns", action="store_true")

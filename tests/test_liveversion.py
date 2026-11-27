@@ -27,6 +27,7 @@ HEADERS = {
 # Every other gzip write must call the Live version guard in the same function.
 NOT_SETS = {
     "app/server.py": "gzip_body() compresses an HTTP answer for a browser that accepts it; no set is written",
+    "app/engine_addon.py": "pack() writes a tar.gz of an engine kit for the add-on; no Live set is involved",
     "app/wiki.py": "go() only unpacks a downloaded answer (GzipFile on bytes it read); no set is written",
 }
 

@@ -94,7 +94,7 @@ STEPS = [
            "A louder song always seems better. That is a trick of the ear, not a fact about the mix.",
            "Listen to four things: the **low end** (how much, how tight), the **vocal level** against the band, the "
            "**brightness**, and the **width**. Do not copy the sound. Ask what it has that yours lacks, then decide if you want it.",
-           "hypnomix can help. `hypnomix match -h` compares a mix with a reference at matched loudness and lists proposals "
+           "HypnoMix can help. `hypnomix match -h` compares a mix with a reference at matched loudness and lists proposals "
            "(tone in eight bands, dynamics, width, loudness) as a report: it processes nothing. `hypnomix reference -h` takes a mix "
            "and a reference and has `--out` and `--keep` options; use `match` when you want the readable list of proposals."],
       terms=[["Reference track", "a finished song you compare your mix against. It stays on its own track, unprocessed."],
@@ -196,7 +196,7 @@ STEPS = [
            "Accept imperfection. Records you love have small flaws. Set a **deadline**. Then **bounce a version**, "
            "save the project under a new name, and listen to the bounce away from the screen: in the kitchen, in the car, "
            "on a walk. If nothing bothers you after a couple of listens, release it to mastering.",
-           "Two hypnomix checks fit the end. `hypnomix scan -h` is a read-only review: it runs the checks on a song, changes nothing, "
+           "Two HypnoMix checks fit the end. `hypnomix scan -h` is a read-only review: it runs the checks on a song, changes nothing, "
            "and writes one review list for you to go through. `hypnomix qc -h` runs release checks and says PASS, WARN or FAIL "
            "per check. They propose; you decide."],
       terms=[["Bounce", "render the mix to a stereo audio file."],
@@ -257,9 +257,9 @@ ENRICH = {
  "mix-check": dict(
      mistakes=["Treating the findings as orders: every one is a suggestion with a before and after to hear. You decide.",
                "Running it before the mix is roughly balanced: run it once it sounds good to you, then again before the final export."],
-     **{"try": dict(do="Run hypnomix's first pass on a finished song. Pick one finding, play its before and after at the same loudness, and decide whether to keep it.",
+     **{"try": dict(do="Run HypnoMix's first pass on a finished song. Pick one finding, play its before and after at the same loudness, and decide whether to keep it.",
                     success="You have approved or skipped each finding you looked at by ear, and none was applied without a listen.")},
-     quiz=[dict(q="What does hypnomix do with its findings?", options=["Proposes them, and you decide by listening", "Applies them automatically", "Deletes the original files"], answer=0,
-                why="hypnomix proposes and you decide. Its tools write new files and never change your originals.")],
+     quiz=[dict(q="What does HypnoMix do with its findings?", options=["Proposes them, and you decide by listening", "Applies them automatically", "Deletes the original files"], answer=0,
+                why="HypnoMix proposes and you decide. Its tools write new files and never change your originals.")],
      more=["first-pass", "step:mix-finished"]),
 }

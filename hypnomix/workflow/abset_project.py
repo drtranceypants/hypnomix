@@ -10,7 +10,7 @@ compared with the original, track by track (tracks matched by their REAPER GUID)
                     the fix, named "<track> · B <id>", muted, right after yours, in the same folder, sending where
                     yours sends. A/B swaps which one is muted.
 
-The project plays exactly like the original (every B is off). `hypnomix reaper review` then opens the Hypnomix panel
+The project plays exactly like the original (every B is off). `hypnomix reaper review` then opens the HypnoMix panel
 in REAPER: A / B / Blind and loudness matching for the finding you are on. Approving still happens in the review, and
 `fix --approved` still writes the real new project from the original. Not previewable this way: track names and
 order (nothing to hear).

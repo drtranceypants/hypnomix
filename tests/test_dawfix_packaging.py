@@ -1,6 +1,7 @@
-"""Packaging fixes for the DAW branch: the engine kit checks (licence, source notice, builder's path), the quit and
-first-launch wiring of the Mac app, the plain wording about the download choice, and the pages' claims."""
-import getpass, os, re, shutil, subprocess, tempfile, unittest
+"""Packaging for the DAW: the engine kit checks (licence, source notice, builder's path) in the shell script and in the
+add-on's Python twin, the quit and first-launch wiring of the Mac app, the plain wording about HypnoMix DAW as an add-on
+(one app, one installer, the DAW added from Setup), and the pages' claims."""
+import getpass, os, re, shutil, subprocess, sys, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 
@@ -38,16 +39,30 @@ class KitChecks(unittest.TestCase):
         self.td = tempfile.TemporaryDirectory()
         self.addCleanup(self.td.cleanup)
 
-    def check(self, kit, via="build"):
-        cmd = ([BASH, str(ROOT / "packaging/mac/build_dmg.sh"), "--check-kit", str(kit)] if via == "build"
-               else [BASH, str(ROOT / "packaging/mac/check_kit.sh"), str(kit)])
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    def check(self, kit, via="script"):
+        """The shell check on its own, or through the archive script (which makes nothing when it refuses)."""
+        if via == "script":
+            cmd = [BASH, str(ROOT / "packaging/mac/check_kit.sh"), str(kit)]
+        else:
+            cmd = [BASH, str(ROOT / "packaging/mac/build_engine_archive.sh"), str(kit), "mac-arm64", str(Path(self.td.name) / "out")]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=dict(os.environ, HYPNOMIX_PYTHON=sys.executable))
         return r.returncode, r.stdout + r.stderr
 
     def test_a_complete_kit_passes(self):
-        for via in ("build", "script"):
-            code, out = self.check(make_kit(self.td.name) if via == "build" else Path(self.td.name) / "HypnomixEngine", via)
-            self.assertEqual(code, 0, out)
+        self.assertEqual(self.check(make_kit(self.td.name))[0], 0)
+        self.assertEqual(self.check(Path(self.td.name) / "HypnomixEngine", "archive")[0], 0)
+
+    def test_the_python_check_agrees_with_the_shell_check(self):
+        """hypnomix/app/engine_addon.py kit_problems is the same check, run on what was downloaded."""
+        from hypnomix.app import engine_addon as EA
+        cases = [dict(), dict(licence=False), dict(notice=False), dict(link=True),
+                 dict(extra={"lib/libx.dylib": b"\x00cflags -I/Users/somebody/build/src -O2\x00"}),
+                 dict(extra={"lib/libx.dylib": b"/Users/Shared/Library/x\x00"})]
+        for kw in cases:
+            with tempfile.TemporaryDirectory() as td:
+                kit = make_kit(td, **kw)
+                code, _ = self.check(kit)
+                self.assertEqual(code == 0, EA.kit_problems(kit) == [], kw)
 
     def test_no_licence_text_is_refused(self):
         code, out = self.check(make_kit(self.td.name, licence=False))
@@ -116,31 +131,29 @@ class KitChecks(unittest.TestCase):
         (Path(self.td.name) / "x").mkdir()
         code, out = self.check(Path(self.td.name) / "x")
         self.assertEqual(code, 1)
-        self.assertIn("not a Hypnomix engine kit", out)
+        self.assertIn("not a HypnoMix DAW engine kit", out)
 
-    def test_the_build_refuses_before_building_anything(self):
-        """--daw runs the check first: a kit with no licence stops it before Python is fetched or anything is written."""
+    def test_the_archive_script_refuses_before_writing_anything(self):
+        """A kit with no licence stops it before an archive is made or a folder created."""
         kit = make_kit(self.td.name, licence=False)
-        before = (ROOT / "packaging" / "build").exists()
-        r = subprocess.run([BASH, str(ROOT / "packaging/mac/build_dmg.sh"), "--daw", str(kit)], capture_output=True, text=True, timeout=120)
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("nothing was built", r.stdout + r.stderr)
-        self.assertNotIn("Python 3", r.stdout)
-        self.assertEqual((ROOT / "packaging" / "build").exists(), before)
+        code, out = self.check(kit, "archive")
+        self.assertEqual(code, 1)
+        self.assertIn("nothing was written", out)
+        self.assertFalse((Path(self.td.name) / "out").exists())
 
-    def test_the_scripts_parse_and_the_licence_is_copied_into_the_app(self):
-        for f in ("packaging/mac/build_dmg.sh", "packaging/mac/check_kit.sh", "macapp/build.sh"):
+    def test_the_scripts_parse_and_check_before_they_pack(self):
+        for f in ("packaging/mac/build_dmg.sh", "packaging/mac/check_kit.sh", "packaging/mac/build_engine_archive.sh", "macapp/build.sh"):
             self.assertEqual(subprocess.run([BASH, "-n", str(ROOT / f)]).returncode, 0, f)
-        sh = (ROOT / "packaging/mac/build_dmg.sh").read_text()
-        self.assertIn('cp "$kit/COPYING" "$kit/SOURCE.txt" "$res/LICENSES/engine/"', sh)
-        self.assertLess(sh.index("check_kit \"$kit\""), sh.index("uv python install"))        # checked before anything is built
+        sh = (ROOT / "packaging/mac/build_engine_archive.sh").read_text()
+        self.assertLess(sh.index('check_kit "$kit"'), sh.index("pack_engine.py"))             # checked before anything is made
+        self.assertNotRegex(sh, r"\b(gh|curl|scp|rsync|git push)\b\s")                       # it never uploads
         self.assertIn("check_kit.sh", (ROOT / "macapp/build.sh").read_text())
 
-    def test_the_full_app_asks_for_the_microphone_in_words_that_cover_recording(self):
+    def test_the_app_asks_for_the_microphone_in_words_that_cover_the_daw_if_it_is_added(self):
         sh = (ROOT / "packaging/mac/build_dmg.sh").read_text()
         self.assertIn("NSMicrophoneUsageDescription</key><string>$mictext", sh)
-        self.assertRegex(sh, r'\[ -z "\$kit" \] \|\| mictext="[^"]*DAW records')
-        self.assertNotIn("HypnomixEdition", sh)                       # nothing reads it: one way to know the edition
+        self.assertRegex(sh, r'mictext="[^"]*HypnoMix DAW[^"]*records from the audio input')
+        self.assertNotIn("HypnomixEdition", sh)
 
 
 class MacAppQuit(unittest.TestCase):
@@ -174,48 +187,50 @@ class MacAppQuit(unittest.TestCase):
 
 
 class DownloadWording(unittest.TestCase):
-    """The setup's "Your download" step and the pages that describe the editions say only what is true."""
+    """There is one app and one installer; HypnoMix DAW is an add-on that is not available yet. The pages say only that."""
     PLAIN = [ROOT / f for f in ("hypnomix/app/setup.py", "hypnomix/app/setup.js", "packaging/README.md", "THIRD_PARTY.md",
                                 "hypnomix/app/wiki/articles/18-setup.html", "hypnomix/app/wiki/articles/20-install.html")]
-    PROMISE = re.compile(r"(add|added|adds|install)[a-z]* (it|the hypnomix dau|the full hypnomix|the dau)[^.<]{0,50}(later|one click|one-click|from setup)"
-                         r"|(to add|added) (it )?with one click|appears? (here|on the .?extras)", re.I)
 
-    def test_no_promise_that_the_assistant_adds_the_full_download_later(self):
-        for f in self.PLAIN:
-            for m in self.PROMISE.finditer(f.read_text()):
-                self.fail(f"{f.name}: promises an add-on that nothing builds: {m.group(0)!r}")
+    def test_no_page_still_offers_two_downloads_or_a_full_app(self):
+        gone = re.compile(r"(?i)two downloads|full download|the full (hypnomix|app)|hypnomix assistant|which hypnomix do you want|"
+                          r"your download|full-mac|replaces (this|the) app|coming soon")
+        for f in self.PLAIN + [ROOT / "hypnomix/app/wiki/articles/18-daw.html", ROOT / "hypnomix/app/wiki/articles/26-features.html",
+                               ROOT / "hypnomix/app/wiki/articles/27-next.html", ROOT / "README.md", ROOT / "docs/APP.md", ROOT / "AGENTS.md"]:
+            for m in gone.finditer(f.read_text()):
+                self.fail(f"{f.name}: still describes the old plan of two downloads: {m.group(0)!r}")
 
-    def test_the_pages_say_it_is_a_separate_download_that_replaces_the_app_and_is_mac_only(self):
-        for f in (ROOT / "hypnomix/app/wiki/articles/18-setup.html", ROOT / "hypnomix/app/wiki/articles/20-install.html",
-                  ROOT / "packaging/README.md"):
-            t = f.read_text()
-            self.assertIn("separate download that replaces", t, f.name)
-            self.assertRegex(t, r"Mac only|for the Mac only|Mac only at first", f.name)
+    def test_setup_has_no_download_step_and_asks_which_daw(self):
+        from hypnomix.app import setup as SU
+        self.assertFalse(hasattr(SU, "DOWNLOADS") or hasattr(SU, "downloads"))
+        self.assertEqual([d["id"] for d in SU.DAWS], ["live", "reaper", "hypnomix", "other"])
+        js = (ROOT / "hypnomix/app/setup.js").read_text()
+        for gone in ("pickDownload", "Which Hypnomix do you want", "data-edition"):
+            self.assertNotIn(gone, js)
+        self.assertIn("Add HypnoMix DAW", js)
+        self.assertIn("data-engine", js)
 
     def test_the_licence_is_stated_where_the_engine_is_described(self):
         for f in ("THIRD_PARTY.md", "packaging/README.md", "hypnomix/app/wiki/articles/20-install.html", "hypnomix/app/wiki/articles/18-setup.html"):
-            t = (ROOT / f).read_text()
+            t = " ".join(re.sub(r"<[^>]+>", " ", (ROOT / f).read_text()).split())
             self.assertRegex(t, r"GNU General Public License", f)
+            self.assertRegex(t, r"HypnoMix DAW" if "/wiki/" in f else r"Ardour", f)      # Ardour is named only where the disclosure belongs
             self.assertIn("source will be published with the first release that includes the engine", t, f)
             self.assertNotRegex(t, r"https?://[^\s\"')]*(engine|daw)[^\s\"')]*source", f)        # no invented source address
+
+    def test_what_is_true_today_is_said_plainly(self):
+        for f in ("README.md", "docs/APP.md", "packaging/README.md", "hypnomix/app/wiki/articles/18-setup.html",
+                  "hypnomix/app/wiki/articles/20-install.html", "hypnomix/app/wiki/articles/18-daw.html"):
+            t = " ".join(re.sub(r"<[^>]+>", " ", (ROOT / f).read_text()).split())
+            self.assertRegex(t, r"(?i)not available yet", f)
+            self.assertRegex(t, r"(?i)one (app|download|installer)", f)
 
     def test_what_was_not_verified_is_said_plainly(self):
         t = " ".join((ROOT / "packaging/README.md").read_text().split())
         for word in ("real sound card", "recording", "native File menu", "disk image", "signing", "Intel"):
             self.assertIn(word, t)
 
-    def test_off_a_mac_the_full_download_says_mac_only_instead_of_coming_soon(self):
-        from hypnomix.app import setup as SU
-        win = SU.downloads("", "win32")
-        self.assertEqual([d["id"] for d in win], ["assistant", "full"])
-        self.assertEqual(win[1]["tag"], "Mac only for now")
-        self.assertTrue(win[1]["soon"])
-        self.assertIn("Mac only", win[1]["what"])
-        self.assertEqual(SU.downloads("", "darwin")[1]["tag"], "coming soon")
-        self.assertEqual(SU.downloads("full", "darwin")[1]["tag"], "what you have now")
-
-    def test_the_engine_finder_and_the_edition_use_one_place_inside_an_app(self):
-        from hypnomix.app import daw, update
+    def test_the_engine_finder_looks_in_the_bundle_in_one_place_only(self):
+        from hypnomix.app import daw
         with tempfile.TemporaryDirectory() as td:
             c = Path(td).resolve() / "Hypnomix.app" / "Contents"
             (c / "MacOS").mkdir(parents=True)
@@ -226,16 +241,9 @@ class DownloadWording(unittest.TestCase):
                     mock.patch.object(daw, "_conf", lambda: {}):
                 inside = [p for p in daw.candidates() if c in p.parents]
                 self.assertEqual(inside, [c / "Resources" / "engine" / "bin" / "hypnomix-engine"])
-                self.assertEqual(update.edition(), "assistant")           # a program in another place is not the full edition...
-                self.assertNotIn(eng, daw.candidates())                   # ...and the DAW tab does not find it either
+                self.assertNotIn(eng, daw.candidates())                   # a program in another place is not found
 
-    def test_the_full_downloads_text_makes_no_promise_of_an_add_on(self):
-        from hypnomix.app import setup as SU
-        for d in SU.DOWNLOADS:
-            self.assertNotIn("Extras", d["what"])
-            self.assertNotRegex(d["what"], r"(?i)one click|later from")
-
-    def test_the_full_app_opens_on_the_setup_the_first_time(self):
+    def test_an_app_in_daw_mode_opens_on_the_setup_the_first_time(self):
         from hypnomix.app import setup as SU
         with tempfile.TemporaryDirectory() as td, mock.patch.object(SU, "STATE", Path(td) / "setup.json"):
             self.assertFalse(SU.is_done())
@@ -246,7 +254,8 @@ class DownloadWording(unittest.TestCase):
         server = (ROOT / "hypnomix/app/server.py").read_text()
         self.assertIn('"true" if DW.STATE["daw"] and SU.is_done() else "false"', server)
 
-    def test_the_update_banner_says_plainly_a_full_app_has_no_download_yet(self):
+    def test_the_update_banner_says_plainly_a_release_has_no_installer_for_this_computer(self):
         js = (ROOT / "hypnomix/app/update.js").read_text()
-        self.assertIn("U.no_full_download", js)
-        self.assertIn("has no full download yet", js)
+        self.assertIn("U.no_download", js)
+        self.assertIn("has no installer for this computer yet", js)
+        self.assertNotIn("no_full_download", js)

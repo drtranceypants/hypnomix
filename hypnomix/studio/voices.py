@@ -228,13 +228,13 @@ VOCAL = ("Lead Vocal", "Vocal", "Harmony", "Backing Vocal")
 
 
 def cache_dir():
-    """The names / renders cache: <hypnomix home>/cache, the same place every other cache lives (HYPNOMIX_HOME)."""
+    """The names / renders cache: <HypnoMix home>/cache, the same place every other cache lives (HYPNOMIX_HOME)."""
     from hypnomix.core.atomic import cache_root
     return cache_root()
 
 
 def style_path():
-    """Your learned harmony spacing: <hypnomix home>/harmony-style.json (HYPNOMIX_HOME decides the home)."""
+    """Your learned harmony spacing: <HypnoMix home>/harmony-style.json (HYPNOMIX_HOME decides the home)."""
     return cache_dir().parent / "harmony-style.json"
 
 

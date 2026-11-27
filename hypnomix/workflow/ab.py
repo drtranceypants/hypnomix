@@ -21,7 +21,7 @@ What can be previewed without Live:
                           Not Live's own warp engine: the timing is exact, the stretched stretch can sound a little
                           different. A nudge of a MIDI note is refused (the instrument is not rendered offline).
   device changes          a change to a Compressor, Glue Compressor, Gate, EQ Eight, Utility or Limiter setting
-                          (devices, sidechain, distortion fixes): the track played through hypnomix's MODEL of the
+                          (devices, sidechain, distortion fixes): the track played through HypnoMix's MODEL of the
                           device, in the set as it is and with only that fix applied. The pair is labelled "a model
                           of the device, not Live itself" in ab.json and on the review page.
   masking cuts            the two parts that fight, summed, with and without the cut (a model of an EQ Eight band)
@@ -255,7 +255,7 @@ def od_of(sd):
 
 def preview_masking(mk, orig, scan, pre, post, manifest, sd, sr):
     """Pairs for masking cuts: the part that gives way and the part that keeps the band, summed, with and without
-    the cut (a bell on the giving part, from hypnomix's model of an EQ Eight band)."""
+    the cut (a bell on the giving part, from HypnoMix's model of an EQ Eight band)."""
     from scipy.signal import lfilter
     from hypnomix.session import devmodel, plugrender as PR
     if stale(scan, orig):

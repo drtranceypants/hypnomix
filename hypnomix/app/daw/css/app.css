@@ -527,6 +527,8 @@ button { cursor: default; }
 .status .status-engine { font-family: var(--mono); color: var(--tx3); }
 .status .status-engine.on { color: var(--ok); }
 .status .status-sel { font-family: var(--mono); color: var(--tx2); }
+.status .status-report { color: var(--tx2); text-decoration: underline; white-space: nowrap; }
+.status .status-report:hover { color: var(--tx0); }
 
 /* ───────────── overlay / toast ───────────── */
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: grid; place-items: center; z-index: 50; backdrop-filter: blur(2px); }

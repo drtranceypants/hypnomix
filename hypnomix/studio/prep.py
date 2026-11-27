@@ -444,7 +444,7 @@ def main():
     ap.add_argument("--keep-levels", action="store_true"); ap.add_argument("--no-breaths", action="store_true")
     ap.add_argument("--no-silence", action="store_true"); ap.add_argument("--no-noise", action="store_true")
     ap.add_argument("--plan", nargs="?", const=True, metavar="SCAN_DIR",
-                    help="change nothing: list every move as a finding for review (hypnomix review / fix)")
+                    help="change nothing: list every move as a finding for review (`hypnomix review` / `fix`)")
     ap.add_argument("--steps", help=f"with a single FILE: run only these steps ({', '.join(STEPS)})")
     a = ap.parse_args()
     if a.plan:

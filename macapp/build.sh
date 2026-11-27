@@ -3,11 +3,12 @@
 # Needs the Swift compiler (xcode-select --install). The app is built for this Mac and signed ad hoc:
 # it runs here; to give it to someone else they build it themselves, or it must be signed and notarised.
 #
-#   macapp/build.sh --daw /path/to/HypnomixEngine   also embed the Hypnomix engine kit (the DAW's `osx_build --hypnomix`)
+#   macapp/build.sh --daw /path/to/HypnomixEngine   also embed the HypnoMix engine kit (the DAW's `osx_build --hypnomix`)
 #                                                   in Contents/Resources/engine: the app opens on the DAW view
-# (the installer's full download is packaging/mac/build_dmg.sh --daw KIT; this one is for trying it on this Mac, and
-# never to give to anyone: the engine is under the GNU GPL and the kit must carry its licence text and a source notice,
-# which build_dmg.sh --daw insists on and this script only warns about)
+# (a test build for this Mac only, and never to give to anyone: the engine is under the GNU GPL and the kit must carry its
+# licence text and a source notice, which this script only warns about. The engine people get is the add-on archive that
+# packaging/mac/build_engine_archive.sh makes; the installer no longer carries it, and the app finds one in its bundle
+# only for one more version)
 set -euo pipefail
 kit=""
 if [ "${1:-}" = "--daw" ]; then kit="$(cd "${2:?--daw needs the engine kit folder}" && pwd)"; fi
@@ -26,8 +27,8 @@ cat > "$out/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>Hypnomix</string>
-  <key>CFBundleDisplayName</key><string>Hypnomix</string>
+  <key>CFBundleName</key><string>HypnoMix</string>
+  <key>CFBundleDisplayName</key><string>HypnoMix</string>
   <key>CFBundleIdentifier</key><string>org.hypnomix.app</string>
   <key>CFBundleExecutable</key><string>Hypnomix</string>
   <key>CFBundleIconFile</key><string>Hypnomix</string>
@@ -37,14 +38,14 @@ cat > "$out/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/></dict>
-  <key>NSAppleEventsUsageDescription</key><string>hypnomix shows a file chooser so you can pick a song.</string>
+  <key>NSAppleEventsUsageDescription</key><string>HypnoMix shows a file chooser so you can pick a song.</string>
   <key>HypnomixPython</key><string>$py</string>
 </dict></plist>
 PLIST
 if [ -n "$kit" ]; then
-  [ -x "$kit/bin/hypnomix-engine" ] || { echo "$kit is not a Hypnomix engine kit (no bin/hypnomix-engine)"; exit 1; }
+  [ -x "$kit/bin/hypnomix-engine" ] || { echo "$kit is not a HypnoMix DAW engine kit (no bin/hypnomix-engine)"; exit 1; }
   # a build for this Mac only: the licence and home-path checks only warn here. The result must never be given to anyone
-  # (packaging/mac/build_dmg.sh --daw refuses such a kit).
+  # (packaging/mac/build_engine_archive.sh refuses such a kit).
   . "$repo/packaging/mac/check_kit.sh"
   check_kit "$kit" || echo "WARNING: this kit is not fit to ship (see above). This app is for this Mac only: do not give it to anyone."
   ditto "$kit" "$out/Contents/Resources/engine"

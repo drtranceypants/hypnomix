@@ -63,7 +63,7 @@ def broken_samples(y):
 def load(path, sr=None):
     """Read audio as float64 (n, ch). Resamples to `sr` if given. Falls back to ffmpeg for mp3/m4a.
 
-    A file hypnomix cannot measure ends in an AudioReadError with one plain sentence (the commands print it, exit 2):
+    A file HypnoMix cannot measure ends in an AudioReadError with one plain sentence (the commands print it, exit 2):
     no audio in it, more than five channels, or NaN / infinite samples (a plug-in that blew up while exporting).
     A tool that must REPORT such a file instead of refusing it (scan, preflight) reads it with read() and looks itself."""
     y, file_sr = read(path)
@@ -71,7 +71,7 @@ def load(path, sr=None):
     if not len(y):
         raise AudioReadError(f"can't read '{path}' as audio: it has no audio in it (zero length); export it again")
     if y.shape[1] > MAX_CHANNELS:
-        raise AudioReadError(f"can't read '{path}' as audio: it has {y.shape[1]} channels and hypnomix reads up to "
+        raise AudioReadError(f"can't read '{path}' as audio: it has {y.shape[1]} channels and HypnoMix reads up to "
                              f"{MAX_CHANNELS}; export it as stereo or mono")
     n, first = broken_samples(y)
     if n:
@@ -107,7 +107,7 @@ def read(path):
                                check=True, capture_output=True)
                 y, file_sr = sf.read(str(tmp), always_2d=True, dtype="float64")
             except Exception as e:
-                raise AudioReadError(f"can't read '{path}' as audio: not an audio file hypnomix can decode") from e
+                raise AudioReadError(f"can't read '{path}' as audio: not an audio file HypnoMix can decode") from e
     return y, int(file_sr)
 
 

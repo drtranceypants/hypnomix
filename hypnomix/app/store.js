@@ -3,7 +3,7 @@
 // macOS only for now (on another system the tab says so). A download nobody can verify is installed only after a second,
 // plain-words confirmation (unverified: true); a running install can be cancelled.
 // Uses the page's own helpers: $, esc, get, post, go, S.
-const ST = {data: null, q: '', kind: '', fmt: '', lic: '', mine: false, open: {}, updates: {}, checking: false, timer: null};
+const ST = {data: null, q: '', kind: '', fmt: '', lic: '', mine: false, mpe: false, open: {}, updates: {}, checking: false, timer: null};
 
 (function () {
   const st = document.createElement('style');
@@ -17,7 +17,7 @@ const ST = {data: null, q: '', kind: '', fmt: '', lic: '', mine: false, open: {}
   .store .it h3{margin:0;font-size:1.05rem;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
   .store .it h3 small{color:var(--mute);font-weight:400;font-size:.85rem}
   .store .tags{display:flex;gap:6px;flex-wrap:wrap}.store .tag.oss{border-color:var(--ok);color:var(--ok)}.store .tag.free{border-color:var(--med);color:var(--med)}
-  .store .tag.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+  .store .tag.ok{background:var(--ok);border-color:var(--ok);color:#fff}.store .tag.mpe{border-color:var(--accent);color:var(--accent);font-weight:600}.store .tag.note{border-style:dashed;color:var(--mute)}
   .store .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:auto;padding-top:6px}
   .store .prog{height:6px;border-radius:3px;background:var(--line);overflow:hidden}.store .prog i{display:block;height:100%;background:var(--accent);transition:width .3s}
   .store .msg{font-size:.88rem;border-left:3px solid var(--info);padding:4px 10px;margin:2px 0;overflow-wrap:anywhere}
@@ -50,6 +50,7 @@ async function storeView() {
     <select id="stfmt" aria-label="Format">${opt('', ST.fmt, 'Any format')}${D.formats.map(f => opt(f, ST.fmt)).join('')}</select>
     <select id="stlic" aria-label="Licence">${opt('', ST.lic, 'Any licence')}${opt('open', ST.lic, 'Open source')}${opt('freeware', ST.lic, 'Freeware (not open source)')}${D.licences.map(l => opt(l, ST.lic)).join('')}</select>
     <label class="note" style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="stmine" ${ST.mine ? 'checked' : ''}> Installed</label>
+    <label class="note" style="display:flex;gap:6px;align-items:center;margin:0" title="Only items whose maker documents MPE: per-note pitch bend, pressure and slide from controllers that send them"><input type="checkbox" id="stmpe" ${ST.mpe ? 'checked' : ''}> MPE</label>
     <button id="stupd" ${ST.checking ? 'disabled' : ''}>${ST.checking ? 'Checking…' : 'Check for updates'}</button>
   </div>
   <p class="note">The Store works on macOS only for now. Plug-ins go into <code>${esc(D.targets.plugins)}</code>, sounds into <code>${esc(D.targets.library)}</code>. SFZ instruments and drum kits play in <b>sfizz</b> (in this store). <a href="#" data-wiki="store">How the store works</a></p>
@@ -68,6 +69,7 @@ function storeList() {
     if (ST.lic === 'open' && !it.open_source || ST.lic === 'freeware' && it.open_source) return false;
     if (ST.lic && !['open', 'freeware'].includes(ST.lic) && it.licence !== ST.lic) return false;
     if (ST.mine && !(D.status[it.id] || {}).installed) return false;
+    if (ST.mpe && !it.mpe) return false;
     return true;
   });
   return `<p class="count">${hits.length} of ${D.items.length}</p><div class="grid">${hits.map(storeCard).join('') || '<p class="note">Nothing matches.</p>'}</div>`;
@@ -90,7 +92,7 @@ function storeCard(it) {
       + (j.action === 'install' ? `<div class="acts"><button data-stcancel="${esc(it.id)}" ${j.cancel ? 'disabled' : ''}>${j.cancel ? 'Cancelling…' : 'Cancel'}</button></div>` : '');
   } else if (j && j.error) {
     const ok = j.unverified_ok ? ' data-unverified="1"' : '';
-    state = `<div class="msg err">${esc(j.error)}</div>`
+    state = `<div class="msg err">${esc(j.error)} <button type="button" data-report="banner">Report this</button></div>`
       + (j.confirm ? `<div class="acts"><button data-stinst="${esc(it.id)}" data-replace="1"${ok}>Replace them</button><button data-stforget="${esc(it.id)}">Leave them</button></div>` : '')
       + (j.unverified ? `<div class="acts"><button data-stinst="${esc(it.id)}" data-unverified="1">Install anyway (not verified)</button><button data-stforget="${esc(it.id)}">Don't install</button></div>` : '');
   } else if (j && j.result) {
@@ -113,6 +115,8 @@ function storeCard(it) {
   const more = ST.open[it.id] ? `<dl><dt>Maker</dt><dd>${esc(it.vendor)}</dd>
     <dt>Licence</dt><dd>${esc(it.licence)}${it.open_source ? ' (open source)' : ' (free to use, not open source)'}</dd>
     ${it.credit ? `<dt>Credit</dt><dd>${esc(it.credit)}</dd>` : ''}
+    ${it.mpe ? `<dt>MPE</dt><dd>${esc(it.mpe_note || 'The maker documents MPE.')}</dd>` : ''}
+    ${it.note ? `<dt>Note</dt><dd>${esc(it.note)}</dd>` : ''}
     <dt>Check</dt><dd>${esc(stVerify[it.verification] || '')}</dd>
     ${it.method === 'pkg' ? '<dt>Installer</dt><dd>A package from the publisher: you read and run it yourself in Apple\'s Installer. It installs outside your home folder and asks for your password.</dd>' : ''}
     <dt>Formats</dt><dd>${esc(it.formats.join(', '))}</dd><dt>Mac</dt><dd>${esc(arm)}${measured ? ` · installed binary: ${esc(measured)}` : ''}</dd>
@@ -125,7 +129,7 @@ function storeCard(it) {
     ${u.error ? `<dt>Updates</dt><dd>${esc(u.error)}</dd>` : u.latest ? `<dt>Newest</dt><dd>${esc(u.latest)}</dd>` : ''}</dl>` : '';
   return `<div class="it${s.installed ? ' inst' : ''}" id="st-${esc(it.id)}"><h3>${esc(it.name)} <small>${esc(it.vendor)}</small></h3>
     <div class="tags"><span class="tag">${esc(it.kind)}</span><span class="tag ${it.open_source ? 'oss' : 'free'}">${it.open_source ? 'open source' : 'freeware'} · ${esc(it.licence)}</span>
-      <span class="tag">${esc(it.formats.join(' · '))}</span>${it.verification === 'none' ? '<span class="tag free" title="No fingerprint to check this download against">not verified</span>' : ''}${inst}</div>
+      <span class="tag">${esc(it.formats.join(' · '))}</span>${it.mpe ? '<span class="tag mpe" title="The maker documents MPE (per-note pitch bend, pressure and slide). Open Details to see how it is switched on.">MPE</span>' : ''}${it.note ? '<span class="tag note" title="Read the note in Details before installing">note</span>' : ''}${it.verification === 'none' ? '<span class="tag free" title="No fingerprint to check this download against">not verified</span>' : ''}${inst}</div>
     <div>${esc(it.about)}</div>${more}${state}<div class="acts">${acts.join('')}</div></div>`;
 }
 
@@ -145,6 +149,7 @@ function storeAfter() {
   q.addEventListener('input', () => { ST.q = q.value; storeDraw(); });
   for (const [id, k] of [['stkind', 'kind'], ['stfmt', 'fmt'], ['stlic', 'lic']]) document.getElementById(id).addEventListener('change', e => { ST[k] = e.target.value; storeDraw(); });
   document.getElementById('stmine').addEventListener('change', e => { ST.mine = e.target.checked; storeDraw(); });
+  document.getElementById('stmpe').addEventListener('change', e => { ST.mpe = e.target.checked; storeDraw(); });
   if (stRunning()) storeWatch();
 }
 
@@ -157,7 +162,7 @@ document.addEventListener('click', async e => {
     if (d.stmore) { ST.open[d.stmore] = !ST.open[d.stmore]; storeDraw(); }
     else if (d.stinst) {
       if (d.replace && !confirm('Replace what is already there? The old copies are moved to the store\'s trash folder, not deleted now; Disk care clears that trash after 60 days.')) return;
-      if (d.unverified && !confirm('NOT VERIFIED.\n\nThis download has no fingerprint from its publisher to be checked against, so hypnomix cannot tell whether the file is the one the publisher released. If it is an installer package, it will run with administrator rights once you click through Apple\'s Installer.\n\nInstall it anyway?')) return;
+      if (d.unverified && !confirm('NOT VERIFIED.\n\nThis download has no fingerprint from its publisher to be checked against, so HypnoMix cannot tell whether the file is the one the publisher released. If it is an installer package, it will run with administrator rights once you click through Apple\'s Installer.\n\nInstall it anyway?')) return;
       await post('/api/store/install', {id: d.stinst, replace: !!d.replace, unverified: !!d.unverified}); await storePoll(); storeWatch();
     } else if (d.stcancel) { await post('/api/store/cancel', {id: d.stcancel}); await storePoll();
     } else if (d.stun) {

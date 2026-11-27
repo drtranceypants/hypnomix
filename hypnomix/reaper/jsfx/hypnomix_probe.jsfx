@@ -1,4 +1,4 @@
-desc:Hypnomix Probe (measures this track for the hypnomix app; audio passes through)
+desc:Hypnomix Probe (measures this track for the HypnoMix app; audio passes through)
 //tags: analysis meter hypnomix
 //author: hypnomix
 // Put it LAST on a track: it hears the track after all its plug-ins. Ten times a second it measures the 20 values

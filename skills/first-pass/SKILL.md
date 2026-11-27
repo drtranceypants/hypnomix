@@ -1,6 +1,6 @@
 ---
 name: first-pass
-description: Scan a whole song with every hypnomix tool at once (parallel subagents), then walk the person through the proposed fixes one at a time and apply only what they approve. Use when someone brings a new or unfinished song (a Live set, a REAPER project, an Ardour session), a folder of raw recordings or exported stems from any DAW, and asks to check it, scan it, "find what's wrong", do a first pass, or clean it up before mixing.
+description: Scan a whole song with every HypnoMix tool at once (parallel subagents), then walk the person through the proposed fixes one at a time and apply only what they approve. Use when someone brings a new or unfinished song (a Live set, a REAPER project, a HypnoMix DAW session), a folder of raw recordings or exported stems from any DAW, and asks to check it, scan it, "find what's wrong", do a first pass, or clean it up before mixing.
 ---
 
 # First pass: scan everything, fix one thing at a time
@@ -14,7 +14,7 @@ until they approve it, originals are never overwritten, and every applied fix is
    `hypnomix prefs questions` one at a time in plain words (each has options, a default and a "why") and save
    with `hypnomix prefs set KEY=VALUE …`. Never fill them in yourself. If preferences exist, read them and
    follow them: review style, how much to explain, protected tracks, what is deliberate.
-2. What to scan: a Live set (`.als`), a REAPER project (`.rpp`), an Ardour session, or a folder of recordings /
+2. What to scan: a Live set (`.als`), a REAPER project (`.rpp`), a HypnoMix DAW session (`.ardour`), or a folder of recordings /
    stems (any DAW; ask for full-length files from the same start point, processing off).
 3. For a set, optional but valuable: a bounce of the full mix (`--mix`: loudness, true peak, release checks)
    and the mix or an instrumental for vocal tuning (`--ref`; defaults to `--mix`). `hypnomix separate mix.wav`
@@ -48,7 +48,7 @@ until they approve it, originals are never overwritten, and every applied fix is
 Start one `hypnomix-scanner` subagent per group, **all in the same message** so they run at once.
 A Live set: `names`, `files`, `clips`, `timing`, `vocals`, `effects`, `devices`, `noise`, `intent`, `structure`, and
 `mix` (only with `--mix`; add `--like REF.wav` if they named a song to sound like). `stems` only when they want the
-deep pass (`--deep`: renders every track). A REAPER project or an Ardour session has its own groups: see
+deep pass (`--deep`: renders every track). A REAPER project or a HypnoMix DAW session has its own groups: see
 `hypnomix scan -h`. A folder: `recordings`, `stems`. Give each the path, scan folder, group, and the `--mix/--ref/--key` values.
 They are read-only and return a short summary.
 

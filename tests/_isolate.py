@@ -16,6 +16,7 @@ the environment, and the system's temporary folder (TMPDIR) becomes a folder ins
 test leaves behind goes too. The temporary folder is removed when the run ends. `isolate()` does nothing a second time.
 """
 import atexit
+import importlib.machinery
 import importlib.util
 import os
 import shutil
@@ -37,7 +38,8 @@ SCRUBBED = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC
 
 # What a run skips when it is missing: (what, the modules or programs, how to get it, what is skipped without it)
 EXTRAS = (
-    ("assistant", ("anthropic", "openai"), "uv pip install -e \".[assistant]\"",
+    # Anthropic's library needs Python 3.10 or newer (pyproject.toml), so a 3.9 run needs only the other one
+    ("assistant", ("anthropic", "openai") if sys.version_info >= (3, 10) else ("openai",), "uv pip install -e \".[assistant]\"",
      "the Assistant's approval flow and provider loops (test_chat, test_daw, test_daw_assistant)"),
 )
 TOOLS = (
@@ -98,6 +100,26 @@ def fresh_chat():
     CH.PREVIEW.update(id=None, undo=[], title="")
 
 
+def stand_in_for_claude_library():
+    """Python 3.9 cannot have Anthropic's library (it needs 3.10; see pyproject.toml). The tests never call the real one:
+    each replaces the client by a stand-in (`mock.patch("anthropic.Anthropic", Fake)`), which needs a module of that name to
+    exist. So on a Python that cannot install the library, and only then, an empty module of that name is made, whose
+    client refuses to be used. Returns True when it made one."""
+    if sys.version_info >= (3, 10) or importlib.util.find_spec("anthropic") is not None:
+        return False
+    import types
+    m = types.ModuleType("anthropic")
+    m.__spec__ = importlib.machinery.ModuleSpec("anthropic", None)
+
+    class Anthropic:
+        def __init__(self, *a, **k):
+            raise RuntimeError("this is the tests' stand-in for Anthropic's library, not a client: a test must replace Anthropic")
+    m.Anthropic = Anthropic
+    m.STAND_IN = True
+    sys.modules["anthropic"] = m
+    return True
+
+
 def missing_extras():
     """[(extra, install command, what is skipped)] for the optional extras that are not installed."""
     return [(name, how, what) for name, mods, how, what in EXTRAS
@@ -112,6 +134,9 @@ def missing_tools():
 def notice():
     """The lines a run prints at its start when something it tests is missing (a skip is not a pass)."""
     out = []
+    if getattr(sys.modules.get("anthropic"), "STAND_IN", False):
+        out.append("tests: Anthropic's library needs Python 3.10 or newer: an empty stand-in module is used, and the tests that "
+                   "replace the client run; nothing here can test the real library")
     for name, how, what in missing_extras():
         out.append(f"tests: the '{name}' extra is not installed ({how}): {what} is SKIPPED")
     for tool, how, what in missing_tools():
@@ -119,6 +144,7 @@ def notice():
     return out
 
 
+stand_in_for_claude_library()
 if not os.environ.get(MARK):
     isolate()
     for line in notice():

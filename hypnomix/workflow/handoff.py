@@ -10,7 +10,7 @@ your own DAW. It takes a scan folder (the one you reviewed) and collects:
 
 It writes (nothing is changed in place):
   HANDOFF.md        a checklist ordered by position: track, bar.beat and m:ss, what to do in your DAW's words
-                    (Live, REAPER, Ardour or plain wording), and what to listen for there
+                    (Live, REAPER, HypnoMix DAW or plain wording), and what to listen for there
   markers           a marker at each spot, where the DAW can take them:
                       Live scan     "<Song> (handoff).als", a NEW set next to the original with a locator at each
                                     spot (checked with `hypnomix check` before it is kept)
@@ -25,7 +25,7 @@ Positions come from the finding's own "where" (or, when that has none, a "first 
 no tempo (a folder of stems) only times written as m:ss or seconds can be placed, and bar.beat needs `--bpm`
 (20 to 400; `--beats-per-bar` is a whole number from 1 to 32). An item with no position is listed at the end, unmarked.
 
-The wording follows your DAW preference (`hypnomix prefs set tools.daw=…`) or `--daw live|reaper|ardour|generic`.
+The wording follows your DAW preference (`hypnomix prefs set tools.daw=…`) or `--daw live|reaper|ardour|generic` (`ardour` is the stored word for HypnoMix DAW).
 
 Usage:
     hypnomix handoff SCAN_DIR [--daw live|reaper|ardour|generic] [--bpm N] [--beats-per-bar N]
@@ -39,7 +39,7 @@ from pathlib import Path
 
 DAWS = ("live", "reaper", "ardour", "generic")
 PREF_DAW = {"ableton": "live", "reaper": "reaper", "ardour": "ardour"}
-NAME = {"live": "Live", "reaper": "REAPER", "ardour": "Ardour", "generic": "your DAW"}
+NAME = {"live": "Live", "reaper": "REAPER", "ardour": "HypnoMix DAW", "generic": "your DAW"}
 
 # kind of job -> (words per DAW, what to listen for). {t} is the track name.
 JOBS = [
@@ -89,7 +89,7 @@ JOBS = [
 DEFAULT = ("other", (),
            dict(live="Open the {t} track in Live and make the change named here.",
                 reaper="Open the {t} track in REAPER and make the change named here.",
-                ardour="Open the {t} track in Ardour and make the change named here.",
+                ardour="Open the {t} track in HypnoMix DAW and make the change named here.",
                 generic="Open the {t} track and make the change named here."),
            "whether the change helps the song when you listen to it in context, not only on its own")
 
@@ -130,7 +130,7 @@ _NOISE = ("noise", ("noise", "boosted-noise"),
 _DC = ("dc", ("dc",),
        dict(live="Put a Utility on {t} and switch its DC filter on, or use the cleaned copy.",
             reaper="Put a high-pass at about 20 Hz in ReaEQ on {t}'s FX chain, or use the cleaned copy.",
-            ardour="Put a high-pass filter plug-in at about 20 Hz on {t} (Ardour's own high/low-pass filter), or use the cleaned copy.",
+            ardour="Put a high-pass filter plug-in at about 20 Hz on {t} (HypnoMix DAW's own high/low-pass filter), or use the cleaned copy.",
             generic="Put a very low high-pass (about 20 Hz) on {t}, or use the cleaned copy."),
        "no click where the clip starts or stops, and the low end sounding the same")
 _UNREADABLE = ("unreadable", ("unreadable",),
@@ -144,7 +144,7 @@ _SILENT = ("silent", ("silent",),
                      "the right file in the set.",
                 reaper="Play {t}'s item in REAPER. If it is silent, the wrong track or range was exported: export it again, or "
                        "put the right file on the item.",
-                ardour="Play {t}'s region in Ardour. If it is silent, the wrong track or range was exported: export it again, "
+                ardour="Play {t}'s region in HypnoMix DAW. If it is silent, the wrong track or range was exported: export it again, "
                        "or import the right file.",
                 generic="Play {t}'s audio. If it is silent, the wrong track or range was exported: export it again, or use the "
                         "right file."),
@@ -236,7 +236,7 @@ def collect(sd, undecided=False):
         what = d.get("decision") if isinstance(d, dict) else d
         note = (d.get("note") if isinstance(d, dict) else "") or ""
         if what == "approve" and f.get("applies") == "manual":
-            items.append(dict(f=f, why="approved, and not something hypnomix can change itself", note=note))
+            items.append(dict(f=f, why="approved, and not something HypnoMix can change itself", note=note))
         elif what in ("skip", "change") and note.strip():
             items.append(dict(f=f, why=f"you decided {what} and left a note", note=note))
         elif undecided and what is None and f.get("applies") == "manual":
@@ -278,7 +278,7 @@ def build(items, tempo, bpb):
 def checklist(song, rows, daw, tempo, bpb):
     job_name = NAME[daw]
     L = [f"# Hand-off: {song}", "",
-         f"What hypnomix could not do itself, in {job_name}'s words, in song order. Tick each as you go. "
+         f"What HypnoMix could not do itself, in {job_name}'s words, in song order. Tick each as you go. "
          "Everything here was measured, not heard: your ears decide.", ""]
     if not tempo:
         L += ["No tempo is known for this scan (a folder of stems), so positions are shown as m:ss where the finding has one; "
@@ -292,7 +292,7 @@ def checklist(song, rows, daw, tempo, bpb):
         L += [f"## {n}. {trk} · {pos}", "",
               f"- [ ] **To do ({job_name}):** {job[2][daw].format(t=trk)}",
               f"  - what was found: {f.get('problem') or f.get('kind')}",
-              f"  - what hypnomix suggests: {str(f.get('fix') or '').strip()[:400] or 'see the finding'}"]
+              f"  - what HypnoMix suggests: {str(f.get('fix') or '').strip()[:400] or 'see the finding'}"]
         if r["item"]["note"].strip():
             L.append(f"  - your note: {r['item']['note'].strip()}")
         L += [f"  - **Listen for:** {f.get('listen') or job[3]}",
@@ -471,7 +471,7 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("scan_dir")
-    ap.add_argument("--daw", choices=DAWS, help="wording for this DAW (default: your tools.daw preference, else the scanned project's)")
+    ap.add_argument("--daw", choices=DAWS, help="wording for this DAW (ardour = HypnoMix DAW; default: your tools.daw preference, else the scanned project's)")
     from hypnomix.core import args as A
     ap.add_argument("--bpm", type=A.number(20, 400), help="tempo for bar.beat when the scan has none (a folder of stems; 20 to 400)")
     ap.add_argument("--beats-per-bar", type=A.whole(1, 32), dest="bpb", help="beats in a bar (1 to 32; default: the project's, else 4)")

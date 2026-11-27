@@ -39,30 +39,30 @@ def flat(text):
 
 # ================================================================ DOCS
 class OneDownloadToday(unittest.TestCase):
-    """Nothing says the download page offers the full Hypnomix (the DAW): today there is one download, the Assistant."""
+    """There is one app and one installer for everyone; HypnoMix DAW is an add-on, not a second download, and it is not
+    available yet. Nothing in the repository says otherwise."""
     CLAIMS = re.compile(r"\btwo downloads\b|download page (asks|offers the same)|offers the same (choice|two)"
                         r"|choose (the )?Hypnomix Assistant|(page|setup) offers? two\b|\bboth downloads\b|offer two:", re.I)
 
     def test_no_file_in_the_repository_claims_a_second_download_is_on_offer(self):
-        me = Path(__file__).resolve()
         for p in repo_text_files():
-            if p.resolve() == me:
+            if p.relative_to(ROOT).parts[0] == "tests":                 # the tests quote the old wording to forbid it
                 continue
             for m in self.CLAIMS.finditer(flat(p.read_text(encoding="utf-8", errors="replace"))):
-                self.fail(f"{p.relative_to(ROOT)}: {m.group(0)!r} says or implies the full download can be got today")
+                self.fail(f"{p.relative_to(ROOT)}: {m.group(0)!r} says or implies a second download")
 
-    def test_the_first_sentences_say_there_is_one_download(self):
+    def test_the_first_sentences_say_there_is_one_download_and_the_daw_is_an_add_on(self):
         a = flat(read("hypnomix/app/wiki/articles/20-install.html"))
-        self.assertRegex(a, r"One download today\.</b> The download page offers the <b>Hypnomix Assistant</b> only")
-        self.assertIn("not out yet", a)
+        self.assertRegex(a, r"One download\.</b> The download page has one installer for each computer, the same for everyone")
+        self.assertRegex(a, r"add-on you add from the app's Setup only if you want it")
         g = flat(read("docs/guides/09-setup-and-ai.md"))
-        self.assertIn("Today there is one download: the **Hypnomix Assistant**", g)
-        self.assertIn("the download page does not offer it yet", g)
+        self.assertIn("It is an **add-on**, not a second download", g)
+        self.assertIn("Add HypnoMix DAW", g)
         s = flat(read("hypnomix/app/setup.py"))
-        self.assertRegex(s, r"Today there is ONE download, the Hypnomix Assistant: the website's /download/ page offers only that (# )?one")
-        self.assertIn("The download page will offer both once the full app is out", read("hypnomix/app/setup.js"))
-        self.assertIn("One download today", read("README.md"))
-        self.assertIn("Today there is one download, the Hypnomix Assistant", flat(read("packaging/README.md")))
+        self.assertIn("There is one app and one installer for everyone", s)
+        self.assertIn("Add HypnoMix DAW", read("hypnomix/app/setup.js"))
+        self.assertIn("One download for everyone", read("README.md"))
+        self.assertIn("one app and one installer", flat(read("packaging/README.md")))
 
 
 class VocalLevelByHand(unittest.TestCase):
@@ -88,11 +88,18 @@ class VocalLevelByHand(unittest.TestCase):
 class RoadmapAndPages(unittest.TestCase):
     def test_the_roadmap_leads_with_what_is_new_and_lists_what_was_built(self):
         t = read("docs/ROADMAP.md")
+        self.assertLess(t.index("## New in 0.3.1"), t.index("## New in 0.3.0"))
         self.assertLess(t.index("## New in 0.3.0"), t.index("## Checked where"))
+        newest = t[t.index("## New in 0.3.1"):t.index("## New in 0.3.0")]
+        self.assertEqual(len(re.findall(r"^\d+\. \*\*", newest, re.M)), 6)
+        for word in ("add-on", "Reporting a problem", "guided tour", "69", "MPE", "GitHub too", "has not run yet"):
+            self.assertIn(word, flat(newest), word)
         new = t[t.index("## New in 0.3.0"):t.index("## Checked where")]
         self.assertEqual(len(re.findall(r"^\d+\. \*\*", new, re.M)), 10)
+        self.assertIn("One download today", new)                        # what 0.3.0 itself said: the add-on is 0.3.1's
+        self.assertNotIn("add-on", new)
         built = t[t.index("## (a) Built"):t.index("### Why the review is the product")]
-        for word in ("`store`", "`als2ardour`", "`chain master --ardour`", "DAW mode, built but not shipped"):
+        for word in ("`store`", "`als2ardour`", "`chain master --ardour`", "DAW mode, built but not available yet"):
             self.assertIn(word, built)
         self.assertNotIn("`chain` (Live and REAPER)", built)
         checked = flat(t[t.index("## Checked where"):t.index("## (a) Built")])
@@ -125,10 +132,11 @@ class RoadmapAndPages(unittest.TestCase):
         self.assertIn("`--kind reaper`, the one with the full scan, hear, apply loop", r)
         self.assertIn("gives the full loop", flat(read("hypnomix/app/wiki/articles/25-chores.html")))
 
-    def test_the_guide_does_not_say_the_full_app_will_be_offered_in_extras(self):
+    def test_the_guide_says_the_daw_is_added_from_setup_and_not_a_download(self):
         g = flat(read("docs/guides/09-setup-and-ai.md"))
         self.assertNotIn("it will be offered there once it is released", g)
-        self.assertIn("the download page will offer it", g)
+        self.assertNotIn("the download page will offer it", g)
+        self.assertIn("not a second download", g)
 
     def test_the_roadmap_gives_the_app_and_the_standalone_page_their_own_thresholds(self):
         r = flat(read("docs/ROADMAP.md"))
@@ -377,13 +385,13 @@ class DawNewWithoutEngine(unittest.TestCase):
             self.eng.new_session(self.td.name, "Song")
         msg = str(cm.exception)
         self.assertIn("no engine is installed", msg)
-        self.assertNotIn("attached to a Hypnomix window", msg)
+        self.assertNotIn("attached to a HypnoMix DAW window", msg)
 
     def test_with_a_window_already_open_it_still_says_to_use_that_window(self):
         with mock.patch.object(self.DW, "is_engine", return_value=True):
             with self.assertRaises(RuntimeError) as cm:
                 self.eng.new_session(self.td.name, "Song")
-        self.assertIn("attached to a Hypnomix window", str(cm.exception))
+        self.assertIn("attached to a HypnoMix DAW window", str(cm.exception))
 
 
 class ChatStateBetweenModules(unittest.TestCase):
@@ -463,19 +471,14 @@ class Packaging(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             return {p.name: p.read_text() for p in Path(td).iterdir()}
 
-    def test_the_stable_name_never_takes_a_full_image(self):
-        after = self.stable_names({"Hypnomix-0.3.0-full-mac-arm64.dmg": "FULL-A", "Hypnomix-0.3.0-full-mac-x86_64.dmg": "FULL-I"})
-        self.assertNotIn("Hypnomix-mac-arm64.dmg", after)
-        self.assertNotIn("Hypnomix-mac-intel.dmg", after)
-
-    def test_the_stable_names_still_point_at_the_ordinary_images(self):
+    def test_the_stable_names_point_at_the_one_installer_of_each_platform(self):
         after = self.stable_names({
-            "Hypnomix-0.3.0-full-mac-arm64.dmg": "FULL-A", "Hypnomix-0.3.0-mac-arm64.dmg": "ASSISTANT-A",
-            "Hypnomix-0.3.0-full-mac-x86_64.dmg": "FULL-I", "Hypnomix-0.3.0-mac-x86_64.dmg": "ASSISTANT-I",
+            "Hypnomix-0.3.0-mac-arm64.dmg": "ARM", "Hypnomix-0.3.0-mac-x86_64.dmg": "INTEL",
             "Hypnomix-0.3.0-windows-x64-setup.exe": "WIN"})
-        self.assertEqual(after["Hypnomix-mac-arm64.dmg"], "ASSISTANT-A")
-        self.assertEqual(after["Hypnomix-mac-intel.dmg"], "ASSISTANT-I")
+        self.assertEqual(after["Hypnomix-mac-arm64.dmg"], "ARM")
+        self.assertEqual(after["Hypnomix-mac-intel.dmg"], "INTEL")
         self.assertEqual(after["Hypnomix-windows-setup.exe"], "WIN")
+        self.assertNotIn("-full-", read(".github/workflows/installers.yml"))        # there is no second image to skip
 
 
 if __name__ == "__main__":

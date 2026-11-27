@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""List the plug-ins installed on this computer, mark the free ones hypnomix knows, and keep the list so
+"""List the plug-ins installed on this computer, mark the free ones HypnoMix knows, and keep the list so
 proposals only name what is really there. Nothing is changed: the only file written is your preferences,
 and only when you ask (--save).
 
@@ -18,7 +18,7 @@ Where it looks (the standard folders of each system; add your own with --folder 
   Linux    ~/.vst3, /usr/lib/vst3, /usr/local/lib/vst3; ~/.clap, /usr/lib/clap; ~/.lv2, /usr/lib/lv2
 
 "Free list" means the free and open-source plug-ins named in the README under "Free plug-ins that work with
-hypnomix". They are marked so a proposal can use them; every other plug-in is listed but never proposed.
+HypnoMix". They are marked so a proposal can use them; every other plug-in is listed but never proposed.
 
   --check     loads VST3 and Audio Unit plug-ins only (that is what the host, pedalboard, can open). CLAP and LV2
               are listed as found and marked "not checked". A plug-in that fails to load, crashes or does not
@@ -35,7 +35,7 @@ hypnomix". They are marked so a proposal can use them; every other plug-in is li
               Without --save nothing is written, and the report says how. --save always keeps the whole list, so it
               is refused together with --only or --free (they only narrow what is shown).
 
-Measured from the folders, not from a host: a plug-in in a folder hypnomix doesn't know isn't listed (use
+Measured from the folders, not from a host: a plug-in in a folder HypnoMix doesn't know isn't listed (use
 --folder). Audio Units are read from their Info.plist; the others by their file name.
 """
 import argparse, json, os, plistlib, re, subprocess, sys, time

@@ -1,9 +1,10 @@
 #!/bin/bash
-# Check a Hypnomix engine kit before it goes into an app other people will get:
+# Check a HypnoMix engine kit before it goes into an app other people will get:
 #
 #   packaging/mac/check_kit.sh KIT          # prints what is wrong and exits 1, or says the kit is fine
 #
-# build_dmg.sh --daw runs the same check first (and `build_dmg.sh --check-kit KIT` is only this check).
+# build_engine_archive.sh runs the same check first. The app runs the same checks again in Python when someone adds
+# HypnoMix DAW (hypnomix/app/engine_addon.py, kit_problems), on what it downloaded, before anything is put in place.
 #
 # The engine is a separate program under the GNU General Public License (version 2 or later): a rebranded fork of a free
 # DAW. hypnomix itself is MIT and contains none of its code, but a download that carries the engine must carry its
@@ -20,7 +21,7 @@ check_kit() {
   local kit="$1" bad=0 user hits
   [ -d "$kit" ] || { echo "no engine kit folder: $kit"; return 1; }
   if [ ! -x "$kit/bin/hypnomix-engine" ] || [ ! -x "$kit/lib/hypnomix-engine" ]; then
-    echo "$kit is not a Hypnomix engine kit (no bin/hypnomix-engine and lib/hypnomix-engine): build it with tools/osx_build --hypnomix"
+    echo "$kit is not a HypnoMix DAW engine kit (no bin/hypnomix-engine and lib/hypnomix-engine): build it with tools/osx_build --hypnomix"
     return 1
   fi
   if [ ! -s "$kit/COPYING" ] || ! grep -q "GNU GENERAL PUBLIC LICENSE" "$kit/COPYING"; then

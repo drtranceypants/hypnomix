@@ -228,7 +228,7 @@ class Refusals(unittest.TestCase):
         junk.write_text("not audio")
         code, text = run([self.a, junk, "--out", self.root / "o"])
         self.assertEqual(code, 1)
-        self.assertIn("can't read junk.wav as audio: not an audio file hypnomix can", text)
+        self.assertIn("can't read junk.wav as audio: not an audio file HypnoMix can", text)
         self.assertEqual(text.count("as audio"), 1)               # not the library's message wrapped in ours
         self.assertNotIn(str(self.root), text)                    # no path cut off mid-way
         self.assertNotIn("Traceback", text)

@@ -453,7 +453,7 @@ def recipe(name, sr, role_of, log, bus):
             pan=L["pan"], send_a_db=L.get("reverb_send_db")))
     return dict(song=name, sample_rate=sr, tracks=tracks,
                 returns=[dict(name="A-Plate", device="Hybrid Reverb or Reverb", decay_s=1.8, predelay_ms=25, lowcut_hz=180, highcut_hz=7000)],
-                drum_bus=bus, note="Recreate with the Ableton MCP (create tracks, load devices) and hypnomix live (exact dB, params).")
+                drum_bus=bus, note="Recreate with the Ableton MCP (create tracks, load devices) and `hypnomix live` (exact dB, params).")
 
 
 def _holds_automix(d):

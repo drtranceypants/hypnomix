@@ -136,8 +136,8 @@ class Chains(unittest.TestCase):
         lines = dict(P.describe(d) for d in self.chain)
         self.assertEqual(lines["Some Reverb"], "off: skipped")
         self.assertEqual(lines["Old Clipper"], "VST2: not supported")
-        self.assertEqual(lines["Utility (gain)"], "Live device: hypnomix model")
-        self.assertEqual(lines["EQ Eight"], "Live device: hypnomix model")
+        self.assertEqual(lines["Utility (gain)"], "Live device: HypnoMix model")
+        self.assertEqual(lines["EQ Eight"], "Live device: HypnoMix model")
         self.assertIn("no model", lines["Saturator"])
 
     def test_vst2_is_refused_with_a_reason(self):
@@ -165,7 +165,7 @@ class WithoutPedalboard(unittest.TestCase):
         self.assertIn("pedalboard is not installed", st["Some EQ"])
         self.assertEqual(st["Some Reverb"], "skipped: switched off")
         self.assertTrue(st["EQ Eight"].startswith("rendered"))
-        self.assertIn("no hypnomix model", st["Saturator"])
+        self.assertIn("no HypnoMix model", st["Saturator"])
         self.assertIn("Max for Live", st["Tool"])
         self.assertTrue(st["Utility (gain)"].startswith("rendered"))
 

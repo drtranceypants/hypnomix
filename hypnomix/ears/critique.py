@@ -8,15 +8,15 @@ The key is the one saved in the app's Assistant settings (~/.hypnomix/ai.json), 
 OPENROUTER_API_KEY.
 
 What is sent: a reduced mono MP3 copy of the song (Gemini hears audio as 16 kHz mono anyway, so a full-quality
-stereo upload only costs time), plus, when given, hypnomix's own measurements and scan review as text. The model's
+stereo upload only costs time), plus, when given, HypnoMix's own measurements and scan review as text. The model's
 ear covers arrangement, energy, balance, clarity and feel; its numbers do not (no LUFS, true peak, stereo width or
-air above 8 kHz by ear), so it is told to take those from hypnomix's measurements.
+air above 8 kHz by ear), so it is told to take those from HypnoMix's measurements.
 
 Usage: hypnomix critique song.wav [--scan SCANDIR] [--measure song.json] [--profile PROFILE.md]
        [--question "is the vocal too far back in the chorus?"] [--provider gemini|openrouter] [--model M] [--out DIR]
        [--minutes N] [--again] [--yes] [--estimate]
 --profile and --measure take a plain .md, .json or .txt file (not a hidden file, not in a hidden folder, under 1 MB);
---scan takes a hypnomix scan folder (one with findings.json or REVIEW.md): what they hold is sent to the service.
+--scan takes a HypnoMix scan folder (one with findings.json or REVIEW.md): what they hold is sent to the service.
 Audio is billed at about 25 tokens per second: a 3½-minute song is about 5,000 tokens (around a cent on Flash).
 
 Nothing is uploaded without a yes. In a terminal the command first prints what it will send (the length, the model, the
@@ -24,7 +24,7 @@ estimated tokens and cost, where it goes) and asks y/N. Anywhere else (a script,
 --yes is passed: --yes is only for when the person has said yes to exactly this send. --estimate only prints, and sends
 nothing. A song longer than 12 minutes is warned about (--estimate prints the warning too), and you choose the whole file or its
 first minutes (--minutes N): an agent passes --minutes 12 unless the person chose the whole file.
-The notes are kept (in the hypnomix home folder, cache/listen) for the same file, model, question and context: asking
+The notes are kept (in the HypnoMix home folder, cache/listen) for the same file, model, question and context: asking
 again shows them for free, and --again listens afresh.
 """
 import argparse, base64, hashlib, json, os, subprocess, sys, tempfile, time, urllib.parse, urllib.request, warnings
@@ -64,7 +64,7 @@ artist who records real instruments and voices. Listen to the whole track. Be sp
 You hear a reduced MONO copy (about 16 kHz). So judge by ear: arrangement and energy arc (where attention sags),
 the balance between parts, vocal and lead clarity and intelligibility, low-end feel (kick against bass, mud),
 harshness in the mids, timing feel, performance and emotion. Do NOT judge by ear: stereo width or panning, air or
-sibilance above about 8 kHz, exact loudness or peaks. For those use hypnomix's measurements below if given, and say
+sibilance above about 8 kHz, exact loudness or peaks. For those use HypnoMix's measurements below if given, and say
 plainly when you have no information.
 
 Keep the human feel: never suggest quantising or hard pitch correction. Prefer gentle, partial moves.
@@ -185,7 +185,7 @@ def describe(est, provider, model, name, question=""):
     d = LISTENERS[provider]
     cost = f", roughly ${est['cost']:.3f} (an estimate: {est['basis']}; a thinking model can cost more)" \
         if est.get("cost") is not None else ", cost unknown (see the service's price list)"
-    ctx = f", with {est['context_tokens'] * 4:,} characters of hypnomix's text (the prompt and the review)" \
+    ctx = f", with {est['context_tokens'] * 4:,} characters of HypnoMix's text (the prompt and the review)" \
         if est.get("context_tokens") else ""
     cut = f" (the first {est['seconds'] / 60:.1f} of {est['full_seconds'] / 60:.1f} min)" \
         if est.get("full_seconds") and est["full_seconds"] - est["seconds"] > 1 else ""
@@ -283,7 +283,7 @@ def _scan_review(scan):
     """REVIEW.md of a scan folder, or None. The folder must look like a scan (findings.json or REVIEW.md in it)."""
     d = Path(scan).expanduser()
     if not d.is_dir() or not ((d / "findings.json").is_file() or (d / "REVIEW.md").is_file()):
-        raise ValueError(f"--scan: {scan} is not a hypnomix scan folder (it has no findings.json or REVIEW.md)")
+        raise ValueError(f"--scan: {scan} is not a HypnoMix scan folder (it has no findings.json or REVIEW.md)")
     rv = d / "REVIEW.md"
     if not rv.is_file():
         return None
@@ -294,17 +294,17 @@ def _scan_review(scan):
 
 
 def context(scan=None, measure=None, profile=None):
-    """hypnomix's own numbers and review, as text the model can lean on for what it can't hear."""
+    """HypnoMix's own numbers and review, as text the model can lean on for what it can't hear."""
     parts = []
     if profile:
         parts.append("The artist's own style profile (judge against THIS, not generic taste):\n"
                      + _context_file(profile, "--profile"))
     if measure:
-        parts.append("hypnomix measurements of this file (JSON):\n" + _context_file(measure, "--measure"))
+        parts.append("HypnoMix measurements of this file (JSON):\n" + _context_file(measure, "--measure"))
     if scan:
         review = _scan_review(scan)
         if review:
-            parts.append("hypnomix's scan review of this song (what it already found; confirm, question or add to it):\n"
+            parts.append("HypnoMix's scan review of this song (what it already found; confirm, question or add to it):\n"
                          + review)
     return "\n\n".join(parts)
 
@@ -321,7 +321,7 @@ def listen(path, question="", notes="", provider=None, model=None, seconds_limit
         import openai
     except ImportError:
         raise ValueError("listening needs the OpenAI client library: in the app, Setup, then Extras (the installers "
-                         "include it); from source, run uv pip install -e \".[critique]\" in the hypnomix folder")
+                         "include it); from source, run uv pip install -e \".[critique]\" in the HypnoMix folder")
     with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
         mp3 = Path(td) / "listen.mp3"
         cut = ["-t", str(seconds_limit)] if seconds_limit else []
@@ -362,7 +362,7 @@ def main():
                                  epilog="--yes is for when the person has said yes to exactly this send: an AI agent "
                                         "must ask them first.")
     ap.add_argument("file")
-    ap.add_argument("--scan", help="a hypnomix scan folder for this song: its review goes along as text")
+    ap.add_argument("--scan", help="a HypnoMix scan folder for this song: its review goes along as text")
     ap.add_argument("--measure", help="hypnomix measure JSON for this file")
     ap.add_argument("--profile", help="your style profile (Markdown)")
     ap.add_argument("--question", default="", help="something specific to listen for")

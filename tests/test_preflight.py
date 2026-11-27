@@ -334,6 +334,38 @@ RPP = """<REAPER_PROJECT 0.1 "7.27/macOS-arm64" 1764000000
 """
 
 
+class UndecodableNames(unittest.TestCase):
+    """A Linux computer under a bare "C" language setting (or a name made on another system) holds the bytes of a name it
+    cannot decode as lone surrogate characters; no UTF-8 file can hold those. The names are made by hand: a Mac refuses them on disk."""
+    HELD = "".join(chr(0xDC00 + b) for b in "\u0411\u0430\u0441".encode("utf-8")) + ".wav"          # the bytes of a Cyrillic name
+
+    def test_the_bytes_are_read_as_utf8_when_they_are_utf8(self):
+        self.assertEqual(PF.shown(self.HELD), "\u0411\u0430\u0441.wav")
+        self.assertEqual(PF.shown("plain \u00e9.wav"), "plain \u00e9.wav")
+        self.assertEqual(PF.shown("a\udc80.wav"), "a\\x80.wav")                  # not UTF-8: shown as the byte
+        PF.shown("a\ud800b").encode("utf-8")                                     # a Windows name with a lone surrogate: still no traceback
+
+    def test_a_name_with_such_bytes_is_a_finding_not_a_traceback(self):
+        kinds = [k for k, _ in PF.name_problems(Path("/stems") / self.HELD)]
+        self.assertIn("encoding", kinds)
+        found = PF.check_names([Path("/stems") / self.HELD, Path("/stems") / "Fine.wav"])
+        f = next(x for x in found if x["kind"] == "name-encoding")
+        self.assertEqual(f["files"], ["\u0411\u0430\u0441.wav"])
+        self.assertIn("UTF-8", f["fix"])
+        self.assertIn("Nothing was renamed", f["fix"])
+        json.dumps(f).encode("utf-8")
+
+    def test_the_report_is_written_as_utf8(self):
+        with tempfile.TemporaryDirectory() as td:
+            write(td, "x.wav", tone(330) * 0.5)
+            f = PF.inspect(Path(td) / "x.wav", envelope=False)
+            f["name"] = self.HELD
+            findings = PF.check_names([Path(td) / self.HELD])
+            text = PF.report(str(Path(td) / ("src" + self.HELD)), [f], findings, [], "Folder")
+        raw = text.encode("utf-8")                                              # no lone surrogate left to refuse
+        self.assertIn("\u0411\u0430\u0441.wav".encode("utf-8"), raw)
+
+
 class Project(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

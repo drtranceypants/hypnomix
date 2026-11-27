@@ -191,7 +191,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           {
-            echo "# Security scan: hypnomix $TAG"; echo
+            echo "# Security scan: HypnoMix $TAG"; echo
             echo "Scanned $(date -u +'%Y-%m-%d %H:%M UTC') by GitHub Actions run $GITHUB_RUN_ID ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."; echo
             for f in defender.md clamav.md virustotal.md; do [ -f "$f" ] && { cat "$f"; echo; } || echo "_${f%.md}: no report (the job failed; see the run)_"; done
           } > SECURITY-SCAN.md

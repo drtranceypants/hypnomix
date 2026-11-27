@@ -1,4 +1,4 @@
-"""Hypnomix Probe and Hypnomix Main for REAPER (JSFX), the same as the Live devices for the hypnomix app.
+"""Hypnomix Probe and Hypnomix Main for REAPER (JSFX), the same as the Live devices for the HypnoMix app.
 
   hypnomix reaper probes install            copy the two effects into REAPER's Effects folder (Effects/hypnomix)
   hypnomix reaper probes insert SONG.rpp     a NEW project with a probe last on every track and Main on the master
@@ -9,7 +9,7 @@ the Live probe, ten times a second, with the song position. Its menus say what t
 whether it is protected. Hypnomix Main on the master is the song card (genre, key, scale, limiter, loudness target,
 ceiling, amount) and measures the mix.
 
-The effects write into REAPER's shared memory; the hypnomix bridge (`hypnomix reaper start`) gives each its slot and
+The effects write into REAPER's shared memory; the HypnoMix bridge (`hypnomix reaper start`) gives each its slot and
 keeps the blocks, and the app (or `hypnomix probe listen`) fetches them: the Live tab's meters, Record, the review
 and `probe report` work the same as with Live. `scan SONG.rpp` reads the menus from the saved project.
 """

@@ -5,7 +5,7 @@
   hypnomix aligndevice --out FOLDER    write them somewhere else
 
 Drag "Hypnomix Align" (User Library → Presets → Audio Effects → Max Audio Effect) onto any track (audio passes
-through untouched). It needs the hypnomix app running (`hypnomix app`, or the Mac app) and Max for Live.
+through untouched). It needs the HypnoMix app running (`hypnomix app`, or the Mac app) and Max for Live.
 
   Set           Choose set: the saved .als you are working on (save first: alignset reads the saved file)
   Guide         select the guide track in Live, click "Guide ←"
@@ -35,7 +35,7 @@ from hypnomix.app import device as D
 W, H = 600, 169
 PORT = D.PORT
 
-JS = r"""// Hypnomix Align (jsui): picks tracks and spans in Live, runs `hypnomix alignset` through the hypnomix app.
+JS = r"""// Hypnomix Align (jsui): picks tracks and spans in Live, runs `hypnomix alignset` through the HypnoMix app.
 autowatch = 1;
 inlets = 1;
 outlets = 1;
@@ -199,7 +199,7 @@ function paint() {
     var ink = [0.93, 0.91, 0.87, 1], mute = [0.63, 0.6, 0.56, 1], s = st.server;
     text("HYPNOMIX ALIGN", 8, 15, ink, 10, true);
     if (!connected()) {
-        text("not connected: start the hypnomix app (or run: hypnomix app)", 110, 15, mute, 10, false);
+        text("not connected: start the HypnoMix app (or run: hypnomix app)", 110, 15, mute, 10, false);
         button("Open app", 8, 30, 70, false, "app");
         return;
     }
@@ -313,7 +313,7 @@ def main():
     except FileNotFoundError as e:
         sys.exit(str(e))
     print(f"wrote {od / 'Hypnomix Align.amxd'}\n      {od / 'hypnomix_align.js'}   (keep the two together)")
-    print("In Live: drag Hypnomix Align onto any track, start the hypnomix app, save your set, Choose set.")
+    print("In Live: drag Hypnomix Align onto any track, start the HypnoMix app, save your set, Choose set.")
 
 
 if __name__ == "__main__":

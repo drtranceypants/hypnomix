@@ -1,74 +1,87 @@
 # Installers
 
 One-click installers for people who don't use a terminal. Each one carries its own Python
-([python-build-standalone](https://github.com/astral-sh/python-build-standalone), fetched by `uv`), hypnomix with
+([python-build-standalone](https://github.com/astral-sh/python-build-standalone), fetched by `uv`), HypnoMix with
 the `assistant` and `critique` extras, and an ffmpeg program. The GPL extras (`reference`, `plugins`) and the large
 `ml` extra stay out: they are for source installs.
 
 | file | built by | what it is |
 |---|---|---|
 | `Hypnomix-<v>-mac-arm64.dmg` / `-mac-x86_64.dmg` | `packaging/mac/build_dmg.sh [arm64\|x86_64]` | drag-to-Applications disk image; `Hypnomix.app` is `macapp/Hypnomix.swift` with Python inside `Contents/Resources/python` |
-| `Hypnomix-<v>-full-mac-arm64.dmg` / `-full-mac-x86_64.dmg` | `packaging/mac/build_dmg.sh --daw KIT [arm64\|x86_64]` | the **full** Hypnomix: the same app with the Hypnomix engine kit inside (`Contents/Resources/engine`). Mac only, and **not released**: no workflow builds or publishes it (see "The full download") |
+| `HypnoMix-engine-<engine version>-<platform>.tar.gz` | `packaging/mac/build_engine_archive.sh KIT` | the **HypnoMix DAW add-on**, not an installer: the engine kit as an archive of its own, uploaded by hand to a release and added from Setup on a click. Mac only at first, and **not published yet** (see "HypnoMix DAW, the add-on") |
 | `Hypnomix-<v>-windows-x64-setup.exe` | `packaging/windows/build.ps1` (on Windows; Inno Setup 6) | per-user install to `%LOCALAPPDATA%\Programs\Hypnomix`, Start menu entries, optional Live setup |
 
 Output lands in `packaging/dist/` (ignored by git). Both Mac architectures build on one Apple silicon Mac.
 
-## The full download (its own DAW)
+## HypnoMix DAW, the add-on (its own DAW)
 
-Today there is one download, the Hypnomix Assistant (the installers above). The plan is a second one, the full Hypnomix,
-the same app with the Hypnomix DAW's engine inside; the download page will offer it when it is released. The full one is a **local build** for now, not a release: nothing in the workflows
-builds or publishes it, and it is for the Mac only (there is no Windows build of the engine).
-
-**It is a separate download that replaces the Assistant app.** Both are the same `/Applications/Hypnomix.app`. Nothing
-in the Assistant adds the full one to itself (Setup → Extras only explains what it is and that it is not available
-yet), and the updater never turns one into the other: see "Which edition" below.
+There is **one app and one installer** for everyone (the three files above). HypnoMix DAW, HypnoMix's own DAW built on
+Ardour, a free open-source DAW, is not inside them. Its engine is published as an archive of its own for each platform
+and added from Setup (**Add HypnoMix DAW**, on a click), or with `hypnomix engine install --yes`, only when the person
+wants it: someone who keeps their own DAW never downloads it. It is **not available yet**: nothing in the workflows builds
+or publishes the engine, no archive exists, and the manifest shipped in the app, `hypnomix/app/engine_addon.json`, names
+no address, so the app says "HypnoMix DAW is not available yet" and downloads nothing. It is for the Mac first
+(`mac-arm64`, `mac-intel`); there is no build of the engine for Windows or Linux.
 
 **Licence.** The engine is a separate program under the GNU General Public License (version 2 or later), a rebranded
-fork of a free DAW. hypnomix stays MIT and contains none of its code; the app starts the engine as a process of its
-own and talks to it over the loopback connection. A download that carries the engine must carry its licence and say
-where its source is, so `build_dmg.sh --daw` **refuses to build** unless the kit has, at its top level, `COPYING` (the
-GNU General Public License text) and `SOURCE.txt` (the source notice: the licence, where the exact source of that
-build is, the same for the libraries in the kit), has no symbolic links, and has no home path or login name of the
-builder inside any file (a build writes its configuration into the program; that would then be public). The check is
-`packaging/mac/check_kit.sh KIT`, also as `build_dmg.sh --check-kit KIT` (builds nothing, exit 1 when the kit is not
-fit). The two files are copied to `Contents/Resources/LICENSES/engine/`. No public source address exists yet: the
-source will be published with the first release that includes the engine, and `SOURCE.txt` has to say where before
-any download carrying the engine is offered. `macapp/build.sh --daw` (a build for this Mac only) runs the same check
-but only warns: never give that app to anyone.
+fork of Ardour; HypnoMix stays MIT and contains none of its code. The app starts the engine as a process of its own and
+talks to it over the loopback connection. An archive that carries the engine must carry its licence and say where its
+source is, so `packaging/mac/build_engine_archive.sh` **refuses to package** a kit unless it has, at its top level,
+`COPYING` (the GNU General Public License text) and `SOURCE.txt` (the source notice: the licence, where the exact source
+of that build is, the same for the libraries in the kit), has no symbolic links, and has no home path or login name of
+the builder inside any file (a build writes its configuration into the program; that would then be public). The check
+is `packaging/mac/check_kit.sh KIT` (exit 1 when the kit is not fit). The app runs the same checks again, in Python
+(`engine_addon.kit_problems`), on what it downloaded, before anything is put in place. No public source address exists
+yet: the source will be published with the first release that includes the engine, and `SOURCE.txt` has to say where
+before any archive carrying the engine is published.
 
-1. Build the engine kit in the Hypnomix DAW source (an Ardour fork): `tools/osx_build --hypnomix` writes
-   `tools/osx_packaging/HypnomixEngine` (`bin/hypnomix-engine`, a launcher that runs only from the kit, plus `lib/`
-   and `share/`; about 100 MB, no links, every Mach-O signed), with `COPYING` and `SOURCE.txt` at its top level and
-   no build path inside (see Licence above). It must be built for the same architecture as the app.
-2. `packaging/mac/build_dmg.sh --daw /path/to/HypnomixEngine` makes `Hypnomix-<v>-full-mac-<arch>.dmg`;
-   add `--app-only DIR` to get just `DIR/Hypnomix.app` (no disk image, e.g. to try it beside an installed copy).
+### Making a release that carries an engine
 
-What is different from the Assistant's app (everything else is the same: its own Python, ffmpeg, the guided setup,
+1. Build the engine kit in the engine's own repository: `tools/osx_build --hypnomix` writes
+   `tools/osx_packaging/HypnomixEngine` (`bin/hypnomix-engine`, a launcher that runs only from the kit, plus `lib/` and
+   `share/`; expected to be about 100 MB, no links, every Mach-O signed), with `COPYING` and `SOURCE.txt` at its top level and no build
+   path inside. It must be built for the Mac it is for (Apple silicon: `mac-arm64`, Intel: `mac-intel`).
+2. Set `"engine"` in `hypnomix/app/engine_addon.json` to the engine's version (it names the folder
+   `engine/<version>/` the engine is put in, and the version the app works with). Give every new archive a new version
+   string, so people see it as an update. (If a rebuilt kit is ever published under the same string, an app that
+   already has that version notices that the fingerprint in the manifest is not the one it was added from, says a rebuilt
+   one is published, and fetches it again on a click; it is never replaced while the engine runs.)
+3. `packaging/mac/build_engine_archive.sh /path/to/HypnomixEngine [mac-arm64|mac-intel] [OUT]` runs the kit check, writes
+   `OUT/HypnoMix-engine-<version>-<platform>.tar.gz` (default OUT: `packaging/dist`) and prints its size and SHA-256 and
+   the line to paste into the manifest. The archive is deterministic: sorted entries, one fixed time, no owners, plain
+   modes, no name or time in the gzip header, so the same kit always gives the same bytes. **It never uploads anything**
+   and does not touch the manifest.
+4. Upload the archive to the release by hand (the draft of the tag the line names).
+5. Paste the line under `"platforms"` in `engine_addon.json`: `{"url": "https://github.com/drtranceypants/hypnomix/releases/download/<tag>/<file>", "sha256": "…", "size": N}`
+   (the address is https only; `tests/test_engine_addon.py` checks that any address in the manifest is the project's own
+   release page). Then tag the release as usual (below).
+
+An app that names a newer engine than the one a person has says so in the DAW view and in Setup and offers the new one;
+the old engine is kept until the new one has run once, then removed. Updating the app never touches the engine folder
+(`~/.hypnomix/engine`), and an app that was an old test build with the engine inside it updates to the ordinary app and
+finds its engine at the add-on's place, or is offered it from Setup.
+
+What the add-on does (`hypnomix/app/engine_addon.py`): downloads over https with a size limit (the manifest's size plus a
+megabyte) and a deadline (30 minutes), checks the SHA-256 **before** anything is unpacked (a mismatch deletes the download),
+unpacks with the Store's protections (no entry outside the folder, no link pointing out, entry and size limits), checks
+the kit, and moves it into place in one step; a failed or interrupted add leaves nothing half-added and can simply be
+run again. The address and the fingerprint come only from the manifest shipped in the app, never from a request.
+
+What is different when the engine is there (everything else is the same app: its own Python, ffmpeg, the guided setup,
 the updater, the Assistant):
 
-- The kit is copied to `Contents/Resources/engine`. The window (`macapp/Hypnomix.swift`) sees it and starts the
-  server with `--daw`, so the DAW view opens first, and adds **File → New Session…** (⌘N, a save panel: folder and
-  name) and **Open Session…** (⌘O, a `.ardour` file or its folder). Both go through the DAW view to the server's
-  supervisor (`POST /api/daw/new`, `/api/daw/open`, with the page's own token), asking first if a session is open.
-- The supervisor (`hypnomix/app/daw.py`) finds `Contents/Resources/engine/bin/hypnomix-engine` from the bundled
-  Python's own path; nothing needs configuring. It reopens the session that was open last time (`daw.json` "last");
-  the first time there is none and the view says to make or open one.
+- The supervisor (`hypnomix/app/daw.py`) finds `engine/<version>/bin/hypnomix-engine` in the HypnoMix folder; nothing needs
+  configuring. The DAW tab appears when an engine is found. It reopens the session that was open last time (`daw.json`
+  "last"); the first time there is none and the view says to make or open one.
+- A test build made with `macapp/build.sh --daw KIT` carries a kit inside the app (`Contents/Resources/engine`): the window
+  (`macapp/Hypnomix.swift`) opens on the DAW view and adds **File → New Session…** (⌘N) and **Open Session…** (⌘O). The
+  supervisor still finds that kit for one more version, and nothing depends on it; the installer does not carry it.
 - Audio: CoreAudio on the Mac's default output (System Settings → Sound), with no input device, so macOS never holds
   the engine's start on the microphone question (to record, give `--input-device NAME` in `daw.json` "args"; the app's
-  microphone text says the DAW records from the input you choose, as well as what the Assistant records). If no
+  microphone text says HypnoMix DAW records from the input you choose, as well as what the Assistant records). If no
   device starts, or the device never answers (seen with a loopback driver as the first device in the list), the engine
   is started again on the Dummy backend and the DAW view says so plainly: no sound, everything else works; Restart
   tries the device again.
-- **Which edition** is known one way: the engine program is inside the app, at
-  `Contents/Resources/engine/bin/hypnomix-engine`. `daw.app_edition()` looks at it, and Setup's "Your download" step,
-  the DAW tab, the window (`dawMode`) and the updater all use that one answer (no Info.plist key, no setting a person
-  can edit). A kit anywhere else does not make the full app. The updater takes `Hypnomix-full-mac-arm64.dmg` /
-  `Hypnomix-full-mac-intel.dmg` for the full app and the Assistant's files for the Assistant, never the other: an update
-  can't swap one for the other. On a release that has no full file the full app is told, plainly, that this version
-  has no full download yet and offers nothing (`no_full_download` in the update state; no link to the Assistant).
-  (Release plumbing still to do before a first full release: the stable-name step in `installers.yml` and the file list
-  in `scan-release.yml` know only the Assistant's three files, and the build names the Intel file `x86_64`, the updater
-  `intel`.)
 - **Unsaved work.** The server tracks whether the open session has changes nobody saved (`dirty` in
   `GET /api/daw/state`, any changing engine call from the page or the Assistant since the last save). **Install and
   restart** answers 409 and installs nothing while that is so (save in the DAW tab first). **Quit** (⌘Q, closing the
@@ -77,18 +90,17 @@ the updater, the Assistant):
   (it stops the engine first, up to about 15 s) before the app quits. The update helper waits for the app, the server
   and the engine (45 s, then it stops what is left, the engine's whole process group included) before it swaps the
   bundle. A SIGTERM sent to the app (the helper, a logout) quits without the question.
-- The bundle id stays **`org.hypnomix.app`**. The Assistant and the full download (once it is released) are one product installed as the same
-  `/Applications/Hypnomix.app` (the updater swaps that bundle in place and checks its version), so the full one
-  replaces the Assistant rather than sitting beside it. One id keeps the user's settings, window place and the
-  macOS permissions they already gave when they move from one to the other. A second copy for testing runs with
-  `open -n` and its own `HYPNOMIX_PORT`, `HYPNOMIX_PROBE_PORT` and homes, not a second id.
-- Not verified yet: playing through a real sound card (only the silent test backend has been run), recording, the
-  native File menu inside the built app, the full app's `.dmg` (no disk image of it has been built or opened),
-  signing and notarising it, and Intel Macs.
-- Signing: every Mach-O inside (Python, its packages, ffmpeg and the kit's 128) is signed innermost first, then the
-  app; `codesign --verify --deep --strict` must pass, ad hoc or with a Developer ID. The hardened-runtime exceptions
-  in `mac/entitlements.plist` (library validation off) also cover the engine's own libraries and plug-ins; a
-  Developer ID build of the full app has not been tried yet.
+- The bundle id stays **`org.hypnomix.app`**: one product, one `/Applications/Hypnomix.app`, which the updater swaps in
+  place and whose version it checks. A second copy for testing runs with `open -n` and its own `HYPNOMIX_PORT`,
+  `HYPNOMIX_PROBE_PORT` and homes, not a second id.
+- Not verified yet: playing through a real sound card (only the silent test backend has been run), recording, the native
+  File menu inside the built app, the add-on's download from a real release (no archive is published, so a real
+  download, unpack and first start of an added engine has not been run end to end), signing and notarising it, and Intel
+  Macs.
+- Signing: every Mach-O inside the app (Python, its packages, ffmpeg) is signed innermost first, then the app;
+  `codesign --verify --deep --strict` must pass, ad hoc or with a Developer ID. The engine's own Mach-O files are signed
+  in the kit (`osx_build --hypnomix`); a file the app downloads carries no quarantine mark, and a Developer ID build with
+  the engine added has not been tried yet.
 - `macapp/build.sh --daw KIT` does the same for a developer build that runs this checkout's `.venv` (it passes the
   kit to the server as `HYPNOMIX_ENGINE`).
 
@@ -135,12 +147,11 @@ Unsigned installers work, but macOS Gatekeeper and Windows SmartScreen ask peopl
 
 ## What the app does on first run
 
-The app opens its **guided setup** (`hypnomix/app/setup.py` + `setup.js`), including the first time in the full app:
-the window opens on the DAW view only once the setup is done or skipped. Which download (these installers are the
-Hypnomix Assistant; the full Hypnomix with its own DAW is a local build for now, above, and shows as not available yet
-in the Assistant, "Mac only for now" off a Mac; in the full app this step says it is the full one, and the Extras step
-shows the DAW as built in), how you want to work (the app alone, an
-AI key, a local model, or a desktop AI app such as Claude Code), the provider and key, a connection test, the
+The app opens its **guided setup** (`hypnomix/app/setup.py` + `setup.js`): how you want to work (the app alone, an
+AI key, a local model, or a desktop AI app such as Claude Code), which DAW you use (Ableton Live, REAPER, HypnoMix DAW or
+something else: choosing HypnoMix DAW shows what the add-on is and an **Add HypnoMix DAW** button, or, while no archive is
+published, which is today, says it is not available yet and remembers the choice; nothing is downloaded without that
+click), the provider and key, a connection test, the
 Ableton Live connection (`hypnomix install`, on a click), and for desktop AI apps a `hypnomix` command plus an
 agent folder. On Windows the installer's "Set up Ableton Live" box also runs `hypnomix install`.
 
@@ -153,7 +164,7 @@ swaps `Hypnomix.app` in place and reopens it; on Windows it runs the setup with 
 (Inno Setup keeps the folder and tasks) and starts the launcher with `--quiet`. The helper logs to
 `~/.hypnomix/updates/update.log`. The helper waits for the app, the server and the audio engine to be gone (up to 45 s,
 longer than the engine's own stop) before it swaps the bundle, and **Install and restart** is refused while a DAW
-session has unsaved changes (see "The full download"). The Windows CI job tests an in-place update after its smoke test. For a local
+session has unsaved changes (see "HypnoMix DAW, the add-on"). The Windows CI job tests an in-place update after its smoke test. For a local
 test beside a running copy, `HYPNOMIX_PORT` and `HYPNOMIX_UPDATE_URL` (a releases JSON) point the app elsewhere; while
 `HYPNOMIX_UPDATE_URL` is set, `http://127.0.0.1` and `http://localhost` addresses are also accepted, nothing else.
 

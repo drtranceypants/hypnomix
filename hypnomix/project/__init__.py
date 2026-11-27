@@ -10,7 +10,7 @@ Supported: REAPER (.rpp), Ardour (.ardour) and Ableton Live (.als).
 from pathlib import Path
 
 SUFFIXES = {".rpp": "reaper", ".als": "live", ".ardour": "ardour"}
-NAMES = {"reaper": "REAPER", "live": "Live", "ardour": "Ardour"}
+NAMES = {"reaper": "REAPER", "live": "Live", "ardour": "HypnoMix DAW"}
 
 
 def ardour_session(path):
@@ -47,12 +47,12 @@ def daw_of(path):
 
 class ProjectReadError(ValueError):
     """A file that is not (or no longer) a project of the kind its name says. `str(e)` is one plain sentence that starts
-    with "not a ..." (the command line prints it after the file name, `e.name`, and exits with code 2, no traceback)."""
+    with "not a readable ..." (the command line prints it after the file name, `e.name`, and exits with code 2, no traceback)."""
 
     def __init__(self, name, kind):
-        what = {"reaper": "a REAPER project", "ardour": "an Ardour session", "live": "a Live set"}.get(kind, "a project")
+        what = {"reaper": "a REAPER project", "ardour": "a HypnoMix DAW session", "live": "a Live set"}.get(kind, "a project")
         app = NAMES.get(kind, "its program")
-        super().__init__(f"not {what} hypnomix can read: the file is empty, damaged or another kind of file; open it in "
+        super().__init__(f"not a readable {what[2:]}: the file is empty, damaged or another kind of file; open it in "
                          f"{app} to check it, or give another")
         self.name = name
 
@@ -66,7 +66,7 @@ def unreadable_errors():
 def load(path):
     kind = daw_of(path)
     if kind is None:
-        raise SystemExit(f"{Path(path).name}: not a project hypnomix can read (use a .rpp, .ardour or .als)")
+        raise SystemExit(f"{Path(path).name}: not a project HypnoMix can read (use a .rpp, .ardour or .als)")
     try:
         if kind == "reaper":
             from hypnomix.project import reaper

@@ -279,7 +279,7 @@ class Routes(unittest.TestCase):
     def test_setup_saves_daw_and_level_and_progress(self):
         tok = self.S.TOKEN
         code, r = call(self.base, "/api/setup/daw", {"daw": "reaper", "teach_level": "tour"}, tok)
-        self.assertEqual((code, r), (200, {"daw": "reaper", "teach_level": "tour", "edition": SU.load().get("edition", "")}))
+        self.assertEqual((code, r), (200, {"daw": "reaper", "teach_level": "tour"}))
         code, st = call(self.base, "/api/teach/state")
         self.assertEqual((st["daw"], st["level"], st["teach"]), ("reaper", "tour", True))
         self.assertEqual([c["id"] for c in st["chapters"]], ["hypnomix"])
@@ -296,7 +296,7 @@ class Routes(unittest.TestCase):
     def test_setup_offers_the_complete_course(self):
         tok = self.S.TOKEN
         code, r = call(self.base, "/api/setup/daw", {"daw": "ardour", "teach_level": "az"}, tok)
-        self.assertEqual((code, r), (200, {"daw": "ardour", "teach_level": "az", "edition": ""}))
+        self.assertEqual((code, r), (200, {"daw": "ardour", "teach_level": "az"}))
         code, st = call(self.base, "/api/teach/state")
         self.assertEqual((st["level"], st["teach"], st["chapters"][0]["id"]), ("az", True, "sound"))
         self.assertEqual(list(st["levels"]), ["tour", "101", "az"])
@@ -324,35 +324,81 @@ class Routes(unittest.TestCase):
         for word in ("data-thear", "data-tquiz", "glossaryView", "Common mistakes"):
             self.assertIn(word, js)
 
-    def test_setup_in_the_full_app_says_it_is_the_full_one(self):
-        from hypnomix.app import daw as DW
-        with mock.patch.object(DW, "app_edition", lambda: "full"):
-            code, s = call(self.base, "/api/setup/state")
-        self.assertEqual(s["installed"], "full")
-        full = next(d for d in s["downloads"] if d["id"] == "full")
-        self.assertEqual((full["tag"], full["soon"]), ("what you have now", False))
-        self.assertIn("File → New Session", full["what"])
-        code, s = call(self.base, "/api/setup/state")
-        self.assertEqual(s["installed"], "")                        # a source checkout
-        js = __import__("urllib.request").request.urlopen(self.base + "/setup.js").read().decode()
-        self.assertIn("U.installed === 'full'", js)
-
-    def test_setup_saves_which_download(self):
-        """The download choice: the Assistant now, the full Hypnomix (its own DAW) coming soon; anything else is cleared."""
+    def test_setup_has_one_app_and_hypnomix_daw_is_a_choice_of_daw_not_a_download(self):
+        """No "which download" step: the DAW question lists HypnoMix DAW; choosing it saves it and downloads nothing; a stale
+        "edition" in a request is ignored and never stored."""
         tok = self.S.TOKEN
         code, s = call(self.base, "/api/setup/state")
-        self.assertEqual([d["id"] for d in s["downloads"]], ["assistant", "full"])
-        self.assertTrue(next(d for d in s["downloads"] if d["id"] == "full")["soon"])
-        what = next(d for d in s["downloads"] if d["id"] == "full")["what"]
-        self.assertIn("separate download that replaces this app", what)   # not a promise of a one-click add from Setup → Extras
-        self.assertNotIn("Extras", what)
-        code, r = call(self.base, "/api/setup/daw", {"edition": "full"}, tok)
-        self.assertEqual((code, r["edition"]), (200, "full"))
-        self.assertEqual(call(self.base, "/api/setup/state")[1]["edition"], "full")
-        call(self.base, "/api/setup/daw", {"edition": "nonsense"}, tok)
-        self.assertEqual(SU.load()["edition"], "")
-        call(self.base, "/api/setup/daw", {"edition": "assistant"}, tok)
-        self.assertEqual(SU.load()["edition"], "assistant")
+        self.assertNotIn("downloads", s)
+        self.assertNotIn("installed", s)
+        self.assertEqual([d["id"] for d in s["daws"]], ["live", "reaper", "hypnomix", "other"])
+        self.assertEqual(next(d for d in s["daws"] if d["id"] == "hypnomix")["title"], "HypnoMix DAW")
+        code, r = call(self.base, "/api/setup/daw", {"daw": "hypnomix", "edition": "full"}, tok)
+        self.assertEqual((code, r), (200, {"daw": "hypnomix", "teach_level": ""}))
+        self.assertNotIn("edition", SU.load())
+        self.assertEqual(call(self.base, "/api/setup/state")[1]["daw"], "hypnomix")
+        call(self.base, "/api/setup/daw", {"daw": "nonsense"}, tok)
+        self.assertEqual(SU.load()["daw"], "")
+        js = __import__("urllib.request").request.urlopen(self.base + "/setup.js").read().decode()
+        self.assertNotIn("U.installed", js)
+
+    def test_setup_shows_a_saved_ardour_as_the_hypnomix_tile_and_enables_the_course_buttons_for_both(self):
+        """0.3.0's Setup saved 'ardour'; the tile is 'hypnomix' now, and the teacher maps both to the same course."""
+        js = __import__("urllib.request").request.urlopen(self.base + "/setup.js").read().decode()
+        self.assertIn("daw = U.daw === 'ardour' ? 'hypnomix' : (U.daw || '')", js)
+        self.assertIn("${daw === 'other' && id ? 'disabled' : ''}", js)
+        self.assertNotIn("daw === 'hypnomix') && id", js)
+        self.assertNotIn("if (daw === 'other' || daw === 'hypnomix') teach = ''", js)
+        self.assertNotIn("can't drive", js)
+        self.assertNotIn("can\\'t drive", js)
+        root = Path(__file__).resolve().parent.parent       # sentences true of the other program are not said of this one
+        for rel in ("hypnomix/app/lessons/ch13_hypnomix.py", "hypnomix/app/lessons/ch13_hypnomix_steps.py",
+                    "hypnomix/app/wiki/articles/18-teacher.html"):
+            self.assertNotRegex((root / rel).read_text(encoding="utf-8"), r"(?i)can.t drive", rel)
+        for saved in ("ardour", "hypnomix"):
+            SU.save(dict(SU.load(), daw=saved, teach_level="tour"))
+            self.assertEqual(T.choice()[0], "ardour", saved)
+
+    def test_no_line_of_the_apps_javascript_hides_statements_inside_a_comment(self):
+        """setup.js open() once had `// note ... teach = ...; step = ...;` on one line: the note swallowed five state resets and the
+        file still parsed. A // comment must not end in what looks like assignment statements, in any of the app's scripts."""
+        def tail(line):
+            q, i = None, 0
+            while i < len(line):
+                c = line[i]
+                if q:
+                    if c == "\\":
+                        i += 2
+                        continue
+                    if c == q:
+                        q = None
+                elif c in "'\"`":
+                    q = c
+                elif c == "/" and line[i + 1:i + 2] == "/" and (i == 0 or line[i - 1] != ":"):
+                    return line[i + 2:]
+                i += 1
+            return ""
+        root = Path(__file__).resolve().parent.parent / "hypnomix" / "app"
+        bad = [f"{f.relative_to(root)}:{n}" for f in root.rglob("*.js")
+               for n, l in enumerate(f.read_text(encoding="utf-8").splitlines(), 1)
+               if re.search(r"\b[A-Za-z_]\w*\s=\s[^=].*;\s*$", tail(l))]
+        self.assertEqual(bad, [])
+        js = (root / "setup.js").read_text(encoding="utf-8")
+        body = js[js.index("async function open(force)"):js.index("function close()")]
+        for stmt in ("teach = U.teach_level || ''", "step = force && U.done ? 1 : 0", "msg = null", "liveLog = ''", "cliDone = null"):
+            line = next(l for l in body.splitlines() if stmt in l)
+            self.assertNotIn("//", line.split(stmt)[0], stmt)          # the statement runs: no comment opens before it
+
+    def test_a_daw_of_the_wrong_kind_is_a_plain_400_not_a_crash(self):
+        """A list or a dict where the id belongs (unhashable in a set) was a TypeError out of setup.py: a crash record and a 500."""
+        tok = self.S.TOKEN
+        for path in ("/api/setup/daw", "/api/setup/finish"):
+            for bad in (["a"], {"a": 1}, 7):
+                code, r = call(self.base, path, {"daw": bad}, tok)
+                self.assertEqual(code, 400, (path, bad, r))
+                self.assertIn("wrong kind", r["error"])
+        self.assertEqual(call(self.base, "/api/setup/finish", {"daw": None}, tok)[0], 200)
+        self.assertEqual(call(self.base, "/api/setup/daw", {"daw": "reaper"}, tok)[1]["daw"], "reaper")
 
     def test_actions_need_an_ok(self):
         code, r = call(self.base, "/api/teach/do", {"daw": "live", "step": "tempo", "kind": "tempo", "args": {"bpm": 90}}, self.S.TOKEN)
@@ -379,7 +425,7 @@ class Wiki(unittest.TestCase):
     def test_courses_are_wiki_articles_under_their_daw(self):
         from hypnomix.app import wiki
         arts = {a["id"]: a for a in wiki.local()}
-        for d, g in (("live", "DAW: Ableton Live"), ("reaper", "DAW: REAPER"), ("ardour", "DAW: Ardour")):
+        for d, g in (("live", "DAW: Ableton Live"), ("reaper", "DAW: REAPER"), ("ardour", "DAW: HypnoMix DAW")):
             self.assertEqual(arts[f"learn-{d}"]["group"], g)
             self.assertEqual(arts[f"tour-{d}"]["group"], g)
         self.assertIn("teacher", arts)

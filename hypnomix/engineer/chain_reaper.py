@@ -14,7 +14,7 @@
                                                               raises the level by ceiling - threshold: measured)
 
 Values are set by what the plug-in shows (Hz, dB, ms), so they read in REAPER exactly as planned. With --verify
-REAPER renders the loudest bars of the master (no BlackHole: REAPER writes the file itself), hypnomix measures
+REAPER renders the loudest bars of the master (no BlackHole: REAPER writes the file itself), HypnoMix measures
 them and trims ReaLimit until the loudness matches the offline master, and lowers the ceiling if true peak is over.
 Every change is an undo step in REAPER ("hypnomix: ...").
 """

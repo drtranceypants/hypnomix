@@ -1,4 +1,4 @@
-"""hypnomix's own models of two of Live's stock devices, for offline previews (`hypnomix ab`, `plugrender`): EQ Eight
+"""HypnoMix's own models of two of Live's stock devices, for offline previews (`hypnomix ab`, `plugrender`): EQ Eight
 and Gate. They sit beside the models of Compressor, Glue Compressor, Utility and Limiter in `plugrender.run_stock`.
 
 They are MODELS, not Live: the filter shapes are the standard ones (RBJ bell and shelves, Butterworth cuts), so the

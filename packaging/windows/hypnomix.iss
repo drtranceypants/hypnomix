@@ -6,13 +6,13 @@
 
 [Setup]
 AppId={{7E3B5C1A-5A0B-4F7E-9C59-8A1F2B6D4E21}
-AppName=hypnomix
+AppName=HypnoMix
 AppVersion={#AppVersion}
 AppPublisher=Dr. Trance
 AppPublisherURL=https://hypnomix.bradfieldenterprises.org
 AppSupportURL=https://github.com/drtranceypants/hypnomix/issues
 DefaultDirName={localappdata}\Programs\Hypnomix
-DefaultGroupName=hypnomix
+DefaultGroupName=HypnoMix
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
@@ -43,13 +43,13 @@ Type: filesandordirs; Name: "{app}\python"
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\hypnomix"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\launcher.pyw"""; WorkingDir: "{app}"; IconFilename: "{app}\hypnomix.ico"
-Name: "{group}\Quit hypnomix"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\launcher.pyw"" --stop"; WorkingDir: "{app}"; IconFilename: "{app}\hypnomix.ico"
-Name: "{userdesktop}\hypnomix"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\launcher.pyw"""; WorkingDir: "{app}"; IconFilename: "{app}\hypnomix.ico"; Tasks: desktopicon
+Name: "{group}\HypnoMix"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\launcher.pyw"""; WorkingDir: "{app}"; IconFilename: "{app}\hypnomix.ico"
+Name: "{group}\Quit HypnoMix"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\launcher.pyw"" --stop"; WorkingDir: "{app}"; IconFilename: "{app}\hypnomix.ico"
+Name: "{userdesktop}\HypnoMix"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\launcher.pyw"""; WorkingDir: "{app}"; IconFilename: "{app}\hypnomix.ico"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\python\python.exe"; Parameters: "-m hypnomix.cli install"; StatusMsg: "Setting up Ableton Live…"; Flags: runhidden; Tasks: live
-Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\launcher.pyw"""; Description: "Open hypnomix now"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\launcher.pyw"""; Description: "Open HypnoMix now"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
 Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\launcher.pyw"" --stop"; Flags: runhidden; RunOnceId: "StopServer"

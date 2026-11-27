@@ -139,7 +139,7 @@ STEPS = [
            "instrument, and the notes stay the same. The tempo can change without the pitch changing. Audio recorded "
            "from a microphone cannot do any of that so easily.",
            "You do not need to buy anything. Live has the **Drum Rack** and **Simpler**, and **Wavetable** if your edition has it. "
-           "REAPER has **ReaSynth** and **ReaSamplOmatic5000**. Ardour has **ACE Fluid Synth**, which plays a free soundfont (a soundfont file) you download."],
+           "REAPER has **ReaSynth** and **ReaSamplOmatic5000**. HypnoMix DAW has **ACE Fluid Synth**, which plays a free soundfont (a soundfont file) you download."],
       terms=[["MIDI", "a set of instructions (notes, timing, velocity) that tells an instrument what to play. It is not sound."],
              ["Note", "one instruction: a pitch that starts at a time and lasts a length."],
              ["Velocity", "how hard a note is played, from 1 to 127. Usually harder is louder and brighter."],
@@ -180,7 +180,7 @@ STEPS = [
            "a few very quiet **ghost notes** on the snare. Vary the **fills**, the short busy bars before a change, so each "
            "is a little different. Before a change, leave out the kick (or stop all the drums) for the last beat or two of the bar, so the first beat of the next section hits harder.",
            "Never copy and paste a single bar 16 times with nothing changed: the ear hears it. Change a note or two every "
-           "few bars. The beat hypnomix writes in `step:drums` is built like this: kick, snare on 2 and 4, eighth-note hi-hats, with small differences in how hard each hit lands.",
+           "few bars. The beat HypnoMix writes in `step:drums` is built like this: kick, snare on 2 and 4, eighth-note hi-hats, with small differences in how hard each hit lands.",
            "Humanise with **velocity**, not by moving every note off the grid. Random timing shifts on everything sound sloppy, not human."],
       terms=[["Kick", "the bass drum: the low thump, usually on beats 1 and 3."],
              ["Snare", "the sharp crack, usually on beats 2 and 4, called the backbeat."],
@@ -221,8 +221,8 @@ STEPS = [
            "So go partway. Use a **strength** (also called amount) of about 50 to 75%: each note moves part of the "
            "way toward the grid, not all of it. Or leave the part alone and fix only the notes that are clearly off. **Swing** "
            "pushes every second note a little late, to give a shuffle: it is a feel, not an error.",
-           "hypnomix's `tighten` works this way for a recorded take. Its help (`hypnomix tighten -h`) describes it as pulling a take's hits part of the way toward the click, in place, keeping "
-           "the player's feel: it moves each hit by a share of its error (default half way), and leaves hits already close to their slot where they are. It writes a new set, so your original stays. hypnomix proposes, you decide."],
+           "HypnoMix's `tighten` works this way for a recorded take. Its help (`hypnomix tighten -h`) describes it as pulling a take's hits part of the way toward the click, in place, keeping "
+           "the player's feel: it moves each hit by a share of its error (default half way), and leaves hits already close to their slot where they are. It writes a new set, so your original stays. HypnoMix proposes, you decide."],
       terms=[["Quantise", "move notes onto a grid of beats."],
              ["Grid", "the evenly spaced beat positions notes can snap to: quarters, eighths, sixteenths."],
              ["Strength (amount)", "how far toward the grid each note moves: 100% is all the way, 50% is halfway."],

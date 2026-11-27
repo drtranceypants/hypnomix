@@ -1,4 +1,4 @@
-"""Disk care: the app clears out the bulky files hypnomix leaves behind, so the disk doesn't fill up.
+"""Disk care: the app clears out the bulky files HypnoMix leaves behind, so the disk doesn't fill up.
 
 While the app is open it looks once an hour. It cleans when a week has passed since the last clean, or straight
 away when the disk is nearly full (under 8% free, counted as at most 50 GB and at least 20 GB, so a big disk is not
@@ -13,17 +13,19 @@ What it removes, and only that:
   cache     ~/.hypnomix/cache/render and renders: rendered audio kept to speed up a re-run, idle 7 days;
             cache/teach (the Teacher tab's audio examples, made again on demand), idle 14 days
             (1 when the disk is nearly full; the pitch cache only then, idle 14 days)
-  scans     audio inside hypnomix scan folders (the app's own, and any folder in "watch") once the whole scan
+  scans     audio inside HypnoMix scan folders (the app's own, and any folder in "watch") once the whole scan
             has been idle 14 days: A/B clips and renders. Findings, decisions and reports stay, so the review
             still opens; "Make A/B clips" builds the clips again
   out       audio in hypnomix-out folders (the app's own and in watched folders), idle 14 days
-  temp      hypnomix's OWN temporary folders, named hypnomix-render-…, hypnomix-work-… (and tidy, alignset, ab), in
+  temp      HypnoMix's OWN temporary folders, named hypnomix-render-…, hypnomix-work-… (and tidy, alignset, ab), in
             ~/.hypnomix/cache/tmp and in the system temp folder, idle 1 day. A command removes its own when it ends;
             these are the ones a crash, a power cut or "kill -9" left behind
   bounces   the app's master bounces older than 30 days; the newest 5 always stay
   store     the Store's leftovers in ~/.hypnomix/store: unfinished downloads (work, idle 2 days), installer packages it kept
             for you to run (idle 30 days; "Show installer" says when one was cleared), and plug-ins it moved aside when
             you confirmed a replace (trash, 60 days); all of these go sooner when the disk is nearly full
+  crashes   crash records (<HypnoMix home>/crashes, written when HypnoMix hits a bug; see `hypnomix report`): listed with
+            their size, and only the newest 20 are kept (older ones go, whatever their age). Nothing in them was sent anywhere
   wavs      only if you switch it on: WAV / AIFF files at the top of Desktop and Downloads, older than 30 days.
             They are moved to ~/.hypnomix/holding, not deleted, and deleted from there 14 days later
             ("Restore" puts the last batch back)
@@ -33,7 +35,7 @@ Library, or all of Music, Desktop or Documents (a folder inside those is fine): 
 A folder saved earlier that no longer qualifies (a project folder on an external drive, say) is not cleaned any more,
 but it is still READ, so the audio its projects use stays protected. The settings list it as "not cleaned" and why.
 
-Never removed: an audio file any Live, REAPER or Ardour project on this computer uses (projects under Music,
+Never removed: an audio file any Live, REAPER or HypnoMix DAW project on this computer uses (projects under Music,
 Documents, Desktop and the watched folders are read for this), a file named "final" or "master", anything
 changed in the last hour, and anything while a job is running.
 
@@ -94,7 +96,7 @@ def load():
 
 
 def save(s):
-    write_private(state_file(), json.dumps(s, indent=1))         # mode 0600, in the 0700 hypnomix folder
+    write_private(state_file(), json.dumps(s, indent=1))         # mode 0600, in the 0700 HypnoMix folder
 
 
 def _same(a, b):
@@ -285,7 +287,7 @@ REF_PAT = {".als": re.compile(rb'<(?:Path|RelativePath|Name) Value="([^"]+)"'),
 
 
 def project_refs(blocked):
-    """Names of every audio file a Live (.als), REAPER (.rpp) or Ardour (.ardour) project here points at.
+    """Names of every audio file a Live (.als), REAPER (.rpp) or HypnoMix DAW (.ardour) project here points at.
     Each project's list is cached by its size and time, so only changed projects are read again."""
     cf = hx_home() / "cache" / "diskcare-refs.json"
     try:
@@ -340,7 +342,7 @@ def project_refs(blocked):
 
 
 def scan_folders(blocked):
-    """hypnomix scan folders: the app's own (scan/*) and any folder with findings.json or scan.log under watch."""
+    """HypnoMix scan folders: the app's own (scan/*) and any folder with findings.json or scan.log under watch."""
     out = []
     root = app_home() / "scan"
     if root.is_dir():
@@ -366,7 +368,7 @@ def out_folders(blocked):
 # ---------------------------------------------------------------- hypnomix's own temporary folders
 def own_temp():
     """hypnomix-render-… and the like (core/tmp.py) in ~/.hypnomix/cache/tmp and the system temp folder: only names made by
-    hypnomix, real folders, owned by you. Cleaned like a cache (see plan)."""
+    HypnoMix, real folders, owned by you. Cleaned like a cache (see plan)."""
     from hypnomix.core import tmp as TMP
     try:
         return TMP.own_folders()
@@ -377,7 +379,7 @@ def own_temp():
 def old_leftovers():
     """[dict(path, bytes, wavs, idle_days, sample)]: folders in the system temp folder that LOOK like what older versions of
     devices, duck, cliplevel and tidy left (a name like tmpwack_btj holding only .wav files, or only a small names.json), a day or more old. There is no
-    way to PROVE hypnomix made one, so these are only offered to the person (`view`), and removed only by `clear_old`
+    way to PROVE HypnoMix made one, so these are only offered to the person (`view`), and removed only by `clear_old`
     when they click. Biggest first."""
     from hypnomix.core import tmp as TMP
     out = []
@@ -498,6 +500,14 @@ def plan(lvl=None):
             if idle > age:
                 items.append(("store", "delete", e, size(e)))
 
+    # crash records: the newest 20 stay (the writer keeps to that itself; this is the safety net)
+    from hypnomix.core import report as RPT
+    cdir = hx_home() / "crashes"
+    if cdir.is_dir():
+        recs = sorted(p for p in listdir(cdir, blocked) if p.is_file() and p.suffix == ".json" and RPT._ID_RE.match(p.stem))
+        for p in recs[:-RPT.KEEP] if len(recs) > RPT.KEEP else []:
+            items.append(("crashes", "delete", p, size(p)))
+
     # loose WAVs (switched on by the person)
     if s.get("wavs"):
         for d in (user_home() / "Desktop", user_home() / "Downloads"):
@@ -572,7 +582,7 @@ def run(reason="by hand", job_running=lambda: False):
         if reason != "by hand" and should_notify(s, freed, lvl1):
             notify(f"Freed {freed / GB:.1f} GB. {free1 / GB:.0f} GB free." if lvl1 == "ok"
                    else f"Freed {freed / GB:.1f} GB, but only {free1 / GB:.0f} GB is free." if freed > GB
-                   else f"Only {free1 / GB:.0f} GB is free: nothing of hypnomix's was old enough to clear.")
+                   else f"Only {free1 / GB:.0f} GB is free: nothing of HypnoMix's was old enough to clear.")
             s["notified"] = dict(when=time.time(), level=lvl1)
             save(s)
         return view()
@@ -615,7 +625,7 @@ def should_notify(s, freed, lvl):
 
 def notify(msg):
     if sys.platform == "darwin":
-        subprocess.run(["osascript", "-e", f'display notification "{msg}" with title "hypnomix"'], capture_output=True)
+        subprocess.run(["osascript", "-e", f'display notification "{msg}" with title "HypnoMix"'], capture_output=True)
 
 
 def view():
@@ -624,7 +634,15 @@ def view():
     held = [b for b in holding().iterdir() if b.is_dir()] if holding().is_dir() else []
     return dict(free=free, total=total, level=level(free, total), auto=s.get("auto", True), wavs=s.get("wavs", False),
                 watch=_saved(), refused=[dict(folder=f, why=w) for f, w in refused()], last=s.get("last"), busy=RUNNING["busy"],
-                holding=dict(batches=len(held), bytes=sum(size(b) for b in held)), leftovers=leftovers_view())
+                holding=dict(batches=len(held), bytes=sum(size(b) for b in held)), leftovers=leftovers_view(), crashes=crashes_view())
+
+
+def crashes_view():
+    """The crash records folder for the popup: how many files, their size, where, and how many are kept."""
+    from hypnomix.core import report as RPT
+    d = hx_home() / "crashes"
+    files = [p for p in d.iterdir() if p.is_file()] if d.is_dir() else []
+    return dict(path=str(d), count=len(files), bytes=sum(size(p) for p in files), keeps=RPT.KEEP)
 
 
 def tempfile_dir():
@@ -705,7 +723,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--run", action="store_true", help="clean now (default: only show what would go)")
     ap.add_argument("--clear-old", action="store_true",
-                    help="list the old unprefixed temp folders that look like hypnomix renders, then remove them after "
+                    help="list the old unprefixed temp folders that look like HypnoMix renders, then remove them after "
                          "you answer y (never part of --run)")
     ap.add_argument("--yes", action="store_true",
                     help="with --clear-old: remove them without asking (needed when there is no terminal to ask on)")
@@ -737,7 +755,7 @@ def main():
     lo = r.get("leftovers") or {}
     if lo.get("count"):
         print(f"older versions left {lo['count']} temp folder(s), {lo['bytes'] / GB:.2f} GB, in {tempfile_dir()} that look like "
-              "hypnomix renders; --clear-old lists and removes them (never done on its own)")
+              "HypnoMix renders; --clear-old lists and removes them (never done on its own)")
     if a.run:
         print(f"freed {r['last']['freed'] / GB:.2f} GB")
     elif r.get("blocked"):

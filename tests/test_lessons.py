@@ -14,7 +14,7 @@ BANNED = {
           "020570fef6bd", "03a1bc2421ef", "045093b24588", "06178141c7c8", "0657ecb53be7", "0894a3078e28", "0a5951779b8c", "139b09b78a6f",
           "1418dfd3e149", "16a48fe214f6", "19fd691c8d89", "1c5d29d3887a", "1cb1f387c32f", "1d0e1bac0cb6", "1f0da16b89bf", "2075c679cb9c",
           "27edf8739f5d", "282f8f55fc67", "2ae280b7b474", "2ae41ee88269", "2d87360b82e8", "3258c35df927", "32d4d0f2ebbd", "33544f590034",
-          "33ad776f0e30", "37e1d3b95593", "445ca6eb84d2", "459d9b16ebab", "503fddae4b19", "507f9328604e", "52d16044f840", "611d633fc825",
+          "33ad776f0e30", "37e1d3b95593", "445ca6eb84d2", "459d9b16ebab", "503fddae4b19", "507f9328604e", "52d16044f840", "52fdbec241d7", "611d633fc825",
           "6199bca8d588", "63cc98599f0a", "74e9f3d8efbd", "762797e24b69", "7e002cc92f0f", "7fe01e5bce7b", "809edbe5ab7a", "8251d280bd3b",
           "884fa7dd6070", "91b2d88a0f9f", "97f2e3c35fe1", "995ebc0e7186", "9a9043b12497", "a067c68e292e", "a2c7aa6e8f8f", "a8adf040d538",
           "bac24813f291", "badcaa4206aa", "bb2bd7ca4a32", "bdf8c1e06ce1", "be923d31b6c4", "c85f9738f8fa", "d004e3a0139c", "d22c5ede4878",
@@ -258,6 +258,94 @@ class NoNumpy(unittest.TestCase):
         r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
         self.assertEqual(r.returncode, 0, r.stderr[-800:])
         self.assertGreater(int(r.stdout.strip() or 0), 100)
+
+
+HONESTY = "HypnoMix DAW is not released yet. Until it is, everything written here for it is written for Ardour 8 or 9, the free DAW it is built on, and has not yet been tried in either."
+
+
+def texts(x, skip=("id", "more", "daws", "levels", "fx", "action", "app", "kind")):
+    """The words a person reads in a lesson: every string except ids, links to other lessons, DAW keys and actions."""
+    if isinstance(x, str):
+        yield x
+    elif isinstance(x, dict):
+        for k, v in x.items():
+            if k not in skip:
+                yield from texts(v, skip)
+    elif isinstance(x, (list, tuple)):
+        for v in x:
+            yield from texts(v, skip)
+
+
+class Naming(unittest.TestCase):
+    """The owner's naming decisions: HypnoMix in prose, `hypnomix ...` only as a command, HypnoMix DAW for the third DAW,
+    and Ardour named only in the honesty line of each HypnoMix DAW course's first step."""
+
+    def test_the_third_daw_is_called_hypnomix_daw(self):
+        self.assertEqual(T.DAWS, {"live": "Ableton Live", "reaper": "REAPER", "ardour": "HypnoMix DAW"})
+        self.assertEqual(T.WIKI_GROUP["ardour"], "DAW: HypnoMix DAW")
+
+    def test_ardour_is_named_only_in_the_honesty_line(self):
+        for ch, s in all_steps():
+            for t in texts(s):
+                self.assertNotIn("Ardour", t.replace(HONESTY, ""), s["id"])
+        for lv in COURSES:
+            for ch in T.steps("ardour", lv):
+                for s in ch["steps"]:
+                    for t in texts(s):
+                        self.assertNotIn("Ardour", t.replace(HONESTY, ""), (lv, s["id"]))
+        for lv in COURSES:
+            self.assertNotIn("Ardour", T.wiki_article("ardour", lv)["text"].replace(HONESTY, ""))
+
+    def test_the_generated_wiki_never_names_ardour_or_says_the_honesty_line(self):
+        """The wiki says it once, in its HypnoMix DAW article (id "ardour", not generated here); the generated articles link to it."""
+        arts = T.wiki_all()
+        self.assertFalse([a["id"] for a in arts if a["id"] == "ardour"])
+        for a in arts:
+            for field in ("title", "sub", "html", "text"):
+                self.assertNotIn("Ardour", a[field], a["id"])
+                self.assertNotIn("not released yet", a[field], a["id"])
+        self.assertIn('data-wiki="ardour"', T.wiki_article("ardour", "tour")["html"])
+        self.assertIn('data-wiki="ardour"', T.wiki_article("ardour", "az")["html"])
+        self.assertEqual(T.wiki_article("ardour", "tour")["title"], "Guided tour: HypnoMix DAW")
+        self.assertNotIn(HONESTY, T.steps("ardour", "az", honesty=False)[0]["steps"][0]["how"])
+
+    def test_titles_do_not_say_the_name_twice(self):
+        for lv in COURSES:
+            for ch in T.steps("ardour", lv):
+                self.assertNotIn("HypnoMix in HypnoMix", ch["title"])
+                for s in ch["steps"]:
+                    self.assertNotIn("HypnoMix with HypnoMix", s["title"])
+
+    def test_the_honesty_line_opens_each_hypnomix_daw_course_and_nowhere_else(self):
+        for lv, first in (("tour", "hm-loop"), ("101", "daw"), ("az", "snd-what-is-sound")):
+            steps = [s for ch in T.steps("ardour", lv) for s in ch["steps"]]
+            self.assertEqual(steps[0]["id"], first)
+            self.assertEqual(steps[0]["how"][0], HONESTY, lv)
+            self.assertEqual(T.HONESTY, HONESTY)
+            for s in steps[1:]:
+                self.assertNotIn("not released yet", " ".join(s["how"] + s["say"]), (lv, s["id"]))
+        for d in ("live", "reaper"):
+            for ch, s in all_steps():
+                for t in texts(s):
+                    self.assertNotIn("not released yet", t)
+
+    def test_the_product_is_spelled_hypnomix_capital_m_in_prose(self):
+        """A bare lower-case "hypnomix" may stay only in a command, a path, a file or a name another program looks up."""
+        keep = re.compile(r"`[^`]*`|~/\.hypnomix|hypnomix[/.\-_][A-Za-z0-9_/.\-]*[A-Za-z0-9_/]|.hypnomix: |\(hypnomix devices\)|type Hypnomix in|Effects/hypnomix|JS \u2192 hypnomix")
+        for ch, s in all_steps():
+            for t in texts(s):
+                left = keep.sub("", t)
+                self.assertIsNone(re.search(r"\bhypnomix\b", left), f"{s['id']}: {t[:90]}")
+                self.assertIsNone(re.search(r"\bHypnomix\b(?! ?(Main|Probe|Align|panel|device|Master)|\*\*|:| \u2192)", left.replace("**Hypnomix**", "")),
+                                  f"{s['id']}: {t[:90]}")
+
+    def test_setup_choice_hypnomix_gets_the_hypnomix_daw_lessons(self):
+        from unittest import mock
+        with mock.patch("hypnomix.app.setup.load", return_value={"daw": "hypnomix", "teach_level": "az"}):
+            self.assertEqual(T.choice()[0], "ardour")
+            st = T.state()
+        self.assertEqual((st["daw"], st["daws"]["ardour"]), ("ardour", "HypnoMix DAW"))
+        self.assertTrue(st["chapters"])
 
 
 if __name__ == "__main__":

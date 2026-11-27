@@ -65,8 +65,8 @@
     });
   }
   function hint(k, it) {
-    if (k === 'afx' || k === 'plug' && HX.mcp.connected || k === 'hx' && /^(hx|Hypnomix) /.test(it.name)) return it.name + ' · double-click to add to the selected track';
-    if (it.name === 'Scan session…') return 'Run a hypnomix scan and open Review';
+    if (k === 'afx' || k === 'plug' && HX.mcp.connected || k === 'hx' && /^(hx|hypnomix) /i.test(it.name)) return it.name + ' · double-click to add to the selected track';
+    if (it.name === 'Scan session…') return 'Run a HypnoMix scan and open Review';
     if (it.name === 'Vocal level check') return 'Ask the Assistant to check vocal levels';
     if (it.snap) return 'Snapshot · ' + it.sub;
     return it.name + ' · click to preview';

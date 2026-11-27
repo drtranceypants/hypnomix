@@ -11,13 +11,13 @@ group: Training
     <ol class="steps">
       <li>Start the first pass with <b>Live devices</b> ticked (on by default for a Live set), or run <code>hypnomix probe insert "Song.als"</code>. Either writes a new set, "Song (hypnomix devices).als", with <b>HypnomixProbe</b> on every track, group and return and the review device and <b>HypnomixMain</b> on Main, each starting at "auto". No dragging; your set isn't touched.</li>
       <li>Open the new set in Live.</li>
-      <li>Set the menus where you know better than a guess. They're Live parameters, so they're saved in your set, and the next <code>scan</code> reads them. Leave "auto" anywhere you're happy for hypnomix to work it out by sound.</li>
+      <li>Set the menus where you know better than a guess. They're Live parameters, so they're saved in your set, and the next <code>scan</code> reads them. Leave "auto" anywhere you're happy for HypnoMix to work it out by sound.</li>
     </ol>
     <div class="note-box">Modes such as Dorian or Mixolydian are tuned with the notes of their parent major key, so A Dorian is tuned to the notes of G major. Chords you type are kept by the app, matched to the song by its track names.</div>
     <h3 class="sub-h">A mastering chain of Live's own devices</h3>
     <ol class="steps">
       <li><b>Build chain</b> puts a rack called <b>Hypnomix Master</b> just before HypnomixMain: Tone (EQ Eight), Glue (Glue Compressor), Tame (Multiband Dynamics, off), Warmth (Saturator, off), Width (Utility: bass mono below 120 Hz) and a Limiter. Every gain starts at 0 dB, so it starts neutral. Open the rack and change anything you like.</li>
-      <li>While it's the rack hypnomix built, it follows the song card: the <b>Ceiling</b> sets the Limiter's ceiling, and the <b>Limiter</b> character (clean, punch, loud) sets its lookahead, its release and the Glue's attack.</li>
+      <li>While it's the rack HypnoMix built, it follows the song card: the <b>Ceiling</b> sets the Limiter's ceiling, and the <b>Limiter</b> character (clean, punch, loud) sets its lookahead, its release and the Glue's attack.</li>
       <li>Play the loudest part and press <b>Match target</b>. It listens to Main after the chain and turns the Limiter's gain until Main sits on the card's <b>Target LUFS</b>, in a few rounds of about 8 seconds each.</li>
       <li>Type a name and press <b>Save</b> to keep the chain as it is now (your edits, or a rack of your own) as a template. Pick it from the menu next time and press Build chain. Plug-ins and Max for Live devices can't be rebuilt by Live, so they're listed as left out.</li>
     </ol>

@@ -3,7 +3,7 @@
 A chapter is a dict: id, title, sub, levels (which courses it belongs to: "tour", "101", "az") and steps. A step may carry
 its own `levels`; without one it follows its chapter. The three courses:
 
-  tour  hypnomix in your DAW (for people who already record and mix)
+  tour  HypnoMix in your DAW (for people who already record and mix)
   101   the crash course: the words, a first recording, one effect at a time, mastering, then the tour
   az    the complete course, A to Z: every chapter and step (101 is a subset of it)
 

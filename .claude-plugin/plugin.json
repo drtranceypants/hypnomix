@@ -1,7 +1,7 @@
 {
   "name": "hypnomix",
-  "version": "0.3.0",
-  "description": "A mixing and mastering engineer for Ableton Live, REAPER and Ardour: scan a song and fix only what you approve, prep raw takes, automix stems, master, align vocals, run tracking sessions and release checks.",
+  "version": "0.3.1",
+  "description": "A mixing and mastering engineer for Ableton Live, REAPER and HypnoMix DAW: scan a song and fix only what you approve, prep raw takes, automix stems, master, align vocals, run tracking sessions and release checks.",
   "license": "MIT",
-  "keywords": ["ableton", "reaper", "ardour", "mixing", "mastering", "audio", "music-production"]
+  "keywords": ["ableton", "reaper", "hypnomix-daw", "mixing", "mastering", "audio", "music-production"]
 }

@@ -1,6 +1,6 @@
 # Lessons: the mistakes behind the rules
 
-hypnomix was built while mixing real songs with an AI agent, and most of its rules exist because something went
+HypnoMix was built while mixing real songs with an AI agent, and most of its rules exist because something went
 wrong once. If you are an agent, read this as a list of traps you will walk into too. Each entry: what
 happened, why, and what to do instead. Where the tools now enforce the lesson, it says so.
 
@@ -76,7 +76,7 @@ happened, why, and what to do instead. Where the tools now enforce the lesson, i
 22. **A batch cost far more than one job suggested.** Not audio, same lesson: time one track before a whole
     song, and say how long the full run will take.
 
-## Building and testing hypnomix itself
+## Building and testing HypnoMix itself
 
 Found in the final review of the work after the public release. Each is a trap for the next person who changes the code.
 
@@ -110,6 +110,6 @@ Found in the final review of the work after the public release. Each is a trap f
 Almost every entry is one of four things: acting before asking, trusting a number that wasn't checked, changing
 something that was a choice, or calling something done without measuring it again. The loop in `AGENTS.md`
 (preferences → scan → review → apply → verify → listen) is built to make those four hard to do. Entries 23 to 28 are
-a fifth, for people who change hypnomix itself: a test, a fallback or a gate that looks as if it did its job and did not.
+a fifth, for people who change HypnoMix itself: a test, a fallback or a gate that looks as if it did its job and did not.
 
 Found a new trap? Add it here, in the same three lines, and add the rule to `AGENTS.md` if it is general.

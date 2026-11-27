@@ -1,7 +1,7 @@
 """The optional extras, for the installed app too.
 
-The installers ship hypnomix with the `assistant` and `critique` extras. The other three stay out of the download:
-`reference` (matchering) and `plugins` (pedalboard) are GPL-3.0, so hypnomix itself stays MIT, and `ml` pulls in an
+The installers ship HypnoMix with the `assistant` and `critique` extras. The other three stay out of the download:
+`reference` (matchering) and `plugins` (pedalboard) are GPL-3.0, so HypnoMix itself stays MIT, and `ml` pulls in an
 ML runtime of about a gigabyte. The app's Setup (Extras step) installs any of them from PyPI on a click, into
 ~/.hypnomix/extras/pyXY, never inside the app itself: so the signed app stays untouched, an update to the app keeps
 them, and deleting that folder removes them. Packages the app already has are pinned to its own versions, so an extra
@@ -9,7 +9,7 @@ can never swap out a library the app depends on (it fails with pip's message ins
 
 A source install (a venv or any other Python) gets them installed into that same Python instead.
 
-Importing hypnomix adds the extras folder to sys.path when it exists (hypnomix/__init__.py), so the app, its
+Importing HypnoMix adds the extras folder to sys.path when it exists (hypnomix/__init__.py), so the app, its
 `hypnomix` command and the agents all see them."""
 import os, re, shutil, site, subprocess, sys, sysconfig, threading, time
 from importlib import metadata, util
@@ -26,7 +26,9 @@ EXTRAS = {
                license="MIT (audio-separator, basic-pitch); brings PyTorch (BSD) and ONNX Runtime (MIT)",
                size="about 1 GB, plus a 320 MB model fetched the first time stem separation runs", commands=["separate", "midi"],
                what="Splits a finished song into stems (vocals, drums, bass, other), and turns a recorded part into MIDI notes."),
-    "assistant": dict(title="The Assistant tab", modules=["anthropic", "openai"], license="MIT", size="included",
+    # Anthropic's library needs Python 3.10 or newer (pyproject.toml): on 3.9 the extra is the OpenAI-compatible providers
+    "assistant": dict(title="The Assistant tab", modules=["anthropic", "openai"] if sys.version_info >= (3, 10) else ["openai"],
+                      license="MIT", size="included",
                       commands=[], what="Talks to Claude or any OpenAI-compatible AI service.", included=True),
     "critique": dict(title="The Listener", modules=["openai"], license="MIT", size="included", commands=["critique"],
                      what="Gemini or OpenRouter hears a bounce and gives notes by ear.", included=True),
@@ -71,7 +73,7 @@ def add_to_path():
 
 
 def requirements(name):
-    """The extra's requirements, as hypnomix's own metadata lists them (pyproject.toml)."""
+    """The extra's requirements, as HypnoMix's own metadata lists them (pyproject.toml)."""
     out = []
     try:
         reqs = metadata.requires("hypnomix") or []
@@ -91,8 +93,8 @@ def installed(name):
 def hint(name):
     """What to tell someone who runs a command that needs a missing extra."""
     if bundled():
-        return f"this needs the optional extra '{name}': in the hypnomix app click Setup, then Extras, and install \"{EXTRAS[name]['title']}\""
-    return f"this needs the optional extra '{name}': in the hypnomix folder, run: uv pip install -e \".[{name}]\""
+        return f"this needs the optional extra '{name}': in the HypnoMix app click Setup, then Extras, and install \"{EXTRAS[name]['title']}\""
+    return f"this needs the optional extra '{name}': in the HypnoMix folder, run: uv pip install -e \".[{name}]\""
 
 
 def _python():
@@ -118,7 +120,7 @@ def commands(name):
     """The pip commands for an extra (one, or two for `ml`), and their environment."""
     reqs = requirements(name)
     if not reqs:
-        raise ValueError(f"hypnomix's metadata lists no packages for the extra '{name}'")
+        raise ValueError(f"HypnoMix's metadata lists no packages for the extra '{name}'")
     env, base = _env()
     return [base + part for part in SPLIT.get(name, [reqs])], env
 
@@ -205,7 +207,7 @@ def install(name):
     if name not in EXTRAS or EXTRAS[name].get("included"):
         raise ValueError(f"no extra to install called '{name}'")
     if not can_install() and not bundled():
-        raise ValueError(f"No pip or uv to install with. In a terminal, in the hypnomix folder: uv pip install -e \".[{name}]\"")
+        raise ValueError(f"No pip or uv to install with. In a terminal, in the HypnoMix folder: uv pip install -e \".[{name}]\"")
     if not can_install():
         raise ValueError("This copy of the app has no pip to install extras with. Download the newest installer from "
                          "hypnomix.bradfieldenterprises.org/download/ and install it over this one.")

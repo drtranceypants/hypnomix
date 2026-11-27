@@ -30,7 +30,7 @@ Usage:
            chords); --answer settles the sections the key map was unsure about (unanswered: notes on the disputed
            pitches are left exactly as sung; notes both scales share are tuned)
 Writes OUT.wav plus OUT.notes.txt (every note: time, sung, target, cents before/after) and OUT.png.
-The pitch track of a take (the slow part, minutes for a long take) is kept in <hypnomix home>/cache/pitch, named by the
+The pitch track of a take (the slow part, minutes for a long take) is kept in <HypnoMix home>/cache/pitch, named by the
 audio itself, so a changed take is always tracked again and the same take (the scan, the previews, the fix) only once.
 Disk care clears it; HYPNOMIX_NO_CACHE=1 tracks every time.
 Needs Rubber Band 3+ (`brew install rubberband` on a Mac; without it tune stops at once with one line that says how to get it
@@ -89,7 +89,7 @@ PITCH_STATS = {"hits": 0, "misses": 0}
 
 
 def _pitch_file(y, sr):
-    """Where this audio's pitch track is kept: <hypnomix home>/cache/pitch/pyin-<hash>.npy (beside the other pitch cache,
+    """Where this audio's pitch track is kept: <HypnoMix home>/cache/pitch/pyin-<hash>.npy (beside the other pitch cache,
     so Disk care looks after it), the hash taken of the samples, the sample rate, the analysis settings and the versions
     of librosa and numpy. The key is the audio itself, so a changed take can never return an old answer, and a copy of the
     same audio hits too."""

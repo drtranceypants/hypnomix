@@ -3,7 +3,7 @@ where something is actually sounding, never on silence.
 
     times, f0, level_db = pitch.track("Vocal.wav")      # f0 in Hz, NaN where nothing pitched is sounding
 
-The result is cached in <hypnomix home>/cache/pitch/ (~/.hypnomix unless HYPNOMIX_HOME says otherwise) by file
+The result is cached in <HypnoMix home>/cache/pitch/ (~/.hypnomix unless HYPNOMIX_HOME says otherwise) by file
 path, size, modification time and settings, so a scan and the fix after it (and any other tool) analyse each
 file once. Use pYIN only where note-level accuracy
 matters (vocal tuning); for "which part is higher / where is it singing" this is plenty.
@@ -17,7 +17,7 @@ import numpy as np
 
 
 def cache_dir():
-    """The pitch cache folder: under the same hypnomix home as everything else (HYPNOMIX_HOME)."""
+    """The pitch cache folder: under the same HypnoMix home as everything else (HYPNOMIX_HOME)."""
     from hypnomix.core.atomic import cache_root
     return cache_root() / "pitch"
 

@@ -9,7 +9,7 @@ plug-ins. Five ways in, one engine:
 | a saved Live set | `hypnomix alignset SET.als --guide … --parts …` | a new set: the timing as **warp markers on your own clips** |
 | Live open, and you'd rather click | the **Hypnomix Align** device (`hypnomix aligndevice`) | the same as alignset, from inside Live |
 | a saved REAPER project | `hypnomix alignset SONG.rpp --guide … --parts …` | a new project: **stretch markers on your own items**, pitch / formant as new takes |
-| REAPER open, and you'd rather click | the **Hypnomix Align** panel (`hypnomix reaper align`) | the same as alignset on the .rpp, from inside REAPER |
+| REAPER open, and you'd rather click | the **HypnoMix Align** panel (`hypnomix reaper align`) | the same as alignset on the .rpp, from inside REAPER |
 
 Nothing overwrites your takes or your set. Every part is measured again afterwards with an independent check,
 and a part that would not end up closer is left as it was.
@@ -126,7 +126,7 @@ Drag **Hypnomix Align** onto any track (audio passes through). Save your set, th
 The device is new: its script is tested against a simulated Live set, and the alignment it drives is tested
 on real sets, but it has not been loaded in Live yet. If something misbehaves, the Max window says which line.
 
-## In REAPER: alignset on a .rpp, and the Hypnomix Align panel
+## In REAPER: alignset on a .rpp, and the HypnoMix Align panel
 
 ```bash
 hypnomix alignset "Song.rpp" --guide "Lead Vox" --parts "Harmony 1" "Harmony 2" --bars 11-21 --bpm 64 --apply

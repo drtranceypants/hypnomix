@@ -21,13 +21,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         web.navigationDelegate = self
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1040, height: 800),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = dawMode ? "Hypnomix" : "hypnomix"
+        window.title = "HypnoMix"
         window.contentView = web
         window.center()
         window.setFrameAutosaveName("HypnomixMain")
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
-        message("Starting hypnomix…")
+        message("Starting HypnoMix…")
         isUp { up in
             if up { self.web.load(URLRequest(url: home)) } else { self.startServer() }
         }
@@ -60,19 +60,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
         do { try p.run() } catch {
-            message("Could not start hypnomix: \(error.localizedDescription)")
+            message("Could not start HypnoMix: \(error.localizedDescription)")
             return
         }
         server = p
         waitForServer()
     }
 
-    // DAW mode: the full download carries the engine kit (Contents/Resources/engine, from the DAW's
-    // `osx_build --hypnomix`; packaging/mac/build_dmg.sh --daw KIT). The app then opens on the DAW view, and the server's
-    // supervisor (hypnomix/app/daw.py) finds Contents/Resources/engine/bin/hypnomix-engine by itself.
+    // DAW mode, for a TEST build only: a kit placed in Contents/Resources/engine (macapp/build.sh --daw KIT) makes the app
+    // open on the DAW view, and the server's supervisor (hypnomix/app/daw.py) finds Contents/Resources/engine/bin/hypnomix-engine
+    // by itself. The installer no longer carries the engine: people add HypnoMix DAW from Setup (hypnomix/app/engine_addon.py),
+    // and the DAW tab then appears like any other. This switch is found for one more version, and nothing depends on it.
+    // HYPNOMIX_DAW=1 only opens the DAW view first (a developer's switch).
     var dawMode: Bool {
-        // ONE place makes this the full app, the same one the server (daw.app_edition) and the updater look at: the engine
-        // program in Resources/engine/bin. HYPNOMIX_DAW=1 only opens the DAW view first (a developer's switch).
         let kit = Bundle.main.bundlePath + "/Contents/Resources/engine/bin/hypnomix-engine"
         return FileManager.default.isExecutableFile(atPath: kit) || ProcessInfo.processInfo.environment["HYPNOMIX_DAW"] == "1"
     }
@@ -99,8 +99,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
             if up { self.web.load(URLRequest(url: home)); return }
             if self.tries > 60 || self.server?.isRunning == false {
                 self.message(self.bundled != nil
-                    ? "hypnomix did not start. Quit and open it again; if it still fails, download the installer again from hypnomix.bradfieldenterprises.org."
-                    : "hypnomix did not start. In Terminal, run: hypnomix app   and read what it says.")
+                    ? "HypnoMix did not start. Quit and open it again; if it still fails, download the installer again from hypnomix.bradfieldenterprises.org."
+                    : "HypnoMix did not start. In Terminal, run: hypnomix app   and read what it says.")
                 return
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.waitForServer() }
@@ -118,8 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
 
     func askForFolder() {
         let a = NSAlert()
-        a.messageText = "Where is hypnomix installed?"
-        a.informativeText = "Choose the hypnomix folder (the one you cloned or unzipped, after running the install steps in it)."
+        a.messageText = "Where is HypnoMix installed?"
+        a.informativeText = "Choose the HypnoMix folder (the one you cloned or unzipped, after running the install steps in it)."
         a.addButton(withTitle: "Choose folder…")
         a.addButton(withTitle: "Quit")
         if a.runModal() != .alertFirstButtonReturn { NSApp.terminate(nil); return }
@@ -143,7 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     }
 
     // ---- quitting (⌘Q, closing the window, the Dock's Quit)
-    // In the full app the session in the engine may have changes nobody saved, and stopping the server stops the engine.
+    // When the DAW is in use the session in the engine may have changes nobody saved, and stopping the server stops the engine.
     // So: ask the server (GET /api/daw/state "dirty"); if it is, offer Save / Don't Save / Cancel; then stop the server
     // and WAIT for it to exit (it stops the engine first, up to about 15 s) before the app itself quits.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -151,10 +151,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         guard let p = server, p.isRunning else { return .terminateNow }        // a server this app did not start is left running
         quitting = true
         let stop = { self.stopServer { NSApp.reply(toApplicationShouldTerminate: true) } }
-        if forceQuit || !dawMode { stop(); return .terminateLater }
+        if forceQuit { stop(); return .terminateLater }
+        // HypnoMix DAW is an add-on, so the engine can be running in any window of this app: ask the server every time.
+        // A test build that carries the engine (dawMode) also asks when the server does not answer; an ordinary window does not nag.
         serverIsDirty { dirty in
             if dirty == nil {                                                  // no answer is not "nothing unsaved"
-                if self.askQuitUnchecked() { stop() } else { self.quitting = false; NSApp.reply(toApplicationShouldTerminate: false) }
+                if !self.dawMode || self.askQuitUnchecked() { stop() } else { self.quitting = false; NSApp.reply(toApplicationShouldTerminate: false) }
                 return
             }
             if dirty == false { stop(); return }
@@ -286,7 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     @objc func newSession() {
         let panel = NSSavePanel()
         panel.title = "New Session"
-        panel.message = "Name the new session. Hypnomix makes a folder of that name here, with the session inside it."
+        panel.message = "Name the new session. HypnoMix makes a folder of that name here, with the session inside it."
         panel.prompt = "Create"
         panel.nameFieldStringValue = "New Song"
         panel.canCreateDirectories = true
@@ -332,10 +334,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         let main = NSMenu()
         let app = NSMenuItem(); main.addItem(app)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: dawMode ? "About Hypnomix" : "About hypnomix", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "About HypnoMix", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Hide hypnomix", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        appMenu.addItem(withTitle: "Quit hypnomix", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Hide HypnoMix", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Quit HypnoMix", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         app.submenu = appMenu
         if dawMode {
             let file = NSMenuItem(); main.addItem(file)

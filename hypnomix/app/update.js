@@ -36,7 +36,7 @@ function draw() {
   if (!show && !installing) return;
   let act = '';
   if (installing || j.status === 'installing') {
-    act = `<span class="small">Installing hypnomix ${esc(U.latest)}… it closes and opens again by itself.</span>`;
+    act = `<span class="small">Installing HypnoMix ${esc(U.latest)}… it closes and opens again by itself.</span>`;
   } else if (!U.kind) {
     act = `<span class="small">From a source install: <code>git pull &amp;&amp; uv pip install -e .</code></span><a href="${esc(U.page)}" target="_blank" rel="noopener">release notes</a><button class="later" data-upd="skip">Later</button>`;
   } else if (j.status === 'downloading' || j.status === 'verifying') {
@@ -47,12 +47,12 @@ function draw() {
     act = `<span class="small">Downloaded and checked.</span><button class="go" data-upd="install">Install and restart</button><button class="later" data-upd="skip">Later</button>`;
   } else if (U.one_click) {
     act = `<button class="go" data-upd="get">Update now${U.size ? ` (${mb(U.size)})` : ''}</button><button class="later" data-upd="skip">Later</button>`;
-  } else if (U.no_full_download) {
-    act = `<span class="small">This version has no full download yet, so this app stays as it is. It is not replaced by the Assistant app.</span>${U.page ? `<a href="${esc(U.page)}" target="_blank" rel="noopener">release notes</a>` : ''}<button class="later" data-upd="skip">Later</button>`;
+  } else if (U.no_download) {
+    act = `<span class="small">This version has no installer for this computer yet, so this app stays as it is.</span>${U.page ? `<a href="${esc(U.page)}" target="_blank" rel="noopener">release notes</a>` : ''}<button class="later" data-upd="skip">Later</button>`;
   } else {
     act = `<a href="https://hypnomix.bradfieldenterprises.org/download/" target="_blank" rel="noopener">Download it</a><button class="later" data-upd="skip">Later</button>`;
   }
-  box.innerHTML = `<div class="row"><b>hypnomix ${esc(U.latest)} is out</b><span class="small">you have ${esc(U.current)}</span>
+  box.innerHTML = `<div class="row"><b>HypnoMix ${esc(U.latest)} is out</b><span class="small">you have ${esc(U.current)}</span>
     ${U.notes ? `<button class="later" data-upd="notes">${notes ? 'Hide' : "What's new"}</button>` : ''}${act}</div>
     ${j.status === 'error' ? `<div class="small err">${esc(j.error)}</div>` : ''}
     ${notes && U.notes ? `<pre>${esc(U.notes)}</pre>` : ''}`;
@@ -73,7 +73,7 @@ function waitForNewVersion(target) {
   const tick = async () => {
     try { const s = await get('/api/update/state'); if (s.current === target) return location.reload(); } catch (e) {}
     if (Date.now() - t0 < 10 * 60e3) setTimeout(tick, 2000);
-    else { installing = false; box.innerHTML = `<div class="small err">The update is taking long. If hypnomix doesn't come back, open it again from the Start menu or Applications.</div>`; }
+    else { installing = false; box.innerHTML = `<div class="small err">The update is taking long. If HypnoMix doesn't come back, open it again from the Start menu or Applications.</div>`; }
   };
   setTimeout(tick, 4000);
 }
@@ -83,7 +83,7 @@ function popup() {
   if (p) { p.remove(); return; }
   p = document.createElement('div'); p.id = 'updpop';
   const when = U && U.checked ? new Date(U.checked * 1000).toLocaleString() : 'never';
-  p.innerHTML = `<b>hypnomix ${esc(U ? U.current : '')}</b>
+  p.innerHTML = `<b>HypnoMix ${esc(U ? U.current : '')}</b>
     <div class="small" style="color:var(--mute);margin-top:4px">${U && U.error ? esc(U.error) : U && U.newer ? `${esc(U.latest)} is available.` : 'Up to date.'} Last checked: ${esc(when)}.</div>
     <label><input type="checkbox" id="updauto" ${U && U.auto ? 'checked' : ''}> Check once a day</label>
     <div style="margin-top:10px;display:flex;gap:8px"><button class="go" id="updnow" style="border:0;border-radius:8px;padding:6px 12px;background:var(--accent);color:var(--accent-ink);cursor:pointer">Check now</button></div>`;
@@ -109,7 +109,7 @@ document.addEventListener('click', async e => {
     if (a === 'skip') { U = await post('/api/update/settings', { skip: true }); return draw(); }
     if (a === 'get') { U = await post('/api/update/download', {}); draw(); return watch(700); }
     if (a === 'install') {
-      if (!confirm(`Install hypnomix ${U.latest} now? hypnomix closes and opens again; a job that is running stops. Your songs and settings stay as they are.`)) return;
+      if (!confirm(`Install HypnoMix ${U.latest} now? HypnoMix closes and opens again; a job that is running stops. Your songs and settings stay as they are.`)) return;
       const target = U.latest;
       U = await post('/api/update/install', {}); installing = true; draw(); waitForNewVersion(target);
     }

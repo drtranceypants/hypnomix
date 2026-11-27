@@ -455,9 +455,11 @@ class GeminiQuirks(unittest.TestCase):
             for inp in ({"command": "scan", "args": ["scan", "/s/Song.als"]},          # what Gemini sent
                         {"command": "scan", "args": ["hypnomix", "scan", "/s/Song.als"]},
                         {"command": "hypnomix scan", "args": ["/s/Song.als"]},
+                        {"command": "HypnoMix scan", "args": ["/s/Song.als"]},                  # the product's written name
+                        {"command": "scan", "args": ["HypnoMix", "scan", "/s/Song.als"]},
                         {"command": "scan", "args": ["/s/Song.als"]}):
                 CH._tool("run_hypnomix", inp)
-        self.assertEqual(ran, [("scan", ["/s/Song.als"])] * 4)
+        self.assertEqual(ran, [("scan", ["/s/Song.als"])] * 6)
 
     def test_a_cut_off_or_empty_reply_is_said(self):
         for why, content, want in (("length", "Half a sent", "cut off"), ("content_filter", None, "safety filter"),

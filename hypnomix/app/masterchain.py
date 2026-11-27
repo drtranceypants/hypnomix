@@ -18,7 +18,7 @@ In Live, HypnomixMain (on Main) has a Mastering chain column:
                  plug-ins and Max for Live devices cannot be rebuilt by Live's API and are listed as left out.
                  Saved templates live in ~/.hypnomix/master-chains/ (one .json each; the app must be running).
 
-While the chain is the one hypnomix built (the rack is called "Hypnomix Master"), it follows the song card: the
+While the chain is the one HypnoMix built (the rack is called "Hypnomix Master"), it follows the song card: the
 Ceiling sets the Limiter's ceiling and the Limiter character (clean, punch, loud) sets its lookahead and release and
 the Glue Compressor's attack. A rack of your own is never changed except by Match target (the Limiter's Gain).
 
@@ -211,7 +211,7 @@ def handle_post(path, body):
 
 
 # ---------------------------------------------------------------- the device's script (Max's JavaScript is ES5)
-JS = r"""// hypnomix master chain (js): builds, saves and loudness-matches the mastering chain before HypnomixMain on Main.
+JS = r"""// HypnoMix master chain (js): builds, saves and loudness-matches the mastering chain before HypnomixMain on Main.
 autowatch = 1;
 inlets = 1;
 outlets = 2;            // 0: status text   1: the template menu
@@ -289,7 +289,7 @@ function myIndex(t) {
     for (var i = 0; i < n; i++) if (new LiveAPI(t.unquotedpath + " devices " + i).id == me.id) return i;
     return n;
 }
-function ours(t, idx) {                    // the rack hypnomix built, just before HypnomixMain
+function ours(t, idx) {                    // the rack HypnoMix built, just before HypnomixMain
     if (idx < 1) return null;
     var d = new LiveAPI(t.unquotedpath + " devices " + (idx - 1));
     return (str(d.get("name")) == RACK && parseInt(d.get("can_have_chains"))) ? d : null;
@@ -395,9 +395,9 @@ function build() {
     st.confirmAt = 0;
     var nm = st.list[st.pick] || STOCK.name;
     if (nm == STOCK.name) return buildWith(STOCK);
-    say("Loading " + nm + " from the hypnomix app…");
+    say("Loading " + nm + " from the HypnoMix app…");
     get("/api/master/chain?name=" + encodeURIComponent(nm), function (d) {
-        if (!d || d.error) { say("Could not load " + nm + (d && d.error ? ": " + d.error : ": is the hypnomix app running?")); return; }
+        if (!d || d.error) { say("Could not load " + nm + (d && d.error ? ": " + d.error : ": is the HypnoMix app running?")); return; }
         buildWith(d);
     });
 }
@@ -500,7 +500,7 @@ function save() {
     var nm = st.name.replace(/^\s+|\s+$/g, "") || "my chain", c = capture();
     if (!c.devices.length) { say("Nothing to save: put the chain just before HypnomixMain on Main."); return; }
     post("/api/master/chain", {name: nm, chain: {about: "saved in Live", devices: c.devices, skipped: c.skipped}}, function (d) {
-        if (!d) { say("Start the hypnomix app to save templates."); return; }
+        if (!d) { say("Start the HypnoMix app to save templates."); return; }
         if (d.error) { say(d.error); return; }
         say("Saved " + d.name + " (" + d.devices + " devices)" + (d.skipped.length ? "; left out: " + d.skipped.join(", ") : "") + ".");
         refreshList();
@@ -526,7 +526,7 @@ function param(nm, v) {
     if (st.ready && now() - st.readyAt > 3000 && (nm == "ceiling" || nm == "mode")) followCard(false);
 }
 var MODES = ["clean", "punch", "loud"];
-function followCard(quiet) {               // only the rack hypnomix built follows the card
+function followCard(quiet) {               // only the rack HypnoMix built follows the card
     var t = track(), rack = ours(t, myIndex(t));
     if (!rack) return;
     var miss = [], lim = findDevice(rack, "Limiter"), glue = findDevice(rack, "GlueCompressor");
@@ -581,7 +581,7 @@ function match() {
     var lim = limiterBefore();
     if (!lim) { say("No Limiter before HypnomixMain: build the chain, or add a Limiter to yours."); return; }
     var g = find(lim, ["Gain", "Input Gain"]);
-    if (!g) { say("This Limiter has no Gain control hypnomix knows."); return; }
+    if (!g) { say("This Limiter has no Gain control HypnoMix knows."); return; }
     try { readCard(); } catch (e) { }
     var target = parseFloat(st.card.target);
     if (isNaN(target)) target = -14;
