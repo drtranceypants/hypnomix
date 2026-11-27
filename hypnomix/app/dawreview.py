@@ -29,7 +29,7 @@ import re
 import time
 from pathlib import Path
 
-WRITTEN = ("fade", "cut", "dip", "mixer")      # what fix_ardour writes into the new snapshot
+WRITTEN = ("fade", "cut", "dip", "mixer", "mpe-discrete")      # what fix_ardour writes into the new snapshot
 MIX_NAME = "mix (engine bounce).wav"
 _GRID = {}
 
@@ -219,7 +219,7 @@ def handling(f, ardour=True):
     op = (f.get("edit") or {}).get("op")
     if op in WRITTEN:
         return "written", "Apply writes this into the new snapshot"
-    return "manual", "a HypnoMix DAW session is written for fades, cuts, spikes and mixer moves only: do this one by hand"
+    return "manual", "a HypnoMix DAW session is written for fades, cuts, spikes, mixer moves and the MPE glide fix only: do this one by hand"
 
 
 def applied_ids(log):

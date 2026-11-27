@@ -59,7 +59,7 @@ WORDS = {
 }
 W = dict(WORDS["reaper"])
 
-GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "recordings", "noise", "intent", "mix", "stems"]
+GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "recordings", "noise", "intent", "mix", "stems", "mpe"]
 SR = 44100
 LIMITER_WORDS = ("limit", "maximi", "loudmax", "clipper")
 
@@ -834,6 +834,12 @@ def g_mix(p, R, od, a):
     return SC.g_mix(p.path, od, a, tempo=p.tempo)
 
 
+def g_mpe(p, R, od, a):
+    """MPE health checks on a HypnoMix DAW session's MIDI tracks (hypnomix.project.mpe): read only."""
+    from hypnomix.project import mpe as MP
+    return MP.checks(p, W)
+
+
 def g_stems(p, R, od, a):
     if not a.deep:
         return [], ["stems: skipped (add --deep to check frequency fights and mic phase between tracks)"]
@@ -881,7 +887,7 @@ def run(a, path, od, groups):
                                          "not told apart", "roles-error.txt"))
     vocal_names = [t for t, r in role.items() if r in ("lead_vocal", "backing_vocal")]
     fns = {"timing": lambda p, R, od, a: g_timing(p, R, od, a, role), "names": g_names, "files": g_files, "clips": lambda p, R, od, a: g_clips(p, R, od, a, vocal_names), "effects": g_effects, "recordings": g_recordings, "noise": g_noise,
-           "intent": g_intent, "mix": g_mix, "stems": g_stems,
+           "intent": g_intent, "mix": g_mix, "stems": g_stems, "mpe": g_mpe,
            "vocals": lambda p, R, od, a: g_vocals(p, R, od, a, role)}
     warn = list(getattr(p, "warnings", [])) + sorted(set(R.warn))
 

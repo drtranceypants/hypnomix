@@ -8,6 +8,8 @@ Called by `fix` when the scan was of an .ardour session. In one pass, on the par
           `amount=0.3`, `ease-ms=500`)
   spikes  a quick dip in the gain envelope of the region(s) over the burst (note `amount=` scales it)
   mixer   a finding may carry a `mixer` edit: fader (dB), pan (-1..+1) and mute on a route
+  mpe     the MPE glide fix: Discrete interpolation for a MIDI source's bend, channel pressure and CC 74 lists
+          (all 16 channels, and per-note pressure where the clip has it), so values hold instead of gliding
 
 Everything else (track names and order, vocal stacks, timing, sidechain, tuning) stays by hand for an Ardour session.
 
@@ -24,19 +26,29 @@ Written and re-read by HypnoMix; not yet opened in Ardour.
 """
 from hypnomix import project as PJ
 from hypnomix.project import ardour_edit as E
+from hypnomix.project import mpe as MP
 from hypnomix.workflow.fix_project import _kv, verify_clips
 
 
 def apply_edits(p, items, dec, log, failed, skipped):
     done = []
-    rank = {"fade": 0, "cut": 1, "dip": 1, "mixer": 2}
+    rank = {"fade": 0, "cut": 1, "dip": 1, "mixer": 2, "mpe-discrete": 3}
     for f in sorted(items, key=lambda f: (rank.get((f.get("edit") or {}).get("op"), 9), f["id"])):
         ed = f.get("edit")
         if not ed or ed.get("op") not in rank:
-            skipped.append((f, "a HypnoMix DAW session is written for fades, cuts, spikes and mixer moves only: do this one by hand"))
+            skipped.append((f, "a HypnoMix DAW session is written for fades, cuts, spikes, mixer moves and the MPE glide fix only: do this one by hand"))
             continue
         kv = _kv(dec, f)
         try:
+            if ed["op"] == "mpe-discrete":
+                if not any(s.get("id") == ed.get("source") and s.get("type") == "midi" for s in p.native.iter("Source")):
+                    skipped.append((f, "its MIDI source is no longer in the session (changed since the scan?)"))
+                    continue
+                k = MP.write_discrete(p.native, ed["source"], list(ed.get("params") or []))
+                log.append(f"- {f['id']}: {f.get('track', '')}: {ed.get('name', '')}: Discrete interpolation for "
+                           f"{len(ed.get('params') or [])} bend, pressure and slide lists ({k} changed)")
+                done.append(f["id"])
+                continue
             if ed["op"] == "mixer":
                 tr = p.track(f["track"])
                 if tr is None or tr.name != f["track"]:

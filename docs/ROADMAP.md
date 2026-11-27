@@ -21,6 +21,9 @@ The six changes you will notice most, in plain words:
    region, mix, scan and review, ask the Assistant, save and export); they never change your song.
 4. **A bigger Store.** 69 free plug-ins and sounds (it was 26), an MPE mark and filter, a bare installer package as the
    download where there is one, and a plain note where an item needs one.
+   MPE checks in the scan of a HypnoMix DAW session (the wiki article "MPE clips"), with one fix: bend, pressure and
+   slide stored so that they hold instead of gliding, written into a new snapshot. Read from the files only; nothing
+   has been played on a controller yet.
 5. **The wiki on GitHub too.** The same pages as the site's and the app's Wiki, built from the same sources and pushed to
    the repository's GitHub wiki by a workflow. That workflow has not run yet, and it needs a one-time setup first (its
    header says what to click).

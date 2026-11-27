@@ -1,0 +1,28 @@
+<!--
+title: MPE clips
+sub: hypnomix scan · per-note bend, pressure and slide in a HypnoMix DAW session, and the one fix for notes that glide
+group: How-to
+teaser: MPE gives every note its own MIDI channel, so each note can bend, be pressed and slide on its own. The scan of a HypnoMix DAW session reads each MIDI track's MPE setting and its MIDI files and lists what may spoil that, in plain words. One finding has a fix: values stored so that they glide. It proposes; you decide.
+-->
+<div class="prose paper">
+      <p><b>What MPE is.</b> On an ordinary keyboard every note shares one MIDI channel, so a pitch bend bends every note at once. MPE (MIDI Polyphonic Expression) gives each sounding note a channel of its own, so each note has its own pitch bend, its own pressure (how hard you press after the note starts) and its own slide (a finger moving up and down the key, sent as controller 74). A <b>zone</b> is one global channel plus up to 15 member channels: the lower zone uses channel 1 as its global channel and members from 2 up; the upper zone uses 16 and members from 15 down. The instrument has to be told it is in MPE mode, and the controller and the instrument have to agree on the bend range (48 semitones on member channels is the MPE default).</p>
+      <p><b>Try it.</b> The checks ride on the normal scan of a session; nothing new to learn.</p>
+      <pre>hypnomix scan "Song/Song.ardour"                 # every check, MPE among them
+hypnomix scan "Song/Song.ardour" --only mpe      # just the MPE checks
+hypnomix fix SCAN_DIR --decide mpe-3=approve      # approve the glide fix, then:
+hypnomix fix SCAN_DIR --approved --out "Song (fixed).ardour"</pre>
+      <p><b>What the scan checks, and why.</b> A clip counts as MPE when it has notes on three or more channels, each with its own bend, pressure or slide, or when its track's MPE mode is on. For those clips it lists:</p>
+      <ul>
+        <li><b>MPE off.</b> The clip looks like MPE but the track's MPE mode is off, so nothing tells the instrument to treat each channel as one note.</li>
+        <li><b>Channels merged or dropped.</b> The track forces every note onto one channel (each note's bend then moves all of them), or filters out channels the clip plays notes on (those notes are not heard).</li>
+        <li><b>More notes than member channels.</b> More notes sound at once than the zone has member channels, so two notes have to share one channel's bend and pressure.</li>
+        <li><b>Bend at the end of its range.</b> A bend that reaches the very end of the declared range usually means the finger went further than the range allows, so the note stops short. The range comes from the bend-range message the clip sends on that channel or, if it sends none, from the track's MPE setting; the finding says which.</li>
+        <li><b>Not back to neutral.</b> After a note ends, nothing sets bend back to centre or pressure back to 0 before the next note on that channel, so the new note starts bent or pressed.</li>
+        <li><b>No starting value.</b> A note starts with no bend, pressure or slide set on its channel before it, so it plays with whatever the instrument last had there.</li>
+        <li><b>The very start of a clip.</b> Values at exactly the first tick, and a first note within about 6 ms of the clip start, are at risk: on the engine as tested they could be lost when the clip was saved again, and the first few milliseconds of a recording are skipped. Other engines may keep them; leave a little room before the first note to be safe.</li>
+        <li><b>Values that glide.</b> Bend, pressure and slide are stored as lists of points, and by default the engine draws a straight line between two points. A held note with one bend at its start and a reset after its end then plays back as a slow ramp.</li>
+      </ul>
+      <p><b>The glide fix.</b> Approve a "glide" finding and <code>hypnomix fix</code> writes Discrete interpolation (each value holds until the next one) for bend, channel pressure and controller 74 on all 16 channels of that clip's MIDI source, and for per-note pressure where the clip has it. It goes into ONE new snapshot beside the original, in the same session folder; the original is never written, and the notes and values themselves are not changed. The new snapshot is read back and checked before it is kept. The Review panel's Apply does the same.</p>
+      <p><b>Presets.</b> Four settings by behaviour, taken from the MPE specification only: the standard lower zone (15 members, member bend 48, global bend 2), the same for instruments limited to a bend range of 24 or of 12, and the upper zone. Each turns into the exact setup bytes in specification order (reset all controllers, the MPE configuration message, then the bend range on the global channel and on every member channel). They are there for the parts still to come; no controller's own preset is written yet.</p>
+      <p><b>Not there yet.</b> HypnoMix DAW is not released yet, and nothing here needs it running: the checks read the session file and the MIDI files only. Nothing has been played on a real MPE controller, nothing has been judged by ear, and the fixed snapshot has been written and read back by HypnoMix but not yet opened in HypnoMix DAW. The other findings are by hand. The setup message order inside a clip, and the other DAW formats HypnoMix reads, are not checked. Every other controller list (sustain, data entry and so on) keeps its own interpolation. To switch an instrument into MPE mode you still use the instrument's own setting.</p>
+    </div>

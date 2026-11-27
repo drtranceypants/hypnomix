@@ -21,6 +21,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from hypnomix.project import ardour as AR
+from hypnomix.project import mpe as MP
 
 MAX_LIN = 2.0                      # Ardour's gain ceiling (+6 dB)
 SHAPES = ("linear", "power", "slow")
@@ -370,6 +371,7 @@ def _stripped(root):
         mm = rt.find("MuteMaster")
         if mm is not None:
             mm.attrib.pop("muted", None)
+    MP.strip_mpe_styles(r)                         # the MPE glide fix: bend / pressure / slide interpolation only
     return r
 
 
@@ -493,5 +495,6 @@ def check(src, out):
 def diff(src, out):
     """What changed between the original and the written session, as the reader sees it: [one line each]."""
     from hypnomix import project as PJ
-    _, changes = _model_diff(PJ.load(src), PJ.load(out))
-    return changes
+    a, b = PJ.load(src), PJ.load(out)
+    _, changes = _model_diff(a, b)
+    return changes + MP.style_changes(a.native, b.native)

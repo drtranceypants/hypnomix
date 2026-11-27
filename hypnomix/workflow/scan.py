@@ -87,7 +87,7 @@ GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "devices", "
 FOLDER_GROUPS = ["recordings", "stems"]
 AUDIO_EXT = (".wav", ".aif", ".aiff", ".flac")
 PLAN_GROUPS = ["prep", "automix", "master", "motion", "borrow", "balance", "colour", "album", "preflight"]         # written by `prep|automix|master|balance|colour|album|preflight --plan`
-ALL_GROUPS = list(dict.fromkeys(GROUPS + FOLDER_GROUPS + PLAN_GROUPS + ["recordings", "live"]))
+ALL_GROUPS = list(dict.fromkeys(GROUPS + FOLDER_GROUPS + PLAN_GROUPS + ["recordings", "live", "mpe"]))
 SEV = {"high": 0, "medium": 1, "low": 2, "info": 3}
 VOCAL_LABELS = ("Lead Vocal", "Vocal", "Harmony", "Backing Vocal")
 
@@ -1932,7 +1932,7 @@ def main():
     ap.add_argument("--no-profile", action="store_true", help="do not compare the mix with your own profile "
                     "(`hypnomix profile build`); `hypnomix prefs set taste.profile=off` turns it off for every scan")
     ap.add_argument("--out", help="output folder (default hypnomix-out/scan/<song>)")
-    ap.add_argument("--only", action="append", choices=sorted(set(GROUPS + FOLDER_GROUPS + ["effects", "recordings"])), help="run only these groups (repeatable)")
+    ap.add_argument("--only", action="append", choices=sorted(set(GROUPS + FOLDER_GROUPS + ["effects", "recordings", "mpe"])), help="run only these groups (repeatable)")
     ap.add_argument("--vocal-track", action="append", help="vocal tracks to check (default: from `name`)")
     ap.add_argument("--lead-track", help="the lead vocal (default: from `name`, else the vocal that sings most)")
     ap.add_argument("--timing-track", action="append", help="instrument tracks for timing (default: from `name`)")
