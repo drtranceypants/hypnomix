@@ -117,7 +117,7 @@ GROUPS = [
         ("device", "hypnomix.app.device", "make the Max for Live device: review from inside Live, and jump Live to each finding"),
         ("aligndevice", "hypnomix.app.aligndevice", "make the Hypnomix Align device: align a vocal stack from inside Live"),
         ("store", "hypnomix.store.cli", "the HypnoMix store: search, install, update and uninstall free and open-source plug-ins, synths, drum kits and sample packs"),
-        ("engine", "hypnomix.app.engine_addon", "HypnoMix Studio, the add-on (engine 0.1.0, Apple-silicon Macs only; not available for Intel Macs or Windows yet): what is added, and (only with --yes) fetch it once, checked against a SHA-256 before it is used, or remove it; report first"),
+        ("engine", "hypnomix.app.engine_addon", "HypnoMix Studio, the add-on (engine 0.2.0, Apple-silicon Macs only; not available for Intel Macs or Windows yet): what is added, and (only with --yes) fetch it once, checked against a SHA-256 before it is used, or remove it; report first"),
     ]),
     ("Setup", [
         ("install", "hypnomix.install", "install the Live remote script into Live's User Library (--dry-run shows it first)"),

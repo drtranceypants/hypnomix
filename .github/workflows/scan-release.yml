@@ -40,7 +40,7 @@ permissions:
   contents: write
 
 env:
-  FILES: "Hypnomix-mac-arm64.dmg Hypnomix-mac-intel.dmg Hypnomix-windows-setup.exe HypnoMix-engine-0.1.0-mac-arm64.tar.gz"   # the engine archive is uploaded to the draft by hand: until it is there the scan fails and nothing is published
+  FILES: "Hypnomix-mac-arm64.dmg Hypnomix-mac-intel.dmg Hypnomix-windows-setup.exe HypnoMix-engine-0.2.0-mac-arm64.tar.gz"   # the engine archive is uploaded to the draft by hand: until it is there the scan fails and nothing is published
   TAG: ${{ inputs.tag }}      # used only as "$TAG" / $env:TAG, never written into a script, and checked first in every job
 
 jobs:

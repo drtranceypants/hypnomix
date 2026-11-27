@@ -7,6 +7,30 @@ every change.
 **What comes next, in one sentence:** open everything the newest release added in real DAWs and on real songs,
 before building anything else on top of it.
 
+## New in 0.4.2
+
+1. **The app's bar stays on top in HypnoMix Studio.** Songs, Preferences, Assistant, Wiki, Teacher, Live, Tools and
+   Setup are one click away from the DAW view. The first time, the DAW view offers New session and Open session
+   instead of an error.
+2. **Automation and the tempo map in HypnoMix Studio.** The DAW view and the Assistant can read and write fader, send
+   and plug-in automation and tempo changes, under the same gentle rules as everywhere else: S-curves only, under
+   7 dB a second, and a line never more than 3 dB (a trim 4 dB) from where it was before HypnoMix touched it, however
+   many edits are made. A bus that carries anything but vocals is never automated. This needs engine 0.2.0
+   (Apple-silicon Macs only); Setup offers it.
+3. **Harmony tools ask what to line up to.** Vocal stacks move toward the group's average or toward one lead, halfway
+   by default, with an amount you choose for timing and for tuning, and the key can be chosen in the review.
+4. **Names read HypnoMix everywhere.** The REAPER effects, the Live devices and Studio snapshots show the new
+   spelling; projects saved with the old one still work. In REAPER, press F5 in the Add FX window after
+   `hypnomix reaper probes install` to see the new names.
+5. **Fixes.** The de-esser's cuts no longer drift early in long files at 44.1 kHz; `ab` keeps its temporary sets out
+   of your song's folder; several Teacher lessons were corrected against Live and REAPER.
+6. **Known problem:** in a render, a Live clip with more than two warp markers plays out of tune by a few tens of
+   cents wherever a stretch between two markers is not at the recorded speed. The tuning checks can then flag notes
+   in such clips that are fine in Live, so listen before approving a tuning fix there. Nothing is written into a
+   project by this. A fix is being tested.
+7. **Not yet tried:** the automation page in a real browser on a real song, the harmony buttons in the Live device
+   and the REAPER panel, sound through a real interface, and MPE with real controllers.
+
 ## New in 0.4.1
 
 1. **HypnoMix Studio (beta).** HypnoMix's own DAW has a name of its own, and it is a beta: new, and not everything in it has been tried yet. Setup now asks one question, Standalone or Studio:

@@ -133,7 +133,7 @@ that asks first.
 inside the bar (the tours scroll a control they point at into view). At 1520 px wide or less the top bar gives way first:
 the DSP meter, the clock and the time signature are hidden, and the name block may shrink down to the mark. The engine's loudness in the top bar is
 one number (short-term LUFS) at every width; momentary LUFS, true peak and correlation are in the status bar. The status
-bar names the engine **HypnoMix engine** and its version (`MCP · HypnoMix engine 0.1.0 · … tools · … kHz · meters
+bar names the engine **HypnoMix engine** and its version (`MCP · HypnoMix engine 0.2.0 · … tools · … kHz · meters
 streaming`): never the name the engine's MCP surface gives itself in its `initialize` reply, so renaming that surface
 changes nothing on the page. Tests: `tests/test_daw_topbar.py`.
 
@@ -224,7 +224,7 @@ for each platform. The first one, engine 0.1.0, is published for `mac-arm64` (Ap
 with and, per platform, the https address and SHA-256 of the archive. For a platform with no archive the manifest carries
 no address and the state says **HypnoMix Studio is not available for** that computer **yet** (for example "HypnoMix Studio is not
 available for Windows yet"). The archive is on the HypnoMix release page, and it is installed to
-`<HypnoMix home>/engine/0.1.0/`. Nothing is
+`<HypnoMix home>/engine/0.2.0/`. Nothing is
 downloaded without a click, and nothing in a request names the address or a folder: the routes are
 `GET /api/setup/engine` (the state) and `POST /api/setup/engine/install` and `/remove` (the page's token, no foreign
 origin, and a body that names anything is refused with 400). An add downloads over https with a size limit (the manifest's
