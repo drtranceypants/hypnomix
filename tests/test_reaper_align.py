@@ -356,6 +356,20 @@ class BridgeScript(unittest.TestCase):
         for name in ("C.align_where", "align_draw", "C.open_project"):
             self.assertIn(name, lua)
 
+    def test_sliders_start_at_the_apps_values_not_their_lowest(self):
+        # the panel draws before `hypnomix reaper align` sends anything: Formant once opened at -3 st
+        import re
+        from hypnomix.reaper.align import Panel
+        lua = (ROOT / "hypnomix" / "reaper" / "bridge.lua").read_text(encoding="utf-8")
+        block = lua[lua.index("local SLIDERS"):lua.index("local function slider")]
+        rows = re.findall(r'\{ "(\w+)", "\w+", (-?[\d.]+), (-?[\d.]+), "[^"]+", \d+, (-?[\d.]+) \}', block)
+        self.assertEqual([r[0] for r in rows], ["tight", "pitch", "vibrato", "formant"])
+        app = Panel(None)
+        for key, lo, hi, start in rows:
+            self.assertEqual(float(start), app.st[key], key)
+            self.assertTrue(float(lo) <= float(start) <= float(hi), key)
+        self.assertIn("panel.st[key] or start", lua)
+
 
 if __name__ == "__main__":
     unittest.main()

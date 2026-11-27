@@ -737,12 +737,14 @@ function C.align_where()       -- what the panel picks from: selected tracks, th
            dirty = reaper.IsProjectDirty(0), tempo = reaper.Master_GetTempo() }
 end
 
-local SLIDERS = { { "tight", "Tight", 0, 1, "%.0f%%", 100 }, { "pitch", "Pitch", 0, 1, "%.0f%%", 100 },
-                  { "vibrato", "Vibrato", 0, 1, "%.0f%%", 100 }, { "formant", "Formant", -3, 3, "%+.1f st", 1 } }
+-- name, label, lowest, highest, how it reads, scale, and the value shown until the app sends one (the app's own
+-- starting values in reaper/align.py: Tight 50%, the rest 0), so the panel never opens showing Formant -3 st
+local SLIDERS = { { "tight", "Tight", 0, 1, "%.0f%%", 100, 0.5 }, { "pitch", "Pitch", 0, 1, "%.0f%%", 100, 0 },
+                  { "vibrato", "Vibrato", 0, 1, "%.0f%%", 100, 0 }, { "formant", "Formant", -3, 3, "%+.1f st", 1, 0 } }
 
 local function slider(def, x, y, w)
-  local key, label, lo, hi, f, k = table.unpack(def)
-  local v = tonumber(panel.st[key] or lo) or lo
+  local key, label, lo, hi, f, k, start = table.unpack(def)
+  local v = tonumber(panel.st[key] or start) or start
   local area = U.slider(x, y, w, v, lo, hi, label, string.format(f, v * k))
   area.key = key
   panel.sliders[#panel.sliders + 1] = area
