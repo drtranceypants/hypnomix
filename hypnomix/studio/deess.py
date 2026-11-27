@@ -105,12 +105,12 @@ def reduction_db(e, amount, max_db):
 
 def gain_curve(n, sr, events, amount, max_db):
     """Per-sample gain (linear) for the high band: 1.0 exactly outside events and their release tails."""
-    step = max(1, int(0.001 * sr))                        # 1 ms control rate
-    k = n // step + 2
+    step = sr / 1000.0                                    # 1 ms control rate (exact at any sample rate)
+    k = int(np.ceil(n / step)) + 2
     tgt = np.zeros(k)
     la = int(np.ceil(ATTACK_MS))                          # look-ahead so the "s" onset is caught
     for e in events:
-        a = max(0, int(e["t"] * 1000) - la); b = min(k, int((e["t"] + e["dur"]) * 1000) + 1)
+        a = max(0, int(round(e["t"] * 1000)) - la); b = min(k, int(round((e["t"] + e["dur"]) * 1000)) + 1)
         tgt[a:b] = np.minimum(tgt[a:b], -reduction_db(e, amount, max_db))
     up, dn = 1 - np.exp(-1 / ATTACK_MS), 1 - np.exp(-1 / RELEASE_MS)
     g = np.empty(k); cur = 0.0

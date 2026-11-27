@@ -8,13 +8,13 @@ from hypnomix.studio import deess, breaths
 SR = 44100
 
 
-def band_db(x, lo, hi):
-    y = sosfiltfilt(butter(6, [lo, hi], "bandpass", fs=SR, output="sos"), x)
+def band_db(x, lo, hi, sr=SR):
+    y = sosfiltfilt(butter(6, [lo, hi], "bandpass", fs=sr, output="sos"), x)
     return 10 * np.log10(np.mean(y ** 2) + 1e-20)
 
 
-def vowel(n, f0=180, seed=0):
-    t = np.arange(n) / SR
+def vowel(n, f0=180, seed=0, sr=SR):
+    t = np.arange(n) / sr
     x = sum((0.5 / k) * np.sin(2 * np.pi * f0 * k * t + k) for k in range(1, 20) if f0 * k < 3500)
     return 0.3 * x / np.max(np.abs(x))
 
@@ -60,6 +60,39 @@ class DeessTest(unittest.TestCase):
 
     def test_no_sibilants_in_plain_vowel(self):
         self.assertEqual(deess.analyse(vowel(2 * SR), SR), [])
+
+    def test_late_sibilant_cut_does_not_drift_at_44100_or_48000(self):
+        """At 44.1 kHz, truncating the 1 ms step to 44 samples drifted cuts ~0.4 s early by 3 minutes."""
+        t_s, dur_s = 180.0, 0.12
+        for sr in (44100, 48000):
+            with self.subTest(sr=sr):
+                n = int(181.5 * sr)
+                ev = [{"t": t_s, "dur": dur_s, "band_hz": [5000, 10000], "over_db": 12.0}]
+                g = deess.gain_curve(n, sr, ev, amount=1.0, max_db=8.0)
+                start = round(t_s * sr)
+                mid = round((t_s + dur_s / 2) * sr)
+                early = round((t_s - 0.41) * sr)
+                self.assertEqual(g[early], 1.0)
+                self.assertLess(20 * np.log10(g[start]), -4.0)
+                self.assertAlmostEqual(20 * np.log10(g[mid]), -8.0, delta=0.1)
+
+                rng = np.random.default_rng(11)
+                x = np.zeros(n, dtype=np.float64)
+                # Put a vocal burst near the drifted time (179.59 s) and the real "s" at 180.0 s
+                w = int(0.8 * sr)
+                w0 = round((t_s - 0.6) * sr)
+                x[w0:w0 + w] = vowel(w, sr=sr)
+                s_len = round(dur_s * sr)
+                ess = sosfiltfilt(butter(4, [6000, 8000], "bandpass", fs=sr, output="sos"), rng.standard_normal(s_len))
+                ess *= 0.25 / np.max(np.abs(ess))
+                x[start:start + s_len] += ess
+                y = deess.process(x, sr, ev, amount=1.0, max_db=8.0)
+                a, b = round((t_s + 0.01) * sr), round((t_s + dur_s - 0.01) * sr)
+                drop = band_db(x[a:b], 5000, 10000, sr=sr) - band_db(y[a:b], 5000, 10000, sr=sr)
+                self.assertTrue(6.0 <= drop <= 9.0, f"sr={sr} drop={drop:.2f} dB")
+                # The drifted spot (~0.41 s earlier) must stay untouched
+                e_a, e_b = round((t_s - 0.5) * sr), round((t_s - 0.2) * sr)
+                self.assertTrue(np.array_equal(y[e_a:e_b], x[e_a:e_b]))
 
 
 class BreathsTest(unittest.TestCase):
