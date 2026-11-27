@@ -12,7 +12,8 @@ Level automation (the fader, trim, a send):
                          that carries anything but vocals is refused), ONE engine undo step
   write_file(p, track, control, pts)          the same S-curves, point by point, into the route's AutomationList
                          (gain on the Amp, trim on the Trim; state Play) of the loaded session, checked the same way
-                         with the facts read from the session (what feeds a bus)
+                         with the facts read from the session (facts_of: what feeds a bus, its output wired there, an
+                         aux send or an external send to it, switched off or not, a bus among them followed in turn)
   A control that already plays automation is refused in both: those moves are made by hand.
 
 Plug-in parameters (motion's filter sweeps) are not level moves: write_engine / write_file take them too
@@ -119,23 +120,59 @@ def steepest_of(reply):
 
 
 # ---------------------------------------------------------------- the same, into a session file
+def _conns(xr):
+    """The ports a route's outputs and its external sends' outputs connect to ('Route/audio_in 1' names)."""
+    ios = [io for io in xr.findall("IO") if io.get("direction") == "Output"]
+    ios += [io for pr in xr.findall("Processor") if pr.get("type") == "send" for io in pr.findall("IO")
+            if io.get("direction") == "Output"]
+    return [c.get("other", "") for io in ios for c in io.iter("Connection")]
+
+
+def feeders_of(p, track):
+    """The routes that feed `track` directly in the loaded session, as the engine's automation_list counts them, and
+    external sends too: those inside it (`parent`), a route whose output is wired to its input (to it and elsewhere),
+    an aux send (an intsend whose target is this route) and an external send wired to its input. Every send counts,
+    pre- or post-fader, switched off too (switching it on would make an automation of this route move that track). A
+    plug-in's sidechain input is not what a route carries: a key wired there is left out."""
+    rt = track.native
+    rid = rt.get("id") if rt is not None else None
+    keys = {pt.get("name") for pr in (rt.findall("Processor") if rt is not None else []) if pr.get("type") == "sidechain"
+            for pt in pr.iter("Port")}
+    out = []
+    for x in p.tracks:
+        xr = x.native
+        if x is track or xr is None or x.kind == "master":
+            continue
+        fed = x.parent is track
+        fed = fed or (rid is not None and any(pr.get("type") == "intsend" and pr.get("target") == rid
+                                              for pr in xr.findall("Processor")))
+        fed = fed or any("/" in o and o.rsplit("/", 1)[0] == track.name and o not in keys for o in _conns(xr))
+        if fed:
+            out.append(x)
+    return out
+
+
 def facts_of(p, track):
-    """automation_list's route facts, read from the loaded session: is it a bus, and what feeds it."""
-    kids = []
+    """automation_list's route facts, read from the loaded session: is it a bus, and the tracks it carries (feeders_of,
+    a bus among them followed in turn, so a return fed by sends that goes into a bus counts for that bus too)."""
+    kids, seen = [], {id(track)}
+    kind = lambda x: "midi_track" if x.kind == "midi" else "audio_track"
 
     def walk(t):
-        for x in p.tracks:
-            if x.parent is t and x is not t:
-                kids.append({"name": x.name, "routeType": "midi_track" if x.kind == "midi" else
-                             "audio_track" if x.kind == "audio" else "bus"})
+        for x in feeders_of(p, t):
+            if id(x) in seen:
+                continue
+            seen.add(id(x))
+            if x.kind in ("folder", "return"):
                 walk(x)
+            else:
+                kids.append({"name": x.name, "routeType": kind(x)})
     if track.kind == "master":
-        kids = [{"name": x.name, "routeType": "midi_track" if x.kind == "midi" else "audio_track"}
-                for x in p.tracks if x.kind in ("audio", "midi")]
+        kids = [{"name": x.name, "routeType": kind(x)} for x in p.tracks if x.kind in ("audio", "midi")]
     elif track.kind in ("folder", "return"):
         walk(track)
     return {"trackName": track.name, "isBus": track.kind in ("folder", "return"), "isMaster": track.kind == "master",
-            "feeders": [k for k in kids if k["routeType"] != "bus"]}
+            "feeders": kids}
 
 
 def _list_of(rt, control):

@@ -291,6 +291,93 @@ class PlugInsOnBuses(Base):
         self.assertIn("Band carries Drums", str(e.exception))
 
 
+def with_return(text, senders=("Lead Vocal", "Guitar"), external=(), into_fx=False, active="1"):
+    """A Guitar track, a Reverb return (a filter, its fader) fed by aux sends from `senders` and external sends from
+    `external`; into_fx: the Reverb's output goes into an FX bus that nothing else feeds."""
+    rid = {"Lead Vocal": "200", "Harmony": "210", "Drums": "220", "Guitar": "230"}
+    out = ('<IO name="Reverb" direction="Output"><Port name="Reverb/audio_out 1"><Connection other="FX/audio_in 1"/></Port></IO>'
+           if into_fx else "")
+    routes = f"""
+    <Route version="7003" id="230" name="Guitar" default-type="audio" audio-playlist="590">
+      <PresentationInfo order="5" flags="AudioTrack,OrderSet"/>
+      <Processor id="2301" name="Trim" active="1" type="trim"><Controllable name="trimcontrol" value="1"/></Processor>
+      <Processor id="2302" name="Amp" active="1" type="amp"><Controllable name="gaincontrol" value="1"/></Processor>
+    </Route>
+    <Route version="7003" id="400" name="Reverb" default-type="audio">
+      <PresentationInfo order="6" flags="AudioBus,OrderSet"/>{out}
+      {BUS_FILTER.replace('id="3009"', 'id="4009"').replace('id="3010"', 'id="4010"').replace('id="3011"', 'id="4011"')}
+      <Processor id="4012" name="Amp" active="1" type="amp"><Automation><AutomationList automation-id="gain" id="4016" state="Off"/></Automation><Controllable name="gaincontrol" value="1"/></Processor>
+    </Route>
+    <Route version="7003" id="500" name="FX" default-type="audio">
+      <PresentationInfo order="7" flags="AudioBus,OrderSet"/>
+      <Processor id="5012" name="Amp" active="1" type="amp"><Automation><AutomationList automation-id="gain" id="5016" state="Off"/></Automation><Controllable name="gaincontrol" value="1"/></Processor>
+    </Route>
+  </Routes>"""
+    text = text.replace("\n  </Routes>", routes, 1)
+    for n in senders:
+        text = text.replace(
+            f'<Processor id="{rid[n]}1" name="Trim"', f'<Processor id="{rid[n]}7" name="Reverb" active="{active}" type="intsend" '
+            f'target="400"/><Processor id="{rid[n]}1" name="Trim"', 1)
+    for n in external:
+        text = text.replace(f'<Processor id="{rid[n]}1" name="Trim"', f'<Processor id="{rid[n]}8" name="Out" active="0" type="send">'
+                            f'<IO name="Out" direction="Output"><Port name="Out/audio_out 1"><Connection other="Reverb/audio_in 1"/>'
+                            f'</Port></IO></Processor><Processor id="{rid[n]}1" name="Trim"', 1)
+    return text
+
+
+class SendFedReturns(Base):
+    SWEEP = [(0.0, 400.0), (8.0, 16000.0)]
+    RIDE = [(2.0, 0.0), (3.2, -2.0), (5.0, -2.0), (6.2, 0.0)]
+
+    def load(self, text):
+        p = PJ.load(self.make(text))
+        return p, p.track("Reverb")
+
+    def test_a_return_fed_by_a_vocal_and_a_guitar_is_never_automated(self):
+        p, rev = self.load(with_return(session()))
+        self.assertEqual(RULES.non_vocal(AA.facts_of(p, rev)), ["Guitar"])
+        for control, pts in (("gain", self.RIDE), ("plugin:4009:4", self.SWEEP)):
+            with self.assertRaises(ValueError) as e:
+                AA.write_file(p, rev, control, pts)
+            self.assertIn("Reverb carries Guitar, not only vocals", str(e.exception))
+        p, rev = self.load(with_return(session(), active="0"))           # switched off: it still counts
+        self.assertEqual(RULES.non_vocal(AA.facts_of(p, rev)), ["Guitar"])
+
+    def test_a_return_fed_only_by_vocal_sends_may_be(self):
+        p, rev = self.load(with_return(session(), senders=("Lead Vocal", "Harmony")))
+        self.assertEqual([f["name"] for f in AA.facts_of(p, rev)["feeders"]], ["Lead Vocal", "Harmony"])
+        self.assertEqual(AA.write_file(p, rev, "plugin:4009:4", self.SWEEP), 2)
+        self.assertGreater(AA.write_file(p, rev, "gain", self.RIDE), 2)
+
+    def test_an_external_send_counts_and_a_chained_bus_carries_it_too(self):
+        p, rev = self.load(with_return(session(), senders=("Lead Vocal",), external=("Guitar",), into_fx=True))
+        self.assertEqual(RULES.non_vocal(AA.facts_of(p, rev)), ["Guitar"])
+        fx = p.track("FX")
+        self.assertEqual(RULES.non_vocal(AA.facts_of(p, fx)), ["Guitar"])              # Reverb goes into FX
+        with self.assertRaises(ValueError) as e:
+            AA.write_file(p, fx, "gain", self.RIDE)
+        self.assertIn("FX carries Guitar", str(e.exception))
+        p, rev = self.load(with_return(session(), senders=("Lead Vocal", "Harmony"), into_fx=True))
+        self.assertEqual(RULES.non_vocal(AA.facts_of(p, p.track("FX"))), [])
+
+    def test_a_sidechain_key_is_not_what_a_route_carries(self):
+        text = with_return(session(), senders=("Lead Vocal",), external=("Guitar",)).replace(
+            '<Processor id="4012" name="Amp"', '<Processor id="4013" name="SC" type="sidechain"><IO name="Reverb/SC" '
+            'direction="Input"><Port name="Reverb/sc_in 1"/></IO></Processor><Processor id="4012" name="Amp"')
+        p, rev = self.load(text)
+        self.assertEqual(RULES.non_vocal(AA.facts_of(p, rev)), ["Guitar"])            # wired to its input: carried
+        p, rev = self.load(text.replace('<Connection other="Reverb/audio_in 1"/>', '<Connection other="Reverb/sc_in 1"/>'))
+        self.assertEqual(RULES.non_vocal(AA.facts_of(p, rev)), [])                     # only keying it: not carried
+
+    def test_motion_skips_a_send_fed_return(self):
+        from hypnomix.session import motion_ardour as MA
+        p, _ = self.load(with_filters(with_return(session()), bus=False))
+        tg = MA.targets_file(p)
+        self.assertEqual({t["track"]: t["others"] for t in tg}, {"Drums": [], "Reverb": ["Guitar"]})
+        fs, meta = MA.propose(p, tg)
+        self.assertEqual(({f["track"] for f in fs}, [s["track"] for s in meta["skipped"]]), ({"Drums"}, ["Reverb"]))
+
+
 class MotionSweeps(Base):
     def test_filter_risers_are_options_written_into_a_new_snapshot(self):
         from hypnomix.session import motion_ardour as MA
