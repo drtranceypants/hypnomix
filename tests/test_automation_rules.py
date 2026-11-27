@@ -1,5 +1,6 @@
 """The smooth-automation rules (engineer/automation_rules.py): S-curves, line moves <= 3 dB, trims <= 4 dB, the steepest
-point under 7 dB/s, on the line at both ends, and never a bus or group that carries a track that is not a vocal."""
+point under 7 dB/s, on the line at both ends, and never a bus or group that carries a track that is not a vocal (its
+level or, the one rule for them, its plug-in parameters)."""
 import math
 import unittest
 
@@ -109,6 +110,42 @@ class Rules(unittest.TestCase):
     def test_other_controls_are_not_level_moves(self):
         self.assertEqual(AR.check(write([(0, -1), (0.1, 1)], control="pan_azimuth", curve="linear"), MIXED_BUS), [])
         self.assertEqual(AR.check(write([(0, 0), (0.01, 1)], control="plugin:7:3", curve="linear")), [])
+        self.assertEqual([AR.checked(c) for c in ("gain", "trim", "send:3", "plugin:7:3", "pan_azimuth", "mute", "x")],
+                         [True, True, True, True, False, False, False])
+
+    def test_plug_in_automation_never_on_a_bus_that_carries_non_vocals(self):
+        sweep = write([(0, 16000.0), (8, 400.0)], control="plugin:7:3", curve="linear")
+        bad = AR.check(sweep, MIXED_BUS)
+        self.assertEqual(len(bad), 1, bad)                               # the mixed-bus rule only
+        self.assertIn("Band carries Drums, Strings, not only vocals: its plug-in automation is never written", bad[0])
+        self.assertIn("automate a vocal track's plug-in instead", bad[0])
+        self.assertEqual(AR.check(sweep, VOCAL_BUS), [])                 # a bus of vocals only
+        self.assertEqual(AR.check(sweep, {"trackName": "Drums", "isBus": False}), [])   # a plain track
+        master = {"trackName": "Master", "isMaster": True, "feeders": [{"trackId": "4", "name": "Drums"}]}
+        self.assertTrue(AR.check(sweep, master))
+
+    def test_a_feeding_bus_that_cannot_be_read_counts_as_not_only_vocals_for_plug_ins_too(self):
+        outer = {"trackId": "10", "trackName": "Vox Master", "isBus": True, "busOfGroup": None, "feeders": [
+            {"trackId": "11", "name": "Vocals 2", "routeType": "bus"},
+            {"trackId": "2", "name": "Lead Vocal", "routeType": "audio_track"}]}
+        sweep = write([(0, 16000.0), (8, 400.0)], control="plugin:7:3", curve="linear")
+        bad = AR.check(sweep, outer, read=lambda tool, args: None)
+        self.assertTrue(bad and "Vox Master carries Vocals 2" in bad[0], bad)
+        inner = {"trackId": "11", "trackName": "Vocals 2", "isBus": True, "feeders": [
+            {"trackId": "3", "name": "Harmony 1", "routeType": "audio_track"}]}
+        self.assertEqual(AR.check(sweep, outer, read=lambda tool, args: inner), [])
+
+    def test_the_level_rules_are_not_applied_to_plug_in_values(self):
+        # a jump of thousands (Hz), linear, one point, force, start/end off the points, silence: all fine on a track
+        for w in (write([(0, 16000.0), (0.01, 200.0)], control="plugin:7:3", curve="linear"),
+                  write([(5, 0.3)], control="plugin:7:3", curve="linear", start=0, end=20),
+                  write([(0, 1.0), (1, None)], control="plugin:7:3", force=True)):
+            self.assertEqual(AR.check(w, VOCAL_BUS, line=lambda t: 0.0), [], w)
+
+    def test_a_plug_in_lane_may_be_cleared_anywhere(self):
+        lane = {"pointList": [{"time": 0, "value": 16000.0}, {"time": 8, "value": 400.0}, {"time": 9, "value": 9000.0}]}
+        self.assertEqual(AR.check_clear({"control": "plugin:7:3", "start": 1, "end": 8.5}, lane), [])
+        self.assertEqual(AR.check_clear({"control": "plugin:7:3"}, lane), [])
 
     def test_s_points_follow_a_raised_cosine(self):
         pts = AR.s_points([(0, 0.0), (1.2, -3.0)])

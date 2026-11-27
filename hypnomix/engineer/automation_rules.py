@@ -1,5 +1,6 @@
-"""The smooth-automation rules, checked by HypnoMix before any level automation is written (the HypnoMix Studio engine's
-automation_write from the Assistant, the DAW view or a command; the .ardour file writer too).
+"""The smooth-automation rules, checked by HypnoMix before any level or plug-in automation is written
+(the HypnoMix Studio engine's automation_write from the Assistant, the DAW view or a command; the .ardour file writer
+too).
 
   - every level move is a gentle S-curve (a raised cosine; about 1.2 s is the usual length)
   - a line move is at most 3 dB (the fader and sends), a trim at most 4 dB
@@ -11,10 +12,15 @@ automation_write from the Assistant, the DAW view or a command; the .ardour file
     (riding it would ride those tracks too); the roles are hypnomix's own (engineer/roles.py, by name)
   - never `force` (the engine's way to write a move it finds too steep)
 
-Pan, width, mute and plug-in parameters are not level moves: they are not held to these rules (the engine has no
-limit on them either). Values are the engine's natural units: dB for the fader, trim and sends (None is silence).
+Plug-in parameters (a filter's cut-off, say) are not level moves and are in the plug-in's own units, so only one rule
+holds for them: never the plug-in automation of a bus, a group's bus or the master that carries a track that is not a
+vocal (moving it would move those tracks too), judged the same way. Clearing a plug-in lane is always allowed (it
+removes movement). Pan, width and mute are not held to these rules (the engine has no limit on them either). Values
+are the engine's natural units: dB for the fader, trim and sends (None is silence).
 
   check(args, facts=None, line=None, read=None) -> [problem, ...]   plain sentences; [] when the write may go ahead
+  checked(control) -> bool                                  is the control held to check() (level or plug-in)
+  mixed_bus(facts, others, k) -> sentence                   why a bus carrying `others` is never automated (kind k)
   non_vocal(facts, read=None) -> [name, ...]                what a bus carries that is not a vocal (read: the engine's
                                                             automation_list for a bus that feeds it, read in turn)
   s_points(points, step=0.05) -> [(t, v), ...]              the points with a cosine S between each pair
@@ -28,6 +34,7 @@ RAMP_S = 1.2           # the usual length of one S-curve
 ON_LINE_DB = 0.1       # a write's first and last points are on the line as it is, within this
 EDGE_S = 0.01          # a replace-range write's start and end are its first and last points' times, within this
 LEVEL_KINDS = ("gain", "trim", "send")
+CHECKED_KINDS = LEVEL_KINDS + ("plugin",)   # held to check(): a plug-in parameter only to the mixed-bus rule
 S_PEAK = math.pi / 2   # a cosine S's steepest point, as a multiple of its average slope
 VOCAL_ROLES = ("lead_vocal", "backing_vocal")
 
@@ -48,6 +55,11 @@ def kind(control):
     if c.startswith("plugin:"):
         return "plugin"
     return "other"
+
+
+def checked(control):
+    """Is this control held to check(): a level control (all the rules) or a plug-in parameter (the mixed-bus rule)."""
+    return kind(control) in CHECKED_KINDS
 
 
 def cap(k):
@@ -181,24 +193,37 @@ def _fmt(t):
     return f"{t:.2f} s"
 
 
+def mixed_bus(facts, others, k):
+    """The sentence for a bus, a group's bus or the master that carries `others` (non_vocal), for a control of kind k."""
+    name = (facts or {}).get("trackName") or "this bus"
+    names = f"{', '.join(others[:6])}{' and more' if len(others) > 6 else ''}"
+    if k == "plugin":
+        return (f"{name} carries {names}, not only vocals: its plug-in automation is never written (it would move them "
+                f"too); automate a vocal track's plug-in instead")
+    what = {"gain": "fader", "trim": "trim", "send": "send level"}.get(k, "level")
+    return (f"{name} carries {names}, not only vocals: its {what} is never automated (it would ride them too); "
+            f"automate the vocal tracks instead")
+
+
 def check(args, facts=None, line=None, read=None):
     """Why this automation_write must not be sent, as plain sentences ([] when it may). facts: automation_list's reply
     for the route (for what a bus carries); line: line_from(...) for the control as it is now (for the edges of a
-    replace-range write); read(tool, args): the engine, for the buses that feed a bus (non_vocal). Only level controls
-    (fader, trim, sends) are checked."""
+    replace-range write); read(tool, args): the engine, for the buses that feed a bus (non_vocal). Level controls
+    (fader, trim, sends) are held to every rule; a plug-in parameter only to the mixed-bus one (its values are in the
+    plug-in's units, so the dB rules mean nothing there); anything else is not checked."""
     a = args or {}
     k = kind(a.get("control"))
-    if k not in LEVEL_KINDS:
+    if k not in CHECKED_KINDS:
         return []
+    others = non_vocal(facts, read)
+    if k == "plugin":
+        return [mixed_bus(facts, others, k)] if others else []
     out = []
     what = {"gain": "fader", "trim": "trim", "send": "send level"}[k]
     if forced(a.get("force")):
         out.append("force is never used: a level move steeper than 7 dB/s is made longer, not forced")
-    others = non_vocal(facts, read)
     if others:
-        name = (facts or {}).get("trackName") or "this bus"
-        out.append(f"{name} carries {', '.join(others[:6])}{' and more' if len(others) > 6 else ''}, not only vocals: "
-                   f"its {what} is never automated (it would ride them too); automate the vocal tracks instead")
+        out.append(mixed_bus(facts, others, k))
     raw = a.get("points") or []
     pts = points_of(raw)
     if len(pts) != len(raw):
@@ -245,7 +270,8 @@ def check_clear(args, reply):
     """Why an automation_clear must not be sent ([] when it may): clearing a stretch inside a level lane joins the points
     either side with a straight line, a move no S-curve shapes, so a ranged clear is refused unless they are level
     with each other (within 0.1 dB). Clearing a whole lane (no start or end) puts the control back to its own value:
-    not a move. reply: automation_get's reply for the control as it is now."""
+    not a move. A plug-in lane may always be cleared, on any route (clearing removes movement; nothing is written).
+    reply: automation_get's reply for the control as it is now."""
     a = args or {}
     if kind(a.get("control")) not in LEVEL_KINDS or (a.get("start") is None and a.get("end") is None):
         return []
