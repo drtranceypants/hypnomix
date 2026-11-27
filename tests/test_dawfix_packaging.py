@@ -5,6 +5,8 @@ import getpass, os, re, shutil, subprocess, sys, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 
+from tests import _isolate
+
 ROOT = Path(__file__).resolve().parents[1]
 BASH = shutil.which("bash")
 GPL = "GNU GENERAL PUBLIC LICENSE\nVersion 2, June 1991\n"
@@ -33,7 +35,8 @@ def make_kit(root, licence=True, notice=True, extra=None, link=False):
     return kit
 
 
-@unittest.skipUnless(BASH, "no bash")
+@_isolate.POSIX_ONLY                                      # the packaging scripts are Mac scripts (lipo, hdiutil)
+@unittest.skipUnless(BASH, "SKIPPED: no bash here, so this test was NOT run")
 class KitChecks(unittest.TestCase):
     def setUp(self):
         self.td = tempfile.TemporaryDirectory()

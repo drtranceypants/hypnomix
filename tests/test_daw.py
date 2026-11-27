@@ -138,7 +138,15 @@ def tearDownModule():
     _ISO[0].cleanup()
 
 
+def need_fake():
+    """Raise the visible skip on Windows. A setUp or setUpClass that makes a folder or sets the environment before it calls
+    make_fake calls this first: after a SkipTest in setUpClass nothing is cleaned up, so nothing may be made yet."""
+    if sys.platform == "win32":
+        raise unittest.SkipTest("SKIPPED: the stand-in engine is a script with a shebang line, which Windows cannot start, so this test was NOT run")
+
+
 def make_fake(folder):
+    need_fake()
     f = Path(folder) / "hypnomix-engine"
     f.write_text(FAKE.format(python=sys.executable))
     f.chmod(0o755)
@@ -173,6 +181,7 @@ def alive(pid):
 
 class Supervisor(unittest.TestCase):
     def setUp(self):
+        need_fake()                                                    # before any folder or environment change
         self.td = tempfile.TemporaryDirectory()
         self.bin = make_fake(self.td.name)
         self.eng = with_session(DW.Engine(binary=self.bin, attach_url="http://127.0.0.1:9/mcp"), self.td.name)
@@ -426,6 +435,7 @@ class Hardening(unittest.TestCase):
     """The supervisor under attack and under accident: two requests at once, odd bytes, text that looks like the engine's
     own words, a hung start, the environment it is given, names that look like options."""
     def setUp(self):
+        need_fake()                                                    # before any folder or environment change
         self.td = tempfile.TemporaryDirectory()
         self.bin = make_fake(self.td.name)
         self.pids = Path(self.td.name) / "pids.txt"
@@ -855,6 +865,7 @@ class AppQuits(unittest.TestCase):
     """An app that is told to quit takes the engine with it, whether or not it was started with --daw, and an engine
     whose app is gone ends by itself (the stand-in honours --parent-pid, as the real one does)."""
     def setUp(self):
+        need_fake()                                                    # before any folder or environment change
         self.td = tempfile.TemporaryDirectory()
         self.bin = make_fake(self.td.name)
 
@@ -1034,6 +1045,7 @@ class Proxy(unittest.TestCase):
     """The app server: POST /mcp to the engine (localhost, the page's token), the DAW view, the engine routes."""
     @classmethod
     def setUpClass(cls):
+        need_fake()                                                    # before any folder or environment change
         cls.td = tempfile.TemporaryDirectory()
         os.environ["HYPNOMIX_APP_HOME"] = cls.td.name
         from hypnomix.app import server as S
@@ -1445,6 +1457,7 @@ class Security(unittest.TestCase):
     on every POST, fields checked."""
     @classmethod
     def setUpClass(cls):
+        need_fake()                                                    # before any folder or environment change
         cls.td = tempfile.TemporaryDirectory()
         cls.env = mock.patch.dict(os.environ, {"HYPNOMIX_APP_HOME": cls.td.name})
         cls.env.start()

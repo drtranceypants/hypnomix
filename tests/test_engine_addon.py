@@ -29,6 +29,7 @@ from unittest import mock
 
 from hypnomix.app import engine_addon as EA, chat as CH, daw as DW, setup as SU
 from hypnomix.store import install as I
+from tests import _isolate
 from tests.test_dawfix_packaging import make_kit
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -934,7 +935,8 @@ class Archive(Base):
         self.publish()
         self.assertEqual(EA.install()["installed"], "1.0.0")
 
-    @unittest.skipUnless(BASH, "no bash")
+    @_isolate.POSIX_ONLY                                      # the packaging scripts are Mac scripts (lipo, hdiutil)
+    @unittest.skipUnless(BASH, "SKIPPED: no bash here, so this test was NOT run")
     def test_the_script_checks_packs_prints_the_manifest_line_and_uploads_nothing(self):
         shipped = ROOT / "hypnomix" / "app" / "engine_addon.json"
         before = shipped.read_text()
@@ -956,7 +958,8 @@ class Archive(Base):
                                 capture_output=True, text=True, timeout=120, env=env)
             self.assertEqual(hashlib.sha256(next((Path(td) / "out2").glob("*.tar.gz")).read_bytes()).hexdigest(), sha)   # same kit, same bytes
 
-    @unittest.skipUnless(BASH, "no bash")
+    @_isolate.POSIX_ONLY                                      # the packaging scripts are Mac scripts (lipo, hdiutil)
+    @unittest.skipUnless(BASH, "SKIPPED: no bash here, so this test was NOT run")
     def test_the_script_refuses_a_kit_that_is_not_fit_before_writing_anything(self):
         for kw in (dict(licence=False), dict(notice=False), dict(link=True)):
             with tempfile.TemporaryDirectory() as td:
@@ -968,7 +971,8 @@ class Archive(Base):
                 self.assertIn("nothing was written", r.stdout + r.stderr)
                 self.assertFalse(out.exists(), kw)
 
-    @unittest.skipUnless(BASH, "no bash")
+    @_isolate.POSIX_ONLY                                      # the packaging scripts are Mac scripts (lipo, hdiutil)
+    @unittest.skipUnless(BASH, "SKIPPED: no bash here, so this test was NOT run")
     def test_the_installer_script_no_longer_takes_the_engine(self):
         sh = (ROOT / "packaging/mac/build_dmg.sh").read_text()
         for word in ("--daw)", "check_kit", "edition", "Resources/engine", "LICENSES/engine", "-full-"):
@@ -1056,6 +1060,7 @@ class Limits(Base):
         self.manifest.write_text(json.dumps({"format": 1, "engine": "3.0.0", "platforms": {}}))   # the manifest names one that is not there
         self.assertEqual(EA.find(), self.root / "9.0.0" / "bin" / "hypnomix-engine")   # then the newest other one
 
+    @_isolate.POSIX_MODES                                                          # Windows has no executable bit
     def test_a_program_that_is_not_executable_is_not_an_engine(self):
         self.publish()
         EA.install()

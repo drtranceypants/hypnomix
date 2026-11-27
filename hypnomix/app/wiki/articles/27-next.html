@@ -2,7 +2,7 @@
 title: What's next
 sub: from the roadmap, in order
 group: Reference
-teaser: What comes next is opening everything the newest release added in real DAWs and on real songs. After that: colour for REAPER and HypnoMix DAW, previews for REAPER projects, space checks, a comp writer, Windows and Linux parity, signed installers, then readers for more DAWs.
+teaser: What comes next is opening everything the newest release added in real DAWs and on real songs. After that: colour for REAPER and HypnoMix DAW, previews for REAPER projects, space checks, a comp writer, Windows parity, signed installers, then readers for more DAWs.
 -->
 <div class="prose paper">
       <p><b>Checked where.</b> The Live devices and the Live fix paths were tested in Live 12. REAPER support was tested in REAPER 7.86. Everything newest passes unit tests and HypnoMix's own structure checks on synthetic data. The REAPER files the newest code writes (the demo project, a project written by <code>fix</code>, masking cuts as ReaEQ bands, the hand-off marker and the A/B project) were opened in REAPER 7.86 on 2026-11-26 and read back through its API, and matched what HypnoMix wrote. Still unchecked: the new Live sets (hand-off locators, the EQ Eight band, colour chains) have not been opened in Live, the HypnoMix DAW snapshots have not been opened in a released DAW, the new tools have not been run on real songs, and nothing new has been judged by ear. <b>DAW mode</b> (<a data-wiki="daw" href="#">HypnoMix DAW</a>, its engine, the Store, <code>als2ardour</code>) was tried against stand-in engines in the tests and against the real engine on its silent test backend only. Not tried: sound through a real sound card, recording, the native File menu of a test build, the add-on's download and unpacking from a real release (HypnoMix DAW is not available yet: no archive is published), signing and notarisation, and Intel Macs.</p>
@@ -14,7 +14,7 @@ teaser: What comes next is opening everything the newest release added in real D
         <li><b>Space checks in <code>devices</code>.</b> Delay times against the tempo, and reverb low cuts.</li>
         <li><b>A comp writer.</b> <code>takes</code> ranks takes and lists the best one per section; next, writing that comp into a project.</li>
         <li><b>HypnoMix DAW, hands-on.</b> DAW mode is built but not available yet: it needs the HypnoMix engine, an add-on that is not published. With it, the app drives the open HypnoMix DAW session (regions, mixer, plug-ins, the review loop); next, releasing the engine, opening it on more real songs and the engine's own plug-ins in the mastering chain beyond the test sessions.</li>
-        <li><b>Windows and Linux parity.</b> File pickers, and loopback capture for the loops that verify a chain.</li>
+        <li><b>Windows parity.</b> File pickers, and loopback capture for the loops that verify a chain.</li>
         <li><b>Signed installers.</b> Signed with a publisher key, and the app checking that signature.</li>
         <li><b>A private access token for shared computers.</b></li>
       </ol>

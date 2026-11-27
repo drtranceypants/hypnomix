@@ -138,7 +138,7 @@ decisions, the same "new files only". What HypnoMix cannot change in a DAW becom
    published). With it, the app drives the open HypnoMix DAW session (regions, mixer, plug-ins, the review loop) and
    `chain master --ardour` builds the mastering chain there; next is releasing the engine, opening it on more real songs, and the DAW's own
    plug-ins (EQ, compressor, expander, delay, reverb) in the chain beyond the test sessions.
-7. **Windows and Linux parity:** file pickers, and loopback capture without a macOS-only device for the loops that
+7. **Windows parity:** file pickers, and loopback capture without a macOS-only device for the loops that
    verify a chain.
 8. **Signed installers:** signed with a publisher key, with the app checking that signature before it updates.
 9. **A private access token for shared computers:** so the app on a shared machine is not open to everyone using it.

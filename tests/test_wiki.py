@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from hypnomix.app import wiki, wiki_build, wiki_md
+from tests import _isolate
 
 ART = """<!--
 title: The first pass
@@ -582,6 +583,7 @@ class Files(unittest.TestCase):
         (self.root / "home" / "wiki-live").mkdir(parents=True)
         (self.root / "home" / "wiki-live" / "articles.json").write_text(json.dumps({"commit_time": 1, "articles": [], "assets": assets}))
 
+    @_isolate.POSIX_MODES
     def test_a_fetched_file_is_capped_and_kept_private(self):
         self._site(["new.png", "huge.png", "liar.png", "page.html"])
         with mock.patch.object(wiki, "ASSET_MAX", 1000), mock.patch("urllib.request.urlopen") as uo:
@@ -599,6 +601,7 @@ class Files(unittest.TestCase):
         left = [p.name for p in (self.root / "home" / "wiki-live" / "assets").iterdir()]
         self.assertEqual(left, ["new.png"])                                     # nothing half-written is left behind
 
+    @_isolate.POSIX_MODES
     def test_settings_and_the_site_copy_are_private(self):
         wiki.save_settings(live=True)
         self.assertEqual((self.root / "home" / "wiki.json").stat().st_mode & 0o777, 0o600)

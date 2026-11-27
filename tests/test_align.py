@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from hypnomix.studio import alignopts as AO
+from tests import _isolate
 
 SR = 44100
 
@@ -74,7 +75,7 @@ class Options(unittest.TestCase):
         self.assertTrue(np.allclose(r[:SR // 2], out[:SR // 2]))
 
 
-@unittest.skipUnless(shutil.which("rubberband"), "needs Rubber Band")
+@unittest.skipUnless(shutil.which("rubberband"), _isolate.NO_RUBBERBAND)
 class Pitch(unittest.TestCase):
     def test_double_moves_toward_guide_and_harmony_keeps_its_interval(self):
         from hypnomix.studio import pitchmatch as PM

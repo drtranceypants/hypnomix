@@ -124,7 +124,7 @@ class RoadmapAndPages(unittest.TestCase):
     def test_the_tests_workflow_is_described_by_what_it_does(self):
         a = flat(read("AGENTS.md"))
         self.assertNotIn("has not run yet", a)
-        self.assertIn("runs the suite on Linux (Python 3.9 to 3.12)", a)
+        self.assertIn("runs the suite on macOS and Windows (Python 3.9 and 3.12)", a)
 
     def test_the_demo_lines_say_the_reaper_project_has_the_full_loop(self):
         r = flat(read("README.md"))

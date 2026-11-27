@@ -196,7 +196,7 @@ while there is unsaved work, unless the request says `"discard": true` (go on wi
 then go on).
 
 **Adding and removing HypnoMix DAW** (`hypnomix/app/engine_addon.py`). The engine is published as an archive of its own
-for each platform (`mac-arm64`, `mac-intel` now; the manifest's structure allows `windows-x64` and `linux-x64` later).
+for each platform (`mac-arm64`, `mac-intel` now; the manifest's structure allows `windows-x64` later, and `linux-x64` for people who build it: the project does not test on Linux).
 `hypnomix/app/engine_addon.json`, shipped inside the app, names for this version of the app the engine version it works
 with and, per platform, the https address and SHA-256 of the archive. Until an archive is published the manifest carries
 no address and the state says **HypnoMix DAW is not available yet** (and "not yet for Windows" off a Mac). Nothing is
@@ -403,8 +403,8 @@ Drag `macapp/dist/Hypnomix.app` into Applications if you want to keep it. Things
   their own with the three lines above.
 - The app remembers where HypnoMix is installed. If you move or reinstall that folder, build again (or the
   app asks you to point at the folder).
-- It is the same page as `hypnomix app`. Nothing is lost by using the browser instead, and on Windows or
-  Linux the browser is the way.
+- It is the same page as `hypnomix app`. Nothing is lost by using the browser instead, and on Windows
+  the browser is the way (on Linux too, but the project does not test on Linux).
 - To remove it, delete the app. Your songs' scans stay in `~/Documents/Hypnomix`.
 
 ## The Live device (Max for Live)

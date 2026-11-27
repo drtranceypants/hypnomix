@@ -10,6 +10,8 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from tests import _isolate
+
 SR = 48000
 BPM = 120.0
 SPB = 60.0 / BPM
@@ -145,7 +147,7 @@ def smf_notes(path):
 
 
 class ConstantRatio(unittest.TestCase):
-    @unittest.skipUnless(shutil.which("rubberband"), "needs the rubberband command")
+    @unittest.skipUnless(shutil.which("rubberband"), _isolate.NO_RUBBERBAND)
     def test_constant_ratio_is_a_stretched_copy_in_time(self):
         from hypnomix.project import als, ardour, als2ardour as X
         td = Path(tempfile.mkdtemp())
@@ -823,6 +825,7 @@ class AdtsAndOutdir(unittest.TestCase):
         self.assertEqual(os.stat(out).st_ino, before)
         self.assertEqual(sorted(x.name for x in out.iterdir() if x.name.startswith(".")), [])   # no temporary folder left
 
+    @_isolate.POSIX_MODES
     def test_an_empty_folder_in_a_read_only_parent_still_works(self):
         import os
         if os.geteuid() == 0:
@@ -837,6 +840,7 @@ class AdtsAndOutdir(unittest.TestCase):
         finally:
             os.chmod(ro, 0o755)
 
+    @_isolate.POSIX_MODES
     def test_a_new_folder_in_a_read_only_parent_is_one_sentence(self):
         import os
         if os.geteuid() == 0:

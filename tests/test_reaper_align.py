@@ -15,6 +15,7 @@ import soundfile as sf
 from hypnomix import project
 from hypnomix.project import rpp_edit as E
 from hypnomix.studio import alignopts as AO
+from tests import _isolate
 from tests.test_align import NOTES, voice
 
 SR = 44100
@@ -218,7 +219,7 @@ class AlignProject(unittest.TestCase):
         self.assertEqual([r["track"] for r in res["parts"]][-2:], ["Double", "Harmony"])
         self.assertEqual({t["name"] for t in res["energy"]["tracks"]}, {"Lead Vox", "Double", "Harmony"})
 
-    @unittest.skipUnless(shutil.which("rubberband"), "needs Rubber Band")
+    @unittest.skipUnless(shutil.which("rubberband"), _isolate.NO_RUBBERBAND)
     def test_formant_becomes_a_new_take_that_sums_to_the_render(self):
         path = stack_project(self.d, harm=False)
         run_alignset(path, "--guide", "Lead", "--parts", "Double", "--formant", "0.4", "--out", self.d / "o",

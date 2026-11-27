@@ -15,6 +15,7 @@ import soundfile as sf
 from hypnomix import cli
 from hypnomix.core import dsp, paths
 from hypnomix.session import distortion as D
+from tests import _isolate
 
 ROOT = Path(__file__).resolve().parent.parent
 SR = 44100
@@ -272,6 +273,7 @@ class UnwritableOut(Base):
         with self.assertRaises(SystemExit):
             paths.out_at(str(blocker / "sub"))                  # a path through a file, not a folder
 
+    @_isolate.POSIX_MODES
     def test_a_late_permission_error_is_still_one_sentence(self):
         msg = cli._audio_read_message(PermissionError(13, "Permission denied", str(self.ro / "late.md")))
         self.assertIn("can't write to", msg)

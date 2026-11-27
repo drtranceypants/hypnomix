@@ -18,6 +18,7 @@ from unittest import mock
 
 from hypnomix import cli
 from hypnomix.core import report as R
+from tests import _isolate
 
 SECRET = "sk-test-SECRET0123456789abcdef"
 ENV_SECRET = "envsecretvalue-99887766"
@@ -243,8 +244,14 @@ class CliCrash(Homed):
         for fr in rec["traceback"]:
             self.assertFalse(fr["file"].startswith("/"), fr)
         self.assertTrue(any(fr["file"] == "hypnomix/cli.py" for fr in rec["traceback"]))
-        self.assertEqual(oct(files[0].stat().st_mode & 0o777), "0o600")
         self.assertEqual(R.last_run()["status"], "crashed")
+
+    @_isolate.POSIX_MODES                                                     # Windows has no permission bits
+    def test_a_crash_record_is_private_to_the_person(self):
+        self.run_cli(["boom"])
+        files = list((self.home / "crashes").glob("*.json"))
+        self.assertEqual(len(files), 1)
+        self.assertEqual(oct(files[0].stat().st_mode & 0o777), "0o600")
 
     def test_the_same_crash_twice_is_one_record(self):
         self.run_cli(["boom"])

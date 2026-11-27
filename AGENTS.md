@@ -397,8 +397,8 @@ don't drive those apps. The plan for deeper support (later) is in `docs/ROADMAP.
   and scrubs the developer's keys from the environment (`tests/_isolate.py`), and names at its start what it will
   skip (a missing extra or tool). Run one file as `python -m unittest tests.test_NAME`, or with discover as
   `-s tests -t . -p 'test_NAME.py'`: without `-t .` the run is not isolated and writes into the real folders.
-  `.github/workflows/tests.yml` runs the suite on Linux (Python 3.9 to 3.12) for every push and pull request, so a test
-  that only passes on a Mac shows up there; read a red run before blaming the change.
+  `.github/workflows/tests.yml` runs the suite on macOS and Windows (Python 3.9 and 3.12) for every push and pull request, so a test
+  that only passes on a Mac shows up there (Windows has no Rubber Band, so the tests that need it are skipped, each saying so; the project does not test on Linux); read a red run before blaming the change.
 - A tool that makes many moves gets a `--plan` (see `hypnomix/workflow/plan.py`): each move is a finding with a
   `plan` dict (`tool`, `file`, and a `step` or `key`), and the tool accepts "only these moves" so `fix` can run
   the approved subset.

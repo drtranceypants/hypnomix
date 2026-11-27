@@ -61,7 +61,7 @@ Your agent will find these in `AGENTS.md`, but they're worth knowing:
   forces one way of doing it.
 - **Keep the human feel.** Gentle, optional pitch and timing edits; nothing that quantises a performance flat.
 - **No audio in the repo.** Tests build synthetic audio and sets in a temp folder.
-- **Work on Windows and Linux too.** Name the encoding of every text file and pipe (`encoding="utf-8"`; a test walks the
+- **Work on macOS and Windows, which the tests run on.** Do not break Linux knowingly, but the project does not test there (patches from people who use Linux are welcome). Name the encoding of every text file and pipe (`encoding="utf-8"`; a test walks the
   source and fails on a bare `open`, `read_text`, `write_text` or `text=True`), and ask the system where a folder is
   (`hypnomix.install.user_library()`, not a hard-coded Mac folder).
 - **No paid product names** in code, docs, tests or screenshots, and no personal paths or details.

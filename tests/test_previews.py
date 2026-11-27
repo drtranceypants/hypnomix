@@ -14,6 +14,7 @@ import soundfile as sf
 
 from hypnomix.session import devmodel, plugrender as PR, render as R
 from hypnomix.workflow import ab
+from tests import _isolate
 
 SR = 44100
 HAVE_RB = bool(shutil.which("rubberband"))
@@ -200,8 +201,7 @@ def onset(y, after, thr=0.05):
     return (i + int(np.argmax(np.abs(y[i:]) > thr))) / SR
 
 
-@unittest.skipUnless(HAVE_RB, "needs Rubber Band")
-class TimingPairs(unittest.TestCase):
+class TimingBase(unittest.TestCase):
     # the hit at source 4.0 s (beat 8 at 120 BPM) plays 40 ms late in the "after" set; the onsets next to it hold
     BEFORE = [(0.0, 0.0), (1.0, 2.0)]
     AFTER = [(0.0, 0.0), (3.9, 7.8), (4.0, 8.08), (4.1, 8.2), (8.0, 16.0)]
@@ -224,6 +224,18 @@ class TimingPairs(unittest.TestCase):
             ab.preview_timing(findings or [self.f], self.orig, {}, sd, 2.0, 3.0, manifest, SR)
         return manifest, sd
 
+
+class TimingWithoutRubberBand(TimingBase):
+    # needs no Rubber Band (the lookup is mocked to find none), so it runs on every system, Windows runners included
+    def test_without_rubber_band_the_case_is_refused_and_says_why(self):
+        with mock.patch.object(ab.shutil, "which", return_value=None):
+            m, _ = self.run_preview()
+        self.assertNotIn("a", m["timing-1"])
+        self.assertIn("Rubber Band", m["timing-1"]["note"])
+
+
+@unittest.skipUnless(HAVE_RB, _isolate.NO_RUBBERBAND)
+class TimingPairs(TimingBase):
     def test_the_pair_plays_the_nudged_hit_late_and_everything_else_where_it_was(self):
         m, sd = self.run_preview()
         row = m["timing-1"]
@@ -252,12 +264,6 @@ class TimingPairs(unittest.TestCase):
         m, _ = self.run_preview([f])
         self.assertNotIn("a", m["timing-1"])
         self.assertIn("MIDI", m["timing-1"]["note"])
-
-    def test_without_rubber_band_the_case_is_refused_and_says_why(self):
-        with mock.patch.object(ab.shutil, "which", return_value=None):
-            m, _ = self.run_preview()
-        self.assertNotIn("a", m["timing-1"])
-        self.assertIn("Rubber Band", m["timing-1"]["note"])
 
     def test_a_set_saved_after_the_scan_is_refused(self):
         sd = self.td / "scan"

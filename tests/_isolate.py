@@ -22,6 +22,7 @@ import os
 import shutil
 import sys
 import tempfile
+import unittest
 from pathlib import Path
 
 FOLDERS = ("HYPNOMIX_HOME", "HYPNOMIX_APP_HOME", "HYPNOMIX_USER_HOME", "HYPNOMIX_OUT")
@@ -42,11 +43,34 @@ EXTRAS = (
     ("assistant", ("anthropic", "openai") if sys.version_info >= (3, 10) else ("openai",), "uv pip install -e \".[assistant]\"",
      "the Assistant's approval flow and provider loops (test_chat, test_daw, test_daw_assistant)"),
 )
+# how to get a program, by system (the project tests on macOS and Windows; the Linux words help a person who runs the tests there)
+_HOW = {"darwin": {"rubberband": "brew install rubberband", "ffmpeg": "brew install ffmpeg"},
+        "win32": {"rubberband": "no reliable package on Windows: the command-line program from breakfastquay.com/rubberband, "
+                                "its folder on PATH", "ffmpeg": "choco install ffmpeg"}}
+
+
+def _how(tool, default):
+    return _HOW.get(sys.platform, {}).get(tool, default)
+
+
 TOOLS = (
-    ("rubberband", "brew install rubberband", "the tune, vocalign and align tests"),
-    ("ffmpeg", "brew install ffmpeg", "the release and preflight tests"),
+    ("rubberband", _how("rubberband", "install rubberband-cli with your package manager"), "the tune, vocalign and align tests"),
+    ("ffmpeg", _how("ffmpeg", "install ffmpeg with your package manager"), "the release and preflight tests"),
     ("node", "install Node.js", "the check that every page script parses"),
 )
+
+# The reason a test gives when it needs Rubber Band and it is not installed: a visible skip that names the tool (like
+# tests/_jscheck.py's NO_RUNNER), never a silent pass. The Windows runners of CI have no Rubber Band (.github/workflows/tests.yml).
+NO_RUBBERBAND = "SKIPPED: Rubber Band (the `rubberband` program) is not installed here, so this test was NOT run"
+
+# For a test whose whole point is a file permission (chmod, mode 0o600, a read-only folder): Windows has no such bits, so it
+# is a visible skip there, never a pass and never a failure that says nothing about HypnoMix.
+POSIX_MODES = unittest.skipIf(sys.platform == "win32", "SKIPPED: this test checks file permission bits (chmod, 0o600, "
+                                                       "read-only folders), which Windows does not have, so it was NOT run")
+# For a test that starts a shell script or a program with a shebang line, uses process groups or sends POSIX signals: a
+# visible skip on Windows (the Mac helper script, the DAW engine's stand-in).
+POSIX_ONLY = unittest.skipIf(sys.platform == "win32", "SKIPPED: this test starts a shell script or uses POSIX process groups "
+                                                      "and signals, which Windows does not have, so it was NOT run")
 
 
 def isolate():

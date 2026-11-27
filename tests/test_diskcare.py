@@ -2,6 +2,8 @@
 import gzip, json, os, tempfile, time, unittest
 from pathlib import Path
 
+from tests import _isolate
+
 OLD = time.time() - 40 * 86400
 
 
@@ -248,6 +250,7 @@ class DiskCare(unittest.TestCase):
             self.assertEqual(self.DC.read_only(), [])
             self.assertIsInstance(self.DC.view()["watch"], list)
 
+    @_isolate.POSIX_MODES
     def test_state_file_is_private(self):
         import stat
         self.DC.settings({"auto": True})

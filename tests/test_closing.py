@@ -35,6 +35,8 @@ from unittest import mock
 import numpy as np
 import soundfile as sf
 
+from tests import _isolate
+
 ROOT = Path(__file__).resolve().parent.parent
 PKG = ROOT / "hypnomix"
 APPJS = PKG / "app"
@@ -513,6 +515,7 @@ class Reads(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
+@_isolate.POSIX_ONLY
 class Helper(unittest.TestCase):
     """The Mac update helper, run for real in bash against stand-ins for hdiutil and ditto: its mount folder is let go of
     whichever way it ends, and it lives in $TMPDIR."""

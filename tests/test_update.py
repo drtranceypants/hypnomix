@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 from hypnomix.app import update as UP
+from tests import _isolate
 
 REAL_ASSET_NAME = UP.asset_name           # Base replaces it; the edition tests put the real one back
 
@@ -323,11 +324,13 @@ class Install(Base):
 
 
 class Modes(Base):
+    @_isolate.POSIX_MODES
     def test_state_files_are_private(self):
         UP.save({"auto": True})
         self.assertEqual(stat.S_IMODE(UP.STATE.stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(UP.STATE.parent.stat().st_mode), 0o700)
 
+    @_isolate.POSIX_MODES
     def test_existing_loose_folder_and_file_are_tightened(self):
         d = self.r / ".hypnomix"
         d.mkdir()
@@ -338,6 +341,7 @@ class Modes(Base):
         self.assertEqual(stat.S_IMODE(d.stat().st_mode), 0o700)
         self.assertEqual(stat.S_IMODE(UP.STATE.stat().st_mode), 0o600)
 
+    @_isolate.POSIX_MODES
     def test_setup_state_is_private(self):
         from hypnomix.app import setup as SU
         with mock.patch.object(SU, "STATE", self.r / "h2" / "setup.json"):
@@ -345,6 +349,7 @@ class Modes(Base):
             self.assertEqual(stat.S_IMODE(SU.STATE.stat().st_mode), 0o600)
             self.assertEqual(stat.S_IMODE(SU.STATE.parent.stat().st_mode), 0o700)
 
+    @_isolate.POSIX_MODES
     def test_tighten_home_leaves_the_users_own_home_alone(self):
         from hypnomix.core import paths
         h = self.r / "hx"
@@ -460,6 +465,7 @@ class Review(Base):
 
 
 class PrivateFolders(unittest.TestCase):
+    @_isolate.POSIX_MODES
     def test_private_dir_makes_every_missing_folder_0700(self):
         from hypnomix.core import paths
         with tempfile.TemporaryDirectory() as t:
@@ -468,6 +474,7 @@ class PrivateFolders(unittest.TestCase):
             for p in (d, d.parent, d.parent.parent):
                 self.assertEqual(stat.S_IMODE(p.stat().st_mode), 0o700, str(p))
 
+    @_isolate.POSIX_MODES
     def test_private_dir_leaves_the_home_folder_and_above_alone(self):
         from hypnomix.core import paths
         with tempfile.TemporaryDirectory() as t:
@@ -486,6 +493,7 @@ class PrivateFolders(unittest.TestCase):
                 self.assertEqual(stat.S_IMODE((home / ".hypnomix").stat().st_mode), 0o700)
                 self.assertEqual(stat.S_IMODE(home.stat().st_mode), 0o755)
 
+    @_isolate.POSIX_MODES
     def test_diskcare_does_not_tighten_a_home_folder_either(self):
         from hypnomix.app import diskcare as DC
         from hypnomix.core import paths
@@ -651,6 +659,7 @@ class UnsavedSession(Base):
             self.assertEqual(UP.engine_pid(), "")                      # a window it only attached to is not waited for
 
 
+@_isolate.POSIX_ONLY
 class HelperWaitsForTheEngine(unittest.TestCase):
     """The Mac helper's stop step, run for real against stand-in processes: it waits for the app, the server and the
     engine, longer than the engine's own stop time, and only then kills what is left (the engine's whole group)."""

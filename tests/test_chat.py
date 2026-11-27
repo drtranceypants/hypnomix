@@ -42,12 +42,16 @@ class Chat(unittest.TestCase):
 
     def test_key_is_kept_private_and_masked(self):
         CH.update_settings({"provider": "anthropic", "key": "sk-ant-secret-12345678"})
-        self.assertEqual(oct(CH.CONF.stat().st_mode)[-3:], "600")
         view = json.dumps(CH.settings_view(), ensure_ascii=False)
         self.assertNotIn("secret", view)
         self.assertIn("…5678", view)
         CH.update_settings({"provider": "anthropic", "forget": True})
         self.assertNotIn("anthropic", json.loads(CH.CONF.read_text()).get("keys", {}))
+
+    @_isolate.POSIX_MODES                                             # Windows has no permission bits
+    def test_the_key_file_is_private_to_the_person(self):
+        CH.update_settings({"provider": "anthropic", "key": "sk-ant-secret-12345678"})
+        self.assertEqual(oct(CH.CONF.stat().st_mode)[-3:], "600")
 
     def test_what_waits_for_a_click(self):
         self.assertTrue(CH.needs_ok("fix", ["DIR", "--list"]))             # every fix is the person's call
@@ -208,6 +212,7 @@ class Chat(unittest.TestCase):
         self.assertNotIn("ABCDEFGH", msg["content"][0]["text"])
         self.assertEqual(msg["content"][1]["signature"], "sk-live-ABCDEFGH1234")     # signatures must stay as they came
 
+    @_isolate.POSIX_MODES
     def test_conversation_file_is_private_and_holds_no_key(self):
         CH.update_settings({"provider": "openai", "key": "sk-live-ABCDEFGH1234"})
         CH.CHAT["items"].append(dict(kind="user", text="my key is sk-live-ABCDEFGH1234"))      # bypassing say()

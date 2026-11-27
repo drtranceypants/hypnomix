@@ -1,14 +1,27 @@
-# Runs the whole test suite on every push and pull request, on Linux, with each Python version the package supports
-# (pyproject.toml: requires-python >=3.9). The tests build synthetic audio and sessions in temporary folders and move
-# themselves onto temporary hypnomix folders (tests/_isolate.py), so the job needs no setup of its own.
+# Runs the whole test suite on every push and pull request, on macOS and on Windows: the two systems HypnoMix is tested
+# on. Linux is not tested by the project (it had an initial compatibility pass in 0.3.1; patches from people who use it
+# are welcome), so no job runs there. The tests build synthetic audio and sessions in temporary folders and move themselves
+# onto temporary hypnomix folders (tests/_isolate.py), so the jobs need no setup of their own beyond the programs below.
+#
+# Which Pythons: pyproject.toml says requires-python >=3.9. 3.9 is the oldest (the Assistant extra installs without
+# Anthropic's library there, because it needs 3.10, and the tests use their stand-ins: tests/_isolate.py) and 3.12 is the
+# newest. 3.10 and 3.11 would add jobs and no code path that those two do not already run (3.10 and later all have the real
+# library), so they are left out: four jobs, not eight, keeps the run short.
 #
 # CI=true makes the tests that need an optional extra (the Assistant's SDKs) or a tool (Node.js, which runs the page and
 # device scripts and parses every page script) fail when it is missing instead of skipping: a skipped safety test says
-# "OK" (tests/test_repo_rules.py). Node.js comes with the ubuntu-latest image; the first step checks that it is there, so
-# a runner image without it stops the job at once with a sentence, not with skipped tests.
+# "OK" (tests/test_repo_rules.py). Node.js comes with both runner images; the first step checks that it is there, so a
+# runner image without it stops the job at once with a sentence, not with skipped tests.
 #
-# On Python 3.9 the Assistant extra installs without Anthropic's library (it needs 3.10; pyproject.toml), and the tests that
-# use it run against the stand-ins they always use (tests/_isolate.py).
+# Rubber Band (the `rubberband` program) is installed on the Mac with Homebrew. Windows has no reliable package for it, so
+# the Windows jobs run without it: the tests that need it (test_align, test_previews, test_reaper_align, test_als2ardour)
+# are skipped, each with a line in the log that says it needs Rubber Band, and the "Say what is installed" step prints a
+# warning that names it. The tests that check what HypnoMix says when it is missing run everywhere
+# (tests/test_fix_portability.py). A skip here is not a pass: read the warning.
+#
+# Every run step says `shell: bash` (Git Bash on Windows), so one script serves both systems. The first step turns off
+# core.autocrlf before the checkout: the Windows image would otherwise write CRLF into the repository's shell scripts, and the
+# tests that run them (and the ones that read files as bytes) would see a carriage return at the end of every line.
 name: tests
 
 on:
@@ -24,34 +37,58 @@ concurrency:
 
 jobs:
   unittest:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.10", "3.11", "3.12"]
+        os: [macos-latest, windows-latest]
+        python: ["3.9", "3.12"]
     env:
       CI: "true"
+      # where `uv venv` puts the interpreter: bin on a Mac, Scripts on Windows
+      PY: ${{ matrix.os == 'windows-latest' && '.venv/Scripts/python.exe' || '.venv/bin/python' }}
+      # a pipe on Windows is cp1252 otherwise (a console is not); the app sets this for the commands it runs too
+      PYTHONIOENCODING: utf-8
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
     steps:
+      - name: Keep line endings as in the repository (Windows checks out CRLF by default)
+        shell: bash
+        run: git config --global core.autocrlf false
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Node.js is there (the tests that run page and device scripts need it)
+        shell: bash
         run: |
           command -v node >/dev/null || { echo "::error::Node.js is not on this runner: the page and device script tests would be skipped"; exit 1; }
           node --version
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-      - name: System programs the tests use (audio libraries, ffmpeg, Rubber Band)
+      - name: System programs the tests use (ffmpeg, and Rubber Band on the Mac)
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg rubberband-cli libsndfile1 libportaudio2
+          # libsndfile and PortAudio come inside the soundfile and sounddevice wheels on both systems
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            choco install ffmpeg -y --no-progress
+          else
+            brew install ffmpeg rubberband
+          fi
       - name: Install hypnomix with the Assistant extra
+        shell: bash
         run: |
           uv venv --python ${{ matrix.python }}
           uv pip install -e ".[assistant]"
       - name: Say what is installed
+        shell: bash
         run: |
-          .venv/bin/python --version
+          "$PY" --version
           node --version
-          ffmpeg -version | head -n 1
-          rubberband --version || true
+          v="$(ffmpeg -version)"; echo "${v%%$'\n'*}"
+          if command -v rubberband >/dev/null; then
+            rubberband --version 2>&1 || true
+          else
+            echo "::warning::Rubber Band (the rubberband program) is not installed on this runner: the tests that need it are skipped, and each says so in the log"
+          fi
       - name: Run the tests
-        run: .venv/bin/python -m unittest discover -s tests -v
+        shell: bash
+        run: |
+          "$PY" -m unittest discover -s tests -v

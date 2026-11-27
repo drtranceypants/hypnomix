@@ -598,10 +598,58 @@ class Environment(unittest.TestCase):
         self.assertIn("unittest discover -s tests", wf)
         self.assertRegex(wf, r"(?m)^\s*push:")
         self.assertRegex(wf, r"(?m)^\s*pull_request:")
-        self.assertIn("ubuntu-latest", wf)
         oldest = re.search(r'requires-python\s*=\s*">=(\d+\.\d+)"', read("pyproject.toml")).group(1)
         self.assertIn(f'"{oldest}"', wf, "the workflow must test the oldest Python the package supports")
         self.assertIn('".[assistant]"', wf.replace("\\", ""), "the workflow must install the extra the tests skip without")
+
+    def test_the_workflow_runs_on_macos_and_windows_and_never_on_linux(self):
+        """The owner's decision (after 0.3.1): the project tests on macOS and Windows only; Linux is left to outside people."""
+        wf = read(".github/workflows/tests.yml")
+        code = "\n".join(l for l in wf.splitlines() if not l.lstrip().startswith("#"))       # the header may name Linux
+        self.assertRegex(code, r"(?m)^\s*os:\s*\[[^\]]*\bmacos-latest\b")
+        self.assertRegex(code, r"(?m)^\s*os:\s*\[[^\]]*\bwindows-latest\b")
+        self.assertNotRegex(code, r"(?i)ubuntu|\blinux\b|apt-get|\bsudo\b")
+        self.assertRegex(code, r"(?m)^\s*runs-on:\s*\$\{\{\s*matrix\.os\s*\}\}")
+        self.assertRegex(code, r"(?m)^\s*fail-fast:\s*false\s*$")
+        self.assertRegex(code, r"(?m)^\s*timeout-minutes:\s*60\s*$")
+        self.assertRegex(wf, r"(?i)Linux is not tested by the project")
+
+    def test_every_run_step_of_the_workflow_says_shell_bash(self):
+        """One script serves both systems (Git Bash on Windows): no step may fall back to PowerShell or cmd."""
+        steps = re.split(r"(?m)^      - ", read(".github/workflows/tests.yml"))[1:]
+        runs = [s for s in steps if re.search(r"(?m)^\s+run:", s)]
+        self.assertGreaterEqual(len(runs), 5)
+        for s in runs:
+            self.assertRegex(s, r"(?m)^\s+shell:\s*bash\s*$", "a run step without `shell: bash`: " + s.splitlines()[0])
+
+    def test_the_workflow_keeps_line_endings_as_in_the_repository_before_the_checkout(self):
+        """The Windows image checks out CRLF by default, which breaks the shell scripts the tests run and the byte-exact reads."""
+        wf = read(".github/workflows/tests.yml")
+        self.assertIn("git config --global core.autocrlf false", wf)
+        self.assertLess(wf.index("core.autocrlf false"), wf.index("actions/checkout@"), "it must be set before the checkout")
+
+    def test_the_windows_jobs_are_honest_about_rubber_band(self):
+        """Windows has no reliable Rubber Band package: the jobs run without it and the log says so, the tests that need it skip by name."""
+        wf = read(".github/workflows/tests.yml")
+        self.assertIn("choco install ffmpeg", wf)
+        self.assertIn("brew install ffmpeg rubberband", wf)
+        self.assertIn("::warning::Rubber Band", wf)
+        from tests import _isolate
+        self.assertIn("Rubber Band", _isolate.NO_RUBBERBAND)
+        self.assertTrue(_isolate.NO_RUBBERBAND.startswith("SKIPPED"))
+        for rel in ("tests/test_align.py", "tests/test_als2ardour.py", "tests/test_previews.py", "tests/test_reaper_align.py"):
+            t = read(rel)
+            self.assertIn("_isolate.NO_RUBBERBAND", t, rel + ": a skip for a missing Rubber Band must say so by name")
+            self.assertNotRegex(t, r'skipUnless\([^\n]*rubberband[^\n]*"needs', rel)
+
+    def test_the_docs_say_the_project_does_not_test_on_linux(self):
+        for rel in ("README.md", "hypnomix/app/wiki/articles/19-requirements.html", "hypnomix/app/wiki/articles/28-faq.html",
+                    "hypnomix/app/wiki/articles/20-install.html"):
+            self.assertIn("the project does not test on Linux", squash(read(rel)), rel)
+        c = squash(read("CONTRIBUTING.md"))
+        self.assertIn("Work on macOS and Windows, which the tests run on", c)
+        self.assertNotIn("Work on Windows and Linux too", c)
+        self.assertNotIn("Windows and Linux parity", read("docs/ROADMAP.md") + read("hypnomix/app/wiki/articles/27-next.html"))
 
     def test_node_is_there_to_parse_the_page_scripts(self):
         if not shutil.which("node"):
