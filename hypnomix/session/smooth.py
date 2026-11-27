@@ -29,7 +29,7 @@ Close the set in Live before --apply (Live would overwrite the edit on its next 
 new file (in the same folder, so relative sample links still work). Assumes a constant song tempo.
 Session View clips are not checked.
 """
-import argparse, gzip, math, sys
+import argparse, gzip, math, os, sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -591,7 +591,7 @@ def main():
         print(f"skipped (audio file not found): {m}")
 
     if a.apply:
-        if Path(a.apply).resolve().parent != src.resolve().parent:
+        if not os.environ.get("HYPNOMIX_ALLOW_TMP_SET") and Path(a.apply).resolve().parent != src.resolve().parent:
             sys.exit("write the new set in the same folder as the original "
                      f"({src.resolve().parent}): samples linked by relative path go offline elsewhere")
         if not issues:

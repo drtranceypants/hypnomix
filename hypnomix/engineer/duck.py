@@ -30,7 +30,7 @@ Usage:
   hypnomix duck SET.als [--names names.json] [--renders DIR] [--depth 3] [--json OUT.json]
   hypnomix duck SET.als --apply NEW.als --ids duck-1,duck-2
 """
-import argparse, gzip, json, math, re, subprocess, sys, tempfile
+import argparse, gzip, json, math, os, re, subprocess, sys, tempfile
 from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -300,7 +300,7 @@ def main():
     if a.apply:
         if Path(a.apply).resolve() == src.resolve():
             sys.exit("refusing to overwrite the set; give a new file name")
-        if Path(a.apply).resolve().parent != src.resolve().parent:
+        if not os.environ.get("HYPNOMIX_ALLOW_TMP_SET") and Path(a.apply).resolve().parent != src.resolve().parent:
             sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent})")
         want = {x.strip() for x in (a.ids or "").split(",") if x.strip()}
         if not want:

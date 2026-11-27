@@ -40,7 +40,7 @@ envelope would override the change). Declip, re-recording and new devices are re
 From code (the first-pass scan):  from hypnomix.session.distortion import scan
     rep = scan("Song.als", audio=[...], post="Stems/", mix="Mix.wav");  rep.findings, rep.to_dict()
 """
-import argparse, json, math, re, sys
+import argparse, json, math, os, re, sys
 from dataclasses import dataclass, field, asdict
 from fractions import Fraction
 from pathlib import Path
@@ -1156,7 +1156,7 @@ def apply(rep, out_path, min_severity="medium"):
     if rep.tree is None:
         raise ValueError("no set loaded")
     src = Path(rep.set_path)
-    if Path(out_path).resolve().parent != src.resolve().parent:
+    if not os.environ.get("HYPNOMIX_ALLOW_TMP_SET") and Path(out_path).resolve().parent != src.resolve().parent:
         raise ValueError(f"write the new set in the same folder as the original ({src.resolve().parent}): "
                          "samples linked by relative path go offline elsewhere")
     pts = pointees(rep.tree.getroot())

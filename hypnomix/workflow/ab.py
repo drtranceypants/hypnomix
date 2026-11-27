@@ -6,7 +6,7 @@ previewed, at matched loudness (the louder one always sounds better, so the pair
 
 Writes SCAN_DIR/ab/<id> A (now).wav and <id> B (fixed).wav, plus ab.json (which pairs exist, and why the
 others don't). Nothing in the project or the source audio is changed: the "fixed" version is built in a
-temporary copy of the set that is deleted afterwards. `hypnomix review` puts play buttons on each pair.
+temporary copy of the set inside the scan folder that is deleted afterwards. `hypnomix review` puts play buttons on each pair.
 
 What can be previewed without Live:
   clip fixes (smooth)     clicks, cuts, spikes, steps: the track is rendered from the set with and without the
@@ -41,7 +41,7 @@ through its chain, without sends. Either way a pair shows what the fix does, not
 """
 from hypnomix.core import atomic
 from hypnomix.extras import hint as extra_hint
-import argparse, json, re, shutil, subprocess, sys, tempfile
+import argparse, json, os, re, shutil, subprocess, sys, tempfile
 from pathlib import Path
 
 import numpy as np
@@ -49,8 +49,9 @@ import soundfile as sf
 
 
 def hx(*args, timeout=3600):
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8", errors="replace",
-                       timeout=timeout)
+    env = {**os.environ, "HYPNOMIX_ALLOW_TMP_SET": "1"}
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=timeout, env=env)
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
@@ -84,7 +85,7 @@ def secs_of(text):
     return int(m.group(1)) * 60 + float(m.group(2)) if m else None
 
 
-def render_tracks(als, names, sr=44100):
+def render_tracks(als, names, sr=44100, sample_als=None):
     """{track name: mono float array} from the set: clip gain, fades, straight warps and the track's VOLUME
     AUTOMATION (relative to its first point), no devices. Returns (audio, seconds per beat, beats per bar)."""
     from hypnomix.session import automation as aa
@@ -101,7 +102,7 @@ def render_tracks(als, names, sr=44100):
     out, warn = {}, []
     for t in pick:
         name = R.v(t, "./Name/EffectiveName")
-        y = R.render_track(t, str(als), spb, n, sr, None, 0, warn)
+        y = R.render_track(t, str(sample_als or als), spb, n, sr, None, 0, warn)
         envs, _ = aa.envelopes(t)
         vol = next((env for lab, env, _ in envs if lab == "Volume"), None)
         if vol is not None:
@@ -212,8 +213,10 @@ def preview_timing(tm, orig, scan, sd, pre, post, manifest, sr):
         for f in todo:
             manifest[f["id"]] = dict(note=why)
         return
-    tmp = orig.parent / f"{orig.stem} (ab preview timing, delete me).als"
-    try:
+    od = od_of(sd)
+    od.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=od, prefix="ab-tmp-") as td:
+        tmp = Path(td) / f"{orig.stem} (ab preview timing).als"
         code, txt = hx(*timing_args(sd, orig, tmp, [f["id"] for f in todo], any(f.get("unroll") for f in todo)))
         if code != 0 or not tmp.exists():
             for f in todo:
@@ -224,12 +227,9 @@ def preview_timing(tm, orig, scan, sd, pre, post, manifest, sr):
         R.WARP_TIMEMAP[0] = True
         try:
             before, spb, bpb = render_tracks(orig, names, sr)
-            after, _, _ = render_tracks(tmp, names, sr)
+            after, _, _ = render_tracks(tmp, names, sr, sample_als=orig)
         finally:
             R.WARP_TIMEMAP[0] = False
-    finally:
-        if tmp.exists():
-            tmp.unlink()
     for f in todo:
         b = beats_of(f.get("where"), bpb)
         y0, y1 = before.get(f["track"]), after.get(f["track"])
@@ -316,8 +316,8 @@ def main():
     # ---- clip fixes: one temporary set with every smooth fix, rendered once
     sm = [f for f in findings if f["tool"] == "smooth" and f.get("applies") == "set"]
     if sm and orig and orig.exists():
-        tmp = orig.parent / f"{orig.stem} (ab preview, delete me).als"
-        try:
+        with tempfile.TemporaryDirectory(dir=od, prefix="ab-tmp-") as td:
+            tmp = Path(td) / f"{orig.stem} (ab preview).als"
             ids = sorted({i for f in sm for i in (f.get("ids") or [f["id"]])})
             code, txt = hx("smooth", orig, "--apply", tmp, "--ids", ",".join(ids))
             if code != 0 or not tmp.exists():
@@ -327,7 +327,7 @@ def main():
                 names = sorted({f["track"] for f in sm})
                 print(f"rendering {len(names)} track(s) with and without {len(sm)} clip fix(es) …")
                 before, spb, bpb = render_tracks(orig, names, sr)
-                after, _, _ = render_tracks(tmp, names, sr)
+                after, _, _ = render_tracks(tmp, names, sr, sample_als=orig)
                 for f in sm:
                     b = beats_of(f.get("where"), bpb)
                     if b is None or f["track"] not in before or f["track"] not in after:
@@ -337,9 +337,6 @@ def main():
                     manifest[f["id"]] = write_pair(od, f["id"], cut(before[f["track"]], sr, t, a.pre, a.post),
                                                    cut(after[f["track"]], sr, t, a.pre, a.post), sr,
                                                    "the track alone, no effects")
-        finally:
-            if tmp.exists():
-                tmp.unlink()
 
     # ---- device changes: the track through hypnomix's MODELS of Live's devices (and, with --plugins, real plug-ins)
     done = set()

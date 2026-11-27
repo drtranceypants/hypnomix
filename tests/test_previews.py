@@ -36,22 +36,22 @@ def peak_db_at(x, sr, f):
     return 20 * np.log10(X[int(round(f * len(x) / sr))] + 1e-12)
 
 
-def clip_xml(wav, markers, end=16.0):    # end in beats: 16 beats = 8 s at 120 BPM
+def clip_xml(wav, markers, end=16.0, rel="x.wav"):    # end in beats: 16 beats = 8 s at 120 BPM
     wm = "".join(f'<WarpMarker Id="{i}" SecTime="{s}" BeatTime="{b}"/>' for i, (s, b) in enumerate(markers))
     return (f'<AudioClip Id="0" Time="0"><Name Value="take"/><CurrentStart Value="0"/><CurrentEnd Value="{end}"/>'
             '<Loop><LoopStart Value="0"/><LoopEnd Value="' + str(end) + '"/><LoopOn Value="false"/><StartRelative Value="0"/></Loop>'
             f'<IsWarped Value="true"/><WarpMarkers>{wm}</WarpMarkers><SampleVolume Value="1"/><Disabled Value="false"/>'
             '<Fades><FadeInLength Value="0"/><FadeOutLength Value="0"/></Fades>'
-            f'<SampleRef><FileRef><Path Value="{wav}"/><RelativePath Value="x.wav"/></FileRef></SampleRef></AudioClip>')
+            f'<SampleRef><FileRef><Path Value="{wav}"/><RelativePath Value="{rel}"/></FileRef></SampleRef></AudioClip>')
 
 
-def track_xml(tid, name, wav, markers, devices="", end=16.0, base=100):
+def track_xml(tid, name, wav, markers, devices="", end=16.0, base=100, rel="x.wav"):
     mixer = (f'<Mixer><Volume><Manual Value="1"/><AutomationTarget Id="{base}"/></Volume>'
              f'<Pan><Manual Value="0"/><AutomationTarget Id="{base + 1}"/></Pan>'
              f'<Speaker><Manual Value="true"/><AutomationTarget Id="{base + 2}"/></Speaker><Sends/></Mixer>')
     return (f'<AudioTrack Id="{tid}"><Name><EffectiveName Value="{name}"/></Name>'
             '<AutomationEnvelopes><Envelopes/></AutomationEnvelopes>'
-            f'<DeviceChain>{mixer}<MainSequencer><Sample><ArrangerAutomation><Events>{clip_xml(wav, markers, end)}</Events>'
+            f'<DeviceChain>{mixer}<MainSequencer><Sample><ArrangerAutomation><Events>{clip_xml(wav, markers, end, rel=rel)}</Events>'
             f'</ArrangerAutomation></Sample></MainSequencer><DeviceChain><Devices>{devices}</Devices></DeviceChain></DeviceChain></AudioTrack>')
 
 
@@ -309,6 +309,112 @@ class MaskingPairs(unittest.TestCase):
         # the pair is level-matched, so judge the cut against the other part: 250 Hz falls about 6 dB relative to 1 kHz
         rel = lambda z: peak_db_at(z[mid:mid + n], SR, 250) - peak_db_at(z[mid:mid + n], SR, 1000)
         self.assertAlmostEqual(rel(y) - rel(x), -6.0, delta=1.0)
+
+
+# ---------------------------------------------------------------- temporary sets stay out of the song's folder
+class AbTempSets(unittest.TestCase):
+    def test_song_folder_unchanged_and_relative_samples_resolve(self):
+        td = Path(tempfile.mkdtemp())
+        song_dir = td / "song"
+        scan_dir = td / "scan"
+        prep_dir = td / "prepared"
+        (song_dir / "Samples").mkdir(parents=True)
+        scan_dir.mkdir()
+        prep_dir.mkdir()
+        sf.write(song_dir / "Samples" / "keys.wav", tone(220, 8.0, 0.3), SR, subtype="PCM_24")
+
+        # Only RelativePath is valid: absolute Path points nowhere, proving sample resolution against orig.parent
+        missing = "/nonexistent/moved/keys.wav"
+        orig = write_set(song_dir / "Song.als",
+                         [track_xml(1, "Keys", missing, [(0.0, 0.0), (1.0, 2.0)], LIMITER(6.0), rel="Samples/keys.wav")])
+        after_dev = write_set(prep_dir / "after-dev.als",
+                              [track_xml(1, "Keys", missing, [(0.0, 0.0), (1.0, 2.0)], LIMITER(0.0), rel="Samples/keys.wav")])
+        after_sm = write_set(prep_dir / "after-sm.als",
+                             [track_xml(1, "Keys", missing, [(0.0, 0.0), (1.0, 2.0)], LIMITER(6.0), rel="Samples/keys.wav").replace(
+                                 '<SampleVolume Value="1"/>', '<SampleVolume Value="0.5"/>')])
+        (scan_dir / "scan.json").write_text(json.dumps({"set": str(orig)}), encoding="utf-8")
+        (scan_dir / "findings.json").write_text(json.dumps({
+            "set": str(orig),
+            "findings": [
+                {"id": "smooth-1", "tool": "smooth", "track": "Keys", "where": "2.1.00", "applies": "set"},
+                {"id": "devices-1", "tool": "devices", "track": "Keys", "kind": "limiter", "applies": "set"},
+            ],
+        }), encoding="utf-8")
+
+        before_tree = sorted(str(p.relative_to(song_dir)) for p in song_dir.rglob("*"))
+        apply_paths = []
+
+        def recording_hx(*args, timeout=0):
+            sargs = [str(x) for x in args]
+            dest = Path(sargs[sargs.index("--apply") + 1])
+            apply_paths.append(dest)
+            src = after_sm if sargs[0] == "smooth" else after_dev
+            shutil.copyfile(src, dest)
+            return 0, ""
+
+        with mock.patch.object(ab, "hx", recording_hx), mock.patch.object(sys, "argv", ["ab", str(scan_dir)]):
+            ab.main()
+
+        self.assertEqual(sorted(str(p.relative_to(song_dir)) for p in song_dir.rglob("*")), before_tree)
+        self.assertEqual(len(apply_paths), 2)
+        for p in apply_paths:
+            self.assertNotEqual(p.resolve().parent, song_dir.resolve())
+            self.assertIn(scan_dir.resolve(), p.resolve().parents)
+        self.assertEqual(list((scan_dir / "ab").rglob("*.als")), [])
+        self.assertEqual(list((scan_dir / "ab").glob("ab-tmp-*")), [])
+
+        manifest = json.loads((scan_dir / "ab" / "ab.json").read_text(encoding="utf-8"))
+        for fid in ("smooth-1", "devices-1"):
+            row = manifest[fid]
+            self.assertIn("a", row, row)
+            ya, _ = sf.read(scan_dir / "ab" / row["a"])
+            yb, _ = sf.read(scan_dir / "ab" / row["b"])
+            self.assertGreater(rms_db(ya), -30.0)
+            self.assertGreater(rms_db(yb), -30.0)
+
+    def test_real_subprocess_ab_leaves_song_folder_unchanged(self):
+        td = Path(tempfile.mkdtemp())
+        song_dir = td / "song"
+        scan_dir = td / "scan"
+        (song_dir / "Samples").mkdir(parents=True)
+        scan_dir.mkdir()
+        # Steady tone with a +20 dB, 60 ms spike at 2.0 s (bar 2.1.00 at 120 BPM)
+        sig = tone(220, 6.0, 0.08)
+        sig[int(2.0 * SR):int(2.06 * SR)] *= 10.0
+        sf.write(song_dir / "Samples" / "lead.wav", sig, SR, subtype="PCM_24")
+
+        missing = "/nonexistent/moved/lead.wav"
+        orig = write_set(song_dir / "Song.als",
+                         [track_xml(1, "Lead", missing, [(0.0, 0.0), (1.0, 2.0)], end=12.0, rel="Samples/lead.wav")])
+        sm_json = scan_dir / "smooth.json"
+        import subprocess
+        r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "smooth", str(orig), "--json", str(sm_json)],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        issues = json.loads(sm_json.read_text(encoding="utf-8"))["findings"]
+        self.assertTrue(issues, "expected smooth to detect the synthetic click")
+        f = dict(issues[0], tool="smooth", applies="set")
+        (scan_dir / "scan.json").write_text(json.dumps({"set": str(orig)}), encoding="utf-8")
+        (scan_dir / "findings.json").write_text(json.dumps({"set": str(orig), "findings": [f]}), encoding="utf-8")
+
+        before_tree = sorted(str(p.relative_to(song_dir)) for p in song_dir.rglob("*"))
+        with mock.patch.object(sys, "argv", ["ab", str(scan_dir)]):
+            ab.main()
+
+        self.assertEqual(sorted(str(p.relative_to(song_dir)) for p in song_dir.rglob("*")), before_tree)
+        self.assertEqual(list((scan_dir / "ab").rglob("*.als")), [])
+        manifest = json.loads((scan_dir / "ab" / "ab.json").read_text(encoding="utf-8"))
+        row = manifest[f["id"]]
+        self.assertIn("a", row, row)
+        ya, _ = sf.read(scan_dir / "ab" / row["a"])
+        self.assertGreater(rms_db(ya), -40.0)
+
+        # Direct user CLI call to smooth --apply outside orig.parent still refuses
+        outside = scan_dir / "moved.als"
+        r2 = subprocess.run([sys.executable, "-m", "hypnomix.cli", "smooth", str(orig), "--apply", str(outside),
+                             "--ids", f["id"]], capture_output=True, text=True)
+        self.assertNotEqual(r2.returncode, 0)
+        self.assertFalse(outside.exists())
 
 
 if __name__ == "__main__":

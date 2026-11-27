@@ -536,11 +536,12 @@ class SetRenderer:
 
     plugins = True
 
-    def __init__(self, als, sr=44100, no_stock=False, do_probe=True, log=None, plugins=True):
+    def __init__(self, als, sr=44100, no_stock=False, do_probe=True, log=None, plugins=True, sample_als=None):
         from hypnomix.session import automation as aa
         from hypnomix.session import render as R
         self.R, self.aa = R, aa
         self.als, self.sr, self.no_stock, self.do_probe = str(als), sr, no_stock, do_probe
+        self.sample_als = str(sample_als or als)       # relative sample paths resolve against the original set's folder
         self.plugins = plugins                         # False: real plug-ins are left out, only hypnomix's models play
         self.root = aa.load(als).getroot()
         self.spb = 60.0 / float(R.v(self.root, ".//Tempo/Manual"))
@@ -576,7 +577,7 @@ class SetRenderer:
         y = None
         if t.tag == "AudioTrack":
             w = []
-            m = self.R.render_track(t, self.als, self.spb, self.N, self.sr, None, 0, w)
+            m = self.R.render_track(t, self.sample_als, self.spb, self.N, self.sr, None, 0, w)
             self.warn += w
             y = np.repeat(m[:, None], 2, axis=1) if np.any(m) else None
         elif t.tag == "GroupTrack":
@@ -779,8 +780,10 @@ def device_preview(f, orig, scan, sd, sr, hx, before_cache, plugins=False):
         kind = {"ReturnTrack": "a return track (fed by sends, which are not rendered)",
                 "MidiTrack": "a MIDI track (instruments are not rendered)"}.get(getattr(t, "tag", ""), "not an audio or group track")
         return dict(note=f"no preview: '{track}' is {kind}")
-    tmp = orig.parent / f"{orig.stem} (ab preview {re.sub(r'[^A-Za-z0-9-]', '', f['id'])}, delete me).als"
-    try:
+    tmp_root = Path(sd) / "ab"
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=tmp_root, prefix="ab-tmp-") as td:
+        tmp = Path(td) / f"{orig.stem} (ab preview {re.sub(r'[^A-Za-z0-9-]', '', f['id'])}).als"
         if f["tool"] == "sidechain":
             args = ["sidechain", orig, "--host", f["host"], "--apply", tmp] + (["--glue-to-compressor"] if f.get("glue") else [])
         else:
@@ -792,7 +795,7 @@ def device_preview(f, orig, scan, sd, sr, hx, before_cache, plugins=False):
         code, txt = hx(*args)
         if code != 0 or not tmp.exists():
             return dict(note="preview failed: the fix could not be built (" + txt.strip()[-120:] + ")")
-        after_r = SetRenderer(tmp, sr, plugins=plugins)
+        after_r = SetRenderer(tmp, sr, plugins=plugins, sample_als=orig)
         ta = after_r.find(track)
         changed = changed_devices(t, ta) if ta is not None else []
         if not changed:
@@ -822,9 +825,6 @@ def device_preview(f, orig, scan, sd, sr, hx, before_cache, plugins=False):
         for r in after_r.report.get(track, {}).get("devices", []):       # a changed device that was left out of the render
             if r.get("id") in {d.get("Id") for d in changed} and r["status"].startswith("skipped"):
                 return dict(note=f"no offline preview: '{r['device']}' {r['status'].replace('skipped: ', 'was left out: ')}")
-    finally:
-        if tmp.exists():
-            tmp.unlink()
     a, skipped = before_cache[track]
     if a is None or b is None:
         return dict(note="no preview: the track has no audio to render")
