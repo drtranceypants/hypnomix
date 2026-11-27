@@ -40,8 +40,9 @@ set they write, and can be previewed without opening Live. Nothing here snaps a 
   Arrangement does not play, which is why they never go on the take's own track. `--engine URL` (else
   `HYPNOMIX_ENGINE_URL`, else 127.0.0.1:4820). With a session file, the engine must have that very file open (a
   same-named copy in another folder is refused); a loop that finds no empty slot makes it exit 1. HypnoMix then
-  shows the session as unsaved: save it to keep the clips. `--cues` needs the HypnoMix Studio add-on, which is not
-  available yet (docs/APP.md, DAW mode); not yet heard by ear.
+  shows the session as unsaved: save it to keep the clips. `--cues` needs the HypnoMix Studio (beta) engine add-on
+  (can be added on Apple-silicon Macs; not available on Intel Macs or Windows yet; docs/APP.md, DAW mode); nothing
+  written for Studio has been judged by ear.
 - **tighten**: a warp marker on every hit. Hits within `--keep-within` ms stay put; the rest move
   `--strength` of the way (0.1 to 0.9, default 0.5; a full snap is refused). Unwarped clips get warp
   switched on first (they play the same).
