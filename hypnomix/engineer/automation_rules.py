@@ -20,8 +20,9 @@ too).
     latch: any later move of the control would be written as a jump)
   - switching a level lane from Off to play is held to the same rules (judge_state): its points start and end on the
     control's value, stay under 7 dB/s and within 3 dB (a trim 4) of the original line
-  - start and end are numbers (the engine would read "5" as 5 s), and the mode and curve are read as the engine reads
-    them (replace_all is replace-all, s-curve is s_curve)
+  - start and end are numbers (the engine would read "5" as 5 s), state, mode and curve are words (a list there is read
+    by the engine as left out), and the mode, curve, control and route are read as the engine reads them (replace_all
+    is replace-all, s-curve is s_curve, fader and volume are gain, route 02 is route 2)
 
 Plug-in parameters (a filter's cut-off, say) are not level moves and are in the plug-in's own units, so only the
 mixed-bus rule (and the no-recording-state rule) holds for them: never the plug-in automation of a bus, a group's bus
@@ -92,10 +93,33 @@ def _num(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
+CONTROL_ALIASES = {"fader": "gain", "volume": "gain", "pan": "pan_azimuth", "width": "pan_width"}   # the engine's
+
+
+def canon_control(control):
+    """A control as the engine finds it (fader and volume are gain, pan is pan_azimuth, width pan_width); anything
+    else as given. One lane has one name, so the original line and the one-call-a-lane check see it once."""
+    return CONTROL_ALIASES.get(control, control) if isinstance(control, str) else control
+
+
+def canon_route(route_id):
+    """A route id as the engine reads it: decimal digits are a number (02 is route 2); anything else as given."""
+    if isinstance(route_id, int) and not isinstance(route_id, bool):
+        return str(route_id)
+    if isinstance(route_id, str) and route_id.isascii() and route_id.isdigit():
+        return str(int(route_id))
+    return route_id
+
+
 def normal(args):
     """The arguments as the engine reads them: in mode an underscore is a hyphen (replace_all is replace-all), in curve
-    a hyphen is an underscore (s-curve is s_curve). A copy; the caller's arguments are never changed."""
+    a hyphen is an underscore (s-curve is s_curve), the control by its own name (fader is gain) and the route id as a
+    number. A copy; the caller's arguments are never changed."""
     a = dict(args or {})
+    if "control" in a:
+        a["control"] = canon_control(a["control"])
+    if "track_id" in a:
+        a["track_id"] = canon_route(a["track_id"])
     if isinstance(a.get("mode"), str):
         a["mode"] = a["mode"].replace("_", "-")
     if isinstance(a.get("curve"), str):
@@ -121,6 +145,10 @@ def arg_problems(args, tool="automation_write"):
         if v is not None and not _num(v):
             out.append(f"{key} must be a number of seconds (not text, true or anything else: the engine reads those "
                        f"differently)")
+    for key in ("state", "mode", "curve"):          # the engine reads a list or an object here as left out (state: play)
+        v = a.get(key)
+        if v is not None and not isinstance(v, str):
+            out.append(f"{key} must be a word (the engine reads a list or an object there as if it were left out)")
     return out
 
 
@@ -497,7 +525,7 @@ def judge(args, facts=None, lane=None, read=None, original=None, current=_FACTS)
 def starts_playing(args, facts=None, lane=None):
     """Does this automation_set_state make a lane's points heard (to play, from a state that does not play them, on a
     lane that has points)?"""
-    a = args or {}
+    a = normal(args)
     return (a.get("state") == "play" and state_of(lane, facts, a.get("control")) not in PLAYING
             and bool(points_of((lane or {}).get("pointList"))))
 
@@ -507,7 +535,7 @@ def judge_state(args, facts=None, lane=None, read=None, original=None, current=_
     set on a level or plug-in lane. Switching a lane that is not playing to play makes its points heard: on a bus
     that carries a track that is not a vocal that is refused (the mixed-bus rule), and a level lane is judged by
     play_problems. Switching a lane off (manual) removes movement: allowed."""
-    a = args or {}
+    a = normal(args)
     ctl = a.get("control")
     k = kind(ctl)
     if k not in CHECKED_KINDS:
@@ -530,11 +558,13 @@ def judge_state(args, facts=None, lane=None, read=None, original=None, current=_
 def check_clear(args, reply):
     """Why an automation_clear must not be sent ([] when it may): clearing a stretch inside a level lane joins the points
     either side with a straight line, a move no S-curve shapes, so a ranged clear is refused unless they are level
-    with each other (within 0.1 dB). Clearing a whole lane (no start or end) puts the control back to its own value:
+    with each other (within 0.1 dB), and a range past the last point (or before the first) is refused when what is left
+    beside it is not the lane's own end (or start) value: the ridden value would stay to the end (or from the start) of
+    the song. Clearing a whole lane (no start or end) puts the control back to its own value:
     not a move. A range is both a start and an end, numbers (the engine takes nothing else). A plug-in lane may always
     be cleared, on any route (clearing removes movement; nothing is written). reply: automation_get's reply for the
     control as it is now."""
-    a = args or {}
+    a = normal(args)
     if kind(a.get("control")) not in LEVEL_KINDS or (a.get("start") is None and a.get("end") is None):
         return []
     bad = arg_problems(a, "automation_clear")
@@ -551,6 +581,16 @@ def check_clear(args, reply):
         return [f"clearing {_fmt(max(lo, before[-1][0]))} to {_fmt(min(hi, after[0][0]))} would join {before[-1][1]:.1f} dB "
                 f"and {after[0][1]:.1f} dB with a straight move, not an S-curve: write the move instead (automation_write, "
                 f"curve s_curve) or clear the whole lane"]
+    # a range past the last point (or before the first) is a one-sided clear too: the lane then holds the value left
+    # beside it to the end (or from the start) of the song, where it used to come back to the lane's own end value
+    if before and not after and len(before) < len(pts) and abs(before[-1][1] - pts[-1][1]) > ON_LINE_DB:
+        return [f"clearing from {_fmt(lo)} on removes the way back: the lane would stay at {before[-1][1]:.1f} dB to the "
+                f"end of the song, where it now ends at {pts[-1][1]:.1f} dB; write the move back instead (automation_write, "
+                f"curve s_curve) or clear the whole lane"]
+    if after and not before and len(after) < len(pts) and abs(after[0][1] - pts[0][1]) > ON_LINE_DB:
+        return [f"clearing up to {_fmt(hi)} removes the way in: the lane would be at {after[0][1]:.1f} dB from the start "
+                f"of the song, where it now starts at {pts[0][1]:.1f} dB; write the move instead (automation_write, curve "
+                f"s_curve) or clear the whole lane"]
     return []
 
 

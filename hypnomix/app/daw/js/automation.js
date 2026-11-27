@@ -176,13 +176,15 @@
   }
   A.lineAt = lineAt;
 
-  /* a level lane's original line { points, value }: the app's (POST /api/daw/original, kept in the session's folder),
-     else the line as first seen here, kept for the session; a lane with no points takes the control's value again */
+  /* a level lane's original line { points, value, kept }: the app's (POST /api/daw/original, kept in the session's
+     folder; once kept it stays, a cleared lane too), else the line as first seen here, kept for the session; a lane
+     with no points and nothing kept takes the control's value again */
   A.originalOf = function (t, control) {
     const d = A.data[t.id], lane = d && d.lanes[control], info = infoOf(t, control);
     if (!d || !lane || !isLevel(control)) return null;
     d.originals = d.originals || {};
-    if (!lane.points.length) d.originals[control] = typeof (info && info.current) === 'number' ? { points: [], value: info.current } : null;
+    const had = d.originals[control];
+    if (!lane.points.length && !(had && had.kept)) d.originals[control] = typeof (info && info.current) === 'number' ? { points: [], value: info.current } : null;
     else if (!d.originals[control]) d.originals[control] = plays(lane) ? { points: lane.points.map((p) => ({ t: p.t, v: p.v })) } : (info && typeof info.current === 'number' ? { points: [], value: info.current } : null);
     return d.originals[control];
   };
@@ -652,7 +654,7 @@
       d.originals = d.originals || {};
       try {
         const o = await HX.api.post('/api/daw/original', { track_id: String(trackId), control });
-        d.originals[control] = o && Array.isArray(o.points) ? { points: o.points.map((q) => ({ t: q[0], v: q[1] })) } : o && typeof o.value === 'number' ? { points: [], value: o.value } : null;
+        d.originals[control] = o && Array.isArray(o.points) ? { points: o.points.map((q) => ({ t: q[0], v: q[1] })), kept: o.kept === true } : o && typeof o.value === 'number' ? { points: [], value: o.value, kept: o.kept === true } : null;
       } catch (e) { delete d.originals[control]; }
     }
     HX.arrange.dirty = true;

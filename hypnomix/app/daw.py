@@ -1075,6 +1075,7 @@ class Engine:
             calls = [(tool, a) for tool in AUTO_TOOLS for _, a in _auto_writes(payload, tool)]
         except AutoUnreadable as e:
             return AR.sentence([str(e)])
+        calls = [(tool, AR.normal(a)) for tool, a in calls]     # fader is gain, route 02 is route 2: one lane, one name
         lanes = [(str(a.get("track_id") or ""), str(a.get("control") or "")) for _, a in calls if AR.checked(a.get("control"))]
         if len(set(lanes)) < len(lanes):
             return AR.sentence(["two automation calls on one lane in one request: send them one at a time"])
@@ -1300,7 +1301,7 @@ def original_line(track_id, control):
     if facts is None or lane is None:
         return 404, {"error": f"route {track_id}'s {control} lane could not be read from the engine"}
     folder = AO.folder_of(ENGINE._read_tool(url, "session_list_snapshots", {}))
-    line, entry, why = AO.pick(folder, str(track_id), str(control), lane, AR.current_of(facts, str(control)))
+    line, entry, why = AO.pick(folder, str(track_id), str(control), lane, AR.current_of(facts, AR.canon_control(str(control))))
     if why:
         return 200, {"unknown": why}
     body = {"points": [[t, v] for t, v in line.points]} if line.points else {"value": line(0.0)}

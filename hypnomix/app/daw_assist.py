@@ -763,6 +763,7 @@ def _auto_context(a, read):
     whole answer; an original line that cannot be known: the rules are judged first, then why)."""
     from hypnomix.engineer import automation_original as AO
     from hypnomix.engineer import automation_rules as AR
+    a = AR.normal(a)                                   # fader is gain, route 02 is route 2, as the engine reads them
     rid, ctl = str(a.get("track_id") or ""), str(a.get("control") or "")
     facts = read("automation_list", {"track_id": rid})
     if facts is None:

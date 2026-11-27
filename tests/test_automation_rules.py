@@ -297,5 +297,29 @@ class RoundThreeFixes(unittest.TestCase):
         self.assertEqual(AR.judge(ride, facts(0.0), lane([], "manual")), [])
 
 
+class Checker(unittest.TestCase):
+    """The checker's pass on the round-3 fixes: names as the engine reads them, and the original line after a clear."""
+
+    def test_names_and_words_as_the_engine_reads_them(self):
+        n = AR.normal({"control": "volume", "track_id": "007", "mode": "replace_all", "curve": "s-curve"})
+        self.assertEqual((n["control"], n["track_id"], n["mode"], n["curve"]), ("gain", "7", "replace-all", "s_curve"))
+        self.assertEqual(AR.canon_route("２"), "２")            # not the engine's digits: left as given (it refuses it)
+        self.assertEqual(AR.normal({"control": "fader", "track_id": 3})["track_id"], "3")
+        for key in ("state", "mode", "curve"):
+            self.assertTrue(any(key + " must be a word" in p for p in AR.arg_problems({key: ["x"]})), key)
+            self.assertEqual(AR.arg_problems({key: None}), [])
+
+    def test_a_kept_original_outlives_a_clear_and_an_alias(self):
+        import tempfile
+        from hypnomix.engineer import automation_original as AO
+        with tempfile.TemporaryDirectory() as td:
+            AO.keep(td, "02", "fader", {"value": 0.0})
+            self.assertEqual(AO.key("02", "fader"), "2|gain")
+            line, entry, why = AO.pick(td, "2", "gain", {"pointList": [], "state": "manual"}, 3.0)
+            self.assertEqual((line(5.0), entry, why), (0.0, None, ""))   # a cleared lane: the kept line, not the +3 held
+            line, entry, why = AO.pick(td, "4", "gain", {"pointList": [], "state": "manual"}, 3.0)
+            self.assertEqual((line(5.0), entry), (3.0, {"value": 3.0}))  # nothing kept: the control's value
+
+
 if __name__ == "__main__":
     unittest.main()

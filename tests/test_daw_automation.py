@@ -227,6 +227,19 @@ print(JSON.stringify({ play: play, add: add, line: line, ok: ok }));
         self.assertEqual(r["line"], 0)                                       # heard: the fader's own value
         self.assertEqual(r["ok"], "play")                                    # points on its value: allowed
 
+    def test_a_cleared_lane_keeps_the_original_the_app_kept(self):
+        r = run_js(self, SETUP + r"""
+d.controls[0].current = 3;
+d.lanes.gain = { points: [], state: 'play' };
+d.originals = { gain: { points: [], value: 0, kept: true } };
+var kept = A.originalOf(tr, 'gain').value;
+d.originals = { gain: { points: [], value: 0, kept: false } };
+var fresh = A.originalOf(tr, 'gain').value;
+print(JSON.stringify({ kept: kept, fresh: fresh }));
+""")
+        self.assertEqual(r["kept"], 0)      # kept by the app (POST /api/daw/original): a clear never starts it again
+        self.assertEqual(r["fresh"], 3)     # nothing kept yet: the control's value
+
 
 class BusRule(unittest.TestCase):
     def test_a_lane_on_a_mixed_bus_refuses_level_and_plug_in_writes_before_sending(self):
@@ -396,10 +409,40 @@ class ProxyRoundThree(unittest.TestCase):
         self.assertIn("from the original line", self.refusal(again))         # a second +3 dB on top: refused
         self.assertIn("from the original line", self.refusal(again, eng=self.engine()))   # a new connection, same folder
         self.assertEqual(self.refusal(self.ride([(12, 3), (13.2, 0), (15, 0), (16, 3)])), "")   # back toward it: allowed
-        self.points, self.state = [], "manual"                              # the lane cleared: its value is the original
+        self.points, self.state = [], "manual"                              # the lane cleared while the fader held +3
         self.current = 3.0
-        self.assertEqual(self.refusal(self.ride([(10, 3), (12, 6), (16, 6), (18, 3)])), "")
-        self.assertEqual(json.loads((Path(self.td.name) / AO.FILE).read_text())["lines"]["2|gain"], {"value": 3.0})
+        self.assertEqual(self.refusal({}, tool="automation_clear"), "")       # a whole-lane clear: allowed
+        self.assertIn("from the original line", self.refusal(self.ride([(10, 3), (12, 6), (16, 6), (18, 3)])))
+        self.assertEqual(json.loads((Path(self.td.name) / AO.FILE).read_text())["lines"]["2|gain"], {"value": 0.0})
+        self.assertEqual(self.refusal(self.ride([(10, 3), (12, 1), (16, 1), (18, 3)])), "")   # within 3 dB of 0: allowed
+
+    def test_one_lane_has_one_name(self):
+        """fader and volume are gain, route 02 is route 2 (the engine reads them so): the original line and the
+        one-call-a-lane check see one lane, so a second write under another name never stacks on the first."""
+        from hypnomix.engineer import automation_rules as AR
+        self.assertEqual(self.refusal(self.ride([(10, 0), (12, 3), (16, 3), (18, 0)])), "")
+        self.points, self.state = AR.s_points([(10, 0), (12, 3), (16, 3), (18, 0)]), "play"
+        on_top = self.ride([(12, 3), (13.2, 6), (15, 6), (16, 3)])
+        for ctl, rid in (("fader", "2"), ("volume", "2"), ("gain", "02"), ("fader", 2)):
+            self.assertIn("from the original line", self.refusal(dict(on_top, control=ctl, track_id=rid)), (ctl, rid))
+        two = json.dumps([{"jsonrpc": "2.0", "id": i, "method": "tools/call", "params": {"name": n, "arguments": dict(
+            self.ride([(t, 3), (t + 1.2, 2), (t + 2.4, 3)]), track_id="2", control=c)}}
+            for i, (n, c, t) in enumerate((("automation_write", "gain", 12), ("automation.write", "fader", 14)))]).encode()
+        self.assertIn("two automation calls on one lane", self.refusal({}, raw=two))
+
+    def test_a_state_that_is_not_a_word_is_refused(self):
+        """The engine reads a list or an object as a state left out (play): an Off lane's old -6 dB points would play."""
+        self.points, self.state = [(0, -6.0), (100, -6.0)], "manual"
+        for st in (["write"], {"x": 1}, ["manual"]):
+            self.assertIn("state must be a word", self.refusal(self.ride([(10, 0), (11.2, 1), (12.4, 0)], state=st)))
+        self.assertIn("mode must be a word", self.refusal(self.ride([(10, 0), (11.2, 1), (12.4, 0)], mode=["replace-all"])))
+
+    def test_a_clear_past_the_lanes_end_that_leaves_the_ride_is_refused(self):
+        self.points, self.state = [(0, 0.0), (10, 0.0), (11.2, -3.0), (20, -3.0), (21.2, 0.0)], "play"
+        self.assertIn("removes the way back", self.refusal({"start": 15, "end": 30}, tool="automation_clear"))
+        self.assertIn("removes the way in", self.refusal({"start": 0, "end": 10.5}, tool="automation_clear"))
+        self.assertEqual(self.refusal({"start": 25, "end": 30}, tool="automation_clear"), "")   # nothing there: allowed
+        self.assertEqual(self.refusal({"start": 0, "end": 30}, tool="automation_clear"), "")    # every point: allowed
 
     def test_without_the_sessions_folder_a_level_write_is_refused(self):
         why = self.refusal(self.ride([(10, 0), (12, 2), (16, 2), (18, 0)]), eng=self.engine(folder=False))

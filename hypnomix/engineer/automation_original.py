@@ -4,8 +4,9 @@ another (engineer/automation_rules.py: check's and judge's `original`). The Assi
 connection that checks every write, `hypnomix vocallevel` (--engine and --apply) all read it here.
 
 What the original is: the line as it was heard before HypnoMix's first write to that lane: the lane's points when it
-played them, else the control's own value. A lane that holds no points has the control's value as its original (taken
-again, in place of what was kept: nothing written to it is left).
+played them, else the control's own value. Once kept it stays, a lane that holds no points any more too: clearing a
+lane leaves the control at the value it held (a ride's top, say), so starting again from that would let writes one
+after another add up past the original.
 
 Where it is kept: hypnomix-original-lines.json in the session's own folder (beside its .ardour snapshots; the engine's
 session_list_snapshots names the folder), one entry per route id and control. In the folder because it then goes
@@ -14,9 +15,10 @@ snapshot made from one that holds a ride cannot start again from that ride). Not
 place for an app's data there is the song card, whose fields are its own, and the engine is not changed for this.
 
 A lane edited by hand outside HypnoMix keeps its original: HypnoMix's later writes to it are still measured from that
-line (a hand edit far from it makes them refused, with the reason). To start again from the line as it is now: clear
-the whole lane (it then holds no points), or remove the lane's entry from the file (or the file itself, for every
-lane): the next write takes the line as it is then.
+line (a hand edit far from it makes them refused, with the reason), and so is a lane cleared since. To start again
+from the line as it is now: remove the lane's entry from the file (or the file itself, for every lane): the next write
+takes the line as it is then. The route id and control are kept as the engine reads them (route 02 is route 2, fader
+and volume are gain), so one lane has one entry whatever name a call gives it.
 
   FILE
   folder_of(snaps) -> str or None                      session_list_snapshots' reply -> the session's folder
@@ -44,7 +46,8 @@ def folder_of(snaps):
 
 
 def key(route_id, control):
-    return f"{route_id}|{control}"
+    """One lane, one key: the route id and control as the engine reads them (02 is route 2, fader is gain)."""
+    return f"{R.canon_route(str(route_id))}|{R.canon_control(str(control))}"
 
 
 def load(folder):
@@ -82,21 +85,21 @@ def pick(folder, route_id, control, lane, current):
     if not folder:
         return None, None, ("the session's folder could not be read (session_list_snapshots), so the lane's original "
                             "line cannot be kept: nothing is written")
-    if not R.points_of((lane or {}).get("pointList")):
-        ln = R.flat(current)
-        if ln is None:
-            return None, None, R.unknown(k)
-        return ln, _entry(ln), ""
     try:
         kept = load(folder).get(key(route_id, control))
     except ValueError as e:
         return None, None, f"{e}: fix it, or remove it to start every lane again from its line as it is then"
-    if kept is not None:
+    if kept is not None:                        # kept wins, a lane with no points too (a clear never starts it again)
         ln = line_of(kept)
         if ln is None:
             return None, None, (f"the original line kept for this lane in {FILE} is not readable: remove its entry to "
                                 f"start again from the line as it is then")
         return ln, None, ""
+    if not R.points_of((lane or {}).get("pointList")):
+        ln = R.flat(current)
+        if ln is None:
+            return None, None, R.unknown(k)
+        return ln, _entry(ln), ""
     ln = R.heard(lane, current)
     if ln is None:
         return None, None, R.unknown(k)
