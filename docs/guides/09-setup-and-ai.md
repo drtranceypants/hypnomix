@@ -68,7 +68,8 @@ fingerprint, because the installers aren't yet signed with a publisher key the a
 the app is whole, not who made it). If that matters to you, update from the source: `git pull`, after reading the
 changes.
 
-HypnoMix's own settings and state files in `~/.hypnomix` (updates, setup, Disk care) can be read by you alone.
+HypnoMix's own settings and state files in `~/.hypnomix` (updates, setup, Disk care) can be read by your account alone
+on a Mac. On Windows that folder sits in your own user folder, which Windows keeps to your account and the computer's administrators; HypnoMix adds no lock of its own there.
 
 ## The guided setup
 
@@ -137,7 +138,8 @@ with a video for each step.
 ## An AI key in the Assistant
 
 The **Assistant** tab is a chat inside the app. You bring a key from an AI company; the key is saved on your
-computer only (`~/.hypnomix/ai.json`, readable by you alone) and is sent only to that company.
+computer only (`~/.hypnomix/ai.json`) and is sent only to that company. On a Mac only your account can read that file.
+On Windows the file sits in your own user folder, which Windows keeps to your account and the computer's administrators; HypnoMix adds no lock of its own there.
 
 **Pros**: help right inside the app, pay only for what you use (or nothing on Gemini's free tier), and Gemini can
 also be the *Listener*, hearing a bounce for notes by ear. **Cons**: an account and a key, the text reports go to that company,

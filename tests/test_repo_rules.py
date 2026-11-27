@@ -642,6 +642,16 @@ class Environment(unittest.TestCase):
             self.assertIn("_isolate.NO_RUBBERBAND", t, rel + ": a skip for a missing Rubber Band must say so by name")
             self.assertNotRegex(t, r'skipUnless\([^\n]*rubberband[^\n]*"needs', rel)
 
+    def test_the_docs_do_not_promise_private_files_on_windows(self):
+        """File permission bits do nothing on Windows (hypnomix/core/paths.py private_dir). Wherever the docs say a file can
+        be read by the person alone, they say that this is on a Mac, and what holds on Windows."""
+        for rel in ("README.md", "docs/guides/09-setup-and-ai.md", "hypnomix/app/wiki/articles/18-assistant.html"):
+            t = squash(read(rel))
+            self.assertIn("HypnoMix adds no lock of its own there", t, rel)
+            self.assertIn("On a Mac only your account can read", t, rel)
+            for old in ("readable by you only", "readable by you alone", "can be read by you alone"):
+                self.assertNotIn(old, t, rel + ": true on a Mac only; say what holds on Windows")
+
     def test_the_docs_say_the_project_does_not_test_on_linux(self):
         for rel in ("README.md", "hypnomix/app/wiki/articles/19-requirements.html", "hypnomix/app/wiki/articles/28-faq.html",
                     "hypnomix/app/wiki/articles/20-install.html"):

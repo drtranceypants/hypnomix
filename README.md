@@ -123,8 +123,8 @@ The assistant runs HypnoMix for you and explains each finding.
 - **Any provider:** Claude (Anthropic), OpenAI, Google Gemini, OpenRouter (many models on one key), Groq,
   Mistral, any other service with an OpenAI-compatible address, or a free model running on your own computer
   in Ollama (no key at all). **List models** shows what your key can use.
-- **Your key and your audio stay with you:** the key is kept in `~/.hypnomix/ai.json` (readable by you only) and
-  sent only to the provider you chose. The assistant reads HypnoMix's text reports, not the audio.
+- **Your key and your audio stay with you:** the key is kept in `~/.hypnomix/ai.json` and
+  sent only to the provider you chose. On a Mac only your account can read that file. On Windows the file sits in your own user folder, which Windows keeps to your account and the computer's administrators; HypnoMix adds no lock of its own there. The assistant reads HypnoMix's text reports, not the audio.
 - **A Listener (optional, off by default):** a second model, with its own key, that can *hear* a bounce and give
   notes by ear with timestamps (arrangement, energy, balance, vocal clarity, low-end feel), checked against
   HypnoMix's own measurements. The chat model stays whatever you like (say Claude); the listener is a Google model,

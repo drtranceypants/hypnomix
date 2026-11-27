@@ -5,7 +5,8 @@ Bring your own key from any provider:
   OpenAI, Google Gemini, OpenRouter,  the OpenAI SDK, each at its own address (these all speak the same chat format)
   Groq, Mistral, Ollama on this computer (free, no key), or any other service that speaks it
 
-The key is kept on this computer only (~/.hypnomix/ai.json, readable by you alone) and goes only to the provider
+The key is kept on this computer only (~/.hypnomix/ai.json: readable by your account alone on a Mac; on Windows it relies
+on the user folder's own protection, see core/paths.py) and goes only to the provider
 you chose. Your audio stays on the computer: the assistant sees HypnoMix's text reports, not the songs. The one
 exception is Listening (off until you choose Google Gemini or OpenRouter for it): then the assistant may ask to
 send a reduced mono copy of one song to that service for notes by ear, and each listen waits for your click.

@@ -14,7 +14,7 @@ shipped inside the app, never from a request). Until the first archive is publis
 Then the connection to your DAW (Live: `hypnomix install`; REAPER: the bridge; only on a click), and for desktop AI apps a `hypnomix`
 command and a folder with the agent guide and the Claude Code skills; then the optional extras (hypnomix/extras.py),
 each installed only on a click. Keys are saved by the Assistant's own settings (~/.hypnomix/ai.json,
-readable by you alone). The setup's own answers are in ~/.hypnomix/setup.json (the folder HYPNOMIX_HOME names, if set).
+readable by your account alone on a Mac; on Windows the user folder's own protection). The setup's own answers are in ~/.hypnomix/setup.json (the folder HYPNOMIX_HOME names, if set).
 
 Costs are estimates from list prices for one typical song (scan to approved fixes, about 40 assistant steps:
 ~1.2 M input tokens, most of them repeated context, and ~20 k output tokens). The guide docs/guides/09-setup-and-ai.md

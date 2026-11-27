@@ -69,7 +69,8 @@ def private_dir(d):
     made from the top down. A folder that already exists and is yours is tightened to 0700; one owned by someone else
     is left as it is, and so is your home folder or anything above it (a mistaken setting never locks you out).
     Everything that reads these folders (the REAPER bridge, the Max devices, the app) runs as you, so nothing else
-    needs access. No effect on Windows."""
+    needs access. No effect on Windows: there these folders sit in the person's own user folder, which Windows keeps to
+    that account and the computer's administrators, and the docs say so (README, guide 09, the Assistant article)."""
     d = Path(d).expanduser()
     if not d.is_absolute():
         d = Path.cwd() / d
