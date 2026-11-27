@@ -345,10 +345,23 @@ CHANGEABLE_REGION_ATTRS = ("scale-amplitude", "fade-in-active", "fade-out-active
 CHANGEABLE_REGION_CHILDREN = ("FadeIn", "FadeOut", "InverseFadeIn", "InverseFadeOut", "Envelope")
 
 
-def _stripped(root):
-    """A copy of the session with everything an edit may change taken out: what is left must be identical."""
+def _stripped(root, automation=False, tempo=False):
+    """A copy of the session with everything an edit may change taken out: what is left must be identical.
+    automation: a route's processor automation lists (their events and state: ardour_automation's writers);
+    tempo: the tempo points (the meters and BBT markers stay)."""
     r = copy.deepcopy(root)
     r.attrib.pop("name", None)
+    if automation:
+        for rt in r.iter("Route"):
+            for pr in rt.findall("Processor"):
+                for al in pr.iter("AutomationList"):
+                    al.attrib.pop("state", None)
+                    for ev in al.findall("events"):
+                        al.remove(ev)
+    if tempo:
+        for tm in r.iter("TempoMap"):
+            for ts in tm.findall("Tempos"):
+                tm.remove(ts)
     for rg in r.iter("Region"):
         for a in CHANGEABLE_REGION_ATTRS:
             rg.attrib.pop(a, None)
@@ -433,8 +446,9 @@ def _source_errors(p):
     return errs
 
 
-def _model_diff(a, b):
-    """-> (structure errors, [changes]) between two loaded projects with the same layout."""
+def _model_diff(a, b, music_moves=False):
+    """-> (structure errors, [changes]) between two loaded projects with the same layout. music_moves: a region placed
+    in music time may move (a new tempo map)."""
     errs, changes = [], []
     if [(t.name, t.kind, t.parent.name if t.parent else None) for t in a.tracks] != \
             [(t.name, t.kind, t.parent.name if t.parent else None) for t in b.tracks]:
@@ -452,8 +466,11 @@ def _model_diff(a, b):
             changes.append(f"{x.name}: {'muted' if y.muted else 'unmuted'}")
         for c, d in zip(x.clips, y.clips):
             tag = f"{x.name} @ {c.start:.3f} s"
+            at = c.native is not None and ((c.native.get("length") or "").partition("@")[2] or c.native.get("position") or "")
+            music = music_moves and bool(at) and at.startswith("b")
+            moved = not music and (abs(c.start - d.start) > 1e-9 or abs(c.length - d.length) > 1e-9)
             if (c.name, c.kind, c.layer, c.muted, c.opaque) != (d.name, d.kind, d.layer, d.muted, d.opaque) \
-                    or abs(c.start - d.start) > 1e-9 or abs(c.length - d.length) > 1e-9 \
+                    or moved \
                     or (c.take and abs(c.take.offset - d.take.offset) > 1e-9) or c.path != d.path:
                 errs.append(f"{tag}: a region moved, changed length, source or layer")
                 continue
@@ -471,24 +488,52 @@ def _model_diff(a, b):
     return errs, changes
 
 
-def check(src, out):
+def check(src, out, automation=False, tempo=False):
     """Structure check of the written session against the original: [errors]. It must read back; ids stay
     unique; fade and envelope times are well-formed; regions stay inside their files; and nothing outside what an
-    approved edit may change differs (tracks, folders, regions, positions, lengths, plug-ins, routing)."""
+    approved edit may change differs (tracks, folders, regions, positions, lengths, plug-ins, routing).
+    automation=True also allows new route automation (its points must be well-formed); tempo=True a new tempo map
+    (regions in music time then move with the bars, as they play; audio-time regions must not move)."""
     from hypnomix import project as PJ
     errs = []
     try:
         a, b = PJ.load(src), PJ.load(out)
     except (Exception, SystemExit) as e:
         return [f"the new session does not read back ({e})"]
-    where = _same(_stripped(a.native), _stripped(b.native))
+    where = _same(_stripped(a.native, automation, tempo), _stripped(b.native, automation, tempo))
     if where:
         errs.append("something outside the approved edits differs (" + where[0] + ")")
     new = set(_problems(b, b.native)) - set(_problems(a, a.native))
     errs += sorted(new)
+    if automation:
+        errs += _automation_problems(b.native)
     errs += sorted(set(_source_errors(b)) - set(_source_errors(a)))
-    e2, _ = _model_diff(a, b)
+    e2, _ = _model_diff(a, b, music_moves=tempo)
     errs += e2
+    return errs
+
+
+def _automation_problems(root):
+    """Route automation points that are not well-formed, or out of time order."""
+    errs = []
+    good = TIME_NEW if AR.session_version(root) >= 7000 else TIME_OLD
+    for rt in root.iter("Route"):
+        for al in rt.iter("AutomationList"):
+            last = None
+            for line in (al.findtext("events") or "").strip().splitlines():
+                parts = line.split()
+                try:
+                    ok = len(parts) >= 2 and good.match(parts[0]) and math.isfinite(float(parts[1]))
+                except ValueError:
+                    ok = False
+                if not ok:
+                    errs.append(f"{rt.get('name')}: an automation point is not well-formed: {line.strip()!r}")
+                    break
+                t = int(parts[0].lstrip("ab")) if parts[0][:1] in "ab" else int(parts[0])
+                if last is not None and t < last:
+                    errs.append(f"{rt.get('name')}: automation points out of time order")
+                    break
+                last = t
     return errs
 
 

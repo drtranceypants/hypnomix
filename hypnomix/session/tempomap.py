@@ -4,6 +4,7 @@
   hypnomix tempomap TAKE.wav [--click CHECK.wav] [--json OUT.json]
   hypnomix tempomap SET.als --track "Drums" --conform --apply "SET (conformed).als" [--preview OUT.wav]
   hypnomix tempomap SET.als --track "Drums" --follow  --apply "SET (tempo map).als"
+  hypnomix tempomap SESSION.ardour --track "Drums" --follow (--engine [URL] | --apply "SESSION (tempo map).ardour")
 
 It follows the beat through the take (the tempo is allowed to wander), puts every beat on the start of
 its hit, guesses which beat is "one" from the low end, and reports the tempo of every bar.
@@ -25,6 +26,12 @@ With a Live set (the take on its own audio track, one clip), there are two ways 
 Both write a NEW set in the same folder, start the take on a bar line at its first full bar, and run
 `hypnomix check` on the result. --preview (with --conform) renders the conformed take with a click,
 without Live, so you can hear the result first. Close the set in Live before --apply.
+
+A HypnoMix DAW session (.ardour, or its folder): --follow writes the tempo map as tempo points, one a bar (or a
+beat), with a bar or more of steady lead-in so the take's first bar line falls on a bar line, into the open session
+(--engine: one undo step) or a new snapshot in the session's folder (--apply NEW.ardour). The take is left exactly as
+played: in HypnoMix DAW audio keeps its time when the tempo changes. --conform needs audio that follows the tempo,
+which HypnoMix DAW does not have yet, so it is refused there.
 
 Limits: one time signature (--bpb, default 4 beats per bar). A long silence or a free-time passage
 inside the take is bridged at the last tempo: check those spots. --follow changes the tempo of the
@@ -76,9 +83,9 @@ def one_clip(root, track, which):
     return t, c, clips
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(prog="hypnomix tempomap", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("source", help="an audio file, or a Live set (.als) with --track")
+    ap.add_argument("source", help="an audio file, or a Live set (.als) or HypnoMix DAW session (.ardour) with --track")
     ap.add_argument("--track"); ap.add_argument("--clip", type=int)
     ap.add_argument("--bpb", type=int, default=4, help="beats per bar (default 4)")
     ap.add_argument("--bpm", type=A.number(20, 400), help="a hint for the tempo")
@@ -95,12 +102,20 @@ def main():
     ap.add_argument("--preview", metavar="OUT.wav", help="with --conform: render the conformed take with a click, without Live")
     ap.add_argument("--anyway", action="store_true", help="use a tempo map that looks unreliable")
     ap.add_argument("--apply", metavar="NEW.als")
+    ap.add_argument("--engine", nargs="?", const="", metavar="URL",
+                    help="HypnoMix DAW: write the tempo map into the open HypnoMix engine (it must have this very "
+                         "session open; one undo step; save in HypnoMix DAW to keep it)")
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     src = Path(a.source)
     mult = 2.0 if a.double else 0.5 if a.half else 1.0
     is_set = src.suffix.lower() == ".als"
-    if is_set:
+    from hypnomix.session import tempo_ardour as TA
+    is_ardour = not is_set and TA.is_session(src)
+    if is_ardour:
+        proj, t, clip = TA.take(src, a.track, a.clip)
+        audio = Path(clip.take.path)
+    elif is_set:
         from hypnomix.session import automation as aa, smooth as sm
         if not a.track:
             sys.exit("give the track the take is on: --track NAME")
@@ -130,6 +145,11 @@ def main():
             beats=[round(float(x), 4) for x in beats], bars=[round(float(x), 4) for x in m["bars"]],
             bar_bpm=[round(float(x), 2) for x in m["bar_bpm"]], wander_pct=round(m["wander_pct"], 2),
             downbeat_sure=round(m["downbeat_sure"], 2)), indent=1), encoding="utf-8")
+    if is_ardour:
+        rc = TA.follow(a, proj, t, clip, m)
+        if rc:
+            sys.exit(rc)                      # (the command line ignores what main returns)
+        return rc
     if not is_set:
         if a.conform or a.follow or a.apply:
             sys.exit("--conform / --follow need a Live set with the take on a track")

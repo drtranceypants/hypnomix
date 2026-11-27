@@ -3,6 +3,7 @@
 
   hypnomix breathe SET.als --mix "Song mix.wav" [--preview "Song (breathing).wav"]
   hypnomix breathe SET.als --sections "17-32:+1.5, 49-64:+1.5, 65-72:-1" --apply "SET (breathing).als"
+  hypnomix breathe SESSION.ardour --sections "..." --grid-only (--engine [URL] | --apply "SESSION (breathing).ardour")
 
 A band without a click pushes the choruses a little and relaxes in the verses. This writes that as tempo
 automation: each section gets a tempo a little above or below the set's, with a short glide into it.
@@ -26,6 +27,12 @@ stay at the old speed and drift out of time, so they are listed and nothing is w
 drums in Beats mode, everything else in Complex Pro). Listen for warp artefacts on exposed vocals.
 The song's length changes slightly: a video cut to the old audio will no longer line up.
 Close the set in Live before --apply. `hypnomix check` runs on the result.
+
+A HypnoMix DAW session (.ardour, or its folder; sections from --sections or --mix): the same plan becomes tempo points,
+each glide a tempo ramp (the glide rounded to whole beats), written into the open session (--engine: one undo step)
+or a new snapshot in the session's folder (--apply NEW.ardour). In HypnoMix DAW audio regions keep their time when the
+tempo changes (audio that follows the tempo map is not built yet): the bar grid and MIDI breathe, the recorded audio
+does not, so a session with audio needs --grid-only to write it.
 """
 import argparse, re, sys
 from pathlib import Path
@@ -110,15 +117,27 @@ def build_points(secs, tempo, end, glide, ritard, bpb):
     return pts
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(prog="hypnomix breathe", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("als"); ap.add_argument("--mix"); ap.add_argument("--sections")
     ap.add_argument("--amount", type=float, default=1.0); ap.add_argument("--glide", type=float, default=2.0)
     ap.add_argument("--ritard", type=float, default=0.0)
     ap.add_argument("--preview", metavar="OUT.wav"); ap.add_argument("--warp-clips", action="store_true")
     ap.add_argument("--replace-tempo", action="store_true"); ap.add_argument("--apply", metavar="NEW.als")
+    ap.add_argument("--engine", nargs="?", const="", metavar="URL",
+                    help="HypnoMix DAW: write the tempo map into the open HypnoMix engine (it must have this very "
+                         "session open; one undo step; save in HypnoMix DAW to keep it)")
+    ap.add_argument("--grid-only", action="store_true",
+                    help="HypnoMix DAW: write the tempo map although the session's audio keeps its time (only the grid "
+                         "and MIDI breathe)")
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
+    from hypnomix.session import tempo_ardour as TA
+    if TA.is_session(a.als):
+        rc = TA.breathe(a, a.als)
+        if rc:
+            sys.exit(rc)                      # (the command line ignores what main returns)
+        return rc
     from hypnomix.session import automation as aa
     src = Path(a.als)
     tree = aa.load(src); root = tree.getroot()

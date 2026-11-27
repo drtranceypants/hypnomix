@@ -87,6 +87,20 @@ set they write, and can be previewed without opening Live. Nothing here snaps a 
   mix repeat themselves. Like `variations`, all three arrive switched off or as review items. `colour` has not yet been
   opened in Live (see guide 5).
 
+## In HypnoMix DAW
+
+`tempomap --follow` and `breathe` take a HypnoMix DAW session (`.ardour`, or its folder) as well as a Live set. The
+map becomes tempo points (`project/ardour_automation.py`): a step is a new point, a glide a tempo **ramp**, which
+HypnoMix DAW plays as a tempo changing evenly beat by beat (the same line `breathe` plans), and the last point never
+ramps. `--engine [URL]` writes it into the open session (`tempo_set_points`, replace-all: one undo step; the engine
+must have this very session open); `--apply NAME.ardour` writes a new snapshot in the session's folder, with each
+point's position, BBT and ramp factor computed as the engine stores them, and a structure check (only the tempo
+points may differ; music-time regions move with the bars, audio regions must not). A session with meter changes, a
+meter that is not x/4, or BBT markers is refused. Audio keeps its time when the tempo changes: `--follow` (the grid
+follows a take played without a click) is exactly what that suits; `breathe` makes only the grid and MIDI breathe, so a
+session with audio needs `--grid-only`; `--conform` is refused. HypnoMix reads a session's ramps exactly too
+(`project/ardour.py`), so bars and music-time positions after a ramp are right.
+
 ## Limits
 
 One time signature per take (`--bpb`). Long silences and free-time passages are bridged at the last tempo.

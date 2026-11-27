@@ -25,6 +25,10 @@ tempo); without one, 8-bar blocks are used and the review says so.
 Safety: only automates controls that exist in the set; never writes into a stretch where that control already
 has automation (your moves are intent); writes a NEW set; `hypnomix check` runs on it.
 
+A HypnoMix DAW session (.ardour, or its folder): the filter sweeps (riser, dip, drift) on the filter plug-ins it already
+has, written as plug-in automation into the open session (--engine) or a new snapshot (--apply NEW.ardour); throws
+and send swells are left to you there (session/motion_ardour.py).
+
 Usage:
   hypnomix motion --learn EXAMPLE.als [EXAMPLE2.als …]                      # learn your moves
   hypnomix motion SET.als --mix MIX.wav [--plan [SCAN_DIR]] [--json OUT.json]  # proposals (review / fix)
@@ -715,7 +719,7 @@ def parse_tweaks(items):
     return out
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(prog="hypnomix motion", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("als", nargs="?"); ap.add_argument("--mix")
@@ -725,7 +729,10 @@ def main():
     ap.add_argument("--json"); ap.add_argument("--plan", nargs="?", const=True, help="write the proposals into a scan folder")
     ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
     ap.add_argument("--tweak", action="append", help='"motion-2:bars=8,depth=0.5" (repeatable)')
-    a = ap.parse_args()
+    ap.add_argument("--engine", nargs="?", const="", metavar="URL",
+                    help="HypnoMix DAW: write the chosen moves into the open HypnoMix engine (it must have this very "
+                         "session open; one undo step a control; save in HypnoMix DAW to keep it)")
+    a = ap.parse_args(argv)
     if a.learn:
         st = learn(a.learn)
         Path(a.style).parent.mkdir(parents=True, exist_ok=True)
@@ -738,6 +745,13 @@ def main():
             return
     if not a.als:
         sys.exit("give a set (or --learn examples)")
+    from hypnomix.session import tempo_ardour as TA
+    if TA.is_session(a.als):
+        from hypnomix.session import motion_ardour as MA
+        rc = MA.main(a)
+        if rc:
+            sys.exit(rc)                      # (the command line ignores what main returns)
+        return rc
     src = Path(a.als)
     style = json.loads(Path(a.style).read_text(encoding="utf-8", errors="replace")) if Path(a.style).exists() else None
     root = ET.fromstring(read_gz(src))

@@ -328,9 +328,15 @@ def remeasure(old_path, new_path, sig, sr, a, melody, order):
 def run(a):
     src = Path(a.als)
     VL.check_paths(a)                         # a missing project, an existing --apply/--json: one sentence, early
-    if a.apply and Path(a.apply).suffix.lower() != ".rpp":
-        sys.exit("--apply writes REAPER projects (SONG.rpp --apply NEW.rpp) and Live sets; for this project make the "
+    ardour = PJ.ardour_session(src) is not None or src.suffix.lower() == ".ardour"
+    if a.apply and Path(a.apply).suffix.lower() != (".ardour" if ardour else ".rpp"):
+        sys.exit("--apply writes REAPER projects (SONG.rpp --apply NEW.rpp), HypnoMix DAW sessions (SESSION.ardour "
+                 "--apply NEW.ardour, or --engine into the open session) and Live sets; for this project make the "
                  "moves by hand from the report")
+    if getattr(a, "engine", None) is not None and not ardour:
+        sys.exit("--engine writes into a HypnoMix DAW session the engine has open: give that session (.ardour)")
+    if getattr(a, "engine", None) is not None and a.apply:
+        sys.exit("choose one: --engine (into the open session) or --apply NEW.ardour (a new snapshot)")
     p = PJ.load(src)
     sig, sr, how = signals(p, a)
     if not sig:
@@ -353,6 +359,12 @@ def run(a):
         VL.write_new_text(a.json, json.dumps(dict(tool="vocallevel", set=str(src), daw=p.daw, measured=how,
                                                   order=order, melody=melody, lines=rows, findings=findings,
                                                   gains=gains), default=float, indent=1))
+    if p.daw == "ardour" and (a.apply or getattr(a, "engine", None) is not None):
+        from hypnomix.workflow import vocallevel_ardour as VA
+        rc = VA.run(p, src, a, gains, tracks, melody)
+        if rc:
+            sys.exit(rc)                      # (the command line ignores what main returns)
+        return rc
     if not a.apply:
         return 0
     out = Path(a.apply)
