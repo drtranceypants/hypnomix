@@ -766,6 +766,8 @@ class Sources:
             if soft != resource.RLIM_INFINITY:
                 cap = min(cap, soft)
             resource.setrlimit(resource.RLIMIT_FSIZE, (cap, hard))
+        # Windows has no rlimits (and no preexec_fn): there the file is bounded by -t (at most MAX_FILE_SECONDS at the
+        # session rate) and by FFMPEG_TIMEOUT, and the disk room was checked before (_no_room)
         with tempfile.TemporaryDirectory(prefix="hypnomix-convert-") as td:
             tmp = Path(td) / "x.wav"
             try:

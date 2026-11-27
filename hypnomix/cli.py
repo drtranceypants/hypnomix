@@ -246,9 +246,9 @@ def _audio_read_message(e):
         if folder:
             return f"{fn} is a folder, not a Live set (.als file); give the .als file itself."
         return f"no such file: {fn}; check the name and the folder, then try again."
-    if isinstance(e, (FileNotFoundError, IsADirectoryError)) and _project_suffix(e.filename):   # a REAPER / HypnoMix DAW project: a typo or a folder
+    if (folder or isinstance(e, FileNotFoundError)) and _project_suffix(e.filename):   # a REAPER / HypnoMix DAW project: a typo or a folder
         fn = str(e.filename)
-        if isinstance(e, IsADirectoryError):
+        if folder:
             return f"{fn} is a folder, not a project file; give the {_project_suffix(fn)} file itself."
         return f"no such file: {fn}; check the name and the folder, then try again."
     if isinstance(e, OSError) and (isinstance(e, PermissionError) or e.errno in (errno.ENOSPC, errno.EROFS, errno.EDQUOT)):

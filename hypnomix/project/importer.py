@@ -56,6 +56,7 @@ MAX_TRACKS = 2000                   # budgets: a project past these is refused i
 MAX_REGIONS = 20000                 # audio and MIDI regions together
 MAX_NOTES = 500000
 NAME_CHARS = 200
+NAME_MAX = 255                      # the longest folder or file name NTFS, APFS and ext4 take
 _CTRL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f\ufffe\uffff]|[\ud800-\udfff]")   # what XML 1.0 cannot hold
 MAX_TEMPO_POINTS = 5000             # tempo points written; more are dropped (the report says so)
 
@@ -674,6 +675,11 @@ def check_out(out, guard, sr=None):
     not inside the project). -> the resolved folder."""
     if sr is not None and not RATES[0] <= int(sr) <= RATES[1]:
         raise SystemExit(f"--sr {sr}: the sample rate must be between {RATES[0]} and {RATES[1]} Hz (for example 48000)")
+    too_long = next((part for part in Path(out).parts if len(part) > NAME_MAX), None)
+    if too_long is not None:      # by length first: Windows answers a too-long name with "invalid name" or not at all
+        raise SystemExit(         # until the folder is made; macOS and Linux say "name too long" (caught below too)
+            f"the new session's folder cannot be used (a name in it is longer than {NAME_MAX} characters: "
+            f"{too_long[:24]}...): choose a shorter name or another place")
     try:
         out = Path(out).expanduser().resolve()
         if out.exists() and not out.is_dir():

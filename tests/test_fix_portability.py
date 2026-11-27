@@ -155,6 +155,31 @@ class NoImplicitEncoding(unittest.TestCase):
                              sorted(["open", "read_text", "write_text", "text=True", "os.fdopen", "Path.open", "tempfile"]))
 
 
+def newline_on_write_text(path):
+    """[line] for every Path.write_text(..., newline=...): that argument came in Python 3.10, and on 3.9 the call
+    raises TypeError (the REAPER snapshot restore did, on the 3.9 runners)."""
+    tree = ast.parse(Path(path).read_text(encoding="utf-8"))
+    atomic = _atomic_aliases(tree)
+    return [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+            and n.func.attr == "write_text" and not (isinstance(n.func.value, ast.Name) and n.func.value.id in atomic)
+            and _kw(n, "newline")]
+
+
+class Python39Calls(unittest.TestCase):
+    def test_no_write_text_with_newline(self):
+        files = sorted(PKG.rglob("*.py")) + sorted((ROOT / "tests").glob("*.py"))
+        bad = [f"{p.relative_to(ROOT)}:{line}" for p in files for line in newline_on_write_text(p)]
+        self.assertEqual(bad, [], "Path.write_text(newline=...) needs Python 3.10; open(path, 'w', encoding='utf-8', "
+                                  "newline=...) works on 3.9:\n" + "\n".join(bad))
+
+    def test_the_walk_finds_it(self):
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "m.py"
+            f.write_text("from pathlib import Path\nPath('x').write_text('t', encoding='utf-8', newline='\\n')\n"
+                         "Path('x').write_text('t', encoding='utf-8')\n", encoding="utf-8")
+            self.assertEqual(newline_on_write_text(f), [2])
+
+
 # ---------------------------------------------------------------- bugs 1, 2, 6: text written and read under a legacy encoding
 class LegacyEncodingRun(unittest.TestCase):
     """Run in a child whose default encoding is ASCII (what a Windows code page does to an arrow)."""

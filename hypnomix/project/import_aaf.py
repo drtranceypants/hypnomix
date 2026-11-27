@@ -29,7 +29,7 @@ def read(path, media_dir=None):
     path = Path(path).expanduser().resolve()
     media = Path(media_dir) if media_dir else Path(tempfile.mkdtemp(prefix="hypnomix-aaf-"))
     media.mkdir(parents=True, exist_ok=True)
-    data = engine_tools.run("hypnomix-aafdump", path, media)
+    data = engine_tools.run("hypnomix-aafdump", path, media, watch=media)
     rate = int(data.get("rate") or 48000)
     daw = product(data.get("product"))
     from hypnomix.project.importer import Budget

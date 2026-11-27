@@ -87,13 +87,36 @@ def default_out(project, kind=None):
     kind = kind or kind_of(p)
     where = p.parent.parent if kind in FOLDER_KINDS else p.parent
     guard = guard_of(p, kind)
-    if where == guard or guard in where.parents or not os.access(where, os.W_OK) or where.parent == where:
+    if where == guard or guard in where.parents or not can_write(where) or where.parent == where:
         where = Path.home() / "Documents" / "HypnoMix" / "Imported"
     base = where / f"{p.stem} (HypnoMix)"
     out, i = base, 2
     while out.exists():
         out, i = Path(f"{base} {i}"), i + 1
     return out
+
+
+# os.access tells a folder that refuses new files on macOS and Linux (its permission bits). On Windows it looks only at
+# the read-only flag, which folders ignore, so a folder of another user or Program Files looks writable: there a
+# small file is made and removed to know.
+ACCESS_SEES_FOLDERS = os.name != "nt"
+
+
+def can_write(folder):
+    if not os.access(folder, os.W_OK):
+        return False
+    if ACCESS_SEES_FOLDERS:
+        return True
+    try:
+        fd, probe = tempfile.mkstemp(prefix=".hypnomix-probe-", dir=str(folder))
+    except OSError:
+        return False
+    os.close(fd)
+    try:
+        os.unlink(probe)
+    except OSError:
+        pass
+    return True
 
 
 def roots_of(project, kind):

@@ -25,6 +25,7 @@ import numpy as np
 import soundfile as sf
 
 from hypnomix.project import ardour, importer, import_logic, import_project
+from tests import _isolate
 
 SR = 48000
 
@@ -391,6 +392,14 @@ def stand_in(d, name, payload=None, body=None):
     `body`. Its first line caps every file it writes at STAND_IN_CAP (RLIMIT_FSIZE), before anything else runs."""
     p = Path(d) / name
     code = body if body is not None else f"sys.stdout.write({json.dumps(json.dumps(payload))})"
+    if os.name == "nt":
+        # Windows starts no file by its #! line and has no rlimits: the stand-in is a .py that this Python runs from a
+        # .cmd beside it (what the reader's path names), and the bodies here are small and known
+        py = p.with_name(name + ".py")
+        py.write_text(f"import sys, os, json, time\n{code}\n", encoding="utf-8")
+        cmd = p.with_name(name + ".cmd")
+        cmd.write_bytes(f'@"{sys.executable}" "{py}" %*\r\n@exit /b %ERRORLEVEL%\r\n'.encode("utf-8"))
+        return cmd
     p.write_text(f"#!{sys.executable}\nimport resource, sys, os, json, time\n"
                  f"resource.setrlimit(resource.RLIMIT_FSIZE, ({STAND_IN_CAP}, {STAND_IN_CAP}))\n{code}\n", encoding="utf-8")
     p.chmod(p.stat().st_mode | stat.S_IXUSR)
@@ -1366,6 +1375,44 @@ class RecheckTest(unittest.TestCase):
                 engine_tools.run("hypnomix-ptdump", self.d / "x.ptx")
         self.assertIn("took longer", str(cm.exception))
 
+    def test_windows_path_watches_the_extracted_files(self):
+        """Windows has no rlimits: the reader runs without one (HAVE_RLIMIT off, as there) and a file it extracts past
+        the one-file limit is still caught, by the watch on its folder."""
+        from hypnomix.project import engine_tools
+        media = self.d / "media"
+        media.mkdir()
+        os.environ["HYPNOMIX_AAFDUMP"] = str(stand_in(self.d, "extracts", body=(
+            "open(os.path.join(sys.argv[2], 'a.wav'), 'wb').write(b'0' * (2 << 20))\ntime.sleep(3)\nprint('{}')")))
+        seen = []
+        real_popen = engine_tools.subprocess.Popen
+
+        def popen(*a, **k):
+            seen.append(k.get("preexec_fn"))
+            return real_popen(*a, **k)
+        with mock.patch.object(engine_tools, "HAVE_RLIMIT", False), \
+                mock.patch.dict(engine_tools.MAX_FILE, {"hypnomix-aafdump": 1 << 20}), \
+                mock.patch.object(engine_tools.subprocess, "Popen", popen):
+            t0 = time.monotonic()
+            with self.assertRaises(SystemExit) as cm:
+                engine_tools.run("hypnomix-aafdump", self.d / "x.aaf", media, watch=media)
+        self.assertEqual(seen, [None])                                   # no preexec_fn, as on Windows
+        self.assertIn("wrote a file larger than 1 MB (a.wav)", str(cm.exception))
+        self.assertLess(time.monotonic() - t0, 2.9)                       # stopped by the watch, not at its end
+
+    def test_windows_readers_get_what_a_windows_program_needs(self):
+        from hypnomix.project import engine_tools
+        env = {"SYSTEMROOT": r"C:\Windows", "TEMP": r"C:\Users\X\AppData\Local\Temp", "HYPNOMIX_SECRET_TEST": "x",
+               "PATH": r"C:\Users\X\bin"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            got = engine_tools.reader_env(windows=True)
+        self.assertEqual(got["SYSTEMROOT"], r"C:\Windows")               # without it a Windows program may not start
+        self.assertIn(r"C:\Windows\System32", got["PATH"])
+        self.assertNotIn(r"C:\Users\X\bin", got["PATH"])
+        self.assertEqual(got["TEMP"], env["TEMP"])
+        self.assertNotIn("HYPNOMIX_SECRET_TEST", got)
+        with mock.patch.dict(os.environ, {"HOME": "/Users/x", "HYPNOMIX_SECRET_TEST": "x"}, clear=True):
+            self.assertEqual(engine_tools.reader_env(windows=False), {"PATH": "/usr/bin:/bin", "HOME": "/Users/x"})
+
     def test_n9_xml_caps(self):
         p = dp_zip(self.d, dp_xml(dp_track("A", "t1"), self.one_clip()), {"audio/a.wav": self.wav})
         with mock.patch.object(self.DP, "MAX_XML", 100):
@@ -1476,6 +1523,7 @@ class RecheckTest(unittest.TestCase):
     def test_n3_later_tempo_on_one_beat_wins(self):
         self.assertEqual(importer.tempo_points(120, [(4, 140), (4, 90)])[-1], (4.0, 90.0))
 
+    @_isolate.POSIX_MODES
     def test_n4_unwritable_place_falls_back(self):
         top = self.d / "top"
         (top / "proj").mkdir(parents=True)
@@ -1487,11 +1535,32 @@ class RecheckTest(unittest.TestCase):
             top.chmod(0o755)
         self.assertEqual(out.parent, Path.home() / "Documents" / "HypnoMix" / "Imported")
 
+    def test_n4_a_folder_that_only_says_it_is_writable_is_tried(self):
+        """Windows: os.access calls every folder writable (it reads only the read-only flag), so there a folder is
+        tried with a small file, made and removed. Here that path is taken on purpose (ACCESS_SEES_FOLDERS off)."""
+        top = self.d / "top"
+        (top / "proj").mkdir(parents=True)
+        src = rpp(top / "proj", '  <TRACK\n    NAME "Gtr"\n  >\n')
+        with mock.patch.object(import_project, "ACCESS_SEES_FOLDERS", False):
+            self.assertEqual(import_project.default_out(src).parent, top.resolve())   # it can be written: beside the project
+            self.assertEqual(sorted(p.name for p in top.iterdir()), ["proj"])  # and the trial file is gone
+            refuse = PermissionError(13, "Access is denied")
+            with mock.patch.object(import_project.tempfile, "mkstemp", side_effect=refuse):
+                out = import_project.default_out(src)
+        self.assertEqual(out.parent, Path.home() / "Documents" / "HypnoMix" / "Imported")
+
     def test_n7_long_folder_name_is_a_sentence(self):
         p = dp_zip(self.d, dp_xml(dp_track("A", "t1"), self.one_clip()), {"audio/a.wav": self.wav})
         with self.assertRaises(SystemExit) as cm:
             import_project.convert(p, self.d / ("x" * 300), log=quiet)
         self.assertIn("cannot be used", str(cm.exception))
+        # Windows' pathlib answers "does it exist" for a too-long name with a plain no (it takes the invalid-name error
+        # for one), so the length itself is checked first: the same sentence there
+        with mock.patch.object(importer.Path, "exists", return_value=False):
+            with self.assertRaises(SystemExit) as cm:
+                importer.check_out(self.d / ("y" * 300), None)
+        self.assertIn("cannot be used", str(cm.exception))
+        self.assertIn("longer than 255 characters", str(cm.exception))
 
     def test_n8_n13_als_sr_checked_first(self):
         import gzip

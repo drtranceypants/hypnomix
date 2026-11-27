@@ -178,6 +178,28 @@ class CappedWait(unittest.TestCase):
         self.assertIsNone(err)
         self.assertEqual(out["v"], 5)
 
+    def test_a_slow_computers_sleeps_still_see_the_other_command(self):
+        """The look at `busy` goes by the clock, not by a count of sleeps: on a slow runner each 20 ms sleep lasted far
+        longer, the first look came after the 2 s timeout, and call() gave up while the other command was still running."""
+        import threading
+        import types
+        (self.d / "alive").write_text("1\nT\n4242\n", encoding="utf-8")
+        (self.d / "busy").write_text("other\nrender_master\nT\n4242\n", encoding="utf-8")
+
+        def bridge():
+            time.sleep(3.0)
+            (self.d / "busy").unlink()
+            for f in self.d.glob("req-*.txt"):
+                (self.d / f.name.replace("req-", "res-").replace(".txt", ".json")).write_bytes(b'{"ok": true, "result": 6}')
+                f.unlink()
+        threading.Thread(target=bridge, daemon=True).start()
+        slow = types.SimpleNamespace(time=time.time, sleep=lambda s: time.sleep(s * 5))   # each sleep lasts 5x longer
+        with mock.patch.object(C, "time", slow), mock.patch.object(C, "pid_running", return_value=True):
+            out = {}
+            err, _ = self.run_bounded(lambda: out.update(v=self.r.call("ping")), 12)
+        self.assertIsNone(err)
+        self.assertEqual(out["v"], 6)
+
 
 class RepeatedBridgeError(unittest.TestCase):
     def test_every_failure_is_written_again(self):

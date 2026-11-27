@@ -114,7 +114,8 @@ def flatten(snap):
 def restore(r, snap):
     """Put a snapshot back in one undo step. Returns {changed, missing}."""
     path = Path(r.dir) / f"restore-{int(time.time() * 1000)}.txt"
-    path.write_text(flatten(snap), encoding="utf-8", newline="\n")
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:      # Path.write_text takes newline= only from 3.10
+        fh.write(flatten(snap))
     try:
         return r.call("mixer_restore", file=str(path).replace("\\", "/"))
     finally:

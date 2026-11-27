@@ -227,10 +227,13 @@ class Reaper:
         res = self.dir / f"res-{rid}.json"
         t0 = time.time()
         timeout = max(self.timeout, LONG.get(cmd, 0.0))
-        deadline, n = t0 + timeout, 0
+        deadline, look = t0 + timeout, t0 + 0.5
         while not res.exists():
-            n += 1
-            if n % 25 == 0:                                 # twice a second: another caller's command still running?
+            now = time.time()
+            # twice a second by the clock, and once more before giving up: another caller's command still running?
+            # (not every so many sleeps: on a slow or busy computer a 20 ms sleep can last far longer)
+            if now >= look or now > deadline:
+                look = now + 0.5
                 b = self.busy()
                 if b and b[0] != rid and pid_running(self._busy_pid()) is not False:   # not one whose REAPER is gone
                     try:

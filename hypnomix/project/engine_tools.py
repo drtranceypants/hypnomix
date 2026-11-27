@@ -31,16 +31,17 @@ class ToolMissing(SystemExit):
 def find(name):
     env = os.environ.get(ENV.get(name, ""))
     cands = [Path(env).expanduser()] if env else []
+    exe = name + ".exe" if os.name == "nt" else name     # a Windows program file ends in .exe
     try:
         from hypnomix.app import daw
         eng = daw.find_engine()
         if eng is not None and eng.name != "engine-dev":
-            cands.append(eng.parent / name)
+            cands.append(eng.parent / exe)
     except Exception:
         pass
     src = os.environ.get("HYPNOMIX_ENGINE_SRC")
     if src:
-        cands.append(Path(src).expanduser() / "build" / "hypnomix" / "importers" / name)
+        cands.append(Path(src).expanduser() / "build" / "hypnomix" / "importers" / exe)
     w = shutil.which(name)
     if w:
         cands.append(Path(w))
@@ -52,9 +53,46 @@ def find(name):
                       f"{ENV.get(name, 'its path')} to a reader they built)")
 
 
-def run(name, *args):
+# Resource limits (RLIMIT_FSIZE, set in the reader before it starts) exist on macOS and Linux only. Windows has no
+# rlimits and no preexec_fn: there the reader's output and error output are watched as everywhere, the timeout
+# stops it as everywhere, and the files in the folder it extracts into (`watch`) are looked at once a second against
+# the same one-file limit.
+HAVE_RLIMIT = os.name == "posix"
+
+
+def reader_env(windows=None):
+    """The small environment a reader runs with: none of the person's keys or tokens. Windows programs also need
+    SYSTEMROOT (and its system folders on PATH) to start at all, and a temporary folder."""
+    windows = os.name == "nt" if windows is None else windows
+    if not windows:
+        return {"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", "/")}
+    env = {k: os.environ[k] for k in ("SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "TEMP", "TMP", "USERPROFILE")
+           if os.environ.get(k)}
+    root = env.get("SYSTEMROOT") or env.get("WINDIR") or r"C:\Windows"
+    env["SYSTEMROOT"] = root
+    env["PATH"] = os.pathsep.join([root + r"\System32", root])
+    return env
+
+
+def _largest(folder):
+    """(size, name) of the largest file directly or further inside `folder`; (0, "") when there is none."""
+    best = (0, "")
+    try:
+        for dirpath, _, files in os.walk(folder):
+            for f in files:
+                try:
+                    best = max(best, (os.stat(os.path.join(dirpath, f)).st_size, f))
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return best
+
+
+def run(name, *args, watch=None):
     """Run a reader and return its JSON. A reader's own error ({"error": ...}) becomes a SystemExit in plain words.
-    Its output goes to a temporary file that is watched: past MAX_JSON, or after TIMEOUT seconds, it is stopped."""
+    Its output goes to a temporary file that is watched: past MAX_JSON, or after TIMEOUT seconds, it is stopped.
+    `watch`: the folder it writes files into, checked against the one-file limit where the OS cannot enforce it."""
     exe = find(name)
     what = Path(args[0]).name if args else name
     with tempfile.TemporaryFile(mode="w+b") as out, tempfile.TemporaryFile(mode="w+b") as err:
@@ -69,23 +107,31 @@ def run(name, *args):
             resource.setrlimit(resource.RLIMIT_FSIZE, (c, hard))
         try:
             proc = subprocess.Popen([str(exe), *map(str, args)], stdout=out, stderr=err, stdin=subprocess.DEVNULL,
-                                    env={"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", "/")},
-                                    preexec_fn=limit if os.name == "posix" else None)
+                                    env=reader_env(), preexec_fn=limit if HAVE_RLIMIT else None)
         except (OSError, subprocess.SubprocessError) as e:
             raise SystemExit(f"{name} could not be started ({getattr(e, 'strerror', None) or type(e).__name__})") from e
-        t0, why = time.monotonic(), None
+        t0, why, look = time.monotonic(), None, time.monotonic() + 1.0
         while proc.poll() is None:
+            big = (0, "")
+            if watch is not None and not HAVE_RLIMIT and time.monotonic() >= look:
+                look = time.monotonic() + 1.0
+                big = _largest(watch)
             if os.fstat(out.fileno()).st_size > MAX_JSON:
                 why = f"{name}: the project is too big to read (more than {MAX_JSON >> 20} MB of data)"
             elif os.fstat(err.fileno()).st_size > MAX_ERR_DISK:
                 why = f"{name} wrote more than {MAX_ERR_DISK >> 20} MB of error output on {what}: stopped"
             elif time.monotonic() - t0 > TIMEOUT:
                 why = f"{name} took longer than {TIMEOUT} s on {what}: stopped"
+            elif big[0] > cap:
+                why = f"{name} wrote a file larger than {cap >> 20} MB ({big[1]}) from {what}: stopped"
             if why:
                 proc.kill()
                 proc.wait()
                 raise SystemExit(why)
             time.sleep(0.05)
+        big = _largest(watch) if watch is not None and not HAVE_RLIMIT else (0, "")
+        if big[0] > cap:                                  # written in its last second, after the last look
+            raise SystemExit(f"{name} wrote a file larger than {cap >> 20} MB ({big[1]}) from {what}: stopped")
         if os.fstat(out.fileno()).st_size > MAX_JSON:
             raise SystemExit(f"{name}: the project is too big to read (more than {MAX_JSON >> 20} MB of data)")
         out.seek(0)

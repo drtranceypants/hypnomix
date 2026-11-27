@@ -70,6 +70,22 @@ class MissingProject(unittest.TestCase):
                 self.assertIn("dir.rpp is a folder, not a project file; give the .rpp file itself.", err)
                 self.assertNotIn("bug", err)
 
+    def test_folder_named_rpp_is_one_sentence_where_a_folder_opens_with_permission_denied(self):
+        """Windows opens a folder with "permission denied" (PermissionError), not IsADirectoryError: read here the way
+        Windows answers, the same sentence (on the CI's Windows runners it said "can't write to ...")."""
+        real = Path.read_bytes
+
+        def read_bytes(p):
+            if p.is_dir():
+                raise PermissionError(errno.EACCES, "Permission denied", str(p))
+            return real(p)
+        for name, argv in self.commands(str(self.folder)).items():
+            with self.subTest(name), mock.patch.object(Path, "read_bytes", read_bytes):
+                code, err = run_cli(argv)
+                self.assertEqual(code, 2, err)
+                self.assertIn("dir.rpp is a folder, not a project file; give the .rpp file itself.", err)
+                self.assertNotIn("can't write", err)
+
     def test_vocallevel_missing_and_folder(self):
         code, err = run_cli(["vocallevel", self.missing])
         self.assertEqual(code, f"no such file: {self.missing}; check the name and the folder, then try again.")
