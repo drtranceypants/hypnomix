@@ -345,6 +345,25 @@ class ArdourTest(unittest.TestCase):
             project.load(bad)
 
 
+class TempoRampTest(unittest.TestCase):
+    """A tempo ramp is read as HypnoMix DAW plays it (linear per quarter note), not as its start tempo."""
+
+    def test_a_ramp_and_what_follows_it(self):
+        import xml.etree.ElementTree as ET
+        from hypnomix.project import ardour as AR
+        root = ET.fromstring(f"""<Session version="7003"><TempoMap superclocks-per-second="{SC}"><Tempos>
+          <Tempo npm="100" enpm="140" note-type="4" type="Ramped" sclock="0" quarters="0:0" bbt="1|1|0" omega="1.4762849584278155e-10"/>
+          <Tempo npm="140" enpm="140" note-type="4" type="Constant" sclock="2279182178" quarters="16:0" bbt="5|1|0" omega="0"/>
+          </Tempos><Meters><Meter note-value="4" divisions-per-bar="4" sclock="0" quarters="0:0" bbt="1|1|0"/></Meters></TempoMap></Session>""")
+        warn = []
+        clock, bpm, bpb, n = AR.tempo_map(root, SR, 7003, warn)
+        self.assertEqual((bpm, bpb, n, warn), (100.0, 4, 2, []))
+        self.assertAlmostEqual(clock.beats_to_s(16), 2279182178 / SC, places=7)     # where the engine put bar 5
+        self.assertAlmostEqual(clock.beats_to_s(20), 2279182178 / SC + 4 * 60 / 140, places=7)
+        self.assertAlmostEqual(clock.s_to_beats(clock.beats_to_s(5.5)), 5.5, places=9)
+        self.assertAlmostEqual(clock.qpm_at(4), 110.0)
+
+
 class ArdourWriteTest(unittest.TestCase):
     """`fix` writes a NEW .ardour: approved fades, gain, dips and mixer moves land, and nothing else does."""
 

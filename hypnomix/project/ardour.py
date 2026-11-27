@@ -25,7 +25,7 @@ An Ardour session is a folder; the .ardour file in it is XML. What is read, and 
 
 Times: Ardour 7+ writes "a<superclock>" (audio time) or "b<ticks>" (music time, 1920 per beat) and
 "<length>@<position>" for lengths; older sessions write samples. Both become seconds here; music time
-goes through the tempo map (constant tempos exactly; ramps as their start tempo, with a warning).
+goes through the tempo map (constant tempos and ramps exactly, as Ardour plays them: `Clock`).
 """
 import math
 import re
@@ -62,25 +62,41 @@ def session_version(root):
 
 
 class Clock:
-    """Ardour time strings -> seconds."""
+    """Ardour time strings -> seconds, through the session's tempo map: constant tempos, and ramps exactly as Ardour
+    plays them (the tempo changes linearly per quarter note from a point's tempo to its end tempo at the next point,
+    so the time into a ramp is a logarithm: t(b) = 60 / (T0 k) * ln(1 + k b), k = (T1 - T0) / (Q T0) per quarter,
+    which is Ardour's own omega times the superclocks per quarter note at the ramp's start)."""
 
     def __init__(self, sr, scps=282240000, tempos=None):
         self.sr, self.scps = sr, scps
-        self.tempos = tempos or [(0.0, 0.0, 120.0)]      # (quarters, seconds, quarters per minute)
+        # (quarters, seconds, quarters per minute, k: the ramp per quarter, 0 for a constant tempo)
+        self.tempos = [tuple(t) + (0.0,) * (4 - len(t)) for t in (tempos or [(0.0, 0.0, 120.0)])]
+
+    def _seg(self, i, key):
+        seg = self.tempos[0]
+        for t in self.tempos:
+            if t[i] <= key:
+                seg = t
+        return seg
 
     def beats_to_s(self, q):
-        q0, s0, qpm = self.tempos[0]
-        for t in self.tempos:
-            if t[0] <= q:
-                q0, s0, qpm = t
-        return s0 + (q - q0) * 60.0 / qpm
+        q0, s0, qpm, k = self._seg(0, q)
+        dq = q - q0
+        if k and 1 + k * dq > 0:
+            return s0 + 60.0 / (qpm * k) * math.log1p(k * dq)
+        return s0 + dq * 60.0 / qpm
 
     def s_to_beats(self, s):
-        q0, s0, qpm = self.tempos[0]
-        for t in self.tempos:
-            if t[1] <= s:
-                q0, s0, qpm = t
-        return q0 + (s - s0) * qpm / 60.0
+        q0, s0, qpm, k = self._seg(1, s)
+        ds = s - s0
+        if k:
+            return q0 + math.expm1(ds * qpm * k / 60.0) / k
+        return q0 + ds * qpm / 60.0
+
+    def qpm_at(self, q):
+        """The tempo (quarters per minute) at a position in quarters."""
+        q0, _, qpm, k = self._seg(0, q)
+        return qpm * (1 + k * (q - q0))
 
     def pos(self, v):
         """A position string -> seconds."""
@@ -121,18 +137,28 @@ def tempo_map(root, sr, version, warn):
         return Clock(sr), 120.0, 4, 0
     scps = int(num(tm.get("superclocks-per-second"), 282240000)) or 282240000
     if version >= 7000:
-        tempos = []
+        raw = []
         for t in tm.iter("Tempo"):
             nt = num(t.get("note-type"), 4.0) or 4.0
             qpm = num(t.get("npm"), 120.0) * 4.0 / nt
+            end = num(t.get("enpm"), 0.0) * 4.0 / nt
             q = t.get("quarters", "0:0")
             b, _, k = q.partition(":")
             quarters = num(b) + num(k) / TICKS
             secs = int(num(t.get("sclock"), 0)) / scps
-            tempos.append((quarters, secs, qpm if qpm > 0 else 120.0))
-            if t.get("type") == "Ramped" or abs(num(t.get("enpm"), 0) - num(t.get("npm"), 0)) > 1e-6:
-                warn.append(f"a tempo ramp at {secs:.1f} s is read as a steady {qpm:g} BPM")
-        tempos.sort()
+            ramped = t.get("type") == "Ramped" or (end > 0 and abs(end - qpm) > 1e-6)
+            raw.append((quarters, secs, qpm if qpm > 0 else 120.0, end if end > 0 else qpm, ramped, num(t.get("omega"), 0.0)))
+        raw.sort()
+        tempos = []
+        for i, (quarters, secs, qpm, end, ramped, omega) in enumerate(raw):
+            k = 0.0
+            if ramped and i + 1 < len(raw):
+                span = raw[i + 1][0] - quarters
+                if span > 0:
+                    k = (end - qpm) / (span * qpm)
+                elif omega:
+                    k = omega * scps * 60.0 / qpm            # Ardour's omega x superclocks per quarter at the start
+            tempos.append((quarters, secs, qpm, k))
         meters_ = list(tm.iter("Meter"))
     else:
         tempos = []
