@@ -108,6 +108,14 @@ def write_engine(eng, route_id, control, pts):
     return eng.call("automation_write", args)
 
 
+def steepest_of(reply):
+    """The steepest move an engine reply reports ({perSecond, jump, ...}), dB/s; None when it says nothing."""
+    st = (reply or {}).get("steepest")
+    if isinstance(st, dict):
+        st = math.inf if st.get("jump") else st.get("perSecond")
+    return float(st) if isinstance(st, (int, float)) else None
+
+
 # ---------------------------------------------------------------- the same, into a session file
 def facts_of(p, track):
     """automation_list's route facts, read from the loaded session: is it a bus, and what feeds it."""

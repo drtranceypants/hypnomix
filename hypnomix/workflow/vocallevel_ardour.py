@@ -91,7 +91,7 @@ def run(p, src, a, gains, vocals, melody):
                 pts = [(t, round(v + cur, 4)) for t, v in pts]
                 r = AA.write_engine(eng, ids[name], control, pts)
                 done.append(f"{what}: {_lines(segs)} line(s), {len(pts)} points, steepest "
-                            f"{float((r or {}).get('steepest') or RULES.steepest(pts)):.1f} dB/s")
+                            f"{AA.steepest_of(r) if AA.steepest_of(r) is not None else RULES.steepest(pts):.1f} dB/s")
             except (ValueError, AG.EngineError) as e:
                 refused.append(f"{what}: {e}")
         for r in refused:
