@@ -217,6 +217,26 @@ def check(args, facts=None, line=None):
     return out
 
 
+def check_clear(args, reply):
+    """Why an automation_clear must not be sent ([] when it may): clearing a stretch inside a level lane joins the points
+    either side with a straight line, a move no S-curve shapes, so a ranged clear is refused unless they are level
+    with each other (within 0.1 dB). Clearing a whole lane (no start or end) puts the control back to its own value:
+    not a move. reply: automation_get's reply for the control as it is now."""
+    a = args or {}
+    if kind(a.get("control")) not in LEVEL_KINDS or (a.get("start") is None and a.get("end") is None):
+        return []
+    pts = [p for p in points_of((reply or {}).get("pointList")) if p[1] is not None]
+    lo = a.get("start") if _num(a.get("start")) else -math.inf
+    hi = a.get("end") if _num(a.get("end")) else math.inf
+    before = [p for p in pts if p[0] < lo]
+    after = [p for p in pts if p[0] > hi]
+    if before and after and abs(after[0][1] - before[-1][1]) > ON_LINE_DB:
+        return [f"clearing {_fmt(max(lo, before[-1][0]))} to {_fmt(min(hi, after[0][0]))} would join {before[-1][1]:.1f} dB "
+                f"and {after[0][1]:.1f} dB with a straight move, not an S-curve: write the move instead (automation_write, "
+                f"curve s_curve) or clear the whole lane"]
+    return []
+
+
 def sentence(problems):
     """The problems as one reply: 'not written: ...'."""
     return "not written (HypnoMix's smooth-automation rules): " + "; ".join(problems) + "."

@@ -96,6 +96,15 @@ class Rules(unittest.TestCase):
         self.assertAlmostEqual(mid[1], -1.5, places=6)
         self.assertTrue(all(b[0] > a[0] for a, b in zip(pts, pts[1:])))
 
+    def test_a_ranged_clear_never_leaves_a_straight_move(self):
+        lane = {"pointList": [{"time": 0, "value": 0.0}, {"time": 5, "value": 0.0}, {"time": 6.2, "value": -2.5},
+                              {"time": 9, "value": -2.5}, {"time": 10.2, "value": 0.0}]}
+        bad = AR.check_clear({"control": "gain", "start": 5.5, "end": 8}, lane)      # 0 dB at 5 s to -2.5 dB at 9 s
+        self.assertTrue(bad and "straight move" in bad[0], bad)
+        self.assertEqual(AR.check_clear({"control": "gain", "start": 5.5, "end": 9.5}, lane), [])    # level either side
+        self.assertEqual(AR.check_clear({"control": "gain"}, lane), [])                              # the whole lane
+        self.assertEqual(AR.check_clear({"control": "pan_azimuth", "start": 5.5, "end": 9.5}, lane), [])
+
     def test_one_sentence(self):
         s = AR.sentence(["a", "b"])
         self.assertTrue(s.startswith("not written (HypnoMix's smooth-automation rules): a; b"))

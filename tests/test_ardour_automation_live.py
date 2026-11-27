@@ -135,6 +135,11 @@ class LiveEngine(unittest.TestCase):
         code, raw = eng.rpc(json.dumps(good).encode())
         self.assertNotIn("isError", json.loads(raw)["result"])
         self.assertGreater(len(self.get("Lead Vocal", "gain")["pointList"]), 8)
+        clear = {"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "automation_clear", "arguments": {
+            "track_id": self.ids["Harmony"], "control": "gain", "start": 5.0, "end": 7.0}}}
+        code, raw = eng.rpc(json.dumps(clear).encode())                    # it would leave a straight 2.5 dB move
+        self.assertIn("straight move", json.loads(raw)["result"]["content"][0]["text"])
+        self.assertAlmostEqual(min(p["value"] for p in self.get("Harmony", "gain")["pointList"]), -2.5, places=2)
         undo = self.eng.call("session_undo", {"count": 1})
         self.assertEqual(str(undo.get("nextRedo")).lower(), "write automation")   # one undo step, the name the view checks
         self.assertEqual(self.get("Lead Vocal", "gain")["pointList"], [])

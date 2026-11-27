@@ -742,6 +742,17 @@ def digest(tool, args):
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
 
 
+def automation_clear_problem(args, read):
+    """Why an automation_clear must not be proposed (a ranged clear inside a level lane that would leave a straight
+    move), or ''."""
+    from hypnomix.engineer import automation_rules as AR
+    a = args or {}
+    if AR.kind(a.get("control")) not in AR.LEVEL_KINDS or (a.get("start") is None and a.get("end") is None):
+        return ""
+    problems = AR.check_clear(a, read("automation_get", {"track_id": str(a.get("track_id") or ""), "control": str(a.get("control") or "")}))
+    return AR.sentence(problems) if problems else ""
+
+
 def automation_problem(args, read):
     """Why an automation_write must not be proposed (hypnomix's smooth-automation rules, read against the route's facts
     and its line as it is now through read(tool, args)), or ''. The app checks the same again as it is sent."""

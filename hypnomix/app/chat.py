@@ -731,6 +731,8 @@ def daw_tool(name, inp):
             bad = DA.export_problem(inp)             # a bounce never replaces a file that is there: the model picks a new name
         if not bad and t["engine"] == "automation_write":
             bad = DA.automation_problem(inp, _engine_read)   # the smooth-automation rules: no card for a write they refuse
+        if not bad and t["engine"] == "automation_clear":
+            bad = DA.automation_clear_problem(inp, _engine_read)   # nor for a clear that would leave a straight move
         if bad:                                      # a card that cannot work is not shown: the model is told why
             return "error (nothing was proposed): " + bad
         rows = DA.preview(t["engine"], inp, _engine_read)

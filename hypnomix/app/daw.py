@@ -352,10 +352,10 @@ def _events(payload):
 METER_SWITCH = ("ensure_rms", "ensureRms")
 
 
-def _auto_writes(payload):
-    """The automation_write calls in a JSON-RPC body (bytes, dict or list): [(id, arguments)]."""
+def _auto_writes(payload, tool="automation_write"):
+    """The automation_write (or automation_clear) calls in a JSON-RPC body (bytes, dict or list): [(id, arguments)]."""
     if isinstance(payload, (bytes, bytearray, str)):
-        if b"automation_write" not in (payload if isinstance(payload, (bytes, bytearray)) else payload.encode("utf-8", "replace")):
+        if tool.encode() not in (payload if isinstance(payload, (bytes, bytearray)) else payload.encode("utf-8", "replace")):
             return []
         try:
             payload = json.loads(payload)
@@ -364,7 +364,7 @@ def _auto_writes(payload):
     out = []
     for m in (payload if isinstance(payload, list) else [payload]):
         pr = m.get("params") if isinstance(m, dict) and m.get("method") == "tools/call" else None
-        if isinstance(pr, dict) and str(pr.get("name") or "").replace("/", "_") == "automation_write":
+        if isinstance(pr, dict) and str(pr.get("name") or "").replace("/", "_") == tool:
             out.append((m.get("id"), pr.get("arguments") if isinstance(pr.get("arguments"), dict) else {}))
     return out
 
@@ -1059,6 +1059,13 @@ class Engine:
             if str(a.get("mode") or "replace-range") != "replace-all":
                 line = AR.line_from(self._read_tool(url, "automation_get", {"track_id": rid, "control": ctl}), cur)
             problems = AR.check(a, facts, line)
+            if problems:
+                return AR.sentence(problems)
+        for _, a in _auto_writes(payload, "automation_clear"):
+            if AR.kind(a.get("control")) not in AR.LEVEL_KINDS or (a.get("start") is None and a.get("end") is None):
+                continue
+            now = self._read_tool(url, "automation_get", {"track_id": str(a.get("track_id") or ""), "control": str(a.get("control") or "")})
+            problems = AR.check_clear(a, now) if now is not None else ["the lane could not be read from the engine (automation_get)"]
             if problems:
                 return AR.sentence(problems)
         return ""
