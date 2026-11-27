@@ -3,7 +3,7 @@
 The lessons live in the package hypnomix/app/lessons (one module per chapter); this module is the engine: which steps a
 course and a DAW get, the progress file, the hands-on actions, the routes, the glossary and the wiki articles.
 Ableton Live and REAPER get the same depth (Live alone has its Session View; REAPER alone has the HypnoMix plug-ins'
-built-in guide), and HypnoMix Studio (beta) the short version (its engine add-on can be added on Apple-silicon Macs,
+built-in guide), and HypnoMix Studio the short version (its engine add-on can be added on Apple-silicon Macs,
 is not available on Intel Macs or Windows yet, and nothing written for Studio has been judged by ear).
 
 A step can carry a hands-on action ("Set the tempo", "Add a drum beat"). Every action that changes the person's
