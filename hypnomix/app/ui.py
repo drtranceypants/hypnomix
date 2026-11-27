@@ -88,7 +88,7 @@ details.byhand{background:var(--card);border:1px solid var(--line);border-radius
 </style></head><body>
 <a class="skiplink" href="#main">Skip to the page</a>
 <header><span class="brand">HypnoMix</span>
-<nav aria-label="Main"><button class="tab" data-daw hidden title="DAW: the HypnoMix Studio (Arrangement, Session, Mixer, Review) on the HypnoMix Studio engine">DAW</button><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
+<nav aria-label="Main"><button class="tab" data-daw hidden title="DAW: the HypnoMix Studio (Arrangement, Session, Mixer, Review) on the HypnoMix Studio engine">Studio</button><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
 <button class="tab" data-view="chat">Assistant</button><button class="tab" data-view="wiki">Wiki</button><button class="tab" data-view="teach" title="Teacher: make a song from scratch, step by step, in your DAW">Teacher</button><button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button><button class="tab" data-setup title="How you work with HypnoMix: AI provider, keys, your DAW, teacher mode">Setup</button></nav>
 <span class="live" id="live" role="status"></span></header>
 <div id="msg" role="alert"></div><div id="sr" class="sr" role="status" aria-live="polite"></div>
@@ -149,11 +149,21 @@ function restoreFocus(root, key) {
 function saveNav() { LS.set('hx.nav', {view: ['job', 'result'].includes(S.view) ? 'home' : S.view, dir: S.view === 'review' && S.review ? S.review.dir : ''}); }
 document.addEventListener('click', e => { const t = e.target.closest('button[data-view]'); if (t) go(t.dataset.view); });
 document.addEventListener('click', e => { if (e.target.closest('button.tab[data-daw]')) location.href = '/daw/'; });   // the nav tab only: Setup's DAW choices are buttons with data-daw too
-// The DAW tab is shown only when there is an engine to drive: `hypnomix app --daw`, an engine program found, or a window attached.
+// The Studio tab is shown only when there is an engine to drive: `hypnomix app --daw`, an engine program found, or a window attached.
 async function dawTab() {
   try { const st = await get('/api/daw/state'); const b = $('button.tab[data-daw]'); if (b) b.hidden = !(DAW_MODE || st.daw_mode || st.binary || st.mode || st.connected); } catch (e) { /* no answer: the tab stays as it was */ }
 }
 dawTab(); setInterval(dawTab, 15000);
+// A link to a tab (/#prefs, /#teach, /#setup …), from the Studio screen's bar or a bookmark, opens that tab.
+function fromHash() {
+  const v = location.hash.slice(1);
+  if (!v) return;
+  if (v === 'setup') { const b = document.querySelector('button.tab[data-setup]'); if (b) b.click(); }
+  else if (['home', 'prefs', 'chat', 'wiki', 'teach', 'live', 'tools'].includes(v)) go(v);
+  else return;
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* the address stays */ }
+}
+window.addEventListener('hashchange', fromHash);
 
 // The state is asked again every second or so. It says its `rev`; asked with it, an unchanged state costs a few bytes (no song rows again), and the asking slows down while nothing happens.
 let quiet = 0;                                              // asks in a row that found nothing new
@@ -476,10 +486,12 @@ window.addEventListener('resize', headerHeight);
 if (window.ResizeObserver) new ResizeObserver(headerHeight).observe(document.querySelector('header'));      // the disk and update notices make it taller later
 function start() {
   headerHeight();
+  if (['home', 'prefs', 'chat', 'wiki', 'teach', 'live', 'tools'].includes(location.hash.slice(1))) { fromHash(); return; }   // a link to a tab wins over where the person last was
   const nav = LS.get('hx.nav', {});
   if (nav.view === 'review' && typeof nav.dir === 'string' && nav.dir) { openReview(nav.dir).catch(() => go('home')); return; }
   if (['home', 'prefs', 'tools', 'chat', 'wiki', 'live', 'teach', 'store'].includes(nav.view)) S.view = nav.view;
   render();
+  fromHash();                                           // /#setup opens Setup on top of that tab
 }
 document.addEventListener('DOMContentLoaded', start);
 // Asked every second while the page is in front, and not at all in a tab nobody is looking at (one catch-up ask when it comes back).

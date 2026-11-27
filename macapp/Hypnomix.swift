@@ -70,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     // DAW mode, for a TEST build only: a kit placed in Contents/Resources/engine (macapp/build.sh --daw KIT) makes the app
     // open on the DAW view, and the server's supervisor (hypnomix/app/daw.py) finds Contents/Resources/engine/bin/hypnomix-engine
     // by itself. The installer no longer carries the engine: people add HypnoMix Studio from Setup (hypnomix/app/engine_addon.py),
-    // and the DAW tab then appears like any other. This switch is found for one more version, and nothing depends on it.
+    // and the Studio tab then appears like any other. This switch is found for one more version, and nothing depends on it.
     // HYPNOMIX_DAW=1 only opens the DAW view first (a developer's switch).
     var dawMode: Bool {
         let kit = Bundle.main.bundlePath + "/Contents/Resources/engine/bin/hypnomix-engine"

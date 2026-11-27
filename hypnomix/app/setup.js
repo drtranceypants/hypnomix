@@ -191,7 +191,7 @@ function dawStep() {
     ${teach ? '<p>The Teacher tab shows you where to click in HypnoMix Studio for every step.</p>' : ''}<p class="small">See Wiki → HypnoMix Studio.</p>`;
   if (daw === 'hypnomix') return `<h2>HypnoMix Studio</h2><p class="sub">${esc(U.engine.what)}</p>
     ${engineAct(true)}${msgHtml()}
-    <p class="small">${esc(U.engine.licence)} Remove it any time here (Setup → Extras). The DAW tab appears once it is added.</p>`;
+    <p class="small">${esc(U.engine.licence)} Remove it any time here (Setup → Extras). The Studio tab appears once it is added.</p>`;
   if (daw === 'other') return `<h2>Your DAW</h2><p class="sub">Nothing to install.</p>
     <p>Export every track as a WAV from the same start point (most DAWs call it "export stems" or "bounce tracks"), put them in one folder, and scan that folder on the Songs tab. Repaired audio comes back as new files.</p><p class="small">See Wiki → Any other DAW.</p>`;
   return live();
@@ -250,7 +250,7 @@ async function refreshEngine() {
   try { U.engine = await get('/api/setup/engine'); } catch (_) { return; }
   if (step === EXTRAS || (step === DAWSTEP && daw === 'hypnomix')) draw();
   clearTimeout(engPoll); engPoll = U.engine.busy ? setTimeout(refreshEngine, 1000) : null;
-  if (!U.engine.busy && typeof dawTab === 'function') dawTab();      // the DAW tab appears (or goes) with the engine, without waiting for the page's own look
+  if (!U.engine.busy && typeof dawTab === 'function') dawTab();      // the Studio tab appears (or goes) with the engine, without waiting for the page's own look
 }
 
 async function refreshExtras() {

@@ -26,6 +26,20 @@
 <body>
 <div class="app" id="app" data-view="arrange">
 
+  <!-- ───────────── the app's own bar: the same tabs as every other screen of HypnoMix, always on top ───────────── -->
+  <nav class="appbar" id="appNav" aria-label="HypnoMix" data-info="The HypnoMix app's own tabs. They are here on every screen; leaving asks first if the session has unsaved changes">
+    <span class="appbar-brand">HypnoMix</span>
+    <a class="on" href="/daw/" aria-current="page" data-info="Studio: this screen (Arrangement, Session, Mixer, Review) on the HypnoMix Studio engine">Studio</a>
+    <a href="/#home" data-info="Songs: scan a song, review each finding, apply what you approve">Songs</a>
+    <a href="/#prefs" data-info="Preferences: how you like to work, asked once">Preferences</a>
+    <a href="/#chat" data-info="The Assistant tab: its settings (provider, key, model) and the whole conversation">Assistant</a>
+    <a href="/#wiki" data-info="Lessons, how-to guides, every command and the FAQ">Wiki</a>
+    <a href="/#teach" data-info="Teacher: make a song from scratch, step by step">Teacher</a>
+    <a href="/#live" data-info="Live: measure every track while it plays">Live</a>
+    <a href="/#tools" data-info="Tools: every other HypnoMix tool, each with a form">Tools</a>
+    <a href="/#setup" data-info="Setup: how you work with HypnoMix, your DAW, and adding or removing HypnoMix Studio">Setup</a>
+  </nav>
+
   <!-- ───────────── top bar ───────────── -->
   <header class="topbar">
     <div class="brand" data-info="HypnoMix Studio: the DAW view of the HypnoMix app">
@@ -80,11 +94,6 @@
       </div>
     </div>
 
-    <nav class="appnav seg" id="appNav" data-info="The rest of the HypnoMix app: songs and their reviews, the Assistant tab, the Wiki">
-      <a href="/#home" data-info="Songs: scan a song, review each finding, apply what you approve">Songs</a>
-      <a href="/#chat" data-info="The Assistant tab: its settings (provider, key, model) and the whole conversation">Assistant</a>
-      <a href="/#wiki" data-info="Lessons, how-to guides, every command and the FAQ">Wiki</a>
-    </nav>
 
     <div class="top-right">
       <div class="cpu" data-info="Engine DSP load (simulated on the demo song)"><span>DSP</span><div class="cpu-bar"><i id="cpuBar"></i></div></div>

@@ -2572,7 +2572,7 @@ def main():
     DC.start_in_background(lambda: JOB["status"] == "running")   # hourly look; cleans weekly or when the disk is nearly full
     import atexit, signal
     from hypnomix.app import daw as DW
-    atexit.register(DW.ENGINE.shutdown)                          # quitting the app stops an engine it started (also one started later, from the DAW tab)
+    atexit.register(DW.ENGINE.shutdown)                          # quitting the app stops an engine it started (also one started later, from the Studio tab)
     for sig in ("SIGTERM", "SIGHUP"):                            # (the Mac app quits its server with SIGTERM)
         if hasattr(signal, sig):
             signal.signal(getattr(signal, sig), lambda *_: sys.exit(0))

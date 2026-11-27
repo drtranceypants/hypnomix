@@ -483,7 +483,7 @@ def install(path=None):
         raise ValueError("only the installed app updates itself; in a source checkout run: git pull && uv pip install -e .")
     if unsaved():
         raise Unsaved("Your DAW session has changes that are not saved, and installing the update closes it. Save it first "
-                      "(Save in the DAW tab, or ⌘S there), then install the update.")
+                      "(Save in the Studio tab, or ⌘S there), then install the update.")
     f = Path(path or JOB.get("file") or "")
     if not f.is_file():
         raise ValueError("download the update first")

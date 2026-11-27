@@ -1391,7 +1391,7 @@ class Proxy(unittest.TestCase):
         self.assertEqual(call(self.base, "/daw/%2e%2e/server.py")[0], 404)
         self.assertEqual(call(self.base, "/daw/")[0], 200)
         code, page, _ = call(self.base, "/")
-        self.assertIn(b"data-daw", page)                              # the DAW tab next to Songs, Assistant, Wiki
+        self.assertIn(b"data-daw", page)                              # the Studio tab next to Songs, Assistant, Wiki
         self.assertIn(b"const DAW_MODE = false", page)
         from hypnomix.app import setup as SU
         with mock.patch.dict(DW.STATE, {"daw": True}), mock.patch.object(SU, "is_done", lambda: True):

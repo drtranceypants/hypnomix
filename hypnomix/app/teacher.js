@@ -69,7 +69,7 @@ async function teachView() {
 }
 
 // The card that opens the guided tours inside the HypnoMix Studio (hypnomix/app/daw/js/tour.js). Only where the DAW view is there at all:
-// the same test as the DAW tab's (a DAW-mode app, or an engine found, attached or connected).
+// the same test as the Studio tab's (a DAW-mode app, or an engine found, attached or connected).
 async function dawTourCard() {
   if (T.dawOk === undefined) {
     try { const d = await get('/api/daw/state'); T.dawOk = !!(d.daw_mode || d.binary || d.mode || d.connected); } catch (e) { T.dawOk = false; }

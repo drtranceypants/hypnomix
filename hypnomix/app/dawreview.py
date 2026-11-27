@@ -70,7 +70,7 @@ def open_session(engine=None):
         pass
     if engine.session:
         return Path(engine.session), False
-    raise RuntimeError("the engine has no saved session open (press Save in the DAW tab once, then scan)")
+    raise RuntimeError("the engine has no saved session open (press Save in the Studio tab once, then scan)")
 
 
 def scan_folder(srv, session):

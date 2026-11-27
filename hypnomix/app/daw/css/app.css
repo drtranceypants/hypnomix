@@ -13,6 +13,7 @@
   --r1: 2px; --r2: 4px; --r3: 6px;
   --row: 20px;          /* standard control height */
   --top-h: 40px;
+  --app-h: 30px;                 /* the HypnoMix app's own bar, above the Studio's */
   --status-h: 22px;
   --browser-w: 212px;
   --dock-w: 368px;        /* the Assistant column (full height on the right) */
@@ -112,9 +113,10 @@ button { cursor: default; }
 .app {
   height: 100vh;
   display: grid;
-  grid-template-rows: var(--top-h) minmax(0, 1fr) var(--bottom-h) var(--status-h);
+  grid-template-rows: var(--app-h) var(--top-h) minmax(0, 1fr) var(--bottom-h) var(--status-h);
   grid-template-columns: var(--browser-w) minmax(0, 1fr) var(--dock-w);
   grid-template-areas:
+    "appbar appbar appbar"
     "top top top"
     "browser main dock"
     "browser dev dock"
@@ -122,7 +124,7 @@ button { cursor: default; }
   gap: 1px;
   background: var(--line);
 }
-.app.dock-short { grid-template-areas: "top top top" "browser main main" "browser dev dock" "status status status"; }
+.app.dock-short { grid-template-areas: "appbar appbar appbar" "top top top" "browser main main" "browser dev dock" "status status status"; }
 .app.dock-min { --dock-w: 0px; }
 .app.dock-min .assistant { display: none; }
 .app.browser-min { --browser-w: 0px; }
@@ -604,14 +606,18 @@ button { cursor: default; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
 /* narrow windows: the Assistant moves beside the device chain so the main view keeps its width */
 @media (max-width: 1000px) {
-  .app, .app.dock-short { grid-template-areas: "top top top" "browser main main" "browser dev dock" "status status status"; }
+  .app, .app.dock-short { grid-template-areas: "appbar appbar appbar" "top top top" "browser main main" "browser dev dock" "status status status"; }
   :root { --dock-w: 300px; }
   .views.seg button { padding: 0 var(--s4); }
 }
 
 /* the hypnomix app around the DAW view: links to its other tabs, and the engine panel */
-.appnav a { display: inline-flex; align-items: center; height: 20px; padding: 0 var(--s4); color: var(--tx2); text-decoration: none; border-radius: var(--r2); font-size: var(--fs-xs); }
-.appnav a:hover { color: var(--tx0); background: var(--bg3); }
+.appbar { grid-area: appbar; display: flex; align-items: center; gap: 2px; padding: 0 var(--s5); background: var(--bg0); min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; white-space: nowrap; }
+.appbar::-webkit-scrollbar { display: none; }
+.appbar-brand { font-weight: 700; letter-spacing: .14em; text-transform: uppercase; font-size: var(--fs-xs); color: var(--tx0); margin-right: var(--s5); }
+.appbar a { display: inline-flex; align-items: center; height: 22px; padding: 0 var(--s4); color: var(--tx2); text-decoration: none; border-radius: var(--r2); font-size: var(--fs-xs); border: 1px solid transparent; }
+.appbar a:hover { color: var(--tx0); background: var(--bg3); }
+.appbar a.on { color: var(--tx0); background: var(--bg1); border-color: var(--line); font-weight: 600; }
 .connect-pop .eng { font-family: var(--mono); font-size: var(--fs-xs); color: var(--tx1); white-space: pre-wrap; max-height: 120px; overflow: auto; background: var(--bg0); border: 1px solid var(--line); border-radius: var(--r2); padding: var(--s3); margin: 0; }
 .connect-pop .row.left { justify-content: flex-start; flex-wrap: wrap; }
 .card.ask pre { margin: 0; padding: 4px 8px; white-space: pre-wrap; font-family: var(--mono); font-size: var(--fs-xs); color: var(--tx1); }

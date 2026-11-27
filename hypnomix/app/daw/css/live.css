@@ -65,12 +65,13 @@
 .demo-badge { flex: none; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--warn, var(--acc)); border: 1px solid currentColor; border-radius: 10px; padding: 1px var(--s4); white-space: nowrap; }
 .demo-badge[hidden] { display: none; }
 .field.tempo.locked { cursor: default; }
-.noeng { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; top: var(--top-h); background: var(--bg0); display: grid; place-items: center; padding: var(--s7) 16px; overflow: auto; }
+.noeng { position: fixed; z-index: 30; left: 0; right: 0; bottom: 0; top: calc(var(--app-h) + var(--top-h) + 1px); background: var(--bg0); display: grid; place-items: center; padding: var(--s7) 16px; overflow: auto; }
 .noeng[hidden] { display: none; }
 .noeng-box { max-width: 560px; display: flex; flex-direction: column; gap: var(--s5); }
 .noeng-box h2 { margin: 0; font-family: var(--serif); font-weight: 600; font-size: var(--fs-l); color: var(--tx0); }
 .noeng-box p { margin: 0; color: var(--tx2); line-height: 1.55; }
 .noeng-box .row { display: flex; gap: var(--s3); flex-wrap: wrap; }
+.noeng-box .row input[type=text] { flex: 1 1 100%; min-width: 0; font: inherit; padding: 6px 10px; color: var(--tx0); background: var(--bg1); border: 1px solid var(--line); border-radius: 6px; }
 .noeng-box pre.eng { margin: 0; white-space: pre-wrap; color: var(--tx3); font: 500 var(--fs-xs)/1.5 var(--mono); }
 .noeng-box pre.eng:empty { display: none; }
 .hx-confirm .confirm-body { display: flex; flex-direction: column; gap: var(--s3); }

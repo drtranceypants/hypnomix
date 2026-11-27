@@ -1067,7 +1067,7 @@ def static(rel):
 def available(probe=False):
     """Is DAW mode usable here: the app was started with --daw, or an engine program is found, or one is running or
     attached? (With probe, a HypnoMix Studio window answering on the attach address counts too: a short look.) An app
-    that has not added HypnoMix Studio (Setup → Extras) and has no engine says no, so its page shows no DAW tab."""
+    that has not added HypnoMix Studio (Setup → Extras) and has no engine says no, so its page shows no Studio tab."""
     if STATE["daw"] or ENGINE.mode in ("engine", "attached") or find_engine() is not None:
         return True
     return bool(probe and is_engine(ENGINE.attach_url, timeout=0.4))

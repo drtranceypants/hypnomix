@@ -743,7 +743,7 @@ print(JSON.stringify(out));"""
             self.assertIn(word, swift)
 
     def test_the_review_message_points_at_the_save_button(self):
-        self.assertIn("press Save in the DAW tab once", read("hypnomix/app/dawreview.py"))
+        self.assertIn("press Save in the Studio tab once", read("hypnomix/app/dawreview.py"))
 
 
 class Parse(unittest.TestCase):

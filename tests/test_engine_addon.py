@@ -184,7 +184,7 @@ class Adding(Base):
         self.assertEqual(s["program"], str(prog))
         self.assertEqual(self.residue(), [])                                     # no half-made folder, no archive left
         self.assertEqual(json.loads((self.root / "1.0.0" / "ADDON.json").read_text(encoding="utf-8"))["sha256"], hashlib.sha256(self.good_bytes).hexdigest())
-        self.assertEqual(DW.find_engine(), prog)                                 # the DAW tab's lookup
+        self.assertEqual(DW.find_engine(), prog)                                 # the Studio tab's lookup
         self.assertTrue(DW.available())
         self.assertEqual(self.server.seen, ["/engine.tar.gz"])
         self.assertEqual(EA.JOB["status"], "done")

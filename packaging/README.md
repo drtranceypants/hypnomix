@@ -73,7 +73,7 @@ What is different when the engine is there (everything else is the same app: its
 the updater, the Assistant):
 
 - The supervisor (`hypnomix/app/daw.py`) finds `engine/<version>/bin/hypnomix-engine` in the HypnoMix folder; nothing needs
-  configuring. The DAW tab appears when an engine is found. It reopens the session that was open last time (`daw.json`
+  configuring. The Studio tab appears when an engine is found. It reopens the session that was open last time (`daw.json`
   "last"); the first time there is none and the view says to make or open one.
 - The window (`macapp/Hypnomix.swift`) always has a **File** menu: **New Session…** (⌘N), **Open Session…** (⌘O) and
   **Import Project…**. Its items are dimmed until HypnoMix Studio has been added. A test build made with
@@ -88,7 +88,7 @@ the updater, the Assistant):
   it back by itself, and stops with a clear message only if the device refuses or the two programs keep changing it.
 - **Unsaved work.** The server tracks whether the open session has changes nobody saved (`dirty` in
   `GET /api/daw/state`, any changing engine call from the page or the Assistant since the last save). **Install and
-  restart** answers 409 and installs nothing while that is so (save in the DAW tab first). **Quit** (⌘Q, closing the
+  restart** answers 409 and installs nothing while that is so (save in the Studio tab first). **Quit** (⌘Q, closing the
   window) asks the server, and if it is dirty offers Save / Don't Save / Cancel (Save is `POST /api/daw/save`; if it
   fails, or if the server does not answer the question at all, the quit is not done unless you say to quit anyway), then stops the server and **waits for it to exit**
   (it stops the engine first, up to about 15 s) before the app quits. The update helper waits for the app, the server

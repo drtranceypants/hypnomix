@@ -226,14 +226,35 @@
   /* the no-engine screen: what is missing, and the ways on (look again, start the engine, the demo song by choice) */
   let noEngSig = '';
   function renderNoEngine(st) {
-    const sig = st ? [!!st.binary, st.state, st.error, !!st.connected, JSON.stringify(st.addon || {})].join('|') : 'looking';
+    const sig = st ? [!!st.binary, st.state, st.error, !!st.connected, !!(st.session || st.new), JSON.stringify(st.addon || {})].join('|') : 'looking';
     if (sig === noEngSig) return;
     noEngSig = sig;
     const title = HX.$('#noEngineTitle'), body = HX.$('#noEngineBody'), err = HX.$('#noEngineErr'), btns = HX.$('#noEngineBtns');
     if (!st) { title.textContent = 'Looking for the engine…'; body.textContent = ''; err.textContent = ''; btns.replaceChildren(); return; }
     const demo = mkBtn('Practice with the demo song', '', () => HX.enterDemo());
     const again = mkBtn('Look again', '', async () => { noEngSig = ''; await watchEngine(); HX.toast('Looked again'); });
-    if (st.binary) {
+    if (st.binary && !(st.session || st.new)) {
+      /* the engine starts with a session, so with none known "Start" can only fail: offer the two ways to get one */
+      title.textContent = 'No session is open yet';
+      body.textContent = 'HypnoMix Studio starts its engine when a session is open. Make a new one, or open one you already have: type where it goes (or where it is) below. The demo song is made up: it plays no sound, saves nothing and sends nothing.';
+      const where = h('input', { type: 'text', id: 'noEngWhere', value: '~/Music/HypnoMix/My Song', spellcheck: 'false', autocomplete: 'off',
+        'aria-label': 'Folder and name of the new session, or the path of a session to open' });
+      const go = async (isNew) => {
+        const v = where.value.trim();
+        if (!v) { HX.toast('Type a folder and a name first, for example ~/Music/HypnoMix/My Song', 6000); where.focus(); return; }
+        setConn('busy', isNew ? 'Making…' : 'Opening…');
+        try {
+          const now = await HX.api.post(isNew ? '/api/daw/new' : '/api/daw/open', isNew ? HX.splitNewPath(v) : { path: v });
+          if (!now.connected) throw new Error(now.error || ('the engine is ' + now.state));
+          HX.engineLost = false; HX.userMock = false;
+          await connectNow();
+          watchEngine.pid = now.pid;
+          if (now.notice) HX.toast(now.notice, 9000);
+        } catch (e) { setConn(null, idleLabel()); HX.toast((isNew ? 'Could not make the session: ' : 'Could not open it: ') + e.message, 8000); }
+      };
+      where.addEventListener('keydown', e => { if (e.key === 'Enter') go(true); });
+      btns.replaceChildren(where, mkBtn('New session', 'primary', () => go(true)), mkBtn('Open session', '', () => go(false)), again, demo);
+    } else if (st.binary) {
       title.textContent = 'The engine is not running';
       body.textContent = 'The DAW view shows and edits what the HypnoMix Studio engine has open: it plays, records and saves nothing by itself. Start the engine, then open or make a session. The demo song is made up: it plays no sound, saves nothing and sends nothing.';
       btns.replaceChildren(mkBtn('Start the engine', 'primary', () => startAgain()), again, demo);
@@ -249,7 +270,7 @@
       }) : null;
       btns.replaceChildren(...[add, again, demo].filter(Boolean));
     }
-    err.textContent = st.error || '';
+    err.textContent = st.binary && !(st.session || st.new) ? '' : (st.error || '');   /* "no session yet" is what the screen already says */
   }
   /* the demo song, by explicit choice (never in place of a connected session) */
   HX.enterDemo = function () {

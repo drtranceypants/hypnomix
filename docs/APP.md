@@ -113,11 +113,11 @@ Arrangement, Session clips, Mixer and Review, the browser on the left, one devic
 Assistant in its own column on the right. **Songs**, **Assistant** and **Wiki** at the top go back to the rest of the
 app. Press `?` in it for every shortcut.
 
-**When the DAW tab is there.** There is one app and one installer for everyone, and DAW mode's engine is not inside
+**When the Studio tab is there.** There is one app and one installer for everyone, and DAW mode's engine is not inside
 them: HypnoMix Studio, HypnoMix's own DAW, is an **add-on** that is added from
 **Setup** on a click (below). The first engine, **0.1.0**, is published for **Apple-silicon Macs only**. On an Intel Mac,
 on Windows and on Linux it is **not available yet**: the manifest shipped in the app names no archive for them, so there is
-nothing to add, the app downloads nothing, and with no engine found the app shows no DAW tab. The tab appears when an
+nothing to add, the app downloads nothing, and with no engine found the app shows no Studio tab. The tab appears when an
 engine program is found (the add-on once it is added, or one of the lookups below), when the app is attached to a
 running HypnoMix Studio window (see the table below), or when the app was started with `--daw` (`--session` alone turns DAW
 mode on too). The add-on's fingerprint is checked when the engine is added, not again when it is started: the app starts the
