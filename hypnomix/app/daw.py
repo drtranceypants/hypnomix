@@ -1047,11 +1047,12 @@ class Engine:
 
     def automation_refusal(self, payload, url):
         """Why a body's automation_write must not reach the engine (hypnomix's smooth-automation rules,
-        engineer/automation_rules.py), or "". Level controls only: the route's facts (is it a bus, what it carries)
-        and the line as it is now are read from the engine first."""
+        engineer/automation_rules.py), or "". Level controls and plug-in parameters (a plug-in only to the mixed-bus
+        rule): the route's facts (is it a bus, what it carries) are read from the engine first, and for a level control
+        the line as it is now. A clear on a plug-in lane is never refused (it removes movement)."""
         from hypnomix.engineer import automation_rules as AR
         for _, a in _auto_writes(payload):
-            if AR.kind(a.get("control")) not in AR.LEVEL_KINDS:
+            if not AR.checked(a.get("control")):
                 continue
             rid, ctl = str(a.get("track_id") or ""), str(a.get("control") or "")
             facts = self._read_tool(url, "automation_list", {"track_id": rid})
@@ -1059,7 +1060,7 @@ class Engine:
                 return AR.sentence([f"what route {rid} carries could not be read from the engine (automation_list)"])
             cur = next((c.get("current") for c in facts.get("controls") or [] if c.get("control") == ctl), None)
             line = None
-            if str(a.get("mode") or "replace-range") != "replace-all":
+            if AR.kind(ctl) in AR.LEVEL_KINDS and str(a.get("mode") or "replace-range") != "replace-all":
                 line = AR.line_from(self._read_tool(url, "automation_get", {"track_id": rid, "control": ctl}), cur)
             problems = AR.check(a, facts, line, read=lambda tool, args: self._read_tool(url, tool, args))
             if problems:
@@ -1220,6 +1221,23 @@ def _unsaved(body):
     return 409, {"error": "unsaved", "dirty": True}
 
 
+def carries(track_id):
+    """POST /api/daw/carries {track_id}: what the route carries that is not a vocal (automation_rules.non_vocal, a bus
+    that feeds it read in turn), so the page's automation lanes can refuse a level or plug-in write on a mixed bus
+    before sending it, in the same words: {trackName, others, level, plugin} (the two refusals, "" when allowed). The
+    engine connection checks every write again as it is sent; this only reads."""
+    from hypnomix.engineer import automation_rules as AR
+    url = ENGINE.url()
+    if not url:
+        return 503, {"error": "the engine is not running"}
+    facts = ENGINE._read_tool(url, "automation_list", {"track_id": str(track_id)})
+    if facts is None:
+        return 404, {"error": f"what route {track_id} carries could not be read from the engine (automation_list)"}
+    others = AR.non_vocal(facts, read=lambda tool, args: ENGINE._read_tool(url, tool, args))
+    say = lambda k: AR.sentence([AR.mixed_bus(facts, others, k)]) if others else ""
+    return 200, {"trackName": facts.get("trackName"), "others": others, "level": say("gain"), "plugin": say("plugin")}
+
+
 def handle_post(path, body):
     """The POST routes (the server has checked the page's token); each field is checked before the engine is touched."""
     if path == "/api/daw/start":
@@ -1242,6 +1260,8 @@ def handle_post(path, body):
     if path == "/api/daw/import":                     # another DAW's project -> a new session (a job; the page polls)
         return 200, import_start(_text(body, "path"), _text(body, "out", required=False),
                                  allow_outside=body.get("allow_outside") is True)
+    if path == "/api/daw/carries":                    # what a route carries that is not a vocal: the page's lanes refuse early
+        return carries(_text(body, "track_id"))
     if path == "/api/daw/meta":                       # time signature + track colours from the saved session file
         from hypnomix.app import daw_meta
         s = ENGINE.session or (str(Path(ENGINE.new[0]) / ENGINE.new[1]) if ENGINE.new else None)

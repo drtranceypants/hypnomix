@@ -755,17 +755,20 @@ def automation_clear_problem(args, read):
 
 def automation_problem(args, read):
     """Why an automation_write must not be proposed (hypnomix's smooth-automation rules, read against the route's facts
-    and its line as it is now through read(tool, args)), or ''. The app checks the same again as it is sent."""
+    and, for a level control, its line as it is now through read(tool, args)), or ''. A plug-in parameter is held to
+    the mixed-bus rule only. The app checks the same again as it is sent."""
     from hypnomix.engineer import automation_rules as AR
     a = args or {}
-    if AR.kind(a.get("control")) not in AR.LEVEL_KINDS:
+    if not AR.checked(a.get("control")):
         return ""
     rid, ctl = str(a.get("track_id") or ""), str(a.get("control") or "")
     facts = read("automation_list", {"track_id": rid})
     if facts is None:
         return f"route {rid}: what it carries could not be read (automation_list); read it first"
     cur = next((c.get("current") for c in facts.get("controls") or [] if c.get("control") == ctl), None)
-    line = None if a.get("mode") == "replace-all" else AR.line_from(read("automation_get", {"track_id": rid, "control": ctl}), cur)
+    line = None
+    if AR.kind(ctl) in AR.LEVEL_KINDS and a.get("mode") != "replace-all":
+        line = AR.line_from(read("automation_get", {"track_id": rid, "control": ctl}), cur)
     problems = AR.check(a, facts, line, read=read)
     return AR.sentence(problems) if problems else ""
 

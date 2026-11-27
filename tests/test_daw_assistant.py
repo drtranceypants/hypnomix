@@ -2010,6 +2010,19 @@ class AutomationAndTempo(unittest.TestCase):
         self.assertIn("line there is -2.0 dB", DA.automation_problem(off, read))
         self.assertEqual(DA.automation_problem(dict(ok, control="pan_azimuth", curve="linear"), read), "")   # not a level
 
+    def test_no_card_for_plug_in_automation_on_a_bus_that_carries_non_vocals(self):
+        read = _read_of(AutoEngine())
+        sweep = {"track_id": "301", "control": "plugin:77:4", "curve": "linear",
+                 "points": [{"time": 0, "value": 16000.0}, {"time": 8, "value": 400.0}]}
+        bad = DA.automation_problem(sweep, read)
+        self.assertIn("Band carries Drums, not only vocals: its plug-in automation is never written", bad)
+        self.assertNotIn("S-curve", bad)                                   # the level rules are not applied to Hz
+        self.assertEqual(DA.automation_problem(dict(sweep, track_id="300"), read), "")     # a bus of vocals only
+        self.assertEqual(DA.automation_problem(dict(sweep, track_id="252"), read), "")     # a track
+        self.assertEqual(DA.automation_clear_problem({"track_id": "301", "control": "plugin:77:4", "start": 1, "end": 2}, read), "")
+        import inspect
+        self.assertIn("A plug-in parameter (in its own units) is never automated on such a", inspect.getsource(CH._automation_note))
+
     def test_a_card_for_a_write_shows_points_moves_and_steepness(self):
         e = AutoEngine()
         a = {"track_id": "302", "control": "gain", "curve": "s_curve",
@@ -2049,6 +2062,37 @@ class AutomationAndTempo(unittest.TestCase):
             code, raw = eng.rpc(json.dumps(good).encode())
         self.assertNotIn("isError", json.loads(raw)["result"])
         self.assertTrue([p for p in sent if "automation_write" in (p.decode() if isinstance(p, bytes) else json.dumps(p))])
+        sent.clear()                                                       # a plug-in sweep on the mixed bus: never sent
+        sweep = json.loads(json.dumps(bad))
+        sweep["params"]["arguments"].update(control="plugin:77:4", curve="linear", points=[[0, 16000.0], [8, 400.0]])
+        with mock.patch.object(DW, "post_json", post):
+            code, raw = eng.rpc(json.dumps(sweep).encode())
+        self.assertIn("its plug-in automation is never written", json.loads(raw)["result"]["content"][0]["text"])
+        self.assertFalse([p for p in sent if "automation_write" in (p.decode() if isinstance(p, bytes) else json.dumps(p))])
+        clear = {"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "automation_clear", "arguments":
+                 {"track_id": "301", "control": "plugin:77:4", "start": 1, "end": 2}}}
+        with mock.patch.object(DW, "post_json", post):                     # clearing it removes movement: allowed
+            eng.rpc(json.dumps(clear).encode())
+        self.assertTrue([p for p in sent if "automation_clear" in (p.decode() if isinstance(p, bytes) else json.dumps(p))])
+
+    def test_the_page_asks_what_a_bus_carries(self):
+        e = AutoEngine()
+        eng = DW.Engine()
+        eng.mode, eng.port, eng.state = "engine", 1, "running"
+        def post(url, payload, timeout=None):
+            body = payload if isinstance(payload, dict) else json.loads(payload)
+            pr = body["params"]
+            return 200, json.dumps({"jsonrpc": "2.0", "id": body.get("id"), "result": e._call(pr["name"], pr["arguments"])}).encode()
+        with mock.patch.object(DW, "post_json", post), mock.patch.object(DW, "ENGINE", eng):
+            code, r = DW.handle_post("/api/daw/carries", {"track_id": "301"})
+            self.assertEqual((code, r["others"]), (200, ["Drums"]))
+            self.assertIn("its plug-in automation is never written", r["plugin"])
+            self.assertIn("its fader is never automated", r["level"])
+            code, r = DW.handle_post("/api/daw/carries", {"track_id": "300"})
+            self.assertEqual((code, r["others"], r["plugin"], r["level"]), (200, [], "", ""))
+            self.assertEqual(DW.handle_post("/api/daw/carries", {"track_id": "999"})[0], 404)
+        with mock.patch.object(DW, "ENGINE", DW.Engine()):
+            self.assertEqual(DW.handle_post("/api/daw/carries", {"track_id": "301"})[0], 503)
 
 
 if __name__ == "__main__":

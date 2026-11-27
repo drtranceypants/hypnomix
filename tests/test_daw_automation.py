@@ -186,6 +186,35 @@ print(JSON.stringify({ sel1: sel1, sel0: sel0, down: down, add: add, st: [st.par
         self.assertEqual(r["st"], ["autoState", "manual"])
 
 
+class BusRule(unittest.TestCase):
+    def test_a_lane_on_a_mixed_bus_refuses_level_and_plug_in_writes_before_sending(self):
+        r = run_js(self, SETUP + r"""
+d.carries = { others: ['Drums'], level: 'not written: Lead Vocal carries Drums (fader)', plugin: 'not written: Lead Vocal carries Drums (plug-in)' };
+d.lanes['plugin:12:4'] = { points: [{ t: 2, v: 9000 }], state: 'manual' };
+d.controls.push({ control: 'plugin:12:4', name: 'Cut-off', min: 20, max: 20000, current: 9000 });
+var n = commits.length;
+A.add(tr, 'plugin:12:4', 5);
+var plug = commits.length === n ? toasts[toasts.length - 1] : 'sent';
+A.add(tr, 'gain', 12);
+var lev = commits.length === n ? toasts[toasts.length - 1] : 'sent';
+d.lanes.pan_azimuth = { points: [], state: 'manual' };
+A.add(tr, 'pan_azimuth', 5);
+var pan = commits.length > n ? 'sent' : toasts[toasts.length - 1];
+var m = commits.length;
+A.remove(tr, 'plugin:12:4', 0);
+var clear = commits.length > m ? commits[commits.length - 1].op.after.call.tool : toasts[toasts.length - 1];
+var why = A.rules.busRefusal('t1', 'mute');
+d.carries = null;
+var free = A.rules.busRefusal('t1', 'plugin:12:4');
+print(JSON.stringify({ plug: plug, lev: lev, pan: pan, clear: clear, why: why, free: free }));
+""")
+        self.assertIn("(plug-in)", r["plug"])
+        self.assertIn("(fader)", r["lev"])
+        self.assertEqual(r["pan"], "sent")                                 # pan is not held to the bus rule
+        self.assertEqual(r["clear"], "automation_clear")                    # a clear removes movement: allowed
+        self.assertEqual((r["why"], r["free"]), ("", ""))                   # not known: the app checks as it is sent
+
+
 class Tempo(unittest.TestCase):
     def test_the_tempo_track_shows_ramps(self):
         r = run_js(self, r"""
@@ -232,6 +261,24 @@ class Proxy(unittest.TestCase):
         from hypnomix.app import daw as D
         self.assertEqual(len(D._auto_writes(escaped.encode())), 1)
         self.assertEqual(self.refusal("automation_get"), "")
+
+    def test_a_plug_in_write_on_a_mixed_bus_is_refused_and_its_clear_is_not(self):
+        why = self.refusal("automation_write", control="plugin:12:4")
+        self.assertIn("Band carries Drums, not only vocals: its plug-in automation is never written", why)
+        self.assertNotIn("S-curve", why)                                   # the level rules stay level-only
+        from types import SimpleNamespace
+        from hypnomix.app import daw as D
+        track = dict(self.facts(), trackName="Drums", isBus=False, feeders=[])
+        eng = SimpleNamespace(_read_tool=lambda url, tool, args: track if tool == "automation_list" else {"pointList": []})
+        body = json.dumps({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "automation_write", "arguments": {
+            "track_id": "4", "control": "plugin:12:4", "curve": "linear", "points": [{"time": 1, "value": 9000}]}}}).encode()
+        self.assertEqual(D.Engine.automation_refusal(eng, body, "http://127.0.0.1:1/mcp"), "")       # a plain track
+        clear = json.dumps({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "automation_clear", "arguments": {
+            "track_id": "9", "control": "plugin:12:4", "start": 1, "end": 2}}}).encode()
+        reads = SimpleNamespace(_read_tool=lambda url, tool, args: self.facts() if tool == "automation_list" else {"pointList": []})
+        self.assertEqual(D.Engine.automation_refusal(reads, clear, "http://127.0.0.1:1/mcp"), "")
+        unread = SimpleNamespace(_read_tool=lambda url, tool, args: None)
+        self.assertIn("could not be read", D.Engine.automation_refusal(unread, body, "http://127.0.0.1:1/mcp"))
 
 
 if __name__ == "__main__":

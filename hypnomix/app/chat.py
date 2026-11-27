@@ -1406,7 +1406,9 @@ def _automation_note():
                 "(an S-curve peaks at 1.6 times its average slope), starting and ending on the line as it is (start and end at the first and last point's times; over existing "
                 "points pass guard false, so the edge points are yours and no guard point sits beside them), never "
                 "with force; never on a bus, a group's bus or the master that carries any track that is not a vocal "
-                "(ride the vocal tracks instead). The app refuses a write that breaks these, before any card.")
+                "(ride the vocal tracks instead). A plug-in parameter (in its own units) is never automated on such a "
+                "bus either (automate a vocal track's plug-in instead). The app refuses a write that breaks these, "
+                "before any card.")
     if have & DA.TEMPO_TOOLS:
         out += (" The tempo map (group tempo): daw_tempo_get_map reads it; daw_tempo_set_points sets tempo points and "
                 "ramps (bpm_end) by bar; audio regions keep their time, MIDI follows the bars. Keep tempo changes "

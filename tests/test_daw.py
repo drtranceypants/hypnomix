@@ -1779,13 +1779,13 @@ class Security(unittest.TestCase):
 
     def test_post_routes_need_the_token_and_check_fields(self):
         for path in ("/api/daw/start", "/api/daw/stop", "/api/daw/restart", "/api/daw/save", "/api/daw/open", "/api/daw/new", "/api/daw/meta",
-                     "/api/dawreview/scan", "/api/dawreview/decide", "/api/dawreview/apply", "/api/dawreview/ab",
+                     "/api/daw/carries", "/api/dawreview/scan", "/api/dawreview/decide", "/api/dawreview/apply", "/api/dawreview/ab",
                      "/api/store/install", "/api/store/uninstall"):
             self.assertEqual(call(self.base, path, {})[0], 403, path)
         self.assertEqual(call(self.base, "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/list"})[0], 403)
         self.assertEqual(call(self.base, "/api/daw/upload?name=a.wav", raw=b"RIFF",
                               headers={"Content-Type": "application/octet-stream"})[0], 403)
-        bad = [("/api/daw/open", {"path": ["x"]}), ("/api/daw/open", {}), ("/api/daw/new", {"folder": "/tmp", "name": 3}),
+        bad = [("/api/daw/open", {"path": ["x"]}), ("/api/daw/open", {}), ("/api/daw/carries", {"track_id": 5}), ("/api/daw/new", {"folder": "/tmp", "name": 3}),
                ("/api/daw/start", {"session": {"a": 1}}),
                ("/api/dawreview/decide", {"dir": 5, "id": "x", "decision": "approve"}),
                ("/api/dawreview/apply", {}), ("/api/dawreview/ab", {"dir": ""})]

@@ -15,8 +15,9 @@
    (curve s_curve), at most 3 dB (a trim 4 dB), its steepest point under 7 dB/s, starting and ending on the line as it
    is. A drag stops where a rule would be broken; the first and last points of a level lane keep their value (the way
    in and out of a move is an S-curve from the line). The app checks the same rules again before the call reaches the
-   engine (and never automates a bus or group that carries tracks that are not vocals): what it refuses is put back
-   and its reason shown. The points of a level lane that carry its moves are the ones a drag takes (where the line
+   engine (and never automates the level or a plug-in parameter of a bus or group that carries tracks that are not
+   vocals: the page asks the app what a bus carries, POST /api/daw/carries, and refuses such a write before sending it,
+   in the app's words): what it refuses is put back and its reason shown. The points of a level lane that carry its moves are the ones a drag takes (where the line
    turns or is flat); the many points of an S-curve between them are drawn, not dragged.
 
    The tempo track (the Tempo button above the lanes) shows the engine's tempo map: each tempo point, and a ramp as a
@@ -78,7 +79,14 @@
     }
     return '';
   }
-  A.rules = { allowed, problem, reach, rate, kindOf, isLevel, cap };
+  /* the bus rule, as the app judged the route (A.load, POST /api/daw/carries): why a level or plug-in write on it is
+     refused, or '' (also '' when it is not known: the app's engine connection checks every write again) */
+  function busRefusal(trackId, control) {
+    const d = A.data[trackId], c = d && d.carries, k = kindOf(control);
+    if (!c) return '';
+    return k === 'plugin' ? c.plugin || '' : LEVEL.includes(k) ? c.level || '' : '';
+  }
+  A.rules = { allowed, problem, reach, rate, kindOf, isLevel, cap, busRefusal };
 
   /* the raised-cosine S between each pair, about one point every 50 ms (8 to 64 a move), as the engine writes s_curve */
   function sCurve(pts) {
@@ -210,7 +218,8 @@
       box.checked = now.has(c.control);
       return h('label.auto-pick', null, box, ' ' + c.name + (c.points ? ' · ' + c.points + ' point' + (c.points === 1 ? '' : 's') : ''));
     });
-    const note = d.facts && (d.facts.isBus || d.facts.isMaster) ? h('small', null, 'A bus: its level is never automated while it carries any track that is not a vocal (ride the vocal tracks instead).') : null;
+    const mixed = d.carries && d.carries.others && d.carries.others.length ? ' ' + t.name + ' carries ' + d.carries.others.slice(0, 6).join(', ') + '.' : '';
+    const note = d.facts && (d.facts.isBus || d.facts.isMaster || d.facts.busOfGroup) ? h('small', null, 'A bus: its level and its plug-in parameters are never automated while it carries any track that is not a vocal (automate the vocal tracks instead).' + mixed) : null;
     const body = h('div.auto-choose', null, ...boxes, note);
     const yes = await HX.dialog({ title: 'Automation lanes · ' + t.name, body, cancel: false, buttons: [{ label: 'Cancel', value: false }, { label: 'Show', value: true, kind: 'primary', focus: true }] });
     if (!yes) return;
@@ -357,6 +366,8 @@
     if (i < 0) { A.sel = null; HX.locate(hit.beat); A.refreshHeaders(); return; }
     A.sel = { trackId: t.id, control, i };
     if (e.altKey) { A.remove(t, control, i); return; }
+    const why = busRefusal(t.id, control);
+    if (why) { HX.toast(why, 5200); A.refreshHeaders(); return; }
     const p0 = lane.points[i];
     const y0 = hit.row.y + 4, hh = hit.row.hgt - 9;
     A.drag = { trackId: t.id, control, i, t: p0.t, v: p0.v, preview: lane.points, moved: false, held: '' };
@@ -465,6 +476,8 @@
   /* one gesture -> one op on the shared op path (store.js): one history entry, one engine undo step */
   A.write = function (t, control, call, label) {
     const lane = laneOf(t, control);
+    const why = call.tool === 'automation_write' ? busRefusal(t.id, control) : '';
+    if (why) { HX.toast(why, 5200); A.sel = null; A.refreshHeaders(); return Promise.resolve(null); }
     const before = { points: lane.points.map((p) => Object.assign({}, p)), state: lane.state };
     const pts = after(lane.points, call);
     const nextState = call.tool === 'automation_write' && call.args.state !== 'keep' ? (call.args.state || 'play') : lane.state;
@@ -552,7 +565,12 @@
     if (!HX.mcp.connected) { if (!A.data[trackId]) A.data[trackId] = mockData(t); return; }
     const r = await HX.mcp.call('automation_list', { track_id: trackId }, { quiet: true });
     const old = A.data[trackId];
-    A.data[trackId] = { facts: r, controls: (r.controls || []).map((c) => Object.assign({}, c)), lanes: old ? old.lanes : {} };
+    /* a bus: what it carries, judged by the app (hypnomix's roles; a bus that feeds it read in turn) */
+    let carries = null;
+    if (r && (r.isBus || r.isMaster || r.busOfGroup) && HX.api && HX.api.inApp) {
+      try { carries = await HX.api.post('/api/daw/carries', { track_id: String(trackId) }); } catch (e) { carries = null; }
+    }
+    A.data[trackId] = { facts: r, carries, controls: (r.controls || []).map((c) => Object.assign({}, c)), lanes: old ? old.lanes : {} };
   };
   A.loadLane = async function (trackId, control) {
     if (!A.data[trackId]) await A.load(trackId);
