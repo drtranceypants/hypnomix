@@ -1024,7 +1024,7 @@ class Engine:
             self._switch_meters()
         return code, raw
 
-    def _read(self, url, tool, args):
+    def _read_tool(self, url, tool, args):
         """One read sent straight to the engine (no unsaved tracking: it only reads) -> its structured reply, or None."""
         try:
             code, raw = post_json(url, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -1051,13 +1051,13 @@ class Engine:
             if AR.kind(a.get("control")) not in AR.LEVEL_KINDS:
                 continue
             rid, ctl = str(a.get("track_id") or ""), str(a.get("control") or "")
-            facts = self._read(url, "automation_list", {"track_id": rid})
+            facts = self._read_tool(url, "automation_list", {"track_id": rid})
             if facts is None:
                 return AR.sentence([f"what route {rid} carries could not be read from the engine (automation_list)"])
             cur = next((c.get("current") for c in facts.get("controls") or [] if c.get("control") == ctl), None)
             line = None
             if str(a.get("mode") or "replace-range") != "replace-all":
-                line = AR.line_from(self._read(url, "automation_get", {"track_id": rid, "control": ctl}), cur)
+                line = AR.line_from(self._read_tool(url, "automation_get", {"track_id": rid, "control": ctl}), cur)
             problems = AR.check(a, facts, line)
             if problems:
                 return AR.sentence(problems)

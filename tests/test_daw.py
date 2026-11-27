@@ -933,6 +933,7 @@ class EveryToolIsAChangeOrARead(unittest.TestCase):
         transport_goto_start transport_locate_bbt transport_locate_sample transport_next_marker transport_play
         transport_prev_marker transport_set_speed transport_stop
         midi_ports_list track_get_mpe midi_monitor_get midi_monitor_stop
+        automation_list automation_get tempo_get_map
     """.split())
 
     def test_the_read_list_is_exactly_this(self):
