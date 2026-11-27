@@ -1,4 +1,4 @@
-"""HypnoMix DAW sessions with the newer devices: ACE Compressor's Range / Auto Release / Mix, ACE EQ's High Pass
+"""HypnoMix Studio sessions with the newer devices: ACE Compressor's Range / Auto Release / Mix, ACE EQ's High Pass
 band and Hypnomix Saturator, read from the session file and used by the compressor maths (`sidechain`), the devices
 check, the sidechain check and the duck check. Small session fixtures, no engine."""
 import tempfile
@@ -124,7 +124,7 @@ class AceSettings(unittest.TestCase):
 
 
 class DevicesCheck(unittest.TestCase):
-    """`scan`'s devices group on a HypnoMix DAW session."""
+    """`scan`'s devices group on a HypnoMix Studio session."""
 
     def run_check(self, procs, level=0.5):
         with tempfile.TemporaryDirectory() as td:
@@ -148,7 +148,7 @@ class DevicesCheck(unittest.TestCase):
         self.assertEqual(c[0]["applies"], "manual")
         self.assertNotIn("Sidechain", c[0]["ace"]["values"])
         self.assertLess(c[0]["ace"]["values"]["Threshold"], -2)
-        self.assertIn("Set these in the device in HypnoMix DAW", c[0]["fix"])
+        self.assertIn("Set these in the device in HypnoMix Studio", c[0]["fix"])
         self.assertFalse([f for f in fs if f["kind"] == "eq-lowcut"])           # the EQ's High Pass band is on
         self.assertTrue(any("ACE Compressor(s) judged" in n for n in notes))
 

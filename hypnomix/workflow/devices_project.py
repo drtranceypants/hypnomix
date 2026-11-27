@@ -138,7 +138,7 @@ def _label(d):
 
 
 def ardour_device(p, t, d, k, x, kind, f0, base, items, notes, known, eqs, lo_cut):
-    """One plug-in of a HypnoMix DAW track, in chain order, on the signal `x` it gets. Returns the signal after it and
+    """One plug-in of a HypnoMix Studio track, in chain order, on the signal `x` it gets. Returns the signal after it and
     the walk's state (known level, EQs seen, low cut seen)."""
     label = d.name
     cut = ace_eq_low_cut(d)
@@ -320,7 +320,7 @@ def findings(p, items):
                 vals.pop("Sidechain", None)              # its own track: the key switch stays as it is (off)
                 f["ace"] = dict(track=it["track"], route_id=it.get("route_id"), plugin_index=it["fx"], values=vals)
                 if not ok:
-                    f["fix"] += (". Set these in the device in HypnoMix DAW ("
+                    f["fix"] += (". Set these in the device in HypnoMix Studio ("
                                  + ", ".join(f"{k} {v:g}" for k, v in vals.items()) + ")")
             out.append(f)
         elif it["kind"] == "eq-lowcut" and ace:
@@ -342,7 +342,7 @@ def findings(p, items):
                             problem=f"'{it['device']}' ({st['curve']}, Drive {st['drive']:+.1f} dB, Mix {st['mix']:.0f} %) "
                                     f"is driven {it['over']:.1f} dB past where its curve saturates (-1.5 dBFS) on the "
                                     f"loudest peak: heavy clipping",
-                            fix=f"Drive {st['drive']:.1f} dB -> {it['new_drive']:.1f} dB in the device in HypnoMix DAW "
+                            fix=f"Drive {st['drive']:.1f} dB -> {it['new_drive']:.1f} dB in the device in HypnoMix Studio "
                                 "(then check its Output level), by ear. An option",
                             settings=dict(Drive=it["new_drive"])))
         elif it["kind"] == "unread":

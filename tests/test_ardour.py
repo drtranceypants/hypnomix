@@ -346,7 +346,7 @@ class ArdourTest(unittest.TestCase):
 
 
 class TempoRampTest(unittest.TestCase):
-    """A tempo ramp is read as HypnoMix DAW plays it (linear per quarter note), not as its start tempo."""
+    """A tempo ramp is read as HypnoMix Studio plays it (linear per quarter note), not as its start tempo."""
 
     def test_a_ramp_and_what_follows_it(self):
         import xml.etree.ElementTree as ET

@@ -1,4 +1,4 @@
-"""`hypnomix vocallevel` on a HypnoMix DAW session: the plan's moves written as automation (session/vocallevel.py
+"""`hypnomix vocallevel` on a HypnoMix Studio session: the plan's moves written as automation (session/vocallevel.py
 measures and plans; workflow/vocallevel_project.py reads the session).
 
   upper trims   (at most 4 dB) on each upper part's TRIM
@@ -143,7 +143,7 @@ def run(p, src, a, gains, vocals, melody):
             print(f"  {e}")
         return 1
     print(f"wrote {out}: " + "; ".join(done))
-    print(f"  smooth S-curves ({AA.RAMP_S:g} s, a point every 0.05 s); open it in HypnoMix DAW (File → Open, the snapshot)")
+    print(f"  smooth S-curves ({AA.RAMP_S:g} s, a point every 0.05 s); open it in HypnoMix Studio (File → Open, the snapshot)")
     return 0
 
 

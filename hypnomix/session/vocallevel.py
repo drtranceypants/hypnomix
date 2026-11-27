@@ -41,7 +41,7 @@ writes the moves as volume envelope points in a new project, structure-checked a
 
   hypnomix vocallevel SONG.rpp [--heard DIR | --renders DIR] [same options] [--apply NEW.rpp [--group FOLDER]]
 
-A HypnoMix DAW session (.ardour, or its folder) is measured the same way; the moves are written as automation, under
+A HypnoMix Studio session (.ardour, or its folder) is measured the same way; the moves are written as automation, under
 HypnoMix's smooth-automation rules: the upper trims (at most 4 dB) on each upper part's trim, the line evening (at most
 3 dB) on the vocal group's bus fader when that bus carries only vocals, else on each vocal track's fader, every change
 one gentle S-curve about 1.2 s long (shorter only where two lines are close, never steeper than 7 dB/s). --engine
@@ -527,7 +527,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="hypnomix vocallevel", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
-    ap.add_argument("als", help="the Live set (.als), REAPER project (.rpp) or HypnoMix DAW session (.ardour)")
+    ap.add_argument("als", help="the Live set (.als), REAPER project (.rpp) or HypnoMix Studio session (.ardour)")
     src = ap.add_mutually_exclusive_group()
     src.add_argument("--renders", help="`hypnomix render` output: fader and volume automation are applied")
     src.add_argument("--heard", help="files already as heard (solo exports): used as they are")
@@ -544,9 +544,9 @@ def main(argv=None):
     ap.add_argument("--apply", help="write the fixes to this NEW set / project")
     ap.add_argument("--group", help="the vocal group track for line evening (default: the melody's group)")
     ap.add_argument("--engine", nargs="?", const="", metavar="URL",
-                    help="HypnoMix DAW: write the moves as automation into the open HypnoMix engine (default its usual "
+                    help="HypnoMix Studio: write the moves as automation into the open HypnoMix engine (default its usual "
                          "URL; the address is in the DAW view's engine panel). It must have this very session file "
-                         "open. HypnoMix sees the change: the session shows as unsaved; save in HypnoMix DAW to keep it")
+                         "open. HypnoMix sees the change: the session shows as unsaved; save in HypnoMix Studio to keep it")
     a = ap.parse_args(argv)
     check_paths(a)
     if Path(a.als).suffix.lower() != ".als":

@@ -1,7 +1,7 @@
 """`hypnomix chain --ardour`: the same mastering chain as in Live, built in the open HypnoMix Studio session over
 MCP, from its own ACE plug-ins and the two HypnoMix Studio devices (all free, all built into HypnoMix Studio).
 
-    Live device          HypnoMix Studio                         set by
+    Live device          HypnoMix Studio                      set by
     EQ Eight             ACE EQ                               low cut / high cut on its High Pass / Low Pass bands
                                                               (12 or 48 dB/oct, as EQ Eight's Low Cut 12 / 48; the
                                                               cut is Butterworth, Q 0.71), low shelf (L), up to 4
@@ -20,7 +20,7 @@ MCP, from its own ACE plug-ins and the two HypnoMix Studio devices (all free, al
                                                               Analog Clip, Digital Clip (as Hard Clip); the plan's
                                                               offline warmth is a tanh curve, which is Analog Clip.
                                                               Any other curve is not built and is listed. An older
-                                                              HypnoMix DAW without it: left out and listed
+                                                              HypnoMix Studio without it: left out and listed
     Limiter              Hypnomix Limiter                     Gain, Ceiling (true peak, 4x oversampled), Release
 
 The chain goes on the master bus, before Hypnomix Main if it is there (Main measures what the chain makes),
@@ -566,7 +566,7 @@ def _build_stages(b, plan):
                 if not on_eq:
                     # an older ACE EQ without the cut bands: the cuts on their own filter (filters in a row commute, so
                     # it sounds the same after the EQ as before it)
-                    b.notes.append("this HypnoMix DAW's ACE EQ has no High Pass / Low Pass bands (an older build): "
+                    b.notes.append("this HypnoMix Studio's ACE EQ has no High Pass / Low Pass bands (an older build): "
                                    "the cuts are on a separate ACE High/Low Pass Filter")
                     st = Stage(b, "ACE High/Low Pass Filter", step["why"])
                     st.pis = [b.filters(bands)]

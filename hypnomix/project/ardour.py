@@ -25,7 +25,7 @@ An Ardour session is a folder; the .ardour file in it is XML. What is read, and 
 
 Times: Ardour 7+ writes "a<superclock>" (audio time) or "b<ticks>" (music time, 1920 per beat) and
 "<length>@<position>" for lengths; older sessions write samples. Both become seconds here; music time
-goes through the tempo map (constant tempos and ramps exactly, as HypnoMix DAW plays them: `Clock`).
+goes through the tempo map (constant tempos and ramps exactly, as HypnoMix Studio plays them: `Clock`).
 """
 import math
 import re
@@ -62,7 +62,7 @@ def session_version(root):
 
 
 class Clock:
-    """Ardour time strings -> seconds, through the session's tempo map: constant tempos, and ramps exactly as HypnoMix DAW
+    """Ardour time strings -> seconds, through the session's tempo map: constant tempos, and ramps exactly as HypnoMix Studio
     plays them (the tempo changes linearly per quarter note from a point's tempo to its end tempo at the next point,
     so the time into a ramp is a logarithm: t(b) = 60 / (T0 k) * ln(1 + k b), k = (T1 - T0) / (Q T0) per quarter,
     which is the engine's own omega times the superclocks per quarter note at the ramp's start)."""

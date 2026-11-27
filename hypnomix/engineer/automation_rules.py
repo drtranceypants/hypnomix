@@ -1,4 +1,4 @@
-"""The smooth-automation rules, checked by HypnoMix before any level automation is written (the HypnoMix DAW engine's
+"""The smooth-automation rules, checked by HypnoMix before any level automation is written (the HypnoMix Studio engine's
 automation_write from the Assistant, the DAW view or a command; the .ardour file writer too).
 
   - every level move is a gentle S-curve (a raised cosine; about 1.2 s is the usual length)

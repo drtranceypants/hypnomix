@@ -1,4 +1,4 @@
-"""Automation and the tempo map of a HypnoMix DAW session, written by HypnoMix's commands (vocallevel, motion,
+"""Automation and the tempo map of a HypnoMix Studio session, written by HypnoMix's commands (vocallevel, motion,
 tempomap --follow, breathe): into the open HypnoMix engine over MCP when the command is given --engine, else into a
 NEW .ardour snapshot. Either way under HypnoMix's smooth-automation rules (engineer/automation_rules.py).
 
@@ -21,7 +21,7 @@ Plug-in parameters (motion's filter sweeps) are not level moves: write_engine / 
 The tempo map (sessions in the format of version 7 and later):
   from_beats(pts) -> [dict(beat, bpm, bpm_end)]   a tempo line of (beat from the start, BPM) pairs, as HypnoMix's
                          tempo writers build it (two pairs on one beat = a step, a change between beats = a glide), as
-                         tempo points: a glide becomes a ramp (HypnoMix DAW ramps change the tempo linearly per beat, the
+                         tempo points: a glide becomes a ramp (HypnoMix Studio ramps change the tempo linearly per beat, the
                          same line), the last point never ramps. Beats are quarter notes; positions are rounded to whole
                          beats (the engine places tempo points on beats)
   engine_points(pts, bpb) / write_tempo_engine(eng, pts, bpb)   tempo_set_points, replace-all, ONE engine undo step
@@ -277,7 +277,7 @@ def write_tempo_file(p, pts, bpb=4):
     import xml.etree.ElementTree as ET
     root = p.native
     if AR.session_version(root) < 7000:
-        raise ValueError("this session was saved by an older HypnoMix DAW (before 7.0): open and save it in HypnoMix DAW first")
+        raise ValueError("this session was saved by an older HypnoMix Studio (before 7.0): open and save it in HypnoMix Studio first")
     tm = root.find("TempoMap")
     if tm is None:
         raise ValueError("the session has no tempo map")

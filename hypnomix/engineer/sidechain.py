@@ -69,7 +69,7 @@ GLUE_ATTACK = [0.01, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0]
 GLUE_RELEASE = [100.0, 200.0, 400.0, 600.0, 800.0, 1200.0, None]
 GLUE_RATIO = [2.0, 4.0, 10.0]
 GLUE_AUTO_MS = 300.0      # Auto release is program-dependent; modelled as a fixed 300 ms
-# ACE Compressor's Auto Release (HypnoMix DAW): two envelopes, the deeper wins. A fast one (the Attack setting, 50 ms
+# ACE Compressor's Auto Release (HypnoMix Studio): two envelopes, the deeper wins. A fast one (the Attack setting, 50 ms
 # release) and a slow one (350 ms attack, 1 s release): a short peak recovers fast, a long passage slowly
 ACE_AUTO_FAST_RELEASE_MS, ACE_AUTO_SLOW_ATTACK_MS, ACE_AUTO_SLOW_RELEASE_MS = 50.0, 350.0, 1000.0
 MODELS = ["Peak", "RMS", "Expand"]
@@ -476,7 +476,7 @@ def suggest(trig, hits, cur, style, decay, f0, gap_ms, beat_ms, is_vocal, active
         c["ratio"] = min(cur["ratio"], 6.0 if style == "clarity" else 10.0) \
             if cur["ratio"] >= 2 and style != "vocal-duck" and not cur.get("fresh") else s["ratio"]
     if cur.get("kind") == "ace":
-        # ACE Compressor (HypnoMix DAW): the suggestion's release is a real one, so Auto Release goes off; a Range that
+        # ACE Compressor (HypnoMix Studio): the suggestion's release is a real one, so Auto Release goes off; a Range that
         # would stop the duck short of the style's depth is lifted. Both are written only when they change
         extra = dict(cur.get("ace_extra") or {})
         if cur.get("auto_release"):

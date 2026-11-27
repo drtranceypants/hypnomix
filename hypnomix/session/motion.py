@@ -25,7 +25,7 @@ tempo); without one, 8-bar blocks are used and the review says so.
 Safety: only automates controls that exist in the set; never writes into a stretch where that control already
 has automation (your moves are intent); writes a NEW set; `hypnomix check` runs on it.
 
-A HypnoMix DAW session (.ardour, or its folder): the filter sweeps (riser, dip, drift) on the filter plug-ins it already
+A HypnoMix Studio session (.ardour, or its folder): the filter sweeps (riser, dip, drift) on the filter plug-ins it already
 has, written as plug-in automation into the open session (--engine) or a new snapshot (--apply NEW.ardour); throws
 and send swells are left to you there (session/motion_ardour.py).
 
@@ -730,8 +730,8 @@ def main(argv=None):
     ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
     ap.add_argument("--tweak", action="append", help='"motion-2:bars=8,depth=0.5" (repeatable)')
     ap.add_argument("--engine", nargs="?", const="", metavar="URL",
-                    help="HypnoMix DAW: write the chosen moves into the open HypnoMix engine (it must have this very "
-                         "session open; one undo step a control; save in HypnoMix DAW to keep it)")
+                    help="HypnoMix Studio: write the chosen moves into the open HypnoMix engine (it must have this very "
+                         "session open; one undo step a control; save in HypnoMix Studio to keep it)")
     a = ap.parse_args(argv)
     if a.learn:
         st = learn(a.learn)

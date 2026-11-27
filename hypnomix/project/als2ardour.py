@@ -165,7 +165,7 @@ def device_section(song):
     if not out:
         return []
     return ["## Devices carried", "",
-            "EQ Eight, Glue Compressor and Saturator come across as HypnoMix DAW's ACE EQ, ACE Compressor (stereo) "
+            "EQ Eight, Glue Compressor and Saturator come across as HypnoMix Studio's ACE EQ, ACE Compressor (stereo) "
             "and Hypnomix Saturator, in the same place in the chain, with their settings. Close to Live, not the same "
             "sound: compare by ear. What a plug-in could not take is listed under it.", "", *out, ""]
 
@@ -1575,7 +1575,7 @@ class Writer:
             for k in kids:
                 k["route_group"] = tr["ardour_name"]
 
-        # devices HypnoMix DAW's own plug-ins can take (`als_devices.py`): planned per route, listed in the report
+        # devices HypnoMix Studio's own plug-ins can take (`als_devices.py`): planned per route, listed in the report
         from hypnomix.project import als_devices as AD
         main_el = song["root"].find(".//MainTrack")
         if main_el is None:
@@ -1929,7 +1929,7 @@ def main(argv=None):
             print(f"  ! {n} {label} (listed in the report)")
     carried = sum(1 for tr in w.song["tracks"] for e in tr.get("device_entries", []) if e["carried"]) + \
         sum(1 for e in w.song.get("main_entries", []) if e["carried"])
-    print(f"  {carried} device(s) carried as HypnoMix DAW plug-ins (EQ Eight, Glue Compressor, Saturator); every "
+    print(f"  {carried} device(s) carried as HypnoMix Studio plug-ins (EQ Eight, Glue Compressor, Saturator); every "
           "other device is listed in the report, not carried")
 
 

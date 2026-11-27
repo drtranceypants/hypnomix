@@ -1,4 +1,4 @@
-"""HypnoMix DAW sessions: tempo ramps read exactly, tempo maps written (file and engine form), level automation
+"""HypnoMix Studio sessions: tempo ramps read exactly, tempo maps written (file and engine form), level automation
 written under the smooth-automation rules (file form), and vocallevel / tempomap --follow / breathe choosing where
 their moves go. The same against the real engine: tests/test_ardour_automation_live.py."""
 import math

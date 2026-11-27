@@ -1,4 +1,4 @@
-"""`hypnomix audit` on a HypnoMix DAW session: the chain read from the saved plug-in controls (ACE EQ's cut bands,
+"""`hypnomix audit` on a HypnoMix Studio session: the chain read from the saved plug-in controls (ACE EQ's cut bands,
 ACE Compressor's Range / Auto Release / Mix, Hypnomix Saturator), bypassed plug-ins, limiters and doubled dynamics,
 as for a Live set. A small session fixture, no engine."""
 import tempfile

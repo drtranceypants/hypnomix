@@ -76,7 +76,7 @@ GROUPS = [
         ("plugrender", "hypnomix.session.plugrender", "render tracks from a .als through their real VST3/AU plug-in chains, offline, faster than real time  [extra: plugins]"),
         ("name", "hypnomix.session.names", "name every track and group by how it sounds (vocal, harmony, guitar, strings, drums…)"),
         ("mine", "hypnomix.session.miner", "tempo, key, tracks, plug-in chains, routing, levels from a set"),
-        ("audit", "hypnomix.session.audit", "flags EQ, stacked limiters, bypassed devices (Live set or HypnoMix DAW session); bounce vs your profile"),
+        ("audit", "hypnomix.session.audit", "flags EQ, stacked limiters, bypassed devices (Live set or HypnoMix Studio session); bounce vs your profile"),
         ("automation", "hypnomix.session.automation", "list/show/offset/dip automation envelopes (writes a new set)"),
         ("smooth", "hypnomix.session.smooth", "find clicks, level jumps at cuts and spikes on clips; ease them (writes a new set)"),
         ("cliplevel", "hypnomix.session.cliplevel", "lower harmony clips sitting well under the rest of their track: propose clip-gain raises (writes a new set)"),

@@ -77,7 +77,7 @@ hypnomix tempomap "Song.als" --track Drums --conform --preview "conformed.wav"
 hypnomix tempomap "Song.als" --track Drums --conform --apply "Song (grid).als"
 hypnomix tempomap "Song.als" --track Drums --follow --apply "Song (follow).als"
 hypnomix loops "Song.als" --track Drums --apply "Song (loops).als"
-hypnomix tempomap "Song/Song.ardour" --track Drums --follow --engine               # HypnoMix DAW: into the open session
+hypnomix tempomap "Song/Song.ardour" --track Drums --follow --engine               # HypnoMix Studio: into the open session
 ```
 
 1. **Check the map by ear first.** The click file plays the beats it found over the take. If fewer than half the
@@ -86,10 +86,10 @@ hypnomix tempomap "Song/Song.ardour" --track Drums --follow --engine            
 2. **Then choose.** `--conform` puts warp markers on the take's bar lines, so it sits on Live's steady grid and
    the feel inside each bar stays exactly as played. `--follow` leaves the take alone and writes tempo
    automation, so everything you overdub breathes with the drummer.
-   In **HypnoMix DAW** `--follow` writes the map as tempo points, one a bar, with a bar or more of steady lead-in so
+   In **HypnoMix Studio** `--follow` writes the map as tempo points, one a bar, with a bar or more of steady lead-in so
    the take's first bar line falls on a bar line (`--engine` into the open session, one undo step; or
    `--apply NAME.ardour`, a new snapshot). Audio keeps its time there, so the take stays exactly as played; `--conform`
-   needs audio that follows the tempo, which HypnoMix DAW does not have yet.
+   needs audio that follows the tempo, which HypnoMix Studio does not have yet.
 3. **loops** offers the steadiest, best-joining 1, 2, 4 and 8 bar loops, grouped by groove, in empty Session slots.
 
 ## Let it breathe: breathe
@@ -105,7 +105,7 @@ ones, a glide between (at most -2% to +2.5%). Hear it on your bounce first.
 > `--warp-clips`. The song's length changes, so anything cut to the old audio (a video) will no longer line up.
 > Run `tighten` and `variations` before breathe, not after: they need a constant tempo.
 
-In **HypnoMix DAW** (`--sections` or `--mix`; `--engine` or `--apply NAME.ardour`) each glide becomes a tempo ramp.
+In **HypnoMix Studio** (`--sections` or `--mix`; `--engine` or `--apply NAME.ardour`) each glide becomes a tempo ramp.
 Audio keeps its time there when the tempo changes, so only the bar grid and MIDI breathe, not the recording: a
 session with audio needs `--grid-only` to say that is what you want.
 
@@ -175,7 +175,7 @@ hypnomix motion "Song.als" --mix "Song mix.wav" --plan
 Fine controls go in the decision note: `bars=`, `depth=`, `dB=`, `every=`, `beats=`, `pattern=`, `track=`.
 It never writes where you already automated that control, and never edits comped clips.
 
-In **HypnoMix DAW** motion offers the sweeps (riser, dip, drift) on the filter plug-ins the session already has, in
+In **HypnoMix Studio** motion offers the sweeps (riser, dip, drift) on the filter plug-ins the session already has, in
 octaves from where each filter sits, and writes the ones you pick (`--ids`) as plug-in automation: `--engine` into the
 open session, or `--apply NAME.ardour`. Throws and send swells are left to you there: a throw is far steeper than the
 smooth-automation rules allow for a level.

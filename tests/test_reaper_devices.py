@@ -207,7 +207,7 @@ class Devices(Isolated):
         self.assertEqual([f for f in bass if f["kind"] == "eq-lowcut"], [])
 
     def test_an_ardour_session_runs_the_group(self):
-        # HypnoMix DAW sessions are judged too now (ACE Compressor, ACE EQ, Hypnomix Saturator:
+        # HypnoMix Studio sessions are judged too now (ACE Compressor, ACE EQ, Hypnomix Saturator:
         # tests/test_ardour_devices3.py); a session with nothing renderable gives no findings and the note
         from tests.test_scan_parity import make_ardour
         p = PJ.load(make_ardour(self.dir))

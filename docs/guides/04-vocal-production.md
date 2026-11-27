@@ -139,14 +139,14 @@ moves made since the scan can change it.
 hypnomix vocallevel "Song.als" --heard "solo exports/"              # each vocal track exported solo, as heard
 hypnomix vocallevel "Song.als" --renders "renders/" --melody "Harmony low"
 hypnomix vocallevel "Song.als" --heard "solo exports/" --apply "Song (levels).als"
-hypnomix vocallevel "Song/Song.ardour" --heard "solo exports/" --engine          # HypnoMix DAW: into the open session
+hypnomix vocallevel "Song/Song.ardour" --heard "solo exports/" --engine          # HypnoMix Studio: into the open session
 hypnomix vocallevel "Song/Song.ardour" --heard "solo exports/" --apply "Song (levels).ardour"
 ```
 
-In **HypnoMix DAW** the same moves become automation: each upper part's trims on its **trim** (at most 4 dB), the
+In **HypnoMix Studio** the same moves become automation: each upper part's trims on its **trim** (at most 4 dB), the
 line evening on the vocal group's bus fader when that bus carries only vocals (else on each vocal track's fader),
 every change one S-curve of about 1.2 s, never steeper than 7 dB/s. `--engine` writes them into the session open in
-HypnoMix DAW (one undo step a track and control; the session shows as unsaved until you save it); `--apply NAME.ardour`
+HypnoMix Studio (a single undo step for each track and control; the session shows as unsaved until you save it); `--apply NAME.ardour`
 writes a new snapshot beside the session. A fader or trim that already plays automation is left alone and listed.
 
 | check | what it flags |

@@ -330,11 +330,11 @@ def run(a):
     VL.check_paths(a)                         # a missing project, an existing --apply/--json: one sentence, early
     ardour = PJ.ardour_session(src) is not None or src.suffix.lower() == ".ardour"
     if a.apply and Path(a.apply).suffix.lower() != (".ardour" if ardour else ".rpp"):
-        sys.exit("--apply writes REAPER projects (SONG.rpp --apply NEW.rpp), HypnoMix DAW sessions (SESSION.ardour "
+        sys.exit("--apply writes REAPER projects (SONG.rpp --apply NEW.rpp), HypnoMix Studio sessions (SESSION.ardour "
                  "--apply NEW.ardour, or --engine into the open session) and Live sets; for this project make the "
                  "moves by hand from the report")
     if getattr(a, "engine", None) is not None and not ardour:
-        sys.exit("--engine writes into a HypnoMix DAW session the engine has open: give that session (.ardour)")
+        sys.exit("--engine writes into a HypnoMix Studio session the engine has open: give that session (.ardour)")
     if getattr(a, "engine", None) is not None and a.apply:
         sys.exit("choose one: --engine (into the open session) or --apply NEW.ardour (a new snapshot)")
     p = PJ.load(src)

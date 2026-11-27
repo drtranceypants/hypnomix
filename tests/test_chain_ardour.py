@@ -29,7 +29,7 @@ PARAMS = {
     "Hypnomix Limiter": [("Gain", -12, 24), ("Ceiling", -12, 0), ("Release", 5, 1000), ("Lookahead", 0.5, 10),
                          ("True Peak", 0, 1)],
 }
-# an ACE EQ and ACE Compressor from before the cut bands and Range / Auto Release / Mix (an older HypnoMix DAW)
+# an ACE EQ and ACE Compressor from before the cut bands and Range / Auto Release / Mix (an older HypnoMix Studio)
 OLD = {"ACE EQ": 6, "ACE Compressor (stereo)": 3}           # how many controls at the end it lacks
 UNIQUE = {"urn:ardour:a-eq": "ACE EQ", "urn:ardour:a-comp#stereo": "ACE Compressor (stereo)",
           "urn:hypnomix:saturator": "Hypnomix Saturator",

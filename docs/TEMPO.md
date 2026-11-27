@@ -87,11 +87,11 @@ set they write, and can be previewed without opening Live. Nothing here snaps a 
   mix repeat themselves. Like `variations`, all three arrive switched off or as review items. `colour` has not yet been
   opened in Live (see guide 5).
 
-## In HypnoMix DAW
+## In HypnoMix Studio
 
-`tempomap --follow` and `breathe` take a HypnoMix DAW session (`.ardour`, or its folder) as well as a Live set. The
+`tempomap --follow` and `breathe` take a HypnoMix Studio session (`.ardour`, or its folder) as well as a Live set. The
 map becomes tempo points (`project/ardour_automation.py`): a step is a new point, a glide a tempo **ramp**, which
-HypnoMix DAW plays as a tempo changing evenly beat by beat (the same line `breathe` plans), and the last point never
+HypnoMix Studio plays as a tempo changing evenly beat by beat (the same line `breathe` plans), and the last point never
 ramps. `--engine [URL]` writes it into the open session (`tempo_set_points`, replace-all: one undo step; the engine
 must have this very session open); `--apply NAME.ardour` writes a new snapshot in the session's folder, with each
 point's position, BBT and ramp factor computed as the engine stores them, and a structure check (only the tempo

@@ -27,11 +27,11 @@ Both write a NEW set in the same folder, start the take on a bar line at its fir
 `hypnomix check` on the result. --preview (with --conform) renders the conformed take with a click,
 without Live, so you can hear the result first. Close the set in Live before --apply.
 
-A HypnoMix DAW session (.ardour, or its folder): --follow writes the tempo map as tempo points, one a bar (or a
+A HypnoMix Studio session (.ardour, or its folder): --follow writes the tempo map as tempo points, one a bar (or a
 beat), with a bar or more of steady lead-in so the take's first bar line falls on a bar line, into the open session
 (--engine: one undo step) or a new snapshot in the session's folder (--apply NEW.ardour). The take is left exactly as
-played: in HypnoMix DAW audio keeps its time when the tempo changes. --conform needs audio that follows the tempo,
-which HypnoMix DAW does not have yet, so it is refused there.
+played: in HypnoMix Studio audio keeps its time when the tempo changes. --conform needs audio that follows the tempo,
+which HypnoMix Studio does not have yet, so it is refused there.
 
 Limits: one time signature (--bpb, default 4 beats per bar). A long silence or a free-time passage
 inside the take is bridged at the last tempo: check those spots. --follow changes the tempo of the
@@ -85,7 +85,7 @@ def one_clip(root, track, which):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="hypnomix tempomap", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("source", help="an audio file, or a Live set (.als) or HypnoMix DAW session (.ardour) with --track")
+    ap.add_argument("source", help="an audio file, or a Live set (.als) or HypnoMix Studio session (.ardour) with --track")
     ap.add_argument("--track"); ap.add_argument("--clip", type=int)
     ap.add_argument("--bpb", type=int, default=4, help="beats per bar (default 4)")
     ap.add_argument("--bpm", type=A.number(20, 400), help="a hint for the tempo")
@@ -103,8 +103,8 @@ def main(argv=None):
     ap.add_argument("--anyway", action="store_true", help="use a tempo map that looks unreliable")
     ap.add_argument("--apply", metavar="NEW.als")
     ap.add_argument("--engine", nargs="?", const="", metavar="URL",
-                    help="HypnoMix DAW: write the tempo map into the open HypnoMix engine (it must have this very "
-                         "session open; one undo step; save in HypnoMix DAW to keep it)")
+                    help="HypnoMix Studio: write the tempo map into the open HypnoMix engine (it must have this very "
+                         "session open; one undo step; save in HypnoMix Studio to keep it)")
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args(argv)
     src = Path(a.source)

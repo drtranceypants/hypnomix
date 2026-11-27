@@ -1,4 +1,4 @@
-"""`hypnomix motion` on a HypnoMix DAW session: filter sweeps, as options, written as plug-in automation.
+"""`hypnomix motion` on a HypnoMix Studio session: filter sweeps, as options, written as plug-in automation.
 
   hypnomix motion SESSION.ardour [--mix MIX.wav] [--json OUT.json]                              the options
   hypnomix motion SESSION.ardour [--mix MIX.wav] --ids motion-1,motion-3 (--engine [URL] | --apply NEW.ardour)
@@ -17,7 +17,7 @@ Nothing is written by default: every move is an option (--ids). All the moves ch
 into the open engine (--engine: automation_write, one engine undo step; it must have this very session open) or a new
 snapshot in the session's folder (--apply NEW.ardour). A control that already has automation is never offered (your
 moves are intent). Filter moves are not level moves; the reverb and delay throws and swells of a Live set are, on
-sends, and motion does not write them in HypnoMix DAW (a throw is far steeper than the smooth-automation rules allow):
+sends, and motion does not write them in HypnoMix Studio (a throw is far steeper than the smooth-automation rules allow):
 make those by hand.
 """
 import json

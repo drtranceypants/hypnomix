@@ -1,14 +1,14 @@
-"""`hypnomix tempomap --follow` and `hypnomix breathe` on a HypnoMix DAW session: the tempo map they make, written as
+"""`hypnomix tempomap --follow` and `hypnomix breathe` on a HypnoMix Studio session: the tempo map they make, written as
 tempo points (project/ardour_automation.py) into the open engine (--engine [URL], tempo_set_points: one undo step)
 or into a NEW .ardour snapshot in the session's folder (--apply NEW.ardour).
 
-In HypnoMix DAW audio regions keep their time when the tempo map changes (audio that follows the tempo is not built
+In HypnoMix Studio audio regions keep their time when the tempo map changes (audio that follows the tempo is not built
 yet); MIDI and regions placed in music time follow the bars. So:
   tempomap --follow   the bar grid follows a take played without a click; the take stays exactly as played. One
                       tempo a bar (or a beat, --per beat), a bar or more of steady lead-in so the take's first bar line
                       lands on a bar line; bar lines then land on the take's within a millisecond or so
   breathe             the grid (and MIDI) breathe: each section a little faster or slower, a ramp into it (the
-                      --glide beats, a HypnoMix DAW ramp: linear per beat, as the plan is). The recorded audio does NOT
+                      --glide beats, a HypnoMix Studio ramp: linear per beat, as the plan is). The recorded audio does NOT
                       breathe with it, so a session with audio regions needs --grid-only to say that is what you want
 """
 import math
@@ -116,7 +116,7 @@ def write(a, p, pts, bpb, what):
 def follow(a, p, t, clip, m):
     """The bar grid follows the take (it stays as played)."""
     if a.conform:
-        sys.exit("--conform warps the take onto the grid, and in HypnoMix DAW audio does not follow the tempo yet: "
+        sys.exit("--conform warps the take onto the grid, and in HypnoMix Studio audio does not follow the tempo yet: "
                  "use --follow (the grid follows the take)")
     if not a.follow:
         print("\nnothing written. Add --follow with --engine or --apply NEW.ardour (see -h).")
@@ -209,9 +209,9 @@ def breathe(a, src):
         pairs = list(zip(grid * 60.0 / tempo, B.beat_seconds(line, tempo, grid)))
         sf.write(a.preview, B.warp_render(y, sr, pairs, crisp=False), sr, subtype="PCM_24")
         print(f"\npreview → {a.preview}\n  (the bounce bent along the new tempo: how it would breathe if the audio "
-              "followed; in HypnoMix DAW today it does not)")
+              "followed; in HypnoMix Studio today it does not)")
     if (a.apply or getattr(a, "engine", None) is not None) and audio and not a.grid_only:
-        sys.exit(f"\nnot written: in HypnoMix DAW the {audio} audio region(s) keep their time when the tempo changes "
+        sys.exit(f"\nnot written: in HypnoMix Studio the {audio} audio region(s) keep their time when the tempo changes "
                  "(audio that follows the tempo map is not built yet), so the recording would not breathe; only the "
                  "bar grid and MIDI would. Add --grid-only to write the tempo map anyway.")
     return write(a, p, pts, bpb, "the breathing tempo map")

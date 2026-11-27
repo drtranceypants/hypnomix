@@ -28,9 +28,9 @@ drums in Beats mode, everything else in Complex Pro). Listen for warp artefacts 
 The song's length changes slightly: a video cut to the old audio will no longer line up.
 Close the set in Live before --apply. `hypnomix check` runs on the result.
 
-A HypnoMix DAW session (.ardour, or its folder; sections from --sections or --mix): the same plan becomes tempo points,
+A HypnoMix Studio session (.ardour, or its folder; sections from --sections or --mix): the same plan becomes tempo points,
 each glide a tempo ramp (the glide rounded to whole beats), written into the open session (--engine: one undo step)
-or a new snapshot in the session's folder (--apply NEW.ardour). In HypnoMix DAW audio regions keep their time when the
+or a new snapshot in the session's folder (--apply NEW.ardour). In HypnoMix Studio audio regions keep their time when the
 tempo changes (audio that follows the tempo map is not built yet): the bar grid and MIDI breathe, the recorded audio
 does not, so a session with audio needs --grid-only to write it.
 """
@@ -125,10 +125,10 @@ def main(argv=None):
     ap.add_argument("--preview", metavar="OUT.wav"); ap.add_argument("--warp-clips", action="store_true")
     ap.add_argument("--replace-tempo", action="store_true"); ap.add_argument("--apply", metavar="NEW.als")
     ap.add_argument("--engine", nargs="?", const="", metavar="URL",
-                    help="HypnoMix DAW: write the tempo map into the open HypnoMix engine (it must have this very "
-                         "session open; one undo step; save in HypnoMix DAW to keep it)")
+                    help="HypnoMix Studio: write the tempo map into the open HypnoMix engine (it must have this very "
+                         "session open; one undo step; save in HypnoMix Studio to keep it)")
     ap.add_argument("--grid-only", action="store_true",
-                    help="HypnoMix DAW: write the tempo map although the session's audio keeps its time (only the grid "
+                    help="HypnoMix Studio: write the tempo map although the session's audio keeps its time (only the grid "
                          "and MIDI breathe)")
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args(argv)

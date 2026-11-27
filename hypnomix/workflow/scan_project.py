@@ -21,7 +21,7 @@ FX, no faders) into raw/renders/, and the groups work from those renders and the
               release bending the bass, drum transients clamped) with suggested settings `fix` writes into it; a low
               cut suggested where a ReaEQ has none and the part rumbles under 80 Hz; ReaGate and ReaLimit listed,
               not judged (their saved settings are not read); a ReaComp with Wet at 0 or a parallel dry/wet mix is
-              not judged; the master track's plug-ins are not read. HypnoMix DAW: each ACE Compressor judged the
+              not judged; the master track's plug-ins are not read. HypnoMix Studio: each ACE Compressor judged the
               same way (Range, Auto Release, Mix simulated; the settings listed by hand), ACE EQ's High Pass band
               as the low cut, a hard-driven Hypnomix Saturator. See `devices_project.py`
   recordings  every source file the project plays: clipping, levels, noise floor, DC, sibilance, breaths, clicks

@@ -9,7 +9,7 @@ Flags:
   - bypassed devices left in chains
   - duplicated dynamics (the same compressor or limiter on a group and on its children)
   - faders above +3 dB, sends at 0 dB
-A HypnoMix DAW session (a .ardour file or its folder) gets the same audit from its saved plug-in controls
+A HypnoMix Studio session (a .ardour file or its folder) gets the same audit from its saved plug-in controls
 (`project/ardour.py`): ACE EQ's shelves and bells as EQ Eight's, its High Pass / Low Pass bands, ACE Compressor's
 Range, Auto Release and Mix, and Hypnomix Saturator's curve and drive are shown in the chain; a plug-in whose Enable
 control is off counts as bypassed; limiters, doubled dynamics on a group bus and its tracks, and faders are flagged
@@ -130,7 +130,7 @@ def audit(als):
     return chains, flags, limit_count
 
 
-# ------------------------------------------------------------------ HypnoMix DAW sessions
+# ------------------------------------------------------------------ HypnoMix Studio sessions
 SAT_CURVES = {0: "Soft Sine", 1: "Analog Clip", 2: "Hard Clip"}
 
 
@@ -204,7 +204,7 @@ def ardour_device_text(d):
 
 
 def audit_ardour(path):
-    """The same audit from a HypnoMix DAW session's saved plug-in controls. -> (chains, flags, limiter count)"""
+    """The same audit from a HypnoMix Studio session's saved plug-in controls. -> (chains, flags, limiter count)"""
     from hypnomix import project
     p = project.load(path)
     flags, chains, limit_count = [], {}, 0

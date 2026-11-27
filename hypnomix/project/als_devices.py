@@ -1,7 +1,7 @@
-"""Live devices carried into a HypnoMix DAW session by `als2ardour` (and `hypnomix import` of a .als): the three
-stock devices that HypnoMix DAW's own plug-ins can take with their settings.
+"""Live devices carried into a HypnoMix Studio session by `als2ardour` (and `hypnomix import` of a .als): the three
+stock devices that HypnoMix Studio's own plug-ins can take with their settings.
 
-    Live device        HypnoMix DAW                 carried
+    Live device        HypnoMix Studio              carried
     EQ Eight           ACE EQ (one per channel)     low cut on the High Pass band, high cut on the Low Pass band
                                                     (12 or 48 dB/oct, as Live's 12 / 48), low shelf (L), up to four
                                                     bells (1-4, width in octaves from Q), high shelf (H), Gain (as
@@ -22,10 +22,10 @@ in Live comes across switched off (the plug-in deactivated). Automation of a car
 carried (its own setting is), and says so. Devices inside racks, every other device and third-party plug-ins are
 not carried: listed as before.
 
-The plug-ins' controls are written by their port symbols and numbers (the LV2 descriptions in HypnoMix DAW's
+The plug-ins' controls are written by their port symbols and numbers (the LV2 descriptions in HypnoMix Studio's
 `libs/plugins`), together with the values the session reader (`project/ardour.py`) reads. The new controls (ACE EQ's
 High Pass / Low Pass, ACE Compressor's Range / Auto Release / Mix) are written only when a device needs them, so a
-HypnoMix DAW from before them loads the rest as it is (and ignores those, which the report says).
+HypnoMix Studio from before them loads the rest as it is (and ignores those, which the report says).
 """
 import math
 import xml.etree.ElementTree as ET
@@ -65,7 +65,7 @@ SATURATOR_PORTS = [
     (2, "output", "Output", 0.0, -36.0, 12.0, False), (3, "mix", "Mix", 100.0, 0.0, 100.0, False),
     (4, "enable", "Enable", 1, 0, 1, True),
 ]
-# the controls a HypnoMix DAW from before ACE EQ's cuts and ACE Compressor's extras does not have: written only when used
+# the controls a HypnoMix Studio from before ACE EQ's cuts and ACE Compressor's extras does not have: written only when used
 NEW_CONTROLS = {"High Pass", "High Pass Frequency", "High Pass Slope", "Low Pass", "Low Pass Frequency",
                 "Low Pass Slope", "Range", "Auto Release", "Mix"}
 PLUGINS = {
@@ -326,7 +326,7 @@ def chain(track_el, live_major=None, automated=()):
         plans += ps
         new = sorted({k for p in ps for k in p.uses_new})
         if new:
-            notes = notes + ["needs a HypnoMix DAW whose plug-in has " + ", ".join(new) + " (an older one ignores them)"]
+            notes = notes + ["needs a HypnoMix Studio whose plug-in has " + ", ".join(new) + " (an older one ignores them)"]
         entries.append(dict(label=label, carried=True, to=" + ".join(p.name for p in ps), summary=summary, notes=notes))
     return plans, entries
 
