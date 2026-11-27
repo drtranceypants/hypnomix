@@ -1393,7 +1393,8 @@ def _daw_note():
 def _automation_note():
     """The smooth-automation rules, for an engine that lists the automation tools (and nothing about them otherwise)."""
     from hypnomix.app import daw_assist as DA
-    have = {t.get("engine") for t in (CHAT.get("daw_tools") or {}).values()}
+    dt = CHAT.get("daw_tools")
+    have = {t.get("engine") for t in dt.values() if isinstance(t, dict)} if isinstance(dt, dict) else set()
     out = ""
     if have & DA.AUTOMATION_TOOLS:
         out += (" Automation (daw_more_tools {group: automation}): read daw_automation_list for a route's controls "
