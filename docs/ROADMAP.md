@@ -7,6 +7,19 @@ every change.
 **What comes next, in one sentence:** open everything the newest release added in real DAWs and on real songs,
 before building anything else on top of it.
 
+## New in 0.4.1
+
+1. **HypnoMix Studio.** HypnoMix's own DAW has a name of its own. Setup now asks one question, Standalone or Studio:
+   **HypnoMix Standalone** works beside the DAW you already use (Ableton Live, REAPER or another one), and
+   **HypnoMix Studio** has the DAW built in. It is still one app and one installer.
+2. **The Studio engine can be added.** On an Apple-silicon Mac, Setup adds engine 0.1.0 with one click: about 30 MB
+   to download, about 105 MB on disk, checked against its fingerprint before it is unpacked. There is no engine for
+   Intel Macs or Windows yet; there the app says so and downloads nothing. Its source is public at
+   https://github.com/drtranceypants/hypnomix-daw.
+3. **Steadier on a shared sound device.** If another program changes the device's sample rate, the engine sets it
+   back and keeps running.
+4. **Not yet tried:** sound through a real interface, recording from an input, and MPE with real controllers.
+
 ## New in 0.4.0
 
 The six changes you will notice most, in plain words:
