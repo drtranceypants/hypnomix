@@ -203,7 +203,7 @@ STEPS = [
                     "For stems: File → **Export Audio/Video**, and choose all individual tracks in the Rendered Track menu, with the whole song selected, WAV, 24-bit.",
                     "Then copy the whole project folder, with the notes file, to your two storage places."],
            "reaper": ["File → **Save project as...**, with the option to copy all media into the project directory ticked, only if you are sure you want it there; the original is not changed.",
-                      "For stems: File → **Render**, Source **Stems (selected tracks)** with all tracks selected, Bounds **Entire project**, WAV, 24-bit.",
+                      "For stems: File → **Render...**, Source **Selected tracks (stems)** with all tracks selected, Bounds **Entire project**, WAV, 24-bit.",
                       "Then copy the whole project folder, with the notes file, to your two storage places."],
            "ardour": ["A HypnoMix Studio session is a self-contained folder, with its audio inside it, so copying the whole session folder is the archive.",
                       "For stems: Session → Export → **Stem Export...**, WAV, 24-bit.",

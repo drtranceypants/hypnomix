@@ -31,7 +31,7 @@ STEPS = [
       how={"live": ["Live's sample rate is the audio device's. Open Live's Settings (called Preferences in Live 11), found under the Live menu on a Mac or the Options menu on Windows. Go to the **Audio** tab and set **Sample Rate**. Set it before you open or start the song.",
                     "The **Record, Warp & Launch** tab of the same window (Record/Warp/Launch in Live 11) has the file type and bit depth for new recordings: choose WAV and 24 bit if they are not already.",
                     "The bit depth of an exported file is chosen in the export window: File → Export Audio/Video."],
-           "reaper": ["Open the project's settings (Project → Project settings, or Alt+Enter) and check the project sample rate there; Options → Preferences → Audio → Device holds the interface's own rate.",
+           "reaper": ["Open the project's settings (File → Project settings..., or Alt+Enter on Windows / Option+Enter on a Mac) and check the project sample rate there; Options → Preferences → Audio → Device holds the interface's own rate.",
                       "The recording format (WAV, 24 bit) is in the same project settings window, in its Media section.",
                       "The bit depth of an exported file is chosen in the render window: File → Render…, then the WAV format's bit depth (24 bit for a mix you'll master).",
                       "REAPER shows the rate it is running at, the recording format and the buffer at the right-hand end of its menu bar (on a Mac, in the title bar of REAPER's main window): a quick check before you record."],

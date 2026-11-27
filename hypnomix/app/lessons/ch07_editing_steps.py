@@ -18,7 +18,7 @@ STEPS = [
       how={"live": ["Right-click the track's name → **Show Take Lanes** (in a version that has take lanes). Each recorded pass sits in its own lane.",
                     "Click and drag across a stretch of a take lane to select it, then press Enter to copy it into the main lane: that is your comp. Click a take lane's speaker button to hear that take on its own. Listen by soloing the track and looping the section.",
                     "Keep the other lanes; they cost nothing."],
-           "reaper": ["Record with each pass kept as a take, or put the takes into separate items. Right-click the item and use the take options to show all takes in lanes (the wording differs between REAPER versions).",
+           "reaper": ["Record with each pass kept as a take, or put the takes into separate items. Turn on Options → Show all takes (when room) (or right-click the track and enable Fixed item lanes in REAPER 7) to see every take stacked.",
                       "Split the item at each join (**S**) and choose which take plays in each piece. Do not delete the unused takes."],
            "ardour": ["Each pass is a region on the track (or a playlist of the track). Make the take layers visible in the track's context menu, in its Layers options (stacked).",
                       "Split the regions at your joins and keep the best one on top for each section."]},
