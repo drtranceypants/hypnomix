@@ -277,7 +277,7 @@ which spots to compare between the old and new set. When the review is finished,
 | Check what was written | `check NEW.als --against OLD.als`, `diff OLD.als NEW.als` | nothing |
 | Vocals | `tune` (and `key` for the song's key), `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |
 | Vocal level, line to line (run in the first scan and before every final export) | `vocallevel SET --heard DIR` (or `--renders DIR`); `--apply NEW.als` writes volume automation. `vocallevel SONG.rpp` measures from the project itself; `--apply NEW.rpp` writes volume envelope points | nothing, or a new `.als` / `.rpp` |
-| Vocal alignment in a set | `alignset` (timing as warp markers on the parts' own clips; pitch/formant as files from bar 1), the `aligndevice` for Live; see docs/ALIGN.md. Pitch matching is off unless the person asks | a new set |
+| Vocal alignment in a set | `alignset` (timing as warp markers on the parts' own clips; pitch/formant as files from bar 1), the `aligndevice` for Live; see docs/ALIGN.md. Pitch matching is off unless the person asks. With 2+ parts, ask what they line up to and pass `--to-average` or `--to-lead` (never choose for the person) | a new set |
 | Device settings and tidy-up in a set | `devices` (stock compressors, gates, limiters, EQ low cut judged on the signal they get), `tidy` (retire switched-off tracks after an archive copy; consolidate; on a HypnoMix Studio session, the group option, written with `--engine --ids`), `unroll` (a looped clip into one copy per pass) | a new `.als`; with `--engine --ids`, the session open in the HypnoMix engine |
 | Vocals inside a set (options from the vocals scan) | `duck` (vocal reverb / delay ducking: tune or add; on a HypnoMix Studio session, written with `--engine --ids`), `cliplevel` (lower-harmony clips far under their track) | a new `.als`; with `--engine --ids`, the session open in the HypnoMix engine |
 | Raw takes / stems | `prep`, `cleanup`, `clipmatch`, `render` (set → WAVs, no Live), `separate` (mix → stems) | new audio files |
@@ -353,7 +353,11 @@ judged by ear. Tell the person to keep their original and listen.
   fades that cut into a word (a lost first consonant). They run in the same scan group; do not mix them up.
 - Pitch and timing of vocals: `tune` corrects the pitch of one take, gently. `vocalign` times (and, if asked,
   pitch-matches) doubles and harmonies as audio files. `alignset` does that timing inside a saved Live set or REAPER
-  project, as warp or stretch markers on the person's own clips, in a new file.
+  project, as warp or stretch markers on the person's own clips, in a new file. With two or more parts both need
+  the person's answer to "what do the parts line up to?": `--to-average` (every part is nudged toward the group's
+  average timing, the lead a little too) or `--to-lead` (the parts follow the lead named with `--lead` / `--guide`,
+  which is never moved). Ask it for every song unless `hypnomix prefs` shows `harmony.reference` saved as `average`
+  or `lead`; without an answer the command stops with one sentence and writes nothing.
 - Noise and mouth sounds: `deess` turns down the "s" moments of one vocal. `breaths` turns breaths down, not off.
   `dehiss` is a spectral de-hiss with a gate for one track. `cleanup` rescues a rough demo (hum, noise, rumble, DC,
   silence). `prep` is the whole pass over a folder of stems (those steps plus clipping, clicks, plosives, formats and

@@ -47,7 +47,9 @@ TEXT = {
         "tighten kick and bass on downbeats most; leave fills and melodic parts looser"),
     ("vocalign", None): (
         "When a double or harmony starts and ends its words apart from the lead, the consonants smear and the stack "
-        "sounds loose. Lining up word starts and ends (not every note) keeps the blend.",
+        "sounds loose. Lining up word starts and ends (not every note) keeps the blend. There are two honest ways "
+        "to do it, and the choice is yours each time: nudge every part toward the group's average timing (the lead "
+        "moves a little too, and the stack keeps its shared feel), or have the parts follow one lead that never moves.",
         "align consonants of doubles to within about 20-30 ms of the lead; leave counter-melodies alone"),
     # pitch
     ("tune", None): (

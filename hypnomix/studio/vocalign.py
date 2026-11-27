@@ -7,9 +7,15 @@ finds the time offset between them every 10 ms; the overdub is then re-timed wit
 that keeps pitch and formants). Offsets are only applied where both are singing, smoothed, and capped.
 
 Usage:
-    hypnomix vocalign LEAD.wav DOUBLE.wav [HARMONY.wav …] [--strength 1.0] [--max-ms 150]
-                     [--trim-tails] [--level -6] [--out DIR]
+    hypnomix vocalign LEAD.wav DOUBLE.wav [HARMONY.wav …] --to-average | --to-lead [--lead NAME]
+                     [--strength 1.0] [--max-ms 150] [--trim-tails] [--level -6] [--out DIR]
 
+  --to-average every part is nudged toward the group's average timing, the first file too (the gentle stack mode:
+               --stack-strength, --fix-strength, --fix-over-ms, --cap-ms)
+  --to-lead    the parts follow the lead, which is never moved (--strength, --max-ms); --lead NAME says which file
+               is the lead when it is not the first one
+               With 2+ parts one of the two is needed: a flag, or your saved answer (`hypnomix prefs set
+               harmony.reference=average` or `=lead`). Nothing is assumed. One part alone follows its guide.
   --strength   0–1: how far to move toward the lead (0.7 keeps a little natural looseness)
   --trim-tails fade overdub word-endings that hang past the lead's (the classic stacked-"s" problem)
   --level      set each overdub this many dB under the lead's loudness while both sing (omit to keep levels)
@@ -592,8 +598,7 @@ def build_parser():
     ap.add_argument("--level", type=float)
     ap.add_argument("--out")
     ap.add_argument("--engine", choices=["auto", "rubberband", "wsola"], default="auto")
-    ap.add_argument("--to-lead", action="store_true",
-                    help="align every part to the lead (the old way); default with 2+ parts: the gentle stack mode")
+    AO.add_reference_flags(ap)
     ap.add_argument("--stack-strength", type=float, default=0.1,
                     help="stack mode: how far every word that is NOT clearly off moves toward the group (very gentle: 0.1)")
     ap.add_argument("--fix-over-ms", type=float, default=30.0,
@@ -658,7 +663,8 @@ def timing_stage(a, od):
     """The timing step. Returns (report lines, {part path: written path or None})."""
     outs = {}
     _last_plans.clear()
-    if len(a.overdubs) >= 2 and not a.to_lead:
+    ref = getattr(a, "_reference", None) or ("average" if len(a.overdubs) >= 2 and not a.to_lead else "lead")
+    if ref == "average":
         rows, meta = stack_align([a.lead] + a.overdubs, a.out, a.stack_strength, a.grid if a.bpm else 0.0, a.bpm, a.cap_ms,
                                  a.same_words, a.fix_over_ms, a.fix_strength, a._protect, a._sync)
         for r in rows:
@@ -809,6 +815,20 @@ def pitch_and_formant(a, od, outs):
     return md
 
 
+def name_lead(a):
+    """--lead NAME: the named file becomes the lead (the first file takes its place among the parts)."""
+    name = getattr(a, "lead_name", None)
+    if not name:
+        return
+    files = [a.lead] + list(a.overdubs)
+    hit = [f for f in files if name in (f, Path(f).name, Path(f).stem)] or \
+          [f for f in files if Path(f).stem.lower().startswith(name.lower())]
+    if len(hit) != 1:
+        sys.exit(f"--lead {name!r} is " + ("not one of the files" if not hit else "more than one of the files")
+                 + ": give the file name of one part (" + ", ".join(Path(f).name for f in files) + ")")
+    a.lead, a.overdubs = hit[0], [f for f in files if f != hit[0]]
+
+
 def main():
     if "--list-presets" in sys.argv:
         print("\n".join(AO.describe(k) for k in AO.PRESETS))
@@ -820,9 +840,14 @@ def main():
         print("\n".join(AO.describe(k) for k in AO.PRESETS))
         return
     AO.apply_preset(a, a.preset, defaults)
+    if not a.no_timing:
+        AO.reference(a, len(a.overdubs))              # the person's choice; a stack with none ends here, in one sentence
+        name_lead(a)
     a._protect, a._sync = AO.ranges(a.protect), AO.syncs(a.sync)
     od = out_at(a.out, "vocalign")
     md, outs = (["# Vocal alignment", "", "Timing step skipped (--no-timing)."], {}) if a.no_timing else timing_stage(a, od)
+    if AO.reference_line(a):
+        md[1:1] = ["", AO.reference_line(a)]
     if a.preset:
         md[1:1] = ["", f"Preset: {AO.describe(a.preset)}"]
     if a._protect:

@@ -211,8 +211,8 @@ class AlignProject(unittest.TestCase):
 
     def test_stack_mode_protect_and_measure_only(self):
         path = stack_project(self.d)
-        run_alignset(path, "--guide", "Lead", "--parts", "Double", "Harmony", "--protect", "5-8", "--out",
-                     self.d / "o", "--json", self.d / "r.json")
+        run_alignset(path, "--guide", "Lead", "--parts", "Double", "Harmony", "--to-average", "--protect", "5-8",
+                     "--out", self.d / "o", "--json", self.d / "r.json")
         res = json.loads((self.d / "r.json").read_text(encoding="utf-8"))
         self.assertIsNone(res["out_set"])                                # measured only: no project written
         self.assertFalse(list(self.d.glob("Song (aligned*")))
@@ -306,6 +306,7 @@ class Panel(unittest.TestCase):
         p.on("protect")
         p.on("sync")
         p.on("preset")
+        p.on("ref_average")                                  # what the parts line up to: the person's choice
         p.on("set:pitch=0.3")
         p.on("set:formant=0.4")
         p.on("write")
@@ -322,6 +323,8 @@ class Panel(unittest.TestCase):
         argv = " ".join(AL.argv_for(run, run["set"], "/tmp/o"))       # the app turns it into a valid alignset call
         self.assertIn("--range 10.000-20.000", argv)
         self.assertIn("--takes", argv)
+        self.assertEqual(run["reference"], "average")
+        self.assertIn("--to-average", argv)
 
     def test_unsaved_project_is_not_run(self):
         self.b.sel.update(dirty=1)

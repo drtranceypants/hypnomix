@@ -9,6 +9,10 @@ through untouched). It needs the HypnoMix app running (`hypnomix app`, or the Ma
 
   Set           Choose set: the saved .als you are working on (save first: alignset reads the saved file)
   Guide         select the guide track in Live, click "Guide ←"
+  To            what the parts line up to. It is asked, never assumed: click for "To: average" (every part is
+                nudged toward the group's average timing, the guide too) or "To: guide" (the parts follow the guide,
+                which is never moved). "To: ?" means not chosen yet: with 2+ parts Align asks you to choose. An
+                answer saved in the app's Preferences shows here as the starting choice
   Parts         select a part, click "+ Part" (repeat); "Clear" empties the list
   Range         "Brace": only the bars under the loop brace; "Song": everywhere
   Protect       puts the loop brace's span on the protected list (never moved)
@@ -47,7 +51,9 @@ var BASE = "http://127.0.0.1:__PORT__";
 var W = __W__, H = __H__;
 var PRESETS = ["", "gentle-stack", "natural-double", "tight-pop", "loose-folk", "rap-doubles"];
 var st = {ready: false, lastOk: 0, flash: "", flashUntil: 0, guide: "", parts: [], range: "brace", protect: [], sync: [],
-          tight: 0.5, pitch: 0, vibrato: 0, formant: 0, preset: 0, write: false, server: null, busy: false};
+          tight: 0.5, pitch: 0, vibrato: 0, formant: 0, preset: 0, write: false, server: null, busy: false, ref: ""};
+var REFS = ["", "average", "lead"];
+function refNow() { return st.ref || (st.server && st.server.reference) || ""; }   // chosen here, else the saved answer
 var hits = [], dials = [], drag = null;
 var task = new Task(tick, this);
 
@@ -121,6 +127,7 @@ function run() {
     var body = {guide: st.guide, parts: st.parts, protect: st.protect, sync: st.sync, tightness: st.tight,
                 pitch: st.pitch, vibrato: st.vibrato, formant: st.formant, apply: st.write, bpm: tempo()};
     if (PRESETS[st.preset]) body.preset = PRESETS[st.preset];
+    if (st.ref) body.reference = st.ref;
     if (st.range == "brace") { var b = brace(); body.start_s = b[0]; body.end_s = b[1]; }
     request("POST", "/api/align/run", body, function (d) { if (d && d.job) flash("Aligning… (the app's log shows each step)"); });
 }
@@ -133,6 +140,7 @@ function act(a) {
     else if (a == "protect") { var b = brace(); st.protect.push(b); flash("Protected " + b[0].toFixed(1) + "–" + b[1].toFixed(1) + " s"); }
     else if (a == "sync") { var t = playhead(); st.sync.push(t); flash("Sync point at " + t.toFixed(2) + " s"); }
     else if (a == "preset") st.preset = (st.preset + 1) % PRESETS.length;
+    else if (a == "ref") st.ref = REFS[(REFS.indexOf(refNow()) + 1) % REFS.length] || "average";
     else if (a == "write") st.write = !st.write;
     else if (a == "align") run();
     else if (a == "open") request("POST", "/api/align/open", {}, function (d) { if (d && d.opened) flash("Opening the aligned set…"); });
@@ -219,7 +227,9 @@ function paint() {
     bx = button("Sync here", bx, y, 58, st.sync.length > 0, "sync");
     button("Clear", bx, y, 36, false, "clear");
     y += 22;
-    text(st.protect.length + " protected · " + st.sync.length + " sync point(s)", x, y + 8, mute, 9, false);
+    text(st.protect.length + " protected · " + st.sync.length + " sync", x, y + 8, mute, 9, false);
+    var rn = refNow();
+    button("To: " + (rn == "average" ? "average" : rn == "lead" ? "guide" : "?"), 152, y - 4, 86, rn != "", "ref");
     // dials
     y = 104;
     dial("Tight", "tight", 8, y, 0, 1, function (v) { return Math.round(v * 100) + "%"; });

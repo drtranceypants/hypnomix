@@ -7,10 +7,16 @@ Pitch matching and formant can't be warp markers: those parts are rendered as fi
 track next to the original (the Align device places them for you; or drag them in at 1.1.1).
 
 Usage:
-  hypnomix alignset SET.als --guide "Lead Vox" --parts "Double" "Harmony Hi" [--bars 33-49] [--apply]
+  hypnomix alignset SET.als --guide "Lead Vox" --parts "Double" "Harmony Hi" --to-average | --to-lead
+           [--bars 33-49] [--apply]
            [every vocalign option: --preset, --protect, --sync, --strength, --stack-strength, --pitch, --formant ...]
 
-  --guide      the track the others follow (in stack mode it is the ruler and moves a little too)
+  --to-average every part is nudged toward the group's average timing (the guide is the ruler and moves a little too)
+  --to-lead    the parts follow the lead, which is never moved; the lead is --guide, or --lead "TRACK" (then the
+               --guide track, if it is another one, is lined up like the other parts)
+               With 2+ parts one of the two is needed: a flag, or your saved answer (`hypnomix prefs set
+               harmony.reference=average` or `=lead`). Nothing is assumed. One part alone follows its guide.
+  --guide      the track the others are measured against
   --parts      the tracks to move (names, or the start of names)
   --bars       only this part of the song (bars, 4/4: 33-49); --range 62-90 does the same in seconds
   --apply      write "SET (aligned).als" next to the original (without it: measure, write previews and a report)
@@ -152,6 +158,21 @@ def main():
         return _main()
 
 
+def lead_and_guide(a):
+    """Settle what the parts line up to before anything is rendered (a stack with no answer ends here, in one
+    sentence), and who the lead is: --lead TRACK takes the guide's place, and the --guide track joins the parts."""
+    if not a.guide and not a.lead_name:
+        sys.exit("name the track the others are measured against: --guide \"TRACK\" (or --to-lead --lead \"TRACK\")")
+    low = lambda s_: str(s_).strip().lower()
+    parts = [p for p in a.parts if low(p) not in (low(a.guide or ""), low(a.lead_name or ""))]
+    if a.lead_name and a.guide and low(a.lead_name) != low(a.guide):
+        parts = [a.guide] + parts
+    if not a.no_timing:
+        AO.reference(a, len(parts))
+    if a.lead_name:
+        a.guide, a.parts = a.lead_name, parts
+
+
 def _main():
     if "--list-presets" in sys.argv:
         print("\n".join(AO.describe(k) for k in AO.PRESETS))
@@ -164,7 +185,7 @@ def _main():
             ap._remove_action(act)
             ap._positionals._group_actions.remove(act)
     ap.add_argument("set")
-    ap.add_argument("--guide", required=True)
+    ap.add_argument("--guide")
     ap.add_argument("--parts", nargs="+", required=True)
     ap.add_argument("--bars")
     ap.add_argument("--range")
@@ -180,6 +201,7 @@ def _main():
     if a.list_presets:
         print("\n".join(AO.describe(k) for k in AO.PRESETS)); return
     AO.apply_preset(a, a.preset, defaults)
+    lead_and_guide(a)
     if a.set.lower().endswith(".rpp"):
         from hypnomix.studio import alignset_rpp
         alignset_rpp.run(a)
@@ -246,8 +268,10 @@ def _main():
     plans = getattr(V, "_last_plans", {})
     md[0] = f"# Align in the set: {src.name}"
     md[1:1] = ["", f"Guide: **{guide}**; parts: {', '.join(parts)}" + (f"; bars {a.bars}" if a.bars else "")
-               + (f"; preset {a.preset}" if a.preset else "") + f". {tempo:g} BPM."] + (["", md_chords] if md_chords else [])
-    result = dict(set=str(src), guide=guide, parts=[], out_set=None, previews={}, rendered={}, report=str(od / "ALIGNSET.md"))
+               + (f"; preset {a.preset}" if a.preset else "") + f". {tempo:g} BPM."] \
+        + (["", AO.reference_line(a)] if AO.reference_line(a) else []) + (["", md_chords] if md_chords else [])
+    result = dict(set=str(src), guide=guide, parts=[], out_set=None, previews={}, rendered={}, report=str(od / "ALIGNSET.md"),
+                  reference=getattr(a, "_reference", None), reference_from=getattr(a, "_reference_from", None))
     edited = 0
     md += ["", "## Warp markers on your clips", ""]
     for p_ in [guide] + parts:                  # in stack mode the guide is nudged toward the group too

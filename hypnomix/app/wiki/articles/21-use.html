@@ -16,7 +16,7 @@ teaser: Twelve recipes that cover most sessions: mixing a folder of stems, maste
     <h3 class="sub-h">3 · Clean up raw recordings</h3>
     <div class="term" data-label="prep"><pre><span class="p">$</span> hypnomix prep "raw stems/"
 <span class="p">$</span> hypnomix dehiss "Lead Vox.wav" --reduce 12 --gate 18 --report
-<span class="p">$</span> hypnomix vocalign "Lead.wav" "Double.wav" "Harmony hi.wav" --trim-tails --level -6</pre></div>
+<span class="p">$</span> hypnomix vocalign "Lead.wav" "Double.wav" "Harmony hi.wav" --to-lead --trim-tails --level -6</pre></div>
     <h3 class="sub-h">4 · First pass on a song: scan → hear → review → fix</h3>
     <div class="term" data-label="first pass"><pre><span class="p">$</span> hypnomix prefs                                                    <span class="c"># once: targets, protected tracks</span>
 <span class="p">$</span> hypnomix preflight "raw takes/"                                    <span class="c"># first: are the files in good shape? (changes nothing)</span>

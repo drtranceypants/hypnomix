@@ -16,14 +16,23 @@ and a part that would not end up closer is left as it was.
 
 ## Timing
 
-Two modes, chosen for you:
+HypnoMix asks what the parts should line up to. It never assumes. Two answers:
 
-- **Gentle stack** (2+ parts, the default): nobody is forced onto one lead. Only the parts singing the same
-  words at the same time are compared. Word by word, a word clearly off the group (beyond the song's own
-  looseness, at least 30 ms) moves 80% of the way; every other word 10%. With `--bpm` the stack is pulled 30%
-  toward the song's own grid. Never more than 60 ms.
-- **To the guide** (`--to-lead`, or one part): the part follows the guide's timing all the way (`--strength 1`),
-  with smooth speed changes (`--mode gentle`) if it sounds warbly.
+- **The group's average** (`--to-average`): nobody is forced onto one lead; every part is nudged, the first
+  one too. Only the parts singing the same words at the same time are compared. Word by word, a word clearly off
+  the group (beyond the song's own looseness, at least 30 ms) moves 80% of the way (`--fix-strength`); every
+  other word 10% (`--stack-strength`). With `--bpm` the stack is pulled 30% toward the song's own grid. Never
+  more than 60 ms (`--cap-ms`).
+- **One lead** (`--to-lead`): the parts follow the lead you name, and the lead itself is never moved. The lead
+  is the first file (or `--guide` in a set); `--lead NAME` names another one. `--strength` says how far the parts
+  go (1 = all the way, 0.7 keeps some looseness) and `--max-ms` is the largest move; `--mode gentle` gives
+  smooth speed changes if a part sounds warbly.
+
+Where the answer comes from, in this order: a flag (`--to-average`, `--to-lead`, `--lead NAME`); a preset that
+follows the guide; your saved answer (`hypnomix prefs set harmony.reference=average` or `=lead`, also in the
+app's Preferences; `=ask` asks every time); the **To** button in the Align device or **Line up to** in the Align
+panel. With two or more parts and no answer, the command stops with one sentence that says what it needs, and
+writes nothing. One part on its own follows its guide. The report's second line says what was used and why.
 
 ## Presets
 
@@ -31,7 +40,7 @@ Two modes, chosen for you:
 
 | preset | for | what it sets |
 |---|---|---|
-| `gentle-stack` | harmony stacks (the default behaviour, named) | worst words 80%, the rest 10%, grid 30%, cap 60 ms |
+| `gentle-stack` | harmony stacks lined up to the group's average (its own defaults, named) | worst words 80%, the rest 10%, grid 30%, cap 60 ms |
 | `natural-double` | a double that should still sound like two takes | to the guide, 70%, gentle speed changes, cap 80 ms |
 | `tight-pop` | pop / R&B stacks | to the guide, 100%, tails trimmed, pitch 0.35, vibrato 0.3 |
 | `loose-folk` | folk, country, indie | worst words only, 50%, no grid pull, cap 40 ms |
@@ -53,7 +62,7 @@ hypnomix vocalign Lead.wav Dbl.wav --protect 1:02-1:10.5 --sync 1:31.2 --sync 95
 ## Pitch matching (off unless you ask)
 
 ```bash
-hypnomix vocalign Lead.wav Dbl.wav Harm.wav --pitch 0.35 --chords "Song instrumental.wav"
+hypnomix vocalign Lead.wav Dbl.wav Harm.wav --to-average --pitch 0.35 --chords "Song instrumental.wav"
 ```
 
 Each note of a part is compared with what the guide sings at that moment:
@@ -72,7 +81,7 @@ are replaced; every other sample is the part as it was.
 ## Formant and transpose
 
 ```bash
-hypnomix vocalign Lead.wav "Dbl L.wav" "Dbl R.wav" --formant "Dbl L.wav=0.4" --formant "Dbl R.wav=-0.4"
+hypnomix vocalign Lead.wav "Dbl L.wav" "Dbl R.wav" --to-lead --formant "Dbl L.wav=0.4" --formant "Dbl R.wav=-0.4"
 ```
 
 - `--formant SEMIS`: the voice's character moves, the pitch doesn't. +0.3 to +0.8 sounds smaller and brighter;
@@ -83,8 +92,8 @@ hypnomix vocalign Lead.wav "Dbl L.wav" "Dbl R.wav" --formant "Dbl L.wav=0.4" --f
 ## In a Live set: alignset
 
 ```bash
-hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --bars 33-49 --bpm 106
-hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --bars 33-49 --bpm 106 --apply
+hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --to-average --bars 33-49 --bpm 106
+hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --to-average --bars 33-49 --bpm 106 --apply
 ```
 
 1. Each track is rendered from the saved set exactly as Live plays it (clip gain, fades, warps).
@@ -115,7 +124,10 @@ Drag **Hypnomix Align** onto any track (audio passes through). Save your set, th
 
 1. **Choose set**: the saved `.als` you are in.
 2. Select the guide track → **Guide ←**. Select each part → **+ Part**. (A track name that starts with a dash is
-   refused with a message: rename the track.)
+   refused with a message: rename the track.) Click **To** until it says what the parts should line up to:
+   **To: average** (every part is nudged toward the group's average timing, the guide too) or **To: guide** (the
+   parts follow the guide, which is never moved). **To: ?** means not chosen: with two or more parts, Align asks
+   you to choose first. An answer saved in Preferences is where the button starts.
 3. Loop-brace the bars → **Range: brace** (or **Range: song**).
 4. Optional: brace a bit you love → **Protect**. Put the playhead on a consonant that must land → **Sync here**.
 5. Drag the dials: **Tight**, **Pitch** (off by default), **Vibrato**, **Formant**. Or click **Preset**.
@@ -129,7 +141,7 @@ on real sets, but it has not been loaded in Live yet. If something misbehaves, t
 ## In REAPER: alignset on a .rpp, and the HypnoMix Align panel
 
 ```bash
-hypnomix alignset "Song.rpp" --guide "Lead Vox" --parts "Harmony 1" "Harmony 2" --bars 11-21 --bpm 64 --apply
+hypnomix alignset "Song.rpp" --guide "Lead Vox" --parts "Harmony 1" "Harmony 2" --to-average --bars 11-21 --bpm 64 --apply
 hypnomix reaper align          # the panel (needs `hypnomix app` running)
 ```
 
@@ -162,5 +174,7 @@ REAPER's élastique modes); new takes play the checked render within 0.4%.
 ## For an AI agent
 
 - Ask before pitch matching: it's off by default, and the person's own tuning rules apply (gentle, chord check).
-- Never align every part to one lead unless asked: the stack mode is the default for a reason.
+- Ask what the parts line up to before any stack alignment, and pass the answer (`--to-average` or `--to-lead`,
+  with `--lead` / `--guide` naming the lead). Never choose for the person; skip the question only when
+  `hypnomix prefs` shows `harmony.reference` saved as `average` or `lead`. Keep the moves gentle either way.
 - Fixes go on the person's own comp clips (alignset), not rendered replacements, unless they ask for files.

@@ -617,6 +617,15 @@ def doubles(files, lead):
     """How far each other vocal sits from the lead in time, where both sing (median and worst 5%)."""
     from hypnomix.core import dsp
     from hypnomix.studio import vocalign as V
+    from hypnomix.studio import alignopts as AO
+    saved = AO.saved_reference()
+    # what the parts should line up to is the person's call, so the card asks it (or says which answer is saved)
+    ask = ("Your saved answer (Preferences, harmony.reference): line parts up to "
+           + ("the group's average timing, so the lead may be nudged a little too. " if saved == "average"
+              else "the lead, which is never moved. ")) if saved else \
+          ("First choose what the parts line up to (asked for every song until you save an answer in Preferences): "
+           "the group's average timing, where every part is nudged a little, the lead too; or one lead track that "
+           "you name, which is never moved. ")
     yl, sr = dsp.load(files[lead], 22050)
     out, notes = [], []
     for n, (t, p) in enumerate(((t, p) for t, p in files.items() if t != lead), 1):
@@ -630,10 +639,12 @@ def doubles(files, lead):
         out.append(dict(id=f"doubles-{n}", tool="vocalign", kind="vocal-timing", severity=sev, track=t, where="",
                         problem=f"sits {med:.0f} ms from the lead on average where both sing (worst moments {p95:.0f} ms{' or more: the most this check measures' if p95 >= 148 else ''}): "
                                 "words start and end apart, which smears consonants",
-                        fix=("listen, then nudge this part's own comp clips in Live where its words start apart from the "
+                        fix=(ask + "Then listen, and nudge this part's own comp clips in Live where its words start apart from the "
                              "lead (clip edits only: no aligned or rendered copy is swapped in). Skip this if it is a "
-                             "counter-melody or sings different words: it is only for parts that follow the lead."),
-                        applies="manual"))
+                             "counter-melody or sings different words: it is only for parts that follow the lead. "
+                             "`hypnomix alignset` (the Align device in Live, the HypnoMix Align panel in REAPER) "
+                             "does the nudging as editable markers on those clips, with --to-average or --to-lead."),
+                        applies="manual", reference=saved or "ask"))
     notes.append(f"doubles: {len(files) - 1} vocal(s) compared with the lead '{lead}' for timing")
     return out, notes
 

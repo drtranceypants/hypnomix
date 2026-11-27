@@ -28,6 +28,9 @@ What the workflow does with them:
   tools.*          your DAW (live = Ableton Live, reaper = REAPER, ardour = HypnoMix Studio, or other; `hypnomix daw` is
                    accepted for ardour, which is only the stored word: the same choice as the app's Setup page, which is used
                    until you answer here) and the free plug-ins you have installed (proposals only name what you have)
+  harmony.*        harmony.reference=average|lead|ask: what a vocal stack is lined up to by `vocalign`, `alignset`,
+                   the Align device and the Align panel: the group's average timing (every part is nudged), or one
+                   lead that is never moved. Unanswered (or `ask`): it is asked for every song, never assumed
   cleanup.*        the tidy steps of the first clean-up, all on by default: cleanup.order, cleanup.retire,
                    cleanup.consolidate (on or off)
   learned          approve / skip / change counts per finding kind from past reviews (advice, never auto-apply)
@@ -68,6 +71,13 @@ QUESTIONS = [
          why="natural keeps vibrato and slides and only moves note centres; off = never propose tuning"),
     dict(key="taste.timing", ask="Timing?", options=["loose", "tight", "off"], default="loose",
          why="loose only fixes hits that stick out from the band's own feel; off = never propose timing changes"),
+    dict(key="harmony.reference", ask="When harmony parts are lined up in time, what should they line up to? "
+         "(average = every part is nudged toward the group's average timing; lead = they follow one lead track that "
+         "you name, and the lead is never moved; ask = ask me for every song)",
+         options=["ask", "average", "lead"], default="ask",
+         why="it changes which takes move: with average the lead moves a little too, with lead only the others do. "
+         "Until you answer (and with ask) every alignment asks first; nothing is assumed. The amount and the "
+         "largest move stay yours to set either way"),
     dict(key="cleanup.order", ask="In the first clean-up, put tracks in working order (drums, bass, keys/guitar/synth, "
          "vocals, other melodic; low to high) and vocal-stack parts on the track for their pitch?",
          options=["on", "off"], default="on",

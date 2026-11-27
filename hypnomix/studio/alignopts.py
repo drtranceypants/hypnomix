@@ -7,6 +7,12 @@
                  near 62.4 s; `62.40=62.31` says the guide's moment at 62.40 s is the part's moment at 62.31 s.
                  A sync point overrides the gentleness: the part moves the whole way there (still within the cap).
 
+  reference      what a stack is lined up to. It is always the person's choice, never assumed: the group's average
+                 timing (--to-average: every part is nudged, the first one too) or one lead (--to-lead: the parts
+                 follow it and it is never moved; --lead NAME names it). The answer comes from a flag, a preset that
+                 follows the guide, or the saved preference harmony.reference; with none of them a stack is refused
+                 in one sentence. One part on its own follows its guide, as it always has.
+
 Times are seconds from the start of the files (or of the song, for a Live set), or m:ss.xx.
 All plans use the convention of vocalign: per 10 ms frame t, the output plays the part's audio from t + o[t]
 (o > 0: the part was late and is pulled earlier).
@@ -41,9 +47,74 @@ def apply_preset(args, name, defaults):
     for k, v in PRESETS[name].items():
         if k == "desc":
             continue
+        if k == "to_lead" and getattr(args, "to_average", False):
+            continue                                  # the person said --to-average: the preset does not overrule it
         if getattr(args, k, None) == defaults.get(k):
             setattr(args, k, v)
     return args
+
+
+# ---------------------------------------------------------------- the reference: the group's average, or one lead
+REFERENCES = ("average", "lead")
+NEEDS_CHOICE = ("say how the parts should line up: --to-average (every part is nudged toward the group's average "
+                "timing) or --to-lead (the parts follow the lead, which is never moved; --lead NAME names it), or save "
+                "your answer once with `hypnomix prefs set harmony.reference=average` (or =lead)")
+WORDS = {"average": "the group's average timing (every part is nudged toward it, the first one too)",
+         "lead": "the lead, which is never moved"}
+
+
+def add_reference_flags(ap):
+    g = ap.add_argument_group("what the parts line up to (asked, never assumed)")
+    g.add_argument("--to-average", action="store_true",
+                   help="nudge every part toward the group's average timing (the gentle stack mode: --stack-strength, "
+                        "--fix-strength, --cap-ms)")
+    g.add_argument("--to-lead", action="store_true",
+                   help="the parts follow the lead, which is never moved (--strength: how far, --max-ms: the most)")
+    g.add_argument("--lead", dest="lead_name", metavar="NAME",
+                   help="with --to-lead: which part is the lead (default: the first file, or --guide)")
+    return g
+
+
+def saved_reference(prefs=None):
+    """The saved answer to "what do harmony parts line up to?": "average", "lead", or "" (not answered, or `ask`)."""
+    try:
+        from hypnomix.workflow import prefs as P
+        v = P.get(P.load() if prefs is None else prefs, "harmony.reference")
+    except Exception:
+        return ""
+    v = str(v or "").strip().lower()
+    return v if v in REFERENCES else ""
+
+
+def reference(a, n_parts, prefs=None):
+    """-> ("average" | "lead", where the answer came from). Sets a.to_lead / a.to_average / a._reference to match.
+    A flag (or a preset that follows the guide) wins, then the saved preference; one part alone follows its guide.
+    A stack with no answer anywhere ends in one sentence (SystemExit): the choice is the person's."""
+    avg, lead, name = bool(getattr(a, "to_average", False)), bool(getattr(a, "to_lead", False)), getattr(a, "lead_name", None)
+    if avg and (lead or name):
+        raise SystemExit("choose one: --to-average (no part is the lead) or --to-lead" + (" / --lead" if name else ""))
+    if avg:
+        got = ("average", "--to-average")
+    elif lead or name:
+        preset = getattr(a, "preset", None)
+        via = "--to-lead" if lead and not (preset and PRESETS.get(preset, {}).get("to_lead")) else f"preset {preset}"
+        got = ("lead", "--lead" if name and not lead else via)
+    else:
+        saved = saved_reference(prefs)
+        if saved:
+            got = (saved, "your saved preference harmony.reference")
+        elif n_parts < 2:
+            got = ("lead", "one part: it follows its guide")
+        else:
+            raise SystemExit(NEEDS_CHOICE)
+    a.to_average, a.to_lead, a._reference, a._reference_from = got[0] == "average", got[0] == "lead", got[0], got[1]
+    return got
+
+
+def reference_line(a):
+    """One line for the report: what the parts were lined up to, and who said so."""
+    ref = getattr(a, "_reference", None)
+    return f"Lined up to: {WORDS[ref]} ({a._reference_from})." if ref else ""
 
 
 def seconds(s):

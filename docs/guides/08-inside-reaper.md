@@ -341,7 +341,8 @@ Save the project first (Align reads the saved `.rpp`), then in the panel:
 
 | button | what it does |
 |---|---|
-| Guide ← | the selected track becomes the guide (the one the others follow) |
+| Guide ← | the selected track becomes the guide (the one the others are measured against) |
+| Line up to | asked, never assumed: **The average** nudges every part toward the group's average timing (the guide too); **The guide** makes the parts follow the guide, which is never moved. With two or more parts, Align asks you to choose one first; an answer saved in the app's Preferences starts chosen |
 | + Part / Clear | the selected tracks become parts (repeat); Clear empties the list |
 | Range: selection / Song | only the time selection, or everywhere |
 | Protect | the time selection is never moved (repeat for more) |
@@ -370,7 +371,7 @@ Only parts that measure closer to the group (or the guide) are written; the othe
 Items that loop their source and MIDI items are left alone and listed. One tempo is assumed. Without the panel:
 
 ```bash
-hypnomix alignset "Song.rpp" --guide "Lead Vox" --parts "Harmony 1" "Harmony 2" --bars 11-21 --bpm 64 --apply
+hypnomix alignset "Song.rpp" --guide "Lead Vox" --parts "Harmony 1" "Harmony 2" --to-average --bars 11-21 --bpm 64 --apply
 ```
 
 Checked in REAPER 7.86 on a real stack (a lead and three harmonies over ten bars, one harmony a comp of three

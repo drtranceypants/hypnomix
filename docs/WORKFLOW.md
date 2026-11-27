@@ -54,6 +54,9 @@ Saved in `~/.hypnomix/preferences.json`. Every scan reads it:
   everything). `review.style`, `review.explain` and `targets.delivery` are read by AI agents and the Assistant,
   who follow them when they run the review with you; the scan itself does not change. `taste.tuning` and
   `taste.timing` (`off`, or gentle or tight) tell a scan how far to go; `off` means that kind of fix is not proposed.
+- **harmony.reference**: what a vocal stack is lined up to by `vocalign`, `alignset`, the Align device and the
+  Align panel: `average` (every part is nudged toward the group's average timing), `lead` (the parts follow one
+  lead, which is never moved) or `ask`. Until it is answered, and with `ask`, every alignment asks first.
 - **cleanup**: the tidy steps of the first clean-up, all on by default: `cleanup.order`, `cleanup.retire`,
   `cleanup.consolidate` (`on` or `off`). They are also in the app's Preferences tab.
 - **tools.daw** is `live`, `reaper`, `ardour` (HypnoMix Studio) or `other`, the same choice as the app's Setup page: until you

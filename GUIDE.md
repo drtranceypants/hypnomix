@@ -129,7 +129,7 @@ This renders each track from bar 1 with clip gain, clip fades and warping applie
 **Doubles and harmonies:**
 
 ```bash
-hypnomix vocalign "Lead.wav" "Double.wav" "Harmony hi.wav" --trim-tails --level -6
+hypnomix vocalign "Lead.wav" "Double.wav" "Harmony hi.wav" --to-lead --trim-tails --level -6
 ```
 
 Tight stacks are what make vocal productions sound expensive. vocalign matches the *timing* of each word to the lead using features that don't depend on pitch (loudness envelope, onsets, consonant energy), so a harmony a third above aligns just as well as a unison double. It then re-times the overdub with a pitch-preserving method, so the pitch and formants don't change. `--trim-tails` fades overdub word endings that ring past the lead's (stacked "s" sounds are the classic giveaway). The report shows the timing difference before and after: under ~10 ms reads as one voice, 20–40 ms as a natural double.

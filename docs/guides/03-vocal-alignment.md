@@ -24,9 +24,21 @@ stays sample for sample wherever nothing needs to change.
 All of them use one engine, and every result is checked by a second, independent measurement. A part that
 would not end up closer to the others is left exactly as it was.
 
-## Timing: the two modes
+## Timing: what do the parts line up to?
 
-### Gentle stack (the default for 2+ parts)
+HypnoMix asks this before it proposes anything, because the two answers move different takes:
+
+- **the group's average**: every part is nudged toward where the group sings, the lead a little too
+- **one lead**: the parts follow the track you name, and that lead is never moved
+
+Give the answer with `--to-average` or `--to-lead` (and `--lead NAME` if the lead is not the first file or the
+guide). In the Align device click **To**; in the Align panel choose under **Line up to**. To stop being asked,
+save it once: `hypnomix prefs set harmony.reference=average` (or `=lead`; `=ask` asks every time), or answer the
+question in the app's Preferences. With two or more parts and no answer, the command stops with one sentence and
+writes nothing. One part on its own follows its guide. Either way the moves stay gentle and yours to set: how
+far, and the largest move.
+
+### To the group's average (`--to-average`)
 
 Nobody is forced onto one lead.
 
@@ -38,14 +50,15 @@ Nobody is forced onto one lead.
 6. Nothing ever moves more than 60 ms. Each word moves as a whole; the change happens in the gap before it.
 
 ```bash
-hypnomix vocalign "Lead.wav" "Harm 1.wav" "Harm 2.wav" "Dbl.wav" --bpm 106
+hypnomix vocalign "Lead.wav" "Harm 1.wav" "Harm 2.wav" "Dbl.wav" --to-average --bpm 106
 ```
 
 The report lists the problem areas ("1:50.2–1:51.4: Harmony 1 early, 20 ms") and the worst words fixed.
 
-### To the guide
+### To one lead (`--to-lead`)
 
-For a double that should sit right on the lead, or one part against one guide:
+For doubles that should sit right on the lead, a stack that should follow one voice, or one part against one
+guide. The lead is never moved. `--lead "Harm 1"` names a lead that is not the first file.
 
 ```bash
 hypnomix vocalign "Lead.wav" "Double.wav" --to-lead --strength 1.0 --trim-tails
@@ -68,7 +81,7 @@ A preset is a starting point. Any option you set yourself still wins.
 
 | preset | for | sets |
 |---|---|---|
-| `gentle-stack` | harmony stacks (the default, named) | worst words 80%, the rest 10%, grid 30%, cap 60 ms |
+| `gentle-stack` | harmony stacks lined up to the group's average (its own defaults, named) | worst words 80%, the rest 10%, grid 30%, cap 60 ms |
 | `natural-double` | a double that should still sound like two takes | to the guide, 70%, smooth speed changes, cap 80 ms |
 | `tight-pop` | pop and R&B stacks | to the guide, 100%, tails trimmed, pitch 0.35, vibrato 0.3 |
 | `loose-folk` | folk, country, indie | worst words only, half way, no grid pull, cap 40 ms |
@@ -108,7 +121,7 @@ point and the others land on it.
 ## Pitch matching (off unless you ask)
 
 ```bash
-hypnomix vocalign "Lead.wav" "Dbl.wav" "Harm.wav" --pitch 0.35 --chords "Song instrumental.wav"
+hypnomix vocalign "Lead.wav" "Dbl.wav" "Harm.wav" --to-average --pitch 0.35 --chords "Song instrumental.wav"
 ```
 
 Each note a part sings is compared with what the guide sings at the same moment:
@@ -157,8 +170,8 @@ The output always lines up with the input sample for sample and keeps its length
 ## In a Live set: alignset
 
 ```bash
-hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --bars 33-49 --bpm 106
-hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --bars 33-49 --bpm 106 --apply
+hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --to-average --bars 33-49 --bpm 106
+hypnomix alignset "Song.als" --guide "Lead Vox" --parts "Double" "Harmony Hi" --to-average --bars 33-49 --bpm 106 --apply
 ```
 
 1. Each track is rendered from the saved set exactly as Live plays it: clip gain, fades, warps.
@@ -196,6 +209,7 @@ passes through it untouched.
 |---|---|
 | Choose set | the saved `.als` you are working in (save first: alignset reads the saved file) |
 | Guide ← | the selected track becomes the guide |
+| To | what the parts line up to: **To: average** (every part is nudged, the guide too) or **To: guide** (the guide is never moved). **To: ?** = not chosen yet: Align asks first |
 | + Part | adds the selected track as a part (repeat for each) |
 | Range: brace / song | only the bars under the loop brace, or the whole song |
 | Protect | adds the loop brace's span to the protected areas |
@@ -224,7 +238,7 @@ passes through it untouched.
 ## Inside REAPER: alignset on a .rpp and the HypnoMix Align panel
 
 ```bash
-hypnomix alignset "Song.rpp" --guide "Lead Vox" --parts "Harmony 1" "Harmony 2" --bars 11-21 --apply
+hypnomix alignset "Song.rpp" --guide "Lead Vox" --parts "Harmony 1" "Harmony 2" --to-average --bars 11-21 --apply
 hypnomix reaper align    # the panel, with the hypnomix app running
 ```
 
@@ -237,9 +251,9 @@ REAPER's selected tracks, time selection and edit cursor. The REAPER guide has t
 
 | situation | reach for |
 |---|---|
-| a big harmony stack that's mostly fine | gentle stack (default), with `--bpm` |
+| a big harmony stack that's mostly fine | `--to-average`, with `--bpm` |
 | a double that should sit right on the lead | `--preset natural-double` or `tight-pop` |
-| one phrase drags, the rest is lovely | gentle stack, or `--sync` on that phrase plus `--protect` around what you love |
+| one phrase drags, the rest is lovely | `--to-average`, or `--sync` on that phrase plus `--protect` around what you love |
 | doubles slightly out of tune with the lead | `--pitch 0.35 --chords …` (asks on chord clashes) |
 | a stack that sounds narrow | `--formant` +0.4 / -0.4 on a pair of doubles |
 | a comped vocal in Live you don't want rendered | `alignset` or the Align device |

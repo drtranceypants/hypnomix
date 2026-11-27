@@ -120,7 +120,7 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="HypnoMix in y
   dict(id="hm-tracking", title="Tracking helpers", daws=ALL,
        say=["Before you record, `hypnomix soundcheck` listens to an interface input and tells you which way to turn the "
             "gain (peaks -12 to -6 dBFS in 24-bit), and flags noise, hum and DC. After recording, `takes` ranks whole "
-            "takes and lists the best one per section, `vocalign` lines doubles and harmonies up with each other, gently: with two or more parts nobody is forced onto the lead, only the words clearly off the group move most of the way and the rest barely move, and `clipmatch` evens out takes recorded on different days."],
+            "takes and lists the best one per section, `vocalign` lines doubles and harmonies up with each other, gently: with two or more parts it first asks what they should line up to (the group's average timing, where every part is nudged, or one lead that is never moved), then only the words clearly off move most of the way and the rest barely move, and `clipmatch` evens out takes recorded on different days."],
        how={"live": ["`hypnomix live arm`, `live input`, `live record 17 8 3` punch-record through AbletonOSC (three passes = three take lanes).",
                      "Live's take lanes (Live 11 and 12) + `takes` for the comp; Hypnomix Align for stacks."],
             "reaper": ["Before you record, the level check below (or `hypnomix soundcheck`) tells you which way to turn the interface's gain.",

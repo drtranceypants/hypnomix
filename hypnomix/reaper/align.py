@@ -6,7 +6,10 @@ Needs the HypnoMix app running (`hypnomix app`; for an app on another port give 
 it runs `hypnomix alignset` on the SAVED project, the same way the Live device does (through /api/align/*). Save
 the project first (alignset reads the saved .rpp). In the panel:
 
-  Guide ←           the selected track becomes the guide (the one the others follow)
+  Guide ←           the selected track becomes the guide (the one the others are measured against)
+  Line up to        asked, never assumed: "The average" nudges every part toward the group's average timing (the
+                    guide too); "The guide" makes the parts follow the guide, which is never moved. With 2+ parts
+                    Align asks you to choose one first; an answer saved in the app's Preferences starts chosen
   + Part / Clear    the selected tracks become parts (repeat); Clear empties the list
   Range: selection  only the time selection; Song: everywhere
   Protect           the time selection is never moved (repeat for more)
@@ -67,7 +70,8 @@ def thin(vals, n=LANE_POINTS):
 class Panel:
     def __init__(self, r):
         self.r = r
-        self.st = dict(guide="", parts=[], range=None, protect=[], sync=[], preset=0, tight=0.5, pitch=0.0,
+        self.saved_ref = None           # the saved answer to "line up to what?", read from the app once
+        self.st = dict(guide="", parts=[], range=None, protect=[], sync=[], preset=0, ref="", tight=0.5, pitch=0.0,
                        vibrato=0.0, formant=0.0, write=False, takes=False)
         self.status, self.busy, self.result, self.job = "", False, None, 0
         self.project = ""
@@ -123,6 +127,8 @@ class Panel:
             st["protect"], st["sync"] = [], []
         elif ev == "preset":
             st["preset"] = (st["preset"] + 1) % len(PRESETS)
+        elif ev in ("ref_average", "ref_lead"):
+            st["ref"] = ev[4:]
         elif ev == "write":
             st["write"] = not st["write"]
         elif ev == "takes":
@@ -145,7 +151,20 @@ class Panel:
             b["start_s"], b["end_s"] = st["range"]
         if PRESETS[st["preset"]]:
             b["preset"] = PRESETS[st["preset"]]
+        if st["ref"]:
+            b["reference"] = st["ref"]
         return b
+
+    def ref_now(self):
+        """What the parts line up to: chosen in the panel, else the answer saved in the app's Preferences, else ""."""
+        if self.st["ref"]:
+            return self.st["ref"]
+        if self.saved_ref is None:
+            try:
+                self.saved_ref = str(app("/api/align/state", timeout=2).get("reference") or "")
+            except (OSError, ValueError):
+                return ""                              # the app is not answering yet: ask it again next time
+        return self.saved_ref
 
     def align(self):
         if self.busy:
@@ -153,6 +172,10 @@ class Panel:
         st = self.st
         if not st["guide"] or not st["parts"]:
             return self.flash("Choose a guide (Guide ←) and at least one part (+ Part)")
+        from hypnomix.studio import alignopts as AO
+        if len(st["parts"]) >= 2 and not self.ref_now() and not AO.PRESETS.get(PRESETS[st["preset"]], {}).get("to_lead"):
+            return self.flash("Choose what the parts line up to first: The average (every part is nudged) or "
+                              "The guide (the guide is never moved)")
         w = self.where()
         path = w.get("project") or ""
         if not path or not path.lower().endswith(".rpp"):
@@ -221,6 +244,7 @@ class Panel:
                     guide=st["guide"], parts=", ".join(st["parts"]), range_on="1" if st["range"] else "0", where=wh,
                     tight=f"{st['tight']:g}", pitch=f"{st['pitch']:g}", vibrato=f"{st['vibrato']:g}",
                     formant=f"{st['formant']:g}", preset=PRESETS[st["preset"]], write="1" if st["write"] else "0",
+                    ref=self.ref_now(),
                     takes="1" if st["takes"] else "0",
                     busy="1" if self.busy else "0", can_open="1" if (self.result or {}).get("out_set") else "0",
                     result=self.summary(), lanes="|".join(lanes[:8]))

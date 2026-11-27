@@ -18,7 +18,7 @@ said "just do it all".
 
 1. **Look first.** `hypnomix stems <folder>` shows what each stem contributes. For only a first fader balance, `hypnomix balance <folder>` proposes one move per part with its measurement (faders only: no EQ, compression or pan; `--plan` sends them to the review). Check names: HypnoMix finds roles from names first (kick, snare, bass, gtr, keys, vox, bv…), then from the sound. If a name is vague ("Audio 7"), ask what it is or suggest renaming before mixing.
 2. **Prep (automatic in automix).** `hypnomix prep <folder>` repairs clicks, clipping, plosives and breaths, removes hum and hiss only where present, silences the gaps, adds fades, sets a common format and gain-stages. Read `PREP REPORT.md` and mention anything big (for example "rebuilt 40 clipped peaks in the vocal: re-record if you can").
-3. **Vocals with doubles or harmonies:** `hypnomix vocalign lead.wav double.wav harm1.wav --trim-tails --level -6` before the mix.
+3. **Vocals with doubles or harmonies:** ask first what the parts should line up to (the group's average timing, where every part is nudged, or one lead that is never moved), then `hypnomix vocalign lead.wav double.wav harm1.wav --to-lead --trim-tails --level -6` (or `--to-average`) before the mix. Never choose for the person.
 4. **Mix:** `hypnomix automix <folder> --name "Song"` (add `--reference ref.wav` when they name a record they want to sound like). Read `MIX NOTES.md`; summarise the 3–5 decisions that matter most, not all of them.
 5. **Second look:** `hypnomix masking "<out>/prepped stems"` for what still collides.
 6. **Release checks:** `hypnomix translate "<master>.wav"` and `hypnomix qc "<master>.wav"`. Fix any FAIL before calling it done.

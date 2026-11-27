@@ -7,8 +7,12 @@ after (the device draws them), the previews, the new set, and any rendered pitch
 
   GET  /api/align/state         the chosen set, the job, the last result
   POST /api/align/choose        {path?}: the Live set (or REAPER project) to work on (no path: a file dialog)
-  POST /api/align/run           {guide, parts, start_s?, end_s?, protect:[[a,b]], sync:[t], preset?, tightness?,
-                                 pitch?, vibrato?, formant?, apply?}
+  POST /api/align/run           {guide, parts, reference?, start_s?, end_s?, protect:[[a,b]], sync:[t], preset?,
+                                 tightness?, pitch?, vibrato?, formant?, apply?}
+                                reference is "average" (every part is nudged toward the group's average timing) or
+                                "lead" (the parts follow the guide, which is never moved). With 2+ parts it must come
+                                from the request, a preset that follows the guide, or the saved preference
+                                harmony.reference: otherwise the answer is {error, ask: "reference"} and nothing runs
   POST /api/align/open          open the new set in Live with the system's own opener (macOS `open`, Windows the program
                                 registered for .als, Linux `xdg-open`); Live asks to save the current one first. When nothing
                                 could be started the answer is {error}, which the device shows, never {opened}
@@ -60,7 +64,9 @@ def state():
         except ValueError:
             pass
     st = S.JOB["status"] if S.JOB["id"] == ALIGN["job"] else "idle"
+    from hypnomix.studio import alignopts as AO
     return dict(set=ALIGN["set"], set_name=Path(ALIGN["set"]).name if ALIGN["set"] else "", status=st,
+                reference=AO.saved_reference(),      # the saved answer ("" = not answered: the device asks)
                 running=running, step=S.JOB.get("step", "") if running else "",
                 log_tail=S.JOB["log"][-6:] if S.JOB["id"] == ALIGN["job"] else [], result=res)
 
@@ -133,6 +139,13 @@ def argv_for(body, set_path, out_dir):
         if body["preset"] not in AO.PRESETS:
             raise ValueError("unknown preset")
         argv += ["--preset", body["preset"]]
+    ref = body.get("reference") or ""
+    if ref:                                 # the person's answer in the device: it wins over a preset and a saved one
+        if ref not in AO.REFERENCES:
+            raise ValueError("reference is average (the group's average timing) or lead (the guide, never moved)")
+        argv.append("--to-average" if ref == "average" else "--to-lead")
+    elif len(parts) >= 2 and not AO.PRESETS.get(body.get("preset") or "", {}).get("to_lead") and not AO.saved_reference():
+        raise NeedsReference()
     t = _num(body, "tightness", 0, 1)
     if t is not None:                       # one dial for both modes: the guide mode's strength, the stack's nudge
         argv += ["--strength", f"{t:.2f}", "--stack-strength", f"{0.3 * t:.2f}", "--fix-strength", f"{min(1.0, 0.3 + 0.7 * t):.2f}"]
@@ -150,6 +163,13 @@ def argv_for(body, set_path, out_dir):
     if body.get("apply"):
         argv.append("--apply")
     return argv
+
+
+class NeedsReference(ValueError):
+    """A stack with no answer to "what do the parts line up to?": the device asks, nothing runs."""
+    def __init__(self):
+        super().__init__("Choose what the parts line up to first: Average (every part is nudged toward the group's "
+                         "average timing) or Guide (the parts follow the guide, which is never moved)")
 
 
 def handle_get(path, q):
@@ -176,11 +196,15 @@ def handle_post(path, body):
             out = _work()
             argv = argv_for(body, sp, out)
             guide, parts = track_names(body)
+        except NeedsReference as e:
+            return 400, {"error": str(e), "ask": "reference"}
         except (ValueError, KeyError, TypeError) as e:
             return 400, {"error": str(e) or "bad request"}
         ALIGN["set"] = sp                          # remembered only once the whole request is good
         (out / "result.json").unlink(missing_ok=True)
-        ALIGN["job"] = S.run_job("align", f"Align: {', '.join(parts)} to {guide}",
+        title = (f"Align: {', '.join([guide] + parts)} toward their average" if "--to-average" in argv
+                 else f"Align: {', '.join(parts)} to {guide}")
+        ALIGN["job"] = S.run_job("align", title,
                                  [("Aligning (writes a new " + ("project" if str(sp).lower().endswith(".rpp") else "set") + ", changes nothing in yours)", argv, True)], out)
         ALIGN["result"] = None
         return 200, {"job": ALIGN["job"], "argv": argv}

@@ -231,9 +231,11 @@ def _run(a, defaults=None):
     md[0] = f"# Align in the project: {src.name}"
     md[1:1] = ["", f"Guide: **{guide.name}**; parts: {', '.join(t.name for t in parts)}"
                + (f"; bars {a.bars}" if a.bars else "") + (f"; preset {a.preset}" if a.preset else "")
-               + f". {p.tempo:g} BPM."] + (["", md_chords] if md_chords else [])
+               + f". {p.tempo:g} BPM."] + (["", AO.reference_line(a)] if AO.reference_line(a) else []) \
+        + (["", md_chords] if md_chords else [])
     result = dict(set=str(src), daw="reaper", guide=guide.name, parts=[], out_set=None, previews={}, rendered={},
-                  takes={}, report=str(od / "ALIGNSET.md"))
+                  takes={}, report=str(od / "ALIGNSET.md"), reference=getattr(a, "_reference", None),
+                  reference_from=getattr(a, "_reference_from", None))
     timing_outs = dict(outs)
     # pitch / formant after the timing (the final files: timing, then pitch, then formant)
     pf = V.pitch_and_formant(a, od, outs) if (a.pitch or a.vibrato or a.formant or a.transpose) else []

@@ -796,6 +796,10 @@ local function align_draw()
   -- how
   U.card(10, 196, U.w - 20, 70)
   U.col(U.C.muted); U.font(3); U.text(22, 204, "HOW")
+  -- what the parts line up to: asked, never assumed (neither lit = not chosen yet; Align then asks)
+  U.text(70, 204, "LINE UP TO")
+  x = button("The average", 140, 199, st.ref == "average" and "teal" or "plain", "ref_average", nil, 18)
+  x = button("The guide", x, 199, st.ref == "lead" and "teal" or "plain", "ref_lead", nil, 18)
   local sw = math.floor((U.w - 64) / 2)
   slider(SLIDERS[1], 22, 222, sw); slider(SLIDERS[2], 42 + sw, 222, sw)
   slider(SLIDERS[3], 22, 244, sw); slider(SLIDERS[4], 42 + sw, 244, sw)
@@ -848,7 +852,7 @@ local function align_draw()
     { 6, 6, U.w - 50, 26, "HypnoMix Align in REAPER", "Lines up the timing (and, if you like, pitch and formant) of vocal parts to a guide track, like the Align device in Live. It writes stretch markers or new takes into a NEW project: yours is never changed." },
     { 10, 46, U.w - 20, 72, "Who", "Select the guide track (usually the lead) and press Guide ←. Then select each part to line up and press + Part. Clear starts over." },
     { 10, 126, U.w - 20, 62, "Where", "Selection aligns only the time selection; Song the whole song. Protect keeps a stretch untouched; Sync here marks a point every part must meet. Clear marks removes them." },
-    { 10, 196, U.w - 20, 70, "How", "Drag the sliders. Tight: how far each part moves toward the guide (gentle is natural). Pitch and Vibrato: how much of the guide's pitch to follow. Formant: the voice's character, in semitones." },
+    { 10, 196, U.w - 20, 70, "How", "Line up to is asked, never assumed: The average nudges every part toward the group's average timing (the guide too); The guide makes the parts follow the guide, which is never moved. Drag the sliders. Tight: how far each part moves toward the guide (gentle is natural). Pitch and Vibrato: how much of the guide's pitch to follow. Formant: the voice's character, in semitones." },
     { 10, 276, U.w - 20, 26, "Align", "Preset recalls saved settings. Timing by markers keeps one item; by takes writes new takes you can switch. Write project makes the new .rpp; Align runs it and Open project opens the result." },
     { 10, 326, U.w - 20, U.h - 336, "Before and after", "Each part's level shape against time: grey before, amber after. Listen in the new project before you keep it. The ? starts this guide again; in this panel space plays and stops REAPER, and Esc closes the guide, or the panel when the guide is off." },
   })
