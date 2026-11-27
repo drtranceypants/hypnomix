@@ -245,7 +245,7 @@ STEPS = [
                 ["Project sample rate", "Keep it at 44.1 or 48 kHz unless you have a reason", "Doubling the rate roughly doubles the work for most plug-ins."],
                 ["Disk speed", "Work from an internal SSD, not a slow external drive", "Many tracks of audio need a disk that can read them all at once."]],
       how={"live": ["The **CPU meter** is at the top right of the window; the **Overall Latency** is on the **Audio** tab of Live's preferences (Settings in Live 12, Preferences in Live 11).",
-                    "Right-click a track's title → **Freeze Track**; the same menu offers **Unfreeze Track**, and **Flatten** makes the frozen audio permanent."],
+                    "Right-click a track's title (or open the **Edit** menu) → **Freeze Track**; the same place offers **Unfreeze Track**, and **Flatten** makes the frozen audio permanent."],
            "reaper": ["Open Performance Meter from the View menu to see the CPU use of each track and plug-in.",
                       "Right-click the track and open **Render/freeze tracks**: it has freeze commands (for example freezing to stereo) that render the track with its effects to audio. **Unfreeze tracks** in the same place reverses it."],
            "ardour": ["The toolbar shows the DSP load; the xrun counter counts the dropouts.",

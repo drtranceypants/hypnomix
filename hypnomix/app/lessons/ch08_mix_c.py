@@ -120,7 +120,7 @@ STEPS = [
                 ["Hi-hat", "low cut 300-500 Hz; roll off above 12 kHz if it hisses; pan 20-40%", "keeps it light, behind the snare"]],
       how={"live": ["Put **EQ Eight** on each drum track (or each pad of a **Drum Rack**: open the rack's chain list and add devices to a pad's chain).",
                     "For the kick: band 1 as a low cut near 30 Hz, a bell cut near 300 Hz, a bell boost near 3 kHz. Use a **Compressor** on the snare, attack 10-30 ms.",
-                    "Pan the hi-hat and toms with each track's pan knob. For two snare mics, put the **Utility** device on the bottom mic and switch on both of its phase-invert buttons (one for the left channel, one for the right) to flip it, then compare with them off.."],
+                    "Pan the hi-hat and toms with each track's pan knob. For two snare mics, put the **Utility** device on the bottom mic and switch on both of its phase-invert buttons (**Phz-L** and **Phz-R**) to flip it, then compare with them off."],
            "reaper": ["Click the track's **FX** button and add **ReaEQ**, with a **High Pass** band near 30 Hz, a bell cut near 300 Hz and a bell boost near 3 kHz for the kick.",
                       "Put **ReaComp** on the snare with the attack at 10-30 ms, so the stick's hit gets through before it turns down.",
                       "Pan the tracks on their pan knobs. For two snare mics, click the track's phase invert button (Ø on the track or mixer strip, or **Invert phase** in its Route window) on the bottom mic and compare."],

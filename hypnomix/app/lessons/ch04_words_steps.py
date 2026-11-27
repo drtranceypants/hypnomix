@@ -63,7 +63,7 @@ STEPS = [
                 ["Vocal track", "input chosen, EQ and compressor loaded", "the one you set up most; ready to record on"]],
       how={"live": ["Set up a new Set with your tracks, return tracks (reverb and delay), and click.",
                     "Use File → Save Live Set As... and save it as 'Template'. For each new song, open it and use Save Live Set As... straight away to give the song its own name.",
-                    "Your Live version may also let you save the current Set as the default for new Sets: look in Settings → Library."],
+                    "In Live 11 and 12, use File → **Save Live Set As Template...** to add it to your Templates folder, or File → **Save Live Set As Default Set...** so every new Set opens with it."],
            "reaper": ["Set up the project with your tracks, sends, and click.",
                       "Use File → Project templates → **Save project as template...** and give it a name.",
                       "For a new song, use File → Project templates and choose your template, then File → Save project as… straight away to give the song its own name.",

@@ -27,7 +27,7 @@ STEPS = [
                 ["Short-term LUFS", "watch it through the chorus; it often sits 1-3 LU above the integrated number", "shows where the song really gets loud"],
                 ["True peak", "-1 dBTP or lower", "leaves room for encoders and cheap converters"],
                 ["Loudness range", "often about 4-8 LU for pop and rock, more for acoustic or quiet music", "no right answer: it is the shape of your song"]],
-      how={"live": ["Live has no stock loudness meter that I can name here. Put a loudness meter plug-in on the **Master**, last in the chain, "
+      how={"live": ["Live has no stock loudness meter that I can name here. Put a loudness meter plug-in on the **Main** track (called **Master** in Live 11), last in the chain, "
                     "or export the song and run `hypnomix measure` on the file. If your version of Live has a loudness meter, use it.",
                     "Read the meter while the whole song plays, then read the **integrated** number at the end."],
            "reaper": ["On the **Master** track click **FX** and type \"loudness\" in the search box to add **JS: Loudness Meter Peak/RMS/LUFS (Cockos)**. Put it last in the chain.",
@@ -108,8 +108,8 @@ STEPS = [
                 ["Gain reduction (loudest part)", "1-3 dB gentle; 4-6 dB loud", "beyond that you hear pumping and flatness"],
                 ["Release", "automatic, or start around 50-200 ms and adjust", "too fast distorts bass; too slow smears the beat"],
                 ["Number of limiters", "one, last", "stacked limiters add distortion"]],
-      how={"live": ["Audio Effects → **Limiter**, last device on the **Master**. Set the **Ceiling** to -1 dB and raise **Gain** while the loudest part plays.",
-                    "Watch its gain-reduction meter. Don't assume it measures true peak: leave -1 dB and check the result with a loudness meter or `hypnomix measure`."],
+      how={"live": ["Audio Effects → **Limiter**, last device on the **Main** track (called **Master** in Live 11). Set the **Ceiling** to -1 dB and raise **Gain** while the loudest part plays.",
+                    "In Live 12.1 and later, Limiter's **Mode** offers **Standard**, **Soft Clip** and **True Peak**: pick **True Peak** for mastering. In earlier Live versions, leave -1 dB and check the exported file with a loudness meter or `hypnomix measure`."],
            "reaper": ["On the master add **ReaLimit** last in the chain. Set its **Ceiling** to -1 dB, tick **True peak** (next to **Brickwall**), and lower **Threshold** while the loudest part plays. Watch its gain-reduction display.",
                       "Leave at least -1 dB of ceiling and verify the rendered file with a loudness meter or `hypnomix measure`."],
            "ardour": ["On the master strip add a limiter last in the chain (x42 Digital Peak Limiter, if you have it). Set the ceiling to -1 dB and push it while the loudest part plays. If it has a true-peak mode, switch it on."]},
@@ -176,7 +176,7 @@ STEPS = [
                 ["Going to 16-bit", "TPDF dither, once, last", "hides rounding distortion in a fade-out"],
                 ["Sample-rate conversion", "do it before dither", "dither belongs at the very end"],
                 ["A copy you will process again", "dither off", "dither only on the final file"]],
-      how={"live": ["File → **Export Audio/Video**. Choose a 16-bit file and set the dither option the dialog offers (triangular if listed). For a 24-bit file leave dither off."],
+      how={"live": ["File → **Export Audio/Video**. Choose a 16-bit file and set **Dither Options** to **Triangular** (or one of the **POW-r** modes). For a 24-bit file choose **No Dither**."],
            "reaper": ["File → **Render...**. For a 16-bit file, tick **Dither master** (and optionally **Noise shape master** beside it; for stems, **Dither stems** and **Noise shape stems**). For 24-bit leave them off."],
            "ardour": ["Session → **Export → Export to Audio File(s)**. In the format's settings choose a 16-bit sample format and a dithering type (triangular); for 24-bit choose none."]},
       listen="Turn a quiet fade-out up loud on a 16-bit export with no dither, then with dither. Without: grainy. With: a soft hiss. The demo exaggerates rounding with only 6 bits and has no dither in it: the gritty noise that follows the notes is the kind of distortion dither hides. (Its aliasing example is a different problem; ignore it here.)",

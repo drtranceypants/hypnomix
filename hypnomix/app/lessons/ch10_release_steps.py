@@ -26,7 +26,7 @@ STEPS = [
                 ["Instrumental", "same length, same start point and the same master chain as the full master", "it lines up exactly with the full version"],
                 ["File names", "Artist - Title (Master).wav", "the same pattern for every file, so nothing is mistaken for another version"],
                 ["Folder", "one release folder with Master, Instrumental, Preview, Art and Lyrics inside", "everything in one place when you upload"]],
-      how={"live": ["File → **Export Audio/Video**: Rendered Track **Master**, the whole song selected, WAV, with the bit depth and sample rate the distributor asks for.",
+      how={"live": ["File → **Export Audio/Video**: Rendered Track **Main** (called **Master** in Live 11), the whole song selected, WAV, with the bit depth and sample rate the distributor asks for.",
                     "For the instrumental, mute the vocal tracks and export again with a new file name."],
            "reaper": ["File → **Render**: Source **Master mix**, Bounds **Entire project**, WAV, the bit depth and sample rate the distributor asks for.",
                       "For the instrumental, mute the vocal tracks and render again with a new file name."],

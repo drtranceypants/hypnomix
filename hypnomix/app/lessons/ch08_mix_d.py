@@ -68,7 +68,7 @@ STEPS = [
                 ["Bus compressor gain reduction", "1-2 dB on the loudest moments", "more starts to change the balance"],
                 ["Bus compressor attack and release", "attack 10-30 ms, release 100-300 ms or auto", "lets the start of each hit through; recovers before the next beat"],
                 ["Limiter on the master", "off", "save it for mastering"]],
-      how={"live": ["Click the **Master** track's device view and drag **Glue Compressor** onto it, if your edition has it (otherwise **Compressor**).",
+      how={"live": ["Click the **Main** track's device view (called **Master** in Live 11) and drag **Glue Compressor** onto it, if your edition has it (otherwise **Compressor**).",
                     "Set ratio 2:1 and a threshold that shows 1-2 dB on the meter on the loudest moments; set makeup to match the bypassed level.",
                     "Do not add a Limiter yet."],
            "reaper": ["Show the master track (View menu → Master track), click its **FX** button and add **ReaComp**.",
@@ -147,7 +147,7 @@ STEPS = [
                 ["Quiet listen", "very low volume, as quiet as you can still hear the vocal", "tells you the balance without loudness helping"],
                 ["Small speakers", "a phone or laptop speaker, at a normal level", "can you still hear the bass line and the words?"],
                 ["Earbuds and car", "a pair you know well; a drive if you can", "tests harshness and low-end boom"]],
-      how={"live": ["Add **Utility** on the master (after everything else) and switch its **Mono** button on to hear the mix in mono. Remove or switch it off before you bounce."],
+      how={"live": ["Add **Utility** on the **Main** track (**Master** in Live 11, after everything else) and switch its **Mono** button on to hear the mix in mono. Remove or switch it off before you bounce."],
            "reaper": ["In the Mixer, click the **Mono** button on the master strip to hear the mix in mono, and click it again to go back to stereo (or put a mono-sum plug-in at the end of the master's FX chain). Switch it off before you bounce."],
            "ardour": ["Use the Monitor section's mono button if your session has one turned on, or add a mono (sum to mono) plug-in at the end of the master's plug-in box. Switch it off before you bounce."]},
       listen="Switch between stereo and mono at the same loudness. The vocal and the bass should stay; if something vanishes or "
