@@ -43,7 +43,7 @@ release, lookahead, sidechain gain and EQ) and Glue Compressor (its menu values 
 ratio, Range, a soft knee; its Auto release is modelled as a fixed 300 ms). Check the result by ear. Close the set in Live before
 --apply; the new set is written next to the original so its samples stay linked.
 """
-import argparse, gzip, math, re, sys
+import argparse, gzip, math, os, re, sys
 from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -842,7 +842,7 @@ def main():
         for f in fs:
             print(f"  {f['id']}: {f['problem']}\n    -> {f['fix']}")
         return
-    if a.apply and Path(a.apply).resolve().parent != src.resolve().parent:
+    if a.apply and not os.environ.get("HYPNOMIX_ALLOW_TMP_SET") and Path(a.apply).resolve().parent != src.resolve().parent:
         sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent}): "
                  "samples linked by relative path go offline elsewhere")
     tree = ET.ElementTree(ET.fromstring(read_gz(src)))

@@ -34,7 +34,7 @@ Usage:
   hypnomix timing SET.als --track ... --apply "SET (timing).als" [--strength 1.0]
 Close the set in Live before --apply. Assumes a constant tempo and 4/4.
 """
-import argparse, math, sys
+import argparse, math, os, sys
 from pathlib import Path
 
 import numpy as np
@@ -675,7 +675,7 @@ def main():
     ap.add_argument("--ids", help="with --apply: only nudge these finding ids (comma-separated, from --json)")
     a = ap.parse_args()
     src = Path(a.als)
-    if a.apply and Path(a.apply).resolve().parent != src.resolve().parent:
+    if a.apply and not os.environ.get("HYPNOMIX_ALLOW_TMP_SET") and Path(a.apply).resolve().parent != src.resolve().parent:
         sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent})")
     tree = aa.load(src)
     root = tree.getroot()

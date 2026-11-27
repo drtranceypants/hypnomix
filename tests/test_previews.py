@@ -417,5 +417,102 @@ class AbTempSets(unittest.TestCase):
         self.assertFalse(outside.exists())
 
 
+# ---------------------------------------------------------------- timing and sidechain previews build temporary sets too
+def comp_xml(source_track, thr=0.5):
+    """A Compressor with its sidechain on, listening to a track's output (post FX); every field the tool reads."""
+    m = lambda n, v: f'<{n}><Manual Value="{v}"/></{n}>'
+    return ('<Compressor2 Id="1"><On><Manual Value="true"/></On>'
+            + m("Threshold", thr) + m("Ratio", 4.0) + m("Attack", 20.0) + m("Release", 400.0) + m("Knee", 6.0)
+            + m("Model", 0) + m("LookAhead", 0) + m("DryWet", 1.0)
+            + '<SideChain><OnOff><Manual Value="true"/></OnOff><Volume><Manual Value="1"/></Volume><RoutedInput>'
+              f'<Target Value="AudioIn/Track.{source_track}/PostFxOut"/><UpperDisplayString Value="Kick"/>'
+              '<LowerDisplayString Value="Post FX"/></RoutedInput></SideChain></Compressor2>')
+
+
+def pulse_wav(path, times, freq, secs, decay=0.006):
+    y = np.zeros(int(secs * SR))
+    m = int(0.03 * SR)
+    for t in times:
+        k = int(t * SR)
+        y[k:k + m] += 0.9 * np.sin(2 * np.pi * freq * np.arange(m) / SR) * np.exp(-np.arange(m) / (decay * SR))
+    sf.write(path, y, SR, subtype="PCM_24")
+
+
+def cli(*args, allow=False):
+    """The command line as a person runs it: the temporary-set variable is only set when asked for."""
+    import os, subprocess
+    env = {k: v for k, v in os.environ.items() if k != "HYPNOMIX_ALLOW_TMP_SET"}
+    if allow:
+        env["HYPNOMIX_ALLOW_TMP_SET"] = "1"
+    return subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env)
+
+
+class AbTimingSidechainTempSets(unittest.TestCase):
+    def folders(self):
+        td = Path(tempfile.mkdtemp())
+        song_dir, scan_dir = td / "song", td / "scan"
+        (song_dir / "Samples").mkdir(parents=True)
+        (scan_dir / "raw").mkdir(parents=True)
+        return song_dir, scan_dir
+
+    def check_pair(self, song_dir, scan_dir, before_tree, fid):
+        self.assertEqual(sorted(str(p.relative_to(song_dir)) for p in song_dir.rglob("*")), before_tree)
+        self.assertEqual(list((scan_dir / "ab").glob("ab-tmp-*")), [])
+        self.assertEqual(list((scan_dir / "ab").rglob("*.als")), [])
+        row = json.loads((scan_dir / "ab" / "ab.json").read_text(encoding="utf-8"))[fid]
+        self.assertNotIn("preview failed", row.get("note", ""), row)
+        self.assertIn("a", row, row)
+        for k in ("a", "b"):
+            self.assertTrue((scan_dir / "ab" / row[k]).is_file(), row)
+            self.assertTrue(row[k].endswith(".wav"), row)
+
+    @unittest.skipUnless(HAVE_RB, _isolate.NO_RUBBERBAND)
+    def test_timing_preview_end_to_end(self):
+        song_dir, scan_dir = self.folders()
+        # a beat every half second (120 BPM), a few of them 40 ms late; samples only by relative path
+        pulse_wav(song_dir / "Samples" / "drums.wav", [i * 0.5 + (0.04 if i in (9, 13, 21) else 0) for i in range(32)], 80, 16.0)
+        orig = write_set(song_dir / "Song.als", [track_xml(1, "Drums", "/nonexistent/drums.wav", [(0.0, 0.0), (1.0, 2.0)],
+                                                           end=32.0, rel="Samples/drums.wav")])
+        tj = scan_dir / "raw" / "timing.json"
+        r = cli("timing", orig, "--json", tj)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        fs = [f for f in json.loads(tj.read_text(encoding="utf-8"))["findings"] if f["applies"] == "set"]
+        self.assertTrue(fs, "expected timing to find the late hit")
+        (scan_dir / "scan.json").write_text(json.dumps({"set": str(orig)}), encoding="utf-8")
+        (scan_dir / "findings.json").write_text(json.dumps({"set": str(orig), "findings": fs}), encoding="utf-8")
+        before_tree = sorted(str(p.relative_to(song_dir)) for p in song_dir.rglob("*"))
+        with mock.patch.object(sys, "argv", ["ab", str(scan_dir)]):
+            ab.main()
+        self.check_pair(song_dir, scan_dir, before_tree, fs[0]["id"])
+
+        outside = scan_dir / "moved.als"                  # a person's own command line still refuses
+        r2 = cli("timing", orig, "--apply", outside, "--ids", fs[0]["id"])
+        self.assertNotEqual(r2.returncode, 0)
+        self.assertIn("same folder", r2.stdout + r2.stderr)
+        self.assertFalse(outside.exists())
+
+    def test_sidechain_preview_end_to_end(self):
+        song_dir, scan_dir = self.folders()
+        pulse_wav(song_dir / "Samples" / "kick.wav", [i * 0.5 for i in range(32)], 60, 16.0, decay=0.05)
+        sf.write(song_dir / "Samples" / "bass.wav", tone(55, 16.0, 0.5), SR, subtype="PCM_24")
+        mk = [(0.0, 0.0), (1.0, 2.0)]
+        orig = write_set(song_dir / "Song.als", [
+            track_xml(1, "Kick", "/nonexistent/kick.wav", mk, end=32.0, rel="Samples/kick.wav"),
+            track_xml(2, "Bass", "/nonexistent/bass.wav", mk, comp_xml(1), end=32.0, base=200, rel="Samples/bass.wav")])
+        (scan_dir / "scan.json").write_text(json.dumps({"set": str(orig)}), encoding="utf-8")
+        (scan_dir / "findings.json").write_text(json.dumps({"set": str(orig), "findings": [
+            {"id": "sidechain-1", "tool": "sidechain", "host": "Bass", "track": "Bass", "applies": "set"}]}), encoding="utf-8")
+        before_tree = sorted(str(p.relative_to(song_dir)) for p in song_dir.rglob("*"))
+        with mock.patch.object(sys, "argv", ["ab", str(scan_dir)]):
+            ab.main()
+        self.check_pair(song_dir, scan_dir, before_tree, "sidechain-1")
+
+        outside = scan_dir / "moved.als"
+        r2 = cli("sidechain", orig, "--host", "Bass", "--apply", outside)
+        self.assertNotEqual(r2.returncode, 0)
+        self.assertIn("same folder", r2.stdout + r2.stderr)
+        self.assertFalse(outside.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
