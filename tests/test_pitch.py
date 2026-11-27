@@ -59,7 +59,7 @@ class TrackAndCache(unittest.TestCase):
         self.wav = self.root / "tone.wav"
         write_sine_and_silence(self.wav)
         self.cache_dir = self.root / "cache"
-        p = mock.patch.object(pitch, "CACHE", self.cache_dir)
+        p = mock.patch.object(pitch, "cache_dir", lambda: self.cache_dir)
         p.start()
         self.addCleanup(p.stop)
 
@@ -81,7 +81,7 @@ class TrackAndCache(unittest.TestCase):
     def test_cache_reuses_single_npz_and_respects_cache_false(self):
         nocache = self.root / "nocache"
         nocache.mkdir()
-        with mock.patch.object(pitch, "CACHE", nocache):
+        with mock.patch.object(pitch, "cache_dir", lambda: nocache):
             pitch.track(self.wav, cache=False)
         self.assertEqual(list(nocache.iterdir()), [])
 
