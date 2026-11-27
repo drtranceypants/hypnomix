@@ -30,7 +30,7 @@ def main():
     ap.add_argument("--sr", type=int, default=44100)
     a = ap.parse_args()
     p = PJ.load(a.project)
-    print(f"{p.path.name}: {p.daw}, {p.tempo:g} BPM {p.beats_per_bar}/4, {len(p.tracks)} tracks, {p.end():.1f} s")
+    print(f"{p.path.name}: {p.daw}, {p.tempo:g} BPM {p.meter_text}, {len(p.tracks)} tracks, {p.end():.1f} s")
     for w in getattr(p, "warnings", []):
         print("  !", w)
     for t in p.tracks:
@@ -55,6 +55,11 @@ def main():
         print(f"\n{len(missing)} missing file(s):")
         for t, c, path in missing[:20]:
             print(f"  {t.name}: {path}")
+    takes = p.missing_takes()
+    if takes:
+        print(f"\n{len(takes)} missing file(s) only take lanes use (not heard):")
+        for t, lane, c, path in takes[:20]:
+            print(f"  {t.name}, {lane.name}: {path}")
     if a.render is None:
         return
     od = out_at(a.render or None, "render", p.path.stem)

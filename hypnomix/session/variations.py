@@ -26,6 +26,19 @@ a player would vary it) and one unused stretch for each. Then:
   --every 4        vary one repeat in this many      --min-repeats 4   what counts as repetitive
   --track NAME     only these parts (repeatable)     --max 3           different unused stretches per part
 
+  hypnomix variations SESSION.ardour --cues [--engine URL]   HypnoMix DAW: auditions into cue slots
+
+A HypnoMix DAW session (.ardour) is read the same way (regions pasted again and again are the repeats; regions do
+not loop in a session). Nothing is written into the session file: with --cues each proposal's two audition files go
+into the cue slots (Session view) of the session open in the HypnoMix engine, on a track "<Track> variations" next
+to the part (a new one, or the empty slots of one already there): slot pairs "<id> A" (the loop as it is) and
+"<id> B" (the unused take; with --mode layer the loop and the take together, as the variation track would play
+them), looping and launched on the bar, so launching A then B switches on the bar line. The part keeps playing on
+its own track (only the variations track's own Arrangement is silenced by its clips), so mute the part while you
+compare, or play from a spot where it is silent. The engine must have this very session file open (a copy of the
+same name in another folder is refused). HypnoMix sees the change (the session shows as unsaved, and Stop, Open,
+New and quit ask Save first): save the session to keep them.
+
 It also lists recordings in the project's Samples folder that the set does not use at all: try
 `hypnomix loops FILE` on the long ones.
 
@@ -79,6 +92,50 @@ def plays(track, als_dir, tempo, bpb):
             f = sm.file_seconds(ci, np.array([ci["start"], ci["end"]]), tempo)
             out.append(dict(start=ci["start"], len=ci["end"] - ci["start"], file=ci["path"],
                             f0=float(f[0]), f1=float(f[1]), ci=ci))
+    return out
+
+
+def ardour_plays(track, tempo):
+    """plays() for a track of the shared model (a HypnoMix DAW session): one entry per audio region, unmuted.
+    `paths` holds every channel's file (a session keeps one mono file per channel), for stereo auditions."""
+    out = []
+    per = tempo / 60.0
+    for c in track.clips:
+        tk = c.take
+        if c.muted or tk is None or tk.kind != "audio" or tk.path is None or not Path(tk.path).exists():
+            continue
+        if c.stretch_markers or abs(tk.rate - 1.0) > 1e-6:          # bent timing: leave it alone
+            continue
+        out.append(dict(start=c.start * per, len=c.length * per, file=Path(tk.path), f0=float(tk.offset),
+                        f1=float(tk.offset + c.length), paths=[Path(tk.path)] + [Path(x) for x in tk.extra_paths]))
+    return out
+
+
+def load_play(p):
+    """A play's audio, every channel (a region's mono files side by side)."""
+    paths = p.get("paths") or [p["file"]]
+    ys = [B.load(x) for x in paths]
+    sr = ys[0][1]
+    if len(ys) == 1 or any(y[1] != sr for y in ys):
+        return ys[0]
+    n = min(len(y[0]) for y in ys)
+    return np.concatenate([y[0][:n, :1] for y in ys], axis=1), sr
+
+
+def ardour_unused(p, src):
+    """Recordings in the session's sound folder that no region plays, at least 4 s: [(path, seconds)]."""
+    ref = {Path(tk.path).name for t in p.tracks for c in t.clips for tk in c.takes if tk.path is not None}
+    ref |= {Path(x).name for t in p.tracks for c in t.clips for tk in c.takes for x in tk.extra_paths}
+    out = []
+    for d in sorted(Path(src).parent.glob("interchange/*/audiofiles")):
+        for f in sorted(d.iterdir()):
+            if f.suffix.lower() in AUDIO_EXT and f.name not in ref and "%R" not in f.name:
+                try:
+                    du = sf.info(str(f)).duration
+                except Exception:
+                    continue
+                if du >= 4:
+                    out.append((f, du))
     return out
 
 
@@ -374,22 +431,52 @@ def main():
     ap.add_argument("--takes", action="append", default=[], metavar="DIR", help="another folder of spare takes to search (repeatable)")
     ap.add_argument("--out"); ap.add_argument("--no-clips", action="store_true", help="skip the audition files")
     ap.add_argument("--apply", metavar="NEW.als")
+    ap.add_argument("--cues", action="store_true", help="put the auditions into cue slots of the session open in the HypnoMix engine (with a session file, "
+                         "that very file must be the one open). HypnoMix sees the change: the session shows as "
+                         "unsaved, and Stop, Open, New and quit ask Save first; save in HypnoMix DAW to keep them")
+    ap.add_argument("--engine", help="the engine's MCP URL (with --cues; it is in the DAW view's engine panel)")
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args()
     from hypnomix.session import automation as aa
     from hypnomix.core.paths import out_at
     src = Path(a.als)
-    tree = aa.load(src); root = tree.getroot()
-    bpb = aa.BPB
-    tempo = B.set_tempo(root)
-    if B.tempo_points(root):
-        sys.exit("this set has tempo automation: variations needs a constant tempo")
-    tracks = [t for t in root.find(".//Tracks") if t.tag == "AudioTrack"]
-    per_track = [(t.find("./Name/EffectiveName").get("Value"), t, plays(t, src.parent, tempo, bpb)) for t in tracks]
+    is_ardour = src.suffix.lower() == ".ardour"
+    if is_ardour and a.apply:
+        sys.exit("--apply writes a Live set: for a HypnoMix DAW session use --cues (the engine's Session view)")
+    if a.cues and not is_ardour:
+        sys.exit("--cues is for a HypnoMix DAW session open in the HypnoMix engine (a Live set: --apply)")
+    if a.cues and a.no_clips:
+        sys.exit("--cues puts the audition files into the slots: drop --no-clips")
+    eng = None
+    if a.cues:
+        from hypnomix.project import ardour_cues as AC
+        try:
+            eng = AC.connect(a.engine, session=src)
+        except RuntimeError as e:
+            sys.exit(str(e))
+    if is_ardour:
+        from hypnomix import project as PJ
+        proj = PJ.load(src)
+        tree = root = None
+        bpb, tempo = proj.beats_per_bar, proj.tempo
+        if proj.tempo_changes > 1:
+            sys.exit("this session's tempo changes: variations needs a constant tempo")
+        if getattr(proj, "meter_changes", 0):
+            sys.exit("this session's time signature changes: variations needs one meter (its bars would be wrong)")
+        tracks = [t for t in proj.tracks if t.kind == "audio"]
+        per_track = [(t.name, t, ardour_plays(t, tempo)) for t in tracks]
+    else:
+        tree = aa.load(src); root = tree.getroot()
+        bpb = aa.BPB
+        tempo = B.set_tempo(root)
+        if B.tempo_points(root):
+            sys.exit("this set has tempo automation: variations needs a constant tempo")
+        tracks = [t for t in root.find(".//Tracks") if t.tag == "AudioTrack"]
+        per_track = [(t.find("./Name/EffectiveName").get("Value"), t, plays(t, src.parent, tempo, bpb)) for t in tracks]
     used = used_map([p for _, _, pl in per_track for p in pl])
     od = out_at(a.out, "variations", src.stem)
     props, report = [], []
-    loose = unused_files(root, src)
+    loose = ardour_unused(proj, src) if is_ardour else unused_files(root, src)
     extra = [Path(x) for d in a.takes for x in ([Path(d)] if Path(d).is_file() else sorted(Path(d).rglob("*")))
              if x.suffix.lower() in AUDIO_EXT]
     off_tempo = set()
@@ -449,15 +536,19 @@ def main():
                              file=str(cf), file_from=c["f0"], file_to=c["f1"], fit=c["fit"], different=c["different"]))
         if not a.no_clips:
             safe = re.sub(r'[\\/:*?"<>|]', "-", f"{q['id']} {q['track']} bar {q['bar']}")
-            ya, sra = B.load(sp["file"])
-            yb, srb = B.load(cf)
+            ya, sra = load_play(sp)
+            yb, srb = load_play(sp) if not c.get("file") else B.load(cf)      # an unused stretch of the same recording
             A_ = ya[int(sp["f0"] * sra): int(sp["f1"] * sra)]
             B_ = yb[int(c["f0"] * srb): int(c["f1"] * srb)] * float(np.clip(10 ** (-c["level_db"] / 20), 0.25, 4.0))
             sf.write(str(od / f"{safe} A (the loop).wav"), A_, sra, subtype="PCM_24")
             sf.write(str(od / f"{safe} B (unused take).wav"), B_, srb, subtype="FLOAT")
+            if B_.shape[1] == 1 and A_.shape[1] > 1:
+                B_ = np.repeat(B_, A_.shape[1], axis=1)
+            q["files"] = dict(A=od / f"{safe} A (the loop).wav", B=od / f"{safe} B (unused take).wav")
             if sra == srb and A_.shape[1] == B_.shape[1]:
                 n = min(len(A_), len(B_))
                 sf.write(str(od / f"{safe} A+B (together).wav"), A_[:n] + B_[:n], sra, subtype="FLOAT")
+                q["files"]["AB"] = od / f"{safe} A+B (together).wav"
     if loose:
         md += ["", "## Recordings in the project folder that this set does not use", "",
                "Try `hypnomix loops FILE` on the long ones.", "", "| file | length |", "|---|---|"]
@@ -471,7 +562,38 @@ def main():
     (od / "variations.json").write_text(json.dumps(dict(set=str(src), tempo=tempo, parts=[
         {k: v for k, v in r.items()} for r in report], findings=out_json), indent=1, default=str), encoding="utf-8")
     print(f"\n{len(props)} proposals on {len({q['track'] for q in props})} parts → {od}")
+    if a.cues:
+        if not props:
+            sys.exit("nothing to put in cue slots")
+        from hypnomix.project import ardour_cues as AC
+        by_track = {}
+        for q in props:
+            by_track.setdefault(q["track"], []).append(q)
+        missed = 0
+        try:
+            for name, qs in by_track.items():
+                after, tname = AC.track_id(eng, name)
+                label = f"{tname or name} variations"
+                tid, _ = AC.clip_track(eng, label, after)
+                clips = []
+                for q in qs:
+                    beats = q["bars"] * bpb
+                    second = q["files"].get("AB") if a.mode == "layer" else None
+                    clips += [dict(file=q["files"]["A"], name=f"{q['id']} A bar {q['bar']}", beats=beats),
+                              dict(file=second or q["files"]["B"], name=f"{q['id']} B" + (" (with the loop)" if second else ""), beats=beats)]
+                placed = AC.fill(eng, tid, clips)
+                missed += AC.not_placed(placed)
+                print(AC.report(placed, label))
+        except (RuntimeError, AC.MCPError) as e:
+            sys.exit(f"the cue slots were not filled: {e}")
+        if missed:
+            sys.exit(1)
+        return
     if not a.apply:
+        if is_ardour:
+            if props:
+                print("listen to the A / B files, or add --cues to put them in cue slots of the session open in the HypnoMix engine.")
+            return
         if props:
             print("listen to the A / B files, then add --apply \"NEW.als\" (variation tracks arrive switched off).")
         return

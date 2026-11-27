@@ -71,13 +71,15 @@
   .tour-spot { transition: none; }
 }
 
-/* a window narrower than the whole top bar: the less used readouts give way (the DSP meter, the clock, the time signature), the
-   name block may shrink a little, and what still does not fit scrolls sideways (the tour scrolls a button it points at into view),
-   so Save, Engine and Tour can still be reached. The ? key opens the shortcuts list, which has a "Take a tour" button too. */
-@media (max-width: 1320px) {
-  .topbar { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
-  .topbar::-webkit-scrollbar { display: none; }
+/* a window narrower than the whole top bar (about 1430 px with the engine's loudness shown, and the name block needs
+   room too): the less used readouts give way (the DSP meter, the clock, the time signature) and the name block may shrink
+   down to the mark. The bar itself scrolls sideways inside itself at every width (app.css), never the page, so a longer
+   label or other fonts cannot push the page sideways either (the tour scrolls a button it points at into view), and Save,
+   Engine and Tour can still be reached. The ? key opens the shortcuts list, which has a "Take a tour" button too. The
+   loudness readout itself has no width rule: it is one number at every width (the rest of the loudness is in the status bar). */
+@media (max-width: 1520px) {
+  .topbar { gap: var(--s3); }
   .topbar > *:not(.brand) { flex-shrink: 0; }
-  .topbar .brand { min-width: 150px; }
-  .topbar .cpu, .topbar .field.pos:last-child, .topbar .field[data-info="Time signature"] { display: none; }
+  .topbar .brand { min-width: 24px; }
+  .topbar .cpu, .topbar .field.pos + .field.pos, .topbar .field[data-info="Time signature"] { display: none; }
 }

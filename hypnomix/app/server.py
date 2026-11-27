@@ -26,7 +26,8 @@ What you can do in it:
                 `uv pip install -e ".[assistant]"` in the HypnoMix folder
   DAW mode      `hypnomix app --daw`: the HypnoMix DAW's window (Arrangement, Session, Mixer, Review, the
                 Assistant) on the HypnoMix DAW engine, which the app starts, watches and stops (hypnomix/app/daw.py);
-                the browser reaches the engine only through this server (POST /mcp)
+                the browser reaches the engine only through this server (POST /mcp, and the meter stream's
+                WebSocket at /api/daw/meters, relayed by hypnomix/app/daw_meters.py)
   Live          with the Max for Live device (`hypnomix device`) loaded in your set, "Show in Live" jumps Live
                 to the finding: the track is selected, the playhead and the loop brace move to the spot, and
                 the clip opens. The device also steps through the open questions from inside Live.
@@ -2005,6 +2006,9 @@ def make_handler(port):
                     html = PAGE.replace("__TOKEN__", TOKEN).replace("__DAWMODE__", "true" if DW.STATE["daw"] and SU.is_done() else "false")
                     html = html.replace("<script>", f'<script nonce="{nonce}">')
                     return self.send(200, html.encode(), "text/html; charset=utf-8", nonce=nonce)
+                if u.path == "/api/daw/meters":     # DAW mode: the engine's meter stream (a WebSocket), same origin, the page's token
+                    from hypnomix.app import daw as DW, daw_meters as DM
+                    return DM.relay(self, q, TOKEN, DW.ENGINE)
                 if u.path == "/daw" or u.path.startswith("/daw/") or u.path in ("/api/daw/state", "/api/daw/import"):   # DAW mode (an import's status needs its random job id)
                     from hypnomix.app import daw as DW
                     r = DW.handle_get(u.path, q, TOKEN)             # the DAW view's page comes with its own nonce
@@ -2513,8 +2517,9 @@ def make_handler(port):
         def mcp_proxy(self):
             """POST /mcp (the page's token checked by do_POST): the engine's MCP surface, same origin (it sends no CORS
             headers). The request must be one JSON-RPC message (or a batch of them) with a method name, and tools/call
-            must name a tool with an object of arguments; then it goes to the engine as it came and the reply comes back
-            as it went."""
+            must name a tool with an object of arguments (daw.parse_rpc: strict, no name repeated in an object). What
+            goes to the engine is the message as checked, written out again (never the bytes it came as, so the engine
+            cannot read a different tool out of it); the reply comes back as it went."""
             n = self.content_length(8_000_000)
             if n is None:
                 return
@@ -2525,10 +2530,10 @@ def make_handler(port):
             if "json" not in (self.headers.get("Content-Type") or ""):
                 return self.send(415, {"error": "JSON-RPC only"})
             from hypnomix.app import daw as DW
-            why = DW.check_rpc(raw)
+            msg, why = DW.parse_rpc(raw)
             if why:
                 return self.send(400, {"error": why})
-            code, data = DW.ENGINE.rpc(raw, DW.rpc_timeout(raw))
+            code, data = DW.ENGINE.rpc(msg, DW.rpc_timeout(msg))
             if not data:                                  # a notification: nothing to say back
                 self.send_response(202 if code == 200 else code)
                 self.send_header("Content-Length", "0")

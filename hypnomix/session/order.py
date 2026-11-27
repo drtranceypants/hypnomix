@@ -21,7 +21,20 @@ which track a clip sits on.
    A moved clip's clip gain is adjusted by the difference between the two faders, so it plays at the same level
    in the mix as before. When the two tracks' effects differ, the review says so: A/B it.
 
+3. Groups in a HypnoMix DAW session (group-N): similar instruments always grouped. Two or more ungrouped tracks of one
+   family (drums, bass, keys/guitar/synth, vocals, strings/brass; from names.json, else the track names, where the
+   rightmost instrument word decides, after a few known two-word names: "Bass Drum" and "Kick Sub" are drums,
+   "Bass Guitar", "Synth Bass" and "Bass Synth" are bass, "Tom 1" and "Overhead L" are drums) become a group track named after it (a route group plus its bus, the tracks routed to
+   it); one more track of a family that has a group joins it. Written straight into the open HypnoMix DAW over MCP
+   when approved (`--engine [URL] --ids group-1`; the engine must have this very session file open); nothing is
+   written without --ids (--apply is for a Live set). A group of tracks with different channel counts is listed as
+   by hand and never written, even with its id. HypnoMix sees the change (the session shows as unsaved, and Stop,
+   Open, New and quit ask Save first); save it to keep it. Tracks already routed into a bus are left alone. (Track order
+   and vocal stacks for HypnoMix DAW sessions come from `hypnomix scan`, and `fix` writes them into a new snapshot.)
+
 Usage:
+  hypnomix order SESSION.ardour [--names names.json] [--json OUT.json]  # HypnoMix DAW: the group options
+  hypnomix order SESSION.ardour --engine [http://127.0.0.1:PORT/mcp] --ids group-1,group-2
   hypnomix order SET.als --names names.json [--json OUT.json]           # proposal (names.json: `hypnomix name`)
   hypnomix order SET.als --names names.json --apply NEW.als [--ids order-1,order-2]
 """
@@ -349,11 +362,23 @@ def read_names(path):
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix order", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
-    ap.add_argument("als"); ap.add_argument("--names", required=True, help="names.json from `hypnomix name`")
+    ap.add_argument("als"); ap.add_argument("--names", help="names.json from `hypnomix name` (needed for a Live set)")
     ap.add_argument("--json"); ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
     ap.add_argument("--no-clips", action="store_true", help="only reorder tracks; leave every clip where it is")
+    ap.add_argument("--engine", nargs="?", const="", metavar="URL",
+                    help="HypnoMix DAW: write the approved groups into the open HypnoMix engine (default its usual URL; the "
+                         "engine's address is in the DAW view's engine panel). It must have this very session file "
+                         "open. HypnoMix sees the change: the session shows as unsaved, and Stop, Open, New and quit "
+                         "ask Save first; save in HypnoMix DAW to keep it")
     a = ap.parse_args()
     src = Path(a.als)
+    from hypnomix import project as PJ
+    if PJ.daw_of(src) == "ardour":
+        from hypnomix.project import ardour_groups as AG
+        labels = AG.labels_from(a.names)
+        sys.exit(AG.run_cli("order", src, a, lambda p: AG.plan_families(p, labels)))
+    if not a.names:
+        ap.error("--names is needed for a Live set (names.json from `hypnomix name`)")
     if a.apply and Path(a.apply).resolve() == src.resolve():
         sys.exit("refusing to overwrite the set; give a new file name")
     if a.apply and Path(a.apply).resolve().parent != src.resolve().parent:

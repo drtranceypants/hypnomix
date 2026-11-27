@@ -192,6 +192,12 @@
      'demo' (the made-up practice song, only by choice, labelled) */
   HX.mode = 'noengine';
   HX.noEngineScreen = () => HX.mode === 'noengine';
+  /* the engine's name in the status bar: always "HypnoMix engine" and its version, never the name its MCP surface
+     gives itself in its initialize reply, so renaming that surface changes nothing on the page */
+  HX.engineLabel = (info) => {
+    const v = info && typeof info.version === 'string' ? info.version.trim().slice(0, 32) : '';
+    return 'HypnoMix engine' + (v ? ' ' + v : '');
+  };
   const idleLabel = () => (HX.mode === 'demo' ? 'Demo' : 'No engine');
   function setMode(m) {
     HX.mode = m; app.dataset.mode = m;
@@ -206,7 +212,7 @@
     HX.$('#connectLabel').textContent = label;
     const es = HX.$('#engineStatus');
     es.classList.toggle('on', state === 'on');
-    es.textContent = state === 'on' ? 'MCP · ' + (HX.mcp.serverInfo ? HX.mcp.serverInfo.name + ' ' + HX.mcp.serverInfo.version : 'engine') + ' · ' + HX.mcp.tools.length + ' tools · ' + S.session.sampleRate / 1000 + ' kHz · ' + (HX.liveEngine.metersLive ? 'meters live' : 'meters simulated (no meters_get)')
+    es.textContent = state === 'on' ? 'MCP · ' + HX.engineLabel(HX.mcp.serverInfo) + ' · ' + HX.mcp.tools.length + ' tools · ' + S.session.sampleRate / 1000 + ' kHz · ' + (HX.liveEngine.stream && HX.liveEngine.stream.live ? 'meters streaming' : HX.liveEngine.metersLive ? 'meters live' : 'meters simulated (no meters_get)')
       : HX.mode === 'demo' ? 'Demo song · made up: it plays no sound, saves nothing and sends nothing to an engine'
       : HX.mode === 'noengine' ? (HX.api.inApp ? 'No engine connected' : 'Opened outside the HypnoMix app: only the demo song')
       : es.textContent;
@@ -463,7 +469,8 @@
     ['Transport'], ['Play / stop', 'Space'], ['Stop twice → start', 'Space Space'], ['Go to start', 'Home / ↩'], ['Move by bar', '← →'], ['Move by 4 bars', '⇧← ⇧→'], ['Loop on/off', 'L'], ['Record arm', 'F9'], ['Metronome', 'K'],
     ['Views'], ['Arrange · Session · Mixer · Review', '⌘1 ⌘2 ⌘3 ⌘4'], ['Zoom in / out', '+ −  (⌘-scroll)'], ['Zoom to fit', 'Z'], ['Follow playhead', 'F'], ['Light / dark', '⇧T'], ['Browser search', '⌘F'], ['Hide / show browser', '⌘⌥B'],
     ['Clips (Arrangement)'], ['Split at the playhead', '⌘E'], ['Mute / unmute clip', '0'], ['Delete clip', '⌫'], ['Drag without snapping', '⌘-drag'], ['Import audio', 'drop files'],
-    ['Tracks'], ['Select track above / below', '↑ ↓'], ['Mute / solo selected', 'M  S'], ['Launch scene (Session)', '1 – 8'], ['Undo / redo', '⌘Z  ⇧⌘Z'], ['Save the session', '⌘S'],
+    ['Tracks'], ['Select track above / below', '↑ ↓'], ['Select one more / a range', '⌘-click  ⇧-click'], ['Group the selected tracks', '⌘G'], ['Mute / solo selected', 'M  S'], ['Undo / redo', '⌘Z  ⇧⌘Z'], ['Save the session', '⌘S'],
+    ['Session view'], ['Launch scene', '1 – 8'], ['Into the clip slots', 'Tab'], ['Move between slots', '← → ↑ ↓'], ['Launch the focused slot', '⏎  Space'], ['Clear the focused slot', '⌫'], ['Pick a region chip, then put it in a slot', '⏎  then ⏎'], ['Let go of a picked region', 'Esc'],
     ['Assistant'], ['Palette + chat', '⌘K'], ['Approve / cancel newest card', '⏎  Esc'], ['Hide / show the Assistant', '⌘J'], ['Assistant full height / beside devices', '⌘⇧J'],
     ['Review'], ['Next / previous finding', 'J K'], ['Approve · skip · change', 'Y N C'], ['A/B', 'B'], ['Play from finding', 'P'],
   ];
@@ -488,6 +495,7 @@
   let byMouse = true;
   document.addEventListener('pointerdown', () => { byMouse = true; }, true);
   document.addEventListener('keydown', (e) => { if (e.key === 'Tab') byMouse = false; }, true);
+  HX.keyboardFocus = () => !byMouse;                 /* the Session grid's slots answer keys only when Tab put the focus there */
   const keyboardControl = () => {
     const a = document.activeElement;
     return !byMouse && !!a && a !== document.body && !!a.closest('button, a[href], summary, [role="button"], .th');
@@ -517,15 +525,16 @@
     if (e.key === 'Escape' && !e.repeat && HX.cardKey(e.key)) { e.preventDefault(); return; }       // Esc cancels the newest card; Enter approves nothing from here
     const k = e.key;
     const beat = HX.pos();
-    const sel = HX.track(S.ui.trackId);
-    const list = HX.allTracks();
+    const hidden = (t) => !!(t && HX.groups && HX.groups.hidden(t));     /* folded away in a group: not on screen */
+    const sel0 = HX.track(S.ui.trackId), sel = hidden(sel0) ? null : sel0;
+    const list = HX.allTracks().filter((t) => t === sel0 || !hidden(t));
     switch (true) {
       case k === ' ': e.preventDefault(); HX.toggle(); break;
       case k === 'Home' || k === 'Enter': e.preventDefault(); HX.locate(0); break;
       case k === 'End': HX.locate(S.session.lengthBeats - 4); break;
       case k === 'ArrowLeft': e.preventDefault(); HX.locate(Math.max(0, Math.floor(beat / 4 - (e.shiftKey ? 4 : 1) + 0.001) * 4)); HX.scrollToBeat(HX.pos()); break;
       case k === 'ArrowRight': e.preventDefault(); HX.locate((Math.floor(beat / 4 + 0.001) + (e.shiftKey ? 4 : 1)) * 4); HX.scrollToBeat(HX.pos()); break;
-      case k === 'ArrowUp' || k === 'ArrowDown': { e.preventDefault(); const i = list.indexOf(sel) + (k === 'ArrowUp' ? -1 : 1); if (list[i]) HX.select(list[i].id); break; }
+      case k === 'ArrowUp' || k === 'ArrowDown': { e.preventDefault(); const i = list.indexOf(sel0) + (k === 'ArrowUp' ? -1 : 1); if (list[i]) HX.select(list[i].id); break; }
       case k === 'l' || k === 'L': HX.toggleLoop(); break;
       case k === 'k' || k === 'K': HX.toggleMetro(); break;
       case k === 'F9': HX.toggleRec(); break;

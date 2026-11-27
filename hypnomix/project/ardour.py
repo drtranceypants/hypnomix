@@ -10,11 +10,18 @@ An Ardour session is a folder; the .ardour file in it is XML. What is read, and 
             MuteMaster), solo (self-solo), polarity (phase-invert bits), plug-in Processors (lv2, ladspa, VST,
             VST3, AU, Lua: name, active, readable parameters, preset label), automation lists that play
   routing   a track whose outputs all go to one bus sits in that bus (`parent`); a bus fed only by aux sends
-            is a "return"
+            is a "return"; a plug-in's sidechain input (its Processor type="sidechain" IO) is traced through the
+            port connections to the tracks that key it (a send's output, or a route's own output) -> the
+            Device's `sidechain` (track names) and `sidechain_tap` (pre_fader: after the source's plug-ins)
+  groups    RouteGroups/RouteGroup: name, members (`routes` ids), the subgroup bus, what the members share
+            (gain, mute, solo, ...), folded (hidden) -> `Project.groups` and each member's `group`
   regions   the track's playlist (audio-playlist / midi-playlist, or Diskstream playlist before Ardour 6):
             each Region's position, length and source offset, scale-amplitude, gain Envelope (when active),
             FadeIn / FadeOut curves (when active), muted, opaque and layering-index (upper opaque regions
             cover the ones below, as Ardour plays them), every channel's source
+  takes     the track's other playlists named "<track>.take N" (orig-track-id = the route; HypnoMix DAW records
+            each pass into one and comps from them with comp_range): `Track.take_lanes`, in take order, with
+            their regions read like the playlist's. They are not heard; the active playlist is the comp
 
 Times: Ardour 7+ writes "a<superclock>" (audio time) or "b<ticks>" (music time, 1920 per beat) and
 "<length>@<position>" for lengths; older sessions write samples. Both become seconds here; music time
@@ -25,7 +32,8 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from hypnomix.project.model import Clip, Device, Project, Take, Track
+from hypnomix.project.model import Clip, Device, Group, Project, Take, TakeLane, Track
+from hypnomix.project.model import quarters_per_bar as QB
 
 TICKS = 1920
 PLUGIN_TYPES = {"lv2": "LV2", "ladspa": "LADSPA", "windows-vst": "VST", "lxvst": "VST", "mac-vst": "VST",
@@ -125,7 +133,7 @@ def tempo_map(root, sr, version, warn):
             if t.get("type") == "Ramped" or abs(num(t.get("enpm"), 0) - num(t.get("npm"), 0)) > 1e-6:
                 warn.append(f"a tempo ramp at {secs:.1f} s is read as a steady {qpm:g} BPM")
         tempos.sort()
-        meter = tm.find(".//Meter")
+        meters_ = list(tm.iter("Meter"))
     else:
         tempos = []
         first = tm.find("Tempo")
@@ -135,10 +143,26 @@ def tempo_map(root, sr, version, warn):
         n = len(tm.findall("Tempo"))
         if n > 1:
             warn.append(f"the session has {n} tempos; music-time positions use the first ({bpm:g} BPM)")
-        meter = tm.find("Meter")
+        meters_ = tm.findall("Meter")
     clock = Clock(sr, scps, tempos or None)
-    bpb = int(num(meter.get("divisions-per-bar"), 4)) if meter is not None else 4
-    return clock, clock.tempos[0][2], bpb, len(tempos)
+    sig = meter_list(meters_)
+    if len({m for m in sig}) > 1:
+        warn.append(f"the session has meter changes ({', '.join(f'{a:g}/{b:g}' for a, b in dict.fromkeys(sig))}): bar "
+                    f"numbers assume the first, {sig[0][0]:g}/{sig[0][1]:g}")
+    return clock, clock.tempos[0][2], QB(*sig[0]), len(tempos)
+
+
+def meter_list(meters_):
+    """Meter elements -> [(divisions per bar, note value)] in order (4/4 when there is none)."""
+    out = [(num(m.get("divisions-per-bar"), 4) or 4, num(m.get("note-value"), 4) or 4) for m in meters_]
+    return out or [(4, 4)]
+
+
+def meters(root, version):
+    tm = root.find("TempoMap")
+    if tm is None:
+        return [(4, 4)]
+    return meter_list(list(tm.iter("Meter")) if version >= 7000 else tm.findall("Meter"))
 
 
 # ---------------------------------------------------------------- sources
@@ -241,7 +265,55 @@ def controllable(node, name):
     return next((c for c in node.findall("Controllable") if c.get("name") == name), None)
 
 
-def plugin_devices(rt):
+def port_owners(rts):
+    """Every output port in the session -> (route name, "send" | "direct", tap, gain, on). A send's tap is "pre_fader"
+    when it sits before the route's fader (after its plug-ins: what Live calls Post FX), else "post_fader"; `on` is
+    False for a switched-off send (it carries nothing)."""
+    owners = {}
+    for rt in rts:
+        name = rt.get("name", "")
+        for io in rt.findall("IO"):
+            if io.get("direction") == "Output":
+                for p in io.findall("Port"):
+                    owners[p.get("name")] = (name, "direct", "post_fader", 1.0, True)
+        after_amp = False
+        for pr in rt.findall("Processor"):
+            if pr.get("type") == "amp":
+                after_amp = True
+            if pr.get("type") == "send":
+                gc = next((c for c in pr.iter("Controllable") if c.get("name") == "gaincontrol"), None)
+                gain = num(gc.get("value"), 1.0) if gc is not None else 1.0
+                for io in pr.findall("IO"):
+                    if io.get("direction") == "Output":
+                        for p in io.findall("Port"):
+                            owners[p.get("name")] = (name, "send", "post_fader" if after_amp else "pre_fader", gain,
+                                                     yes(pr.get("active", "1")))
+    return owners
+
+
+def sidechain_sources(p, owners, off=None):
+    """A plug-in Processor's sidechain feeds -> [(track name, tap, send gain)], one per feeding track. A switched-off
+    send feeds nothing: its track's name goes into `off` instead (when a list is given)."""
+    feeds = []
+    for sc in p.findall("Processor"):
+        if sc.get("type") != "sidechain":
+            continue
+        for c in sc.iter("Connection"):
+            o = owners.get(c.get("other", ""))
+            if not o:
+                continue
+            if len(o) > 4 and not o[4]:
+                if off is not None and o[0] not in off:
+                    off.append(o[0])
+                continue
+            if o[0] not in [f[0] for f in feeds]:
+                feeds.append((o[0], o[2], o[3]))
+    if off is not None:
+        off[:] = [n for n in off if n not in [f[0] for f in feeds]]
+    return feeds
+
+
+def plugin_devices(rt, owners=None):
     out = []
     for p in rt.findall("Processor"):
         kind = PLUGIN_TYPES.get(p.get("type", ""))
@@ -254,8 +326,29 @@ def plugin_devices(rt):
         preset = ""
         for sub in p:
             preset = sub.get("last-preset-label") or preset
+        off = []
+        feeds = sidechain_sources(p, owners or {}, off)
         out.append(Device(name=p.get("name", "?"), kind=kind, on=yes(p.get("active", "1")), preset=preset,
-                          params=params, native=p))
+                          params=params, native=p, uid=p.get("unique-id", ""), sidechain=[f[0] for f in feeds],
+                          sidechain_tap=feeds[0][1] if feeds else "", sidechain_feeds=feeds, sidechain_off=off))
+    return out
+
+
+def route_groups(root, proj):
+    """RouteGroups -> [Group]; each member's `group` is set."""
+    by_id = {t.route_id: t for t in proj.tracks if t.route_id}
+    out = []
+    rgs = root.find("RouteGroups")
+    for g in (rgs.findall("RouteGroup") if rgs is not None else []):
+        members = [by_id[i] for i in (g.get("routes") or "").split() if i in by_id]
+        members.sort(key=lambda t: t.index)
+        shares = {k: yes(g.get(k, "0")) for k in ("gain", "relative", "mute", "solo", "recenable", "select", "color")}
+        grp = Group(name=g.get("name", ""), id=g.get("id", ""), bus=by_id.get(g.get("subgroup-bus", "")),
+                    members=members, shares=shares, folded=yes(g.get("hidden", "0")), active=yes(g.get("active", "1")),
+                    native=g)
+        for t in members:
+            t.group = grp.name
+        out.append(grp)
     return out
 
 
@@ -331,6 +424,28 @@ def playlist_of(rt, by_id, by_name):
     return by_name.get(name) if name else None
 
 
+TAKE_NAME = re.compile(r"\.take (\d{1,6})$")
+
+
+def take_number(name):
+    """'Lead Vocal.take 3' -> 3; None for any other playlist name."""
+    m = TAKE_NAME.search(name or "")
+    return int(m.group(1)) if m and int(m.group(1)) >= 1 and m.start() > 0 else None
+
+
+def take_playlists(rt, active, pls):
+    """The route's take playlists (not the one it plays), sorted by take number: [(number, Playlist)]."""
+    rid = rt.get("id")
+    out = []
+    for p in pls:
+        if p is active or rid is None or (p.get("orig-track-id") or p.get("orig-diskstream-id")) != rid:
+            continue
+        n = take_number(p.get("name"))
+        if n is not None:
+            out.append((n, p))
+    return sorted(out, key=lambda x: x[0])
+
+
 def outputs(rt):
     """Names of the routes this route's outputs feed (port names are 'Route/audio_in 1')."""
     names = set()
@@ -367,14 +482,16 @@ def read(path):
     by_id = {p.get("id"): p for p in pls}
     by_name = {p.get("name"): p for p in pls}
 
+    sig = meters(root, version)
     proj = Project(path=path, daw="ardour", tempo=bpm, beats_per_bar=bpb, sample_rate=sr,
-                   tempo_changes=tpoints, native=root)
+                   tempo_changes=tpoints, native=root, meter=sig[0], meter_changes=sum(1 for a, b in zip(sig, sig[1:]) if a != b))
     proj.warnings = warn
     routes = root.find("Routes")
     rts = list(routes) if routes is not None else []
     rts = sorted(enumerate(rts), key=lambda x: (route_kind(x[1]) == "master", route_order(x[1], x[0])))
 
     send_targets = {p.get("target") for p in root.iter("Processor") if p.get("type") == "intsend"}
+    owners = port_owners([rt for _, rt in rts])
     made, outs = {}, {}
     for i, rt in rts:
         kind = route_kind(rt)
@@ -408,9 +525,15 @@ def read(path):
         if pl is not None:
             clips = [region(rg, clock, srcs, version, sr, warn, name) for rg in pl.findall("Region")]
             clips.sort(key=lambda c: c.start)
-        t = Track(name=name, index=len(proj.tracks), kind=kind, clips=clips, devices=plugin_devices(rt),
+        lanes = []
+        if kind == "audio":
+            for n, tp in take_playlists(rt, pl, pls):
+                tclips = sorted((region(rg, clock, srcs, version, sr, warn, name) for rg in tp.findall("Region")),
+                                key=lambda c: c.start)
+                lanes.append(TakeLane(name=tp.get("name", ""), number=n, clips=tclips, native=tp))
+        t = Track(name=name, index=len(proj.tracks), kind=kind, clips=clips, devices=plugin_devices(rt, owners),
                   envelopes=route_automation(rt, clock), volume=fader * tgain, pan=pan, muted=muted, solo=solo,
-                  polarity=polarity, native=rt)
+                  polarity=polarity, take_lanes=lanes, native=rt, route_id=rt.get("id", ""), active=yes(rt.get("active", "1")))
         if abs(tgain - 1.0) > 1e-6:
             t.trim = tgain
         proj.tracks.append(t)
@@ -424,6 +547,7 @@ def read(path):
             d = made[next(iter(dest))]
             if d.kind in ("folder", "return") and d is not t:
                 t.parent = d
+    proj.groups = route_groups(root, proj)
     vcas = [v for v in root.iter("VCA")]
     if vcas:
         warn.append(f"{len(vcas)} VCA fader(s): their gain is not included in levels here")

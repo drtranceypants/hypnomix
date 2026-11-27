@@ -11,8 +11,8 @@ Part of the first clean-up, with `name` and `order`. ON BY DEFAULT in scan/fix (
      - its activator is automated (it plays somewhere), or it is a group or return
      - another track listens to it (a sidechain or an input routed from it)
    Review note "keep: Name, Name" keeps those tracks.
-   (A new "Old takes" GROUP is not built here: a group needs Live to create it. In Live: select the "old:" tracks,
-   Cmd/Ctrl-G.)
+   (A new "Old takes" GROUP is not built in a Live set: a group needs Live to create it. In Live: select the "old:"
+   tracks, Cmd/Ctrl-G. A HypnoMix DAW session open in HypnoMix DAW gets it directly: see 3.)
 
 2. Consolidate (merge-N). Two tracks of the same instrument, side by side in one group, become one track when:
      - the same devices with the same settings, the same sends, pan and output (so they sound the same)
@@ -26,7 +26,16 @@ Part of the first clean-up, with `name` and `order`. ON BY DEFAULT in scan/fix (
    The silence check renders one track at a time into a scratch folder (hypnomix-tidy-… under ~/.hypnomix/cache/tmp),
    deletes each render as soon as it is read, and removes the folder when the command ends (an error or Ctrl-C too).
 
+3. HypnoMix DAW sessions (group-1). The switched-off (inactive) tracks not in a group yet become one folded group track
+   "Old takes" (a route group plus its bus), written straight into the open HypnoMix DAW over MCP when approved
+   (`--engine [URL] --ids group-1`; the engine must have this very session file open: a copy of the same name in
+   another folder is refused). Nothing is removed or merged in a HypnoMix DAW session here, and nothing is written
+   without --ids (--apply is for a Live set). Not in the engine's undo history: Ungroup puts it back. HypnoMix sees
+   the change (the session shows as unsaved, and Stop, Open, New and quit ask Save first); save it to keep it.
+
 Usage:
+  hypnomix tidy SESSION.ardour [--json OUT.json]                       # HypnoMix DAW: the group option
+  hypnomix tidy SESSION.ardour --engine [http://127.0.0.1:PORT/mcp] --ids group-1
   hypnomix tidy SET.als [--names names.json] [--json OUT.json]
   hypnomix tidy SET.als --apply NEW.als [--ids retire-1,merge-2] [--mode remove|bottom] [--tweak "retire-1:keep: A, B"]
 """
@@ -455,8 +464,17 @@ def main():
     ap.add_argument("--silence-db", type=float, default=-55.0,
                     help="an overlap may be cut only where the cut-off part stays under this (dBFS RMS, 20 ms)")
     ap.add_argument("--no-retire", action="store_true"); ap.add_argument("--no-merge", action="store_true")
+    ap.add_argument("--engine", nargs="?", const="", metavar="URL",
+                    help="HypnoMix DAW: write the approved group into the open HypnoMix engine (default its usual URL; the "
+                         "engine's address is in the DAW view's engine panel). It must have this very session file "
+                         "open. HypnoMix sees the change: the session shows as unsaved, and Stop, Open, New and quit "
+                         "ask Save first; save in HypnoMix DAW to keep it")
     a = ap.parse_args()
     src = Path(a.als)
+    from hypnomix import project as PJ
+    if PJ.daw_of(src) == "ardour":
+        from hypnomix.project import ardour_groups as AG
+        sys.exit(AG.run_cli("tidy", src, a, lambda p: [] if a.no_retire else AG.plan_old_takes(p)))
     if a.apply and Path(a.apply).resolve() == src.resolve():
         sys.exit("refusing to overwrite the set; give a new file name")
     if a.apply and Path(a.apply).resolve().parent != src.resolve().parent:

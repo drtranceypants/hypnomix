@@ -1,5 +1,5 @@
 {
- "note": "The SHAPE of the HypnoMix engine's tools/list (111 tools): each tool's name, its arguments (name, type, limits) and the LENGTH of its texts. Made from the engine's list; none of the engine's own wording is kept here. tests/test_daw_assistant.py rebuilds a stand-in list from it (filler words of the same length) to check the Assistant's rules against the real names and sizes. Regenerate it when the engine's tool list changes.",
+ "note": "The SHAPE of the HypnoMix engine's tools/list (144 tools): each tool's name, its arguments (name, type, limits) and the LENGTH of its texts. Made from the engine's list; none of the engine's own wording is kept here. tests/test_daw_assistant.py rebuilds a stand-in list from it (filler words of the same length) to check the Assistant's rules against the real names and sizes. Regenerate it when the engine's tool list changes.",
  "tools": [
   {
    "name": "hello_world",
@@ -2262,6 +2262,1047 @@
    "properties": {},
    "required": [],
    "title_len": 14
+  },
+  {
+   "name": "playlist_list",
+   "desc_len": 208,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 48
+    },
+    "include_regions": {
+     "type": "boolean",
+     "desc_len": 13
+    }
+   },
+   "required": [
+    "track_id"
+   ],
+   "title_len": 20
+  },
+  {
+   "name": "playlist_new",
+   "desc_len": 349,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 48
+    },
+    "name": {
+     "type": "string"
+    },
+    "copy_active": {
+     "type": "boolean",
+     "desc_len": 13
+    },
+    "select": {
+     "type": "boolean",
+     "desc_len": 51
+    }
+   },
+   "required": [
+    "track_id"
+   ],
+   "title_len": 17
+  },
+  {
+   "name": "playlist_select",
+   "desc_len": 219,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 48
+    },
+    "playlist_id": {
+     "type": "string",
+     "desc_len": 18
+    },
+    "name": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "track_id"
+   ],
+   "title_len": 21
+  },
+  {
+   "name": "take_list",
+   "desc_len": 284,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 48
+    },
+    "include_regions": {
+     "type": "boolean",
+     "desc_len": 12
+    }
+   },
+   "required": [
+    "track_id"
+   ],
+   "title_len": 10
+  },
+  {
+   "name": "comp_range",
+   "desc_len": 639,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 48
+    },
+    "take": {
+     "type": "integer",
+     "minimum": 1,
+     "desc_len": 28
+    },
+    "take_playlist_id": {
+     "type": "string",
+     "desc_len": 25
+    },
+    "start_sample": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "end_sample": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "start": {
+     "type": "number",
+     "minimum": 0,
+     "desc_len": 7
+    },
+    "end": {
+     "type": "number",
+     "desc_len": 7
+    },
+    "xfade_ms": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 500,
+     "desc_len": 59
+    },
+    "shape": {
+     "type": "string",
+     "enum": [
+      "linear",
+      "fast",
+      "slow",
+      "constant_power",
+      "symmetric"
+     ],
+     "desc_len": 32
+    },
+    "comp_playlist_id": {
+     "type": "string",
+     "desc_len": 58
+    }
+   },
+   "required": [
+    "track_id"
+   ],
+   "title_len": 24
+  },
+  {
+   "name": "plugin_set_sidechain",
+   "desc_len": 704,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 52
+    },
+    "plugin_index": {
+     "type": "integer",
+     "minimum": 0,
+     "desc_len": 60
+    },
+    "source_track_id": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "desc_len": 66
+    },
+    "tap": {
+     "type": "string",
+     "enum": [
+      "pre_fader",
+      "post_fader"
+     ],
+     "desc_len": 46
+    },
+    "set_switch": {
+     "type": "boolean",
+     "desc_len": 68
+    }
+   },
+   "required": [
+    "track_id",
+    "plugin_index",
+    "source_track_id"
+   ],
+   "title_len": 21
+  },
+  {
+   "name": "plugin_get_sidechain",
+   "desc_len": 330,
+   "properties": {
+    "track_id": {
+     "type": "string"
+    },
+    "plugin_index": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [],
+   "title_len": 22
+  },
+  {
+   "name": "group_create",
+   "desc_len": 562,
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "track_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "gain": {
+     "type": "boolean",
+     "desc_len": 45
+    },
+    "relative": {
+     "type": "boolean",
+     "desc_len": 43
+    },
+    "mute": {
+     "type": "boolean",
+     "desc_len": 36
+    },
+    "solo": {
+     "type": "boolean",
+     "desc_len": 37
+    },
+    "color": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "name",
+    "track_ids"
+   ],
+   "title_len": 18
+  },
+  {
+   "name": "group_add",
+   "desc_len": 258,
+   "properties": {
+    "group_id": {
+     "type": "string"
+    },
+    "track_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "group_id",
+    "track_ids"
+   ],
+   "title_len": 19
+  },
+  {
+   "name": "group_remove",
+   "desc_len": 412,
+   "properties": {
+    "group_id": {
+     "type": "string"
+    },
+    "track_ids": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "confirm": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "group_id",
+    "track_ids"
+   ],
+   "title_len": 24
+  },
+  {
+   "name": "group_delete",
+   "desc_len": 277,
+   "properties": {
+    "group_id": {
+     "type": "string"
+    },
+    "confirm": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "group_id"
+   ],
+   "title_len": 7
+  },
+  {
+   "name": "group_set",
+   "desc_len": 287,
+   "properties": {
+    "group_id": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "gain": {
+     "type": "boolean"
+    },
+    "relative": {
+     "type": "boolean"
+    },
+    "mute": {
+     "type": "boolean"
+    },
+    "solo": {
+     "type": "boolean"
+    },
+    "active": {
+     "type": "boolean"
+    },
+    "folded": {
+     "type": "boolean"
+    },
+    "color": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "group_id"
+   ],
+   "title_len": 20
+  },
+  {
+   "name": "group_list",
+   "desc_len": 181,
+   "properties": {},
+   "required": [],
+   "title_len": 11
+  },
+  {
+   "name": "meters_stream_info",
+   "desc_len": 495,
+   "properties": {},
+   "required": [],
+   "title_len": 12
+  },
+  {
+   "name": "track_bounce",
+   "desc_len": 440,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 22
+    },
+    "path": {
+     "type": "string",
+     "desc_len": 51
+    },
+    "start_samples": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "end_samples": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "bit_depth": {
+     "type": "integer",
+     "enum": [
+      16,
+      24,
+      32
+     ]
+    },
+    "wait_ms": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 600000,
+     "desc_len": 48
+    }
+   },
+   "required": [
+    "track_id",
+    "path"
+   ],
+   "title_len": 16
+  },
+  {
+   "name": "session_get_card",
+   "desc_len": 184,
+   "properties": {},
+   "required": [],
+   "title_len": 13
+  },
+  {
+   "name": "session_set_card",
+   "desc_len": 265,
+   "properties": {
+    "key": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "desc_len": 14
+    },
+    "tempo": {
+     "type": [
+      "number",
+      "null"
+     ],
+     "minimum": 20,
+     "maximum": 999
+    },
+    "notes": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "genre": {
+     "type": [
+      "string",
+      "null"
+     ]
+    },
+    "target_lufs": {
+     "type": [
+      "number",
+      "null"
+     ],
+     "minimum": -40,
+     "maximum": 0
+    },
+    "ceiling_dbtp": {
+     "type": [
+      "number",
+      "null"
+     ],
+     "minimum": -12,
+     "maximum": 0
+    },
+    "clear": {
+     "type": "boolean"
+    }
+   },
+   "required": [],
+   "title_len": 13
+  },
+  {
+   "name": "cue_list",
+   "desc_len": 404,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 34
+    },
+    "all_slots": {
+     "type": "boolean",
+     "desc_len": 20
+    }
+   },
+   "required": [],
+   "title_len": 14
+  },
+  {
+   "name": "cue_set_clip",
+   "desc_len": 682,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 42
+    },
+    "slot": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 15,
+     "desc_len": 37
+    },
+    "region_id": {
+     "type": "string",
+     "desc_len": 42
+    },
+    "file": {
+     "type": "string",
+     "desc_len": 59
+    },
+    "clear": {
+     "type": "boolean",
+     "desc_len": 20
+    },
+    "show": {
+     "type": "boolean",
+     "desc_len": 45
+    },
+    "launch_style": {
+     "type": "string",
+     "enum": [
+      "oneshot",
+      "retrigger",
+      "gate",
+      "toggle",
+      "repeat"
+     ],
+     "desc_len": 240
+    },
+    "quantize": {
+     "type": "string",
+     "enum": [
+      "none",
+      "8bars",
+      "4bars",
+      "2bars",
+      "bar",
+      "half",
+      "beat",
+      "eighth",
+      "sixteenth"
+     ],
+     "desc_len": 85
+    },
+    "follow_action": {
+     "type": "string",
+     "enum": [
+      "none",
+      "stop",
+      "again",
+      "next",
+      "prev",
+      "first",
+      "last",
+      "jump"
+     ],
+     "desc_len": 176
+    },
+    "jump_targets": {
+     "type": "array",
+     "items": {
+      "type": "integer"
+     },
+     "desc_len": 39
+    },
+    "follow_action2": {
+     "type": "string",
+     "enum": [
+      "none",
+      "stop",
+      "again",
+      "next",
+      "prev",
+      "first",
+      "last",
+      "jump"
+     ],
+     "desc_len": 69
+    },
+    "jump_targets2": {
+     "type": "array",
+     "items": {
+      "type": "integer"
+     }
+    },
+    "follow_probability": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 100,
+     "desc_len": 57
+    },
+    "follow_count": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 128,
+     "desc_len": 30
+    },
+    "follow_length_bars": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 1024,
+     "desc_len": 99
+    },
+    "gain_db": {
+     "type": "number",
+     "minimum": -60,
+     "maximum": 12,
+     "desc_len": 19
+    },
+    "stretchable": {
+     "type": "boolean",
+     "desc_len": 58
+    },
+    "tempo": {
+     "type": "number",
+     "minimum": 20,
+     "maximum": 400,
+     "desc_len": 90
+    },
+    "beats": {
+     "type": "number",
+     "maximum": 4096,
+     "desc_len": 85
+    },
+    "cue_isolated": {
+     "type": "boolean",
+     "desc_len": 21
+    },
+    "name": {
+     "type": "string",
+     "desc_len": 15
+    }
+   },
+   "required": [
+    "track_id",
+    "slot"
+   ],
+   "title_len": 17
+  },
+  {
+   "name": "cue_set_props",
+   "desc_len": 259,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 42
+    },
+    "slot": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 15,
+     "desc_len": 37
+    },
+    "launch_style": {
+     "type": "string",
+     "enum": [
+      "oneshot",
+      "retrigger",
+      "gate",
+      "toggle",
+      "repeat"
+     ],
+     "desc_len": 240
+    },
+    "quantize": {
+     "type": "string",
+     "enum": [
+      "none",
+      "8bars",
+      "4bars",
+      "2bars",
+      "bar",
+      "half",
+      "beat",
+      "eighth",
+      "sixteenth"
+     ],
+     "desc_len": 85
+    },
+    "follow_action": {
+     "type": "string",
+     "enum": [
+      "none",
+      "stop",
+      "again",
+      "next",
+      "prev",
+      "first",
+      "last",
+      "jump"
+     ],
+     "desc_len": 176
+    },
+    "jump_targets": {
+     "type": "array",
+     "items": {
+      "type": "integer"
+     },
+     "desc_len": 39
+    },
+    "follow_action2": {
+     "type": "string",
+     "enum": [
+      "none",
+      "stop",
+      "again",
+      "next",
+      "prev",
+      "first",
+      "last",
+      "jump"
+     ],
+     "desc_len": 69
+    },
+    "jump_targets2": {
+     "type": "array",
+     "items": {
+      "type": "integer"
+     }
+    },
+    "follow_probability": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 100,
+     "desc_len": 57
+    },
+    "follow_count": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 128,
+     "desc_len": 30
+    },
+    "follow_length_bars": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 1024,
+     "desc_len": 99
+    },
+    "gain_db": {
+     "type": "number",
+     "minimum": -60,
+     "maximum": 12,
+     "desc_len": 19
+    },
+    "stretchable": {
+     "type": "boolean",
+     "desc_len": 58
+    },
+    "tempo": {
+     "type": "number",
+     "minimum": 20,
+     "maximum": 400,
+     "desc_len": 90
+    },
+    "beats": {
+     "type": "number",
+     "maximum": 4096,
+     "desc_len": 85
+    },
+    "cue_isolated": {
+     "type": "boolean",
+     "desc_len": 21
+    },
+    "name": {
+     "type": "string",
+     "desc_len": 15
+    }
+   },
+   "required": [
+    "track_id",
+    "slot"
+   ],
+   "title_len": 21
+  },
+  {
+   "name": "cue_launch",
+   "desc_len": 259,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 42
+    },
+    "slot": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 15,
+     "desc_len": 37
+    },
+    "velocity": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 1
+    }
+   },
+   "required": [
+    "track_id",
+    "slot"
+   ],
+   "title_len": 15
+  },
+  {
+   "name": "cue_stop",
+   "desc_len": 190,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 42
+    },
+    "now": {
+     "type": "boolean",
+     "desc_len": 43
+    }
+   },
+   "required": [],
+   "title_len": 14
+  },
+  {
+   "name": "scene_launch",
+   "desc_len": 248,
+   "properties": {
+    "scene": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 15,
+     "desc_len": 23
+    }
+   },
+   "required": [
+    "scene"
+   ],
+   "title_len": 12
+  },
+  {
+   "name": "ab_list",
+   "desc_len": 189,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 15
+    }
+   },
+   "required": [],
+   "title_len": 20
+  },
+  {
+   "name": "ab_use_playlist",
+   "desc_len": 230,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 42
+    },
+    "playlist_id": {
+     "type": "string",
+     "desc_len": 41
+    },
+    "playlist_name": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "track_id"
+   ],
+   "title_len": 18
+  },
+  {
+   "name": "midi_ports_list",
+   "desc_len": 579,
+   "properties": {
+    "direction": {
+     "type": "string",
+     "enum": [
+      "input",
+      "output",
+      "all"
+     ],
+     "desc_len": 30
+    }
+   },
+   "required": [],
+   "title_len": 15
+  },
+  {
+   "name": "midi_port_set_flags",
+   "desc_len": 683,
+   "properties": {
+    "port": {
+     "type": "string",
+     "minLength": 1,
+     "desc_len": 61
+    },
+    "music": {
+     "type": "boolean"
+    },
+    "control": {
+     "type": "boolean"
+    },
+    "selection": {
+     "type": "boolean"
+    },
+    "mpe": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "port"
+   ],
+   "title_len": 19
+  },
+  {
+   "name": "midi_track_connect_input",
+   "desc_len": 447,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "pattern": "^[0-9]+$",
+     "desc_len": 42
+    },
+    "port": {
+     "type": "string",
+     "minLength": 1,
+     "desc_len": 61
+    },
+    "exclusive": {
+     "type": "boolean",
+     "desc_len": 62
+    }
+   },
+   "required": [
+    "track_id",
+    "port"
+   ],
+   "title_len": 24
+  },
+  {
+   "name": "midi_track_disconnect_input",
+   "desc_len": 213,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "pattern": "^[0-9]+$",
+     "desc_len": 42
+    },
+    "port": {
+     "type": "string",
+     "minLength": 1,
+     "desc_len": 38
+    }
+   },
+   "required": [
+    "track_id"
+   ],
+   "title_len": 27
+  },
+  {
+   "name": "midi_monitor_get",
+   "desc_len": 1419,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "pattern": "^[0-9]+$",
+     "desc_len": 42
+    },
+    "since": {
+     "type": "integer",
+     "minimum": 0,
+     "desc_len": 135
+    },
+    "max_events": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 4096,
+     "desc_len": 66
+    },
+    "all_channels": {
+     "type": "boolean",
+     "desc_len": 42
+    },
+    "reset": {
+     "type": "boolean",
+     "desc_len": 36
+    }
+   },
+   "required": [
+    "track_id"
+   ],
+   "title_len": 18
+  },
+  {
+   "name": "midi_monitor_stop",
+   "desc_len": 101,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "pattern": "^[0-9]+$",
+     "desc_len": 42
+    }
+   },
+   "required": [],
+   "title_len": 23
+  },
+  {
+   "name": "track_get_mpe",
+   "desc_len": 457,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 53
+    }
+   },
+   "required": [
+    "track_id"
+   ],
+   "title_len": 18
+  },
+  {
+   "name": "track_set_mpe",
+   "desc_len": 857,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 53
+    },
+    "zone": {
+     "type": "string",
+     "enum": [
+      "off",
+      "lower",
+      "upper"
+     ]
+    },
+    "members": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 15,
+     "desc_len": 28
+    },
+    "member_bend_range": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 96,
+     "desc_len": 49
+    },
+    "global_bend_range": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 96,
+     "desc_len": 56
+    },
+    "clear_channel_filter": {
+     "type": "boolean",
+     "desc_len": 141
+    },
+    "resend": {
+     "type": "boolean",
+     "desc_len": 60
+    }
+   },
+   "required": [
+    "track_id",
+    "zone"
+   ],
+   "title_len": 18
   }
  ]
 }

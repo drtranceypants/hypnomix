@@ -14,7 +14,7 @@
     for (const id in refs) HX.unwatchVisible(refs[id].el);
     root.innerHTML = ''; refs = {};
     const mx = h('div.mx');
-    S.session.tracks.forEach((t, i) => mx.append(strip(t, i + 1, null, 'tracks')));
+    S.session.tracks.forEach((t, i) => { if (HX.groups && HX.groups.hidden(t)) return; const el = strip(t, i + 1, null, 'tracks'); if (HX.groups) HX.groups.decorateStrip(t, el); mx.append(el); });
     mx.append(h('div.mx-gap'));
     S.session.returns.forEach((t, i) => mx.append(strip(t, String.fromCharCode(65 + i), 'return', 'returns')));
     mx.append(h('div.mx-gap'));
@@ -81,7 +81,7 @@
 
   function strip(t, num, cls, group) {
     const r = {};
-    const el = h('div.strip' + (cls ? '.' + cls : ''), { style: { '--c': t.color }, 'data-group': group || null, role: 'group', 'aria-label': t.name, onpointerdown: () => HX.select(t.id) });
+    const el = h('div.strip' + (cls ? '.' + cls : ''), { style: { '--c': t.color }, 'data-group': group || null, role: 'group', 'aria-label': t.name, onpointerdown: (e) => HX.selectPress(e, t.id) });
     r.el = el;
     r.chip = h('button.chip', { 'data-info': 'Track colour · click to choose', 'aria-label': 'Colour of ' + t.name, onclick: (e) => { e.stopPropagation(); colourPicker(t, r.chip); } });
     const name = h('div.s-name', { 'data-info': t.name + (group ? ' · drag sideways to move' : '') },
@@ -144,7 +144,7 @@
 
   function sync(t) {
     const r = refs[t.id]; if (!r) return;
-    r.el.classList.toggle('sel', S.ui.trackId === t.id);
+    r.el.classList.toggle('sel', HX.isTrackSelected(t.id));
     r.el.style.setProperty('--c', t.color);
     const p = HX.dbToPos(t.faderDb);
     const capTop = (q) => 'calc(4px + ' + ((1 - q) * 100).toFixed(3) + '% - ' + ((1 - q) * 8).toFixed(2) + 'px)';

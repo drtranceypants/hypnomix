@@ -38,6 +38,11 @@ unknown tool counts as changing), and a new or newly opened session starts clean
 `dirty`; `POST /api/daw/save` saves through the engine and answers {ok, dirty}; stop, restart, open and new answer
 HTTP 409 {"error": "unsaved", "dirty": true} while dirty, unless the body says "discard": true (go on without
 saving) or "save": true (save, then go on). `dirty()` and `save()` are the same for the updater and the native app.
+A change that reaches the engine WITHOUT the app (`hypnomix tidy|order|duck --engine`, `loops|variations --cues`, a
+script on the engine's port) counts too: the engine keeps its own unsaved flag (Session::dirty(), the "dirty" of its
+read-only session_list_snapshots), and the app reads it, before every stop, restart, open, new and `dirty()` and for
+`GET /api/daw/state` (one reading shared by all of them, at most every ENGINE_DIRTY_TTL seconds). Unsaved is the app's count OR the engine's flag;
+a save clears both. An engine that does not answer keeps the last answer it gave.
 One program is started, stopped or replaced at a time: a second request meanwhile is answered "busy" (409).
 
 Until the engine program exists, the app **attaches** to a HypnoMix DAW window that is already running
@@ -62,6 +67,8 @@ MAX_RESTARTS = 3                 # within RESTART_WINDOW seconds; then it stays 
 RESTART_WINDOW = 60.0
 READY_TIMEOUT = 120.0            # a big session can take a while to load
 RPC_TIMEOUT = 8.0
+ENGINE_DIRTY_TTL = 2.0         # how old the engine's own unsaved flag may be (the page polls GET /api/daw/state; Stop and quit read it too)
+ENGINE_DIRTY_TIMEOUT = 3.0     # how long a look at it may take (an engine busy exporting keeps the last answer)
 
 
 def conf_path():
@@ -285,15 +292,29 @@ def is_engine(url, timeout=1.5):
 
 
 # Tools that only read, or move the playhead: every other tool counts as a CHANGE to the session (so does one this list
-# has never heard of), and a change makes the session "dirty" until it is saved. Names are the engine's own
+# has never heard of), and a change makes the session "dirty" until it is saved. Launching or stopping a cue slot is
+# playback, like transport_play: it changes nothing the session file keeps. Names are the engine's own
 # (`/` is read as `_`). session_quick_snapshot writes another snapshot and leaves the open session as it was.
+# meters_get is a read, but its ensure_rms switches every route's meter type, which the session file keeps: on a clean
+# session rpc() takes that argument out and sends it with the first change (_without_meter_switch), the Assistant never
+# sends it (daw_assist STRIP_ARGS), and anything else that sends it is seen by the engine's own flag (engine_dirty).
+# MIDI inputs and MPE (an engine that has them): the port list and a track's MPE setting are reads, and the per-note
+# monitor attaches a tap to a MIDI input PORT and detaches it again (midi_monitor_get / midi_monitor_stop): nothing the
+# session file keeps, and the engine does not mark its session dirty for it. Port flags (kept in the user's port
+# settings, not the session), track input connections (saved with the session) and track_set_mpe are changes.
 READ_ONLY_TOOLS = frozenset("""
     hello_world session_get_info session_list_snapshots session_quick_snapshot session_export_mix export_status
     meters_get markers_list midi_note_get_json midi_note_list plugin_get_description plugin_list_available
     region_get_info region_get_peaks region_get_warp track_get_fader track_get_info track_get_regions tracks_list
     transport_get_state transport_play transport_stop transport_goto_start transport_goto_end transport_locate_bbt
     transport_locate_sample transport_next_marker transport_prev_marker transport_set_speed
+    playlist_list take_list plugin_get_sidechain group_list meters_stream_info session_get_card track_bounce
+    cue_list ab_list cue_launch cue_stop scene_launch
+    midi_ports_list track_get_mpe midi_monitor_get midi_monitor_stop
 """.split())
+# Tools the page may not call through POST /mcp: the meter stream's address and token are the app's (daw_meters.py
+# relays the stream on the app's own origin), so neither reaches a page or the Assistant.
+APP_ONLY_TOOLS = frozenset({"meters_stream_info"})
 NEUTRAL_METHODS = ("initialize", "ping", "tools/list", "notifications/", "resources/", "prompts/")
 
 
@@ -323,6 +344,38 @@ def _events(payload):
         elif not any(method == n or (n.endswith("/") and method.startswith(n)) for n in NEUTRAL_METHODS):
             out.append((m.get("id"), "change"))
     return out
+
+
+METER_SWITCH = ("ensure_rms", "ensureRms")
+
+
+def _without_meter_switch(payload):
+    """A body that asks meters_get to switch every route's meter type to one with RMS (the view does once as it
+    connects) -> (the same body without that argument, True); any other body -> (it, False). The switch is kept in the
+    session file, so on a clean session the engine would call it unsaved though the person changed nothing."""
+    if isinstance(payload, (bytes, bytearray, str)):
+        if not any(k in (payload if isinstance(payload, str) else payload.decode("utf-8", "replace")) for k in METER_SWITCH):
+            return payload, False
+        try:
+            msg = json.loads(payload)
+        except ValueError:
+            return payload, False
+    else:
+        try:
+            msg = json.loads(json.dumps(payload))                # a copy: the caller's body is never changed
+        except (TypeError, ValueError):
+            return payload, False
+    found = False
+    for m in (msg if isinstance(msg, list) else [msg]):
+        pr = m.get("params") if isinstance(m, dict) and m.get("method") == "tools/call" else None
+        args = pr.get("arguments") if isinstance(pr, dict) and str(pr.get("name") or "") == "meters_get" else None
+        if isinstance(args, dict) and any(args.get(k) for k in METER_SWITCH):
+            for k in METER_SWITCH:
+                args.pop(k, None)
+            found = True
+    if not found:
+        return payload, False
+    return (json.dumps(msg).encode() if isinstance(payload, (bytes, bytearray, str)) else msg), True
 
 
 def end_preview(why):
@@ -400,6 +453,10 @@ class Engine:
         self.backend = ""                          # the backend the engine said it runs on (its READY line)
         self.dirty = False                         # a changing call went through since the last save (or since it started)
         self._edits = 0                            # changes so far: a save only clears what it saw
+        self.edirty = False                        # the engine's OWN unsaved flag, as last read (changes made without the app)
+        self._eseen = 0.0                          # when it was last read (or last tried)
+        self._saves = 0                            # saves so far: a look that started before a save is older than it
+        self._meters_wanted = False                # the view's RMS meter switch, held back while the session is clean
 
     # ---------------------------------------------------------------- where
     def binary(self):
@@ -467,10 +524,10 @@ class Engine:
             self.mode, self.state, self.port, self.error = "engine", "starting", None, ""
             self._stopping = False
             self._failed = ""
-            lost = bool(_restart_gen is not None and self.dirty)   # the engine died with changes the file does not have
+            lost = bool(_restart_gen is not None and (self.dirty or self.edirty))   # the engine died with changes the file does not have
             if _restart_gen is None and (session is not None or new is not None) and self.notice == LOST_NOTICE:
                 self.notice = ""                       # another session was opened on purpose: the note is about the old one
-            self.dirty, self._edits = False, 0          # a session just loaded has nothing unsaved
+            self._clean()                              # a session just loaded has nothing unsaved
             if lost:
                 self.notice = LOST_NOTICE              # kept until the next Save or Restart: never lose work silently
             args = extra_args()
@@ -561,7 +618,7 @@ class Engine:
                 return self.status()
             if is_engine(self.attach_url):
                 if self.mode != "attached":
-                    self.dirty, self._edits = False, 0
+                    self._clean()
                 self.mode, self.state, self.error = "attached", "attached", ""
             else:
                 self.mode, self.state = None, "stopped"
@@ -587,7 +644,8 @@ class Engine:
     def _stop(self, timeout=8.0, kill_wait=5.0):
         with self.lock:
             if self.mode == "attached":
-                self.mode, self.state, self.dirty = None, "stopped", False   # we let go of it; the window itself keeps running
+                self.mode, self.state = None, "stopped"   # we let go of it; the window itself keeps running
+                self._clean()
                 return self.status()
             self._stopping = True
             p = self.proc
@@ -612,7 +670,7 @@ class Engine:
         with self.lock:
             if self.proc is p:                         # (not a newer one: only the process that was signalled is let go)
                 self.proc, self.mode, self.port, self.state = None, None, None, "stopped"
-                self.dirty, self._edits = False, 0
+                self._clean()
         return self.status()
 
     @staticmethod
@@ -698,8 +756,56 @@ class Engine:
 
     # ---------------------------------------------------------------- unsaved work
     def unsaved(self):
-        """Is there work in the engine this app started that Stop, Restart, Open or New would lose?"""
-        return bool(self.dirty and self.mode == "engine" and self.state in ("running", "starting"))
+        """Is there work in the engine this app started that Stop, Restart, Open or New would lose? The app's own count,
+        or the engine's own flag (a change a command made over the engine's port never passed the app), read at most
+        every ENGINE_DIRTY_TTL seconds like the page poll's. Never for a window the app only attached to (it is not
+        the app's to protect)."""
+        if not (self.mode == "engine" and self.state in ("running", "starting")):
+            return False
+        return bool(self.dirty or self.engine_dirty())
+
+    def _clean(self):
+        """Nothing unsaved: a session just started or opened, or one let go of (the app's count and the engine's flag)."""
+        self.dirty, self._edits = False, 0
+        self.edirty, self._eseen = False, 0.0
+        self._meters_wanted = False
+
+    def engine_dirty(self, max_age=ENGINE_DIRTY_TTL):
+        """The engine's own unsaved flag (session_list_snapshots "dirty": its Session::dirty()), read when the last
+        reading is older than max_age seconds (0: now). Read-only on the engine. When it does not answer, or is an
+        older engine that does not say, the last reading stands (False for a session just opened): an error is no
+        information, never a reason to block or to clear. Only for an engine this app started (never an attached
+        window); the engine's flag never clears the app's own count. Read only by unsaved() and GET /api/daw/state."""
+        if not (self.mode == "engine" and self.state == "running" and self.url()):
+            return False
+        if max_age and time.time() - self._eseen < max_age:
+            return self.edirty
+        saves = self._saves
+        value = None
+        try:
+            r = self.call("tools/call", {"name": "session_list_snapshots", "arguments": {}}, timeout=ENGINE_DIRTY_TIMEOUT) or {}
+            sc = r.get("structuredContent") if isinstance(r, dict) and not r.get("isError") else None
+            value = sc.get("dirty") if isinstance(sc, dict) else None
+        except Exception:
+            pass
+        with self.lock:
+            self._eseen = time.time()
+            if isinstance(value, bool) and saves == self._saves:   # a save that went through meanwhile is newer than this
+                self.edirty = value
+            out = self.edirty
+        return out
+
+    def _switch_meters(self):
+        """The view's RMS meter switch, held back while the session was clean, goes in once there is unsaved work anyway
+        (the next save keeps it with the person's changes)."""
+        with self.lock:
+            if not self._meters_wanted:
+                return
+            self._meters_wanted = False
+        try:
+            self.call("tools/call", {"name": "meters_get", "arguments": {"ensure_rms": True}}, timeout=ENGINE_DIRTY_TIMEOUT)
+        except Exception:
+            pass
 
     def save(self):
         """Save the open session through the engine (session_save) -> the status. RuntimeError when it did not work."""
@@ -730,8 +836,11 @@ class Engine:
                     mine += 1
                     self._edits += 1
                     self.dirty = True
-                elif self._edits - mine == edits0:     # a save clears what it saw, not an edit that came in meanwhile
-                    self.dirty = False
+                else:
+                    self._saves += 1
+                    self.edirty, self._eseen = False, time.time()   # the engine's own flag: a save clears it
+                    if self._edits - mine == edits0:   # a save clears what it saw, not an edit that came in meanwhile
+                        self.dirty = False
 
     # ---------------------------------------------------------------- the process
     def _say(self, line):
@@ -859,6 +968,9 @@ class Engine:
             return 503, _err(None, -32000, "the engine is not running" + (f" ({self.state})" if self.state != "stopped" else ""))
         if any(kind == "save" for _, kind in _events(payload)):   # however a save arrives (the page's proxy, the Assistant, a script):
             end_preview("the session is being saved")               # a value Hear it is trying is put back first, never written to the file
+        held, switch = _without_meter_switch(payload)
+        if switch and not self.dirty and not self.edirty:          # (the last reading: a call is never held up by a look)
+            payload, self._meters_wanted = held, True          # a clean session stays clean: the switch waits for a change
         edits0 = self._edits
         try:
             code, raw = post_json(url, payload, timeout)
@@ -871,6 +983,8 @@ class Engine:
                 self.error = f"the HypnoMix DAW window at {url} stopped answering"
             return 502, _err(None, -32000, f"engine unreachable at {url}: {e}")
         self._track(payload, edits0, code, raw)
+        if self._meters_wanted and self.dirty:
+            self._switch_meters()
         return code, raw
 
     def call(self, method, params=None, timeout=RPC_TIMEOUT):
@@ -912,7 +1026,8 @@ class Engine:
                         session=self.session, new=list(self.new) if self.new else None, error=self.error,
                         restarts=len([t for t in self.restarts if time.time() - t < RESTART_WINDOW]),
                         backend=self.backend if pid else "", dummy=self.dummy, notice=self.notice,
-                        dirty=bool(self.dirty and self.state in ("running", "attached")),
+                        dirty=bool((self.dirty or (self.edirty and self.mode == "engine"))
+                                   and self.state in ("running", "attached")),
                         log=self.log[-40:], uptime=round(time.time() - self.started, 1) if pid else 0)
 
 
@@ -977,6 +1092,8 @@ def handle_get(path, q, token):
     if path.startswith("/daw/"):
         return static(path[len("/daw/"):]) or (404, {"error": "not found"})
     if path == "/api/daw/state":
+        if ENGINE.engine_dirty():                         # the engine's own unsaved flag: a change made without the app counts
+            ENGINE._switch_meters()                       # unsaved anyway: the view's held-back RMS switch goes in now
         st = ENGINE.status()
         if st["mode"] is None and not st["binary"] and st["state"] == "stopped":
             st = ENGINE.attach()                          # a window may have been opened since: look again
@@ -1196,13 +1313,64 @@ def save_upload(rfile, length, name):
     return {"path": str(f), "name": name, "bytes": length}
 
 
+class _Repeated(ValueError):
+    pass
+
+
+def _no_repeats(pairs):
+    seen = {}
+    for k, v in pairs:
+        if k in seen:
+            raise _Repeated(k)
+        seen[k] = v
+    return seen
+
+
+def _no_constant(name):
+    raise ValueError(f"{name} is not JSON")
+
+
+def _finite(text):
+    """A number too big for a double (1e999) is read as infinity, and written out again it would not be JSON."""
+    value = float(text)
+    if value != value or value in (float("inf"), float("-inf")):
+        raise ValueError(f"{text} is not a finite number")
+    return value
+
+
+def parse_rpc(raw):
+    """A body for POST /mcp -> (the message, "") or (None, why it is refused). Strict, so what the app checks is what the
+    engine gets: UTF-8 only (no BOM, no UTF-16), no NaN / Infinity, and no name given twice in one object at any depth
+    (Python keeps the last of a repeated name and the engine's parser the first: {"name": "a", "name": "b"} would be
+    checked as one tool and run as another), and no number too big to write back as JSON (1e999). The proxy sends
+    json.dumps of this message, never the bytes it came as."""
+    try:
+        text = (raw or b"").decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw or "")
+    except UnicodeDecodeError:
+        return None, "bad request: the body is not UTF-8 JSON"
+    if text.startswith("\ufeff"):
+        return None, "bad request: the body is not JSON"
+    try:
+        msg = json.loads(text, object_pairs_hook=_no_repeats, parse_constant=_no_constant, parse_float=_finite)
+    except _Repeated:
+        return None, "bad request: repeated name in the message"
+    except ValueError:
+        return None, "bad request: the body is not JSON"
+    why = check_rpc(msg)
+    return (None, why) if why else (msg, "")
+
+
 def check_rpc(raw):
     """Why a body for POST /mcp is refused, or "" when it is a JSON-RPC message (or a batch) the engine may get:
-    each one an object with "jsonrpc": "2.0" and a method name; tools/call with a tool name and object arguments."""
-    try:
-        msg = json.loads(raw or b"")
-    except ValueError:
-        return "bad request: the body is not JSON"
+    each one an object with "jsonrpc": "2.0" and a method name; tools/call with a tool name and object arguments.
+    raw is the body's bytes or an already parsed message (parse_rpc)."""
+    if raw is not None and not isinstance(raw, (bytes, bytearray, str)):
+        msg = raw
+    else:
+        try:
+            msg = json.loads(raw or b"")
+        except ValueError:
+            return "bad request: the body is not JSON"
     msgs = msg if isinstance(msg, list) else [msg]
     if not msgs or len(msgs) > 50:
         return "bad request: send one JSON-RPC message (or a batch of at most 50)"
@@ -1218,12 +1386,22 @@ def check_rpc(raw):
                 return "bad request: tools/call needs the tool's name"
             if not isinstance(pr.get("arguments", {}), dict):
                 return "bad request: a tool's arguments are an object"
+            if pr["name"].replace("/", "_") in APP_ONLY_TOOLS:
+                return f"bad request: {pr['name']} is the app's own (the meter stream is at /api/daw/meters)"
     return ""
 
 
 def rpc_timeout(raw):
-    """Import blocks until every file is copied: give it minutes, not the usual seconds."""
-    return 600.0 if b"session_import_audio" in (raw or b"") else RPC_TIMEOUT
+    """Import blocks until every file is copied: give it minutes, not the usual seconds. A clip put into a cue slot
+    (cue_set_clip) is copied and loaded before the engine answers: up to a minute and a half."""
+    raw = raw or b""
+    if isinstance(raw, (dict, list)):
+        raw = json.dumps(raw).encode()
+    if b"session_import_audio" in raw:
+        return 600.0
+    if b"cue_set_clip" in raw:
+        return max(RPC_TIMEOUT, 90.0)
+    return RPC_TIMEOUT
 
 
 def start_for_app(session=None):

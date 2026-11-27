@@ -16,7 +16,11 @@
 
   const rows = () => {
     const out = []; let y = 0;
-    S.session.tracks.forEach((t) => { out.push({ t, y, hgt: t.height }); y += t.height; });
+    S.session.tracks.forEach((t) => {
+      if (HX.groups && HX.groups.hidden(t)) return;      /* folded group members: js/groups.js */
+      out.push({ t, y, hgt: t.height }); y += t.height;
+      if (HX.takes) HX.takes.rows(t, y).forEach((r) => { out.push(r); y += r.hgt; });   // take lanes (js/takes.js)
+    });
     y += GAP;
     S.session.returns.forEach((t) => { out.push({ t, y, hgt: t.height }); y += t.height; });
     out.push({ t: S.session.master, y, hgt: S.session.master.height }); y += S.session.master.height;
@@ -72,21 +76,51 @@
   };
 
   /* ── headers (DOM) ── */
+  /* the headers are drawn again on every structural change (a T or fold button, a poll, an edit): a control that had the
+     focus gets it back afterwards, found by its header (data-hk: the track, or the take lane) and its kind (its class),
+     never by its name, which changes with its state. A track folded away hands it to its group's header. */
+  const CTL_KINDS = ['tk', 'grp-fold', 'grp-x', 'take-comp', 'm', 's', 'r'];
+  function focusedHeaderKey() {
+    const a = document.activeElement;
+    if (!a || !headers || !headers.contains(a)) return null;
+    const row = a.closest('[data-hk]'); if (!row) return null;
+    return { hk: row.dataset.hk, kind: a === row ? '' : CTL_KINDS.find((c) => a.classList.contains(c)) || '' };
+  }
+  function restoreHeaderFocus(k) {
+    if (!k) return;
+    const rows = [...headers.querySelectorAll('[data-hk]')];
+    let row = rows.find((r) => r.dataset.hk === k.hk);
+    if (!row) {
+      const tid = k.hk.startsWith('take:') ? k.hk.split(':')[1] : k.hk, t = HX.track(tid);
+      const g = t && HX.groups && HX.groups.ofMember(t);
+      row = rows.find((r) => r.dataset.hk === (g && g.busId)) || rows.find((r) => r.dataset.hk === tid);
+      k = { kind: '' };
+    }
+    if (!row) return;
+    const el = (k.kind && row.querySelector('.' + k.kind)) || row;
+    try { el.focus({ preventScroll: true }); } catch (e) {}
+  }
   function renderHeaders() {
     for (const id in hdrRefs) HX.unwatchVisible(hdrRefs[id].meter);
+    if (!headers) return;                               // not mounted yet
+    const hadFocus = focusedHeaderKey();
     headers.innerHTML = ''; hdrRefs = {};
-    S.session.tracks.forEach((t) => headers.append(header(t)));
+    S.session.tracks.forEach((t) => {
+      if (HX.groups && HX.groups.hidden(t)) return;      /* folded group members: js/groups.js */
+      headers.append(header(t)); if (HX.takes) headers.append(...HX.takes.headers(t));
+    });
     headers.append(h('div.lane-gap'));
     S.session.returns.forEach((t) => headers.append(header(t, 'return')));
     headers.append(header(S.session.master, 'master'));
+    restoreHeaderFocus(hadFocus);
     A.dirty = true;
   }
   HX.renderArrangeHeaders = renderHeaders;
 
   function header(t, cls) {
     const r = {};
-    const el = h('div.th' + (cls ? '.' + cls : ''), { style: { height: t.height + 'px' }, role: 'group', 'aria-label': t.name, tabindex: '0', onpointerdown: () => HX.select(t.id),
-      onkeydown: (e) => { if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); HX.select(t.id); } } });
+    const el = h('div.th' + (cls ? '.' + cls : ''), { style: { height: t.height + 'px' }, role: 'group', 'aria-label': t.name, tabindex: '0', 'data-hk': t.id, onpointerdown: (e) => HX.selectPress(e, t.id),
+      onkeydown: (e) => { if (e.target === el && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); HX.selectClick(e, t.id); } } });
     r.el = el;
     r.meter = h('canvas.meter-v');
     HX.watchVisible(r.meter);
@@ -98,6 +132,7 @@
       r.s = h('button.tog.s', { 'data-info': 'Solo ' + t.name + ' · S on the selected track', 'aria-label': 'Solo ' + t.name, onclick: (e) => { e.stopPropagation(); HX.edit({ trackId: t.id, param: 'solo' }, !t.solo, (t.solo ? 'Unsolo ' : 'Solo ') + t.name); } }, 'S');
       ctl.append(r.m, r.s);
       if (!t.isReturn) { r.r = h('button.tog.r', { 'data-info': 'Arm ' + t.name + ' for recording', 'aria-label': 'Record arm ' + t.name, onclick: (e) => { e.stopPropagation(); HX.edit({ trackId: t.id, param: 'arm' }, !t.arm, (t.arm ? 'Disarm ' : 'Arm ') + t.name); } }, '●'); ctl.append(r.r); }
+      const tk = !t.isReturn && HX.takes && HX.takes.toggle(t); if (tk) ctl.append(tk);   // show / hide take lanes
     }
     const ctl2 = h('div.th-ctl2');
     r.vol = h('span.val', { 'data-info': 'Volume (dB) · drag, shift = fine, double-click = 0 dB' });
@@ -114,6 +149,7 @@
       ctl2.append(h('span.label', null, 'A'), r.send);
     }
     el.append(h('i.chip', { style: { background: t.color } }), name, ctl, r.meter);
+    if (HX.groups) HX.groups.decorateHeader(t, el, name);   /* group bus header / member indent: js/groups.js */
     if (t.height > 36) el.append(ctl2);
     hdrRefs[t.id] = r;
     syncHeader(t);
@@ -121,7 +157,7 @@
   }
   function syncHeader(t) {
     const r = hdrRefs[t.id]; if (!r) return;
-    r.el.classList.toggle('sel', S.ui.trackId === t.id);
+    r.el.classList.toggle('sel', HX.isTrackSelected(t.id));
     r.vol.textContent = HX.fmtDb(t.faderDb);
     if (r.pan) r.pan.textContent = HX.fmtPan(t.pan);
     if (r.send) r.send.textContent = HX.fmtDb(t.sends[0].db);
@@ -167,11 +203,11 @@
     const L = S.session.loop;
     if (L.on) { ctx.fillStyle = colors['--acc-2']; ctx.globalAlpha = 0.35; ctx.fillRect(X(L.start), 0, (L.end - L.start) * z, R.total); ctx.globalAlpha = 1; }
     // clips
-    R.forEach((r) => inView(r) && r.t.clips.forEach((c) => {
+    R.forEach((r) => inView(r) && (r.lane ? HX.takes.drawLane(ctx, r, { X, w, colors, drawClip }) : r.t.clips.forEach((c) => {
       const x0 = X(c.start), x1 = X(c.start + c.len);
       if (x1 < 0 || x0 > w) return;
       drawClip(ctx, r.t, c, x0, r.y + 1, x1 - x0, r.hgt - 2);
-    }));
+    })));
     // review findings: thin violet ticks on their lanes
     if (S.findings.length && S.ui.view === 'arrange') S.findings.forEach((f) => {
       if (f.status === 'skipped') return;
@@ -368,6 +404,7 @@
       const x = e.clientX - rect.left, y = e.clientY - rect.top;
       const hit = hitAt(x, y);
       if (!hit) return;
+      if (hit.row.lane) return HX.takes.pointerDown(e, hit, { rect, B, snap, lanesWrap });   // drag across a take: comp it
       const { row, c, zone } = hit;
       HX.select(row.t.id, c && c.id);
       if (!c) { HX.locate(snap(hit.beat)); return; }
@@ -441,7 +478,7 @@
       const hv = c ? c.id : null;
       if (A.hover !== hv) { A.hover = hv; A.dirty = true; }
       lanesWrap.style.cursor = c ? CURSOR[hit.zone] : '';
-      HX.info(c ? c.name + ' · ' + hit.row.t.name + ' · bar ' + (Math.floor(c.start / 4) + 1) + ', ' + (c.len / 4).toFixed(2) + ' bars · ' + INFO[hit.zone] : 'Click to place the playhead · ⌘-scroll to zoom · shift-scroll to move in time · drop audio files here to import');
+      HX.info(hit && hit.row.lane ? HX.takes.info(hit) : c ? c.name + ' · ' + hit.row.t.name + ' · bar ' + (Math.floor(c.start / 4) + 1) + ', ' + (c.len / 4).toFixed(2) + ' bars · ' + INFO[hit.zone] : 'Click to place the playhead · ⌘-scroll to zoom · shift-scroll to move in time · drop audio files here to import');
     });
     lanesWrap.addEventListener('mouseleave', () => { if (A.hover) { A.hover = null; A.dirty = true; } });
     bindDrop();
@@ -451,6 +488,7 @@
     const row = rows().find((r) => y >= r.y && y < r.y + r.hgt);
     if (!row) return null;
     const beat = B(x);
+    if (row.lane) return { row, beat };
     const c = [...row.t.clips].reverse().find((c) => beat >= c.start && beat < c.start + c.len);
     if (!c) return { row, beat };
     const z = S.ui.zoom, x0 = X(c.start), x1 = X(c.start + c.len), y0 = row.y + 1, hh = row.hgt - 2;
@@ -496,7 +534,7 @@
       const rect = lanesWrap.getBoundingClientRect();
       const x = e.clientX - rect.left, y = e.clientY - rect.top;
       const row = rows().find((r) => y >= r.y && y < r.y + r.hgt);
-      const t = row && row.t.kind === 'audio' && !row.t.isReturn && !row.t.isMaster ? row.t : null;
+      const t = row && !row.lane && row.t.kind === 'audio' && !row.t.isReturn && !row.t.isMaster ? row.t : null;
       return { t, row, x, beat: x > lanesWrap.clientWidth ? HX.pos() : Math.max(0, snap(B(x))) };   // on a track header: at the playhead
     };
     const files = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');

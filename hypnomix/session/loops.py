@@ -3,6 +3,8 @@
 
   hypnomix loops TAKE.wav [--bars 1 2 4 8] [--top 8] [--out DIR]
   hypnomix loops SET.als --track "Drums" --apply "SET (loops).als" [--top 8]
+  hypnomix loops SESSION.ardour --track "Drums" --cues [--engine URL]   (HypnoMix DAW: cue slots)
+  hypnomix loops TAKE.wav --cues [--engine URL]
 
 It maps the take's tempo (like `hypnomix tempomap`), then scores every 1, 2, 4 and 8 bar window:
 
@@ -17,6 +19,14 @@ Output: each loop as a WAV cut from bar line to bar line (as played, tempo in th
 loops.json. With a Live set, --apply writes a NEW set where each loop sits in a Session-view slot of the
 take's track: warped to the set's tempo, looping, named. Launch them one after another in Session view
 to compare; drag the one you like into the Arrangement. The Arrangement itself is not changed.
+
+With --cues, the loops go into the cue slots (the Session view) of the session open in the HypnoMix engine, on a
+track "<Track> loops" right after the take's track (made new, or the empty slots of one already there; while a
+track's slot holds a clip, that track's Arrangement does not play, so never on the take's own track): looping,
+launched on the bar, at the session's tempo. With a HypnoMix DAW session (.ardour) the take is the --track's region
+(--clip N for another one); it must be the session the engine has open. --engine URL, else HYPNOMIX_ENGINE_URL, else
+a HypnoMix DAW window on 127.0.0.1:4820. HypnoMix sees the change (the session shows as unsaved, and Stop, Open, New
+and quit ask Save first): save the session to keep them.
 
 Check the tempo map first (`hypnomix tempomap TAKE.wav --click CHECK.wav`): loops cut on wrong bar
 lines are useless. Pass the same --downbeat / --double / --half here. Close the set before --apply.
@@ -144,14 +154,53 @@ def main():
     ap = argparse.ArgumentParser(prog="hypnomix loops", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("source"); ap.add_argument("--track"); ap.add_argument("--clip", type=int)
     ap.add_argument("--bars", type=int, nargs="+", default=[1, 2, 4, 8]); ap.add_argument("--top", type=int, default=8)
-    ap.add_argument("--bpb", type=int, default=4); ap.add_argument("--bpm", type=A.number(20, 400))
+    ap.add_argument("--bpb", type=int, help="beats per bar (default: the session's own for a HypnoMix DAW session, else 4)")
+    ap.add_argument("--bpm", type=A.number(20, 400))
     ap.add_argument("--downbeat", type=float); ap.add_argument("--double", action="store_true"); ap.add_argument("--half", action="store_true")
     ap.add_argument("--out"); ap.add_argument("--apply", metavar="NEW.als")
+    ap.add_argument("--cues", action="store_true", help="put the loops into cue slots of the session open in the HypnoMix engine (with a session file, "
+                         "that very file must be the one open). HypnoMix sees the change: the session shows as "
+                         "unsaved, and Stop, Open, New and quit ask Save first; save in HypnoMix DAW to keep them")
+    ap.add_argument("--engine", help="the engine's MCP URL (with --cues; it is in the DAW view's engine panel)")
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args()
     src = Path(a.source)
     is_set = src.suffix.lower() == ".als"
-    if is_set:
+    is_ardour = src.suffix.lower() == ".ardour"
+    if is_ardour and a.apply:
+        sys.exit("--apply writes a Live set: for a HypnoMix DAW session use --cues (the engine's Session view)")
+    if a.cues and a.apply:
+        sys.exit("choose --apply (a new Live set) or --cues (the engine's cue slots), not both")
+    eng = None
+    if a.cues:
+        from hypnomix.project import ardour_cues as AC
+        try:
+            eng = AC.connect(a.engine, session=src if is_ardour else None)
+        except RuntimeError as e:
+            sys.exit(str(e))
+    tempo = None
+    if is_ardour:
+        from hypnomix import project as PJ
+        if not a.track:
+            sys.exit("give the track the take is on: --track NAME")
+        p = PJ.load(src)
+        t = p.track(a.track)
+        clips = [c for c in (t.clips if t else []) if c.kind == "audio" and c.path is not None]
+        if not clips:
+            sys.exit(f"no track {a.track!r} with audio regions in {src.name}")
+        if a.clip is not None and not 1 <= a.clip <= len(clips):
+            sys.exit(f"{t.name} has {len(clips)} audio region(s): --clip 1 to {len(clips)}")
+        clip = clips[a.clip - 1] if a.clip else max(clips, key=lambda c: c.length)
+        audio, tempo = Path(clip.path), p.tempo
+        if a.bpb is None:
+            q = float(p.beats_per_bar or 4)
+            if abs(q - round(q)) > 1e-6 or getattr(p, "meter_changes", 0):
+                sys.exit(f"this session's bar is {q:g} quarter notes{' and its meter changes' if getattr(p, 'meter_changes', 0) else ''}: "
+                         "say the beats per bar with --bpb")
+            a.bpb = int(round(q))
+        if not audio.exists():
+            sys.exit(f"the region's recording is missing: {audio}")
+    elif is_set:
         from hypnomix.session import automation as aa, smooth as sm
         from hypnomix.session.tempomap import one_clip
         if not a.track:
@@ -162,6 +211,7 @@ def main():
         audio = sm.clip_info(clip, src.parent, tempo)["path"]
     else:
         audio = src
+    a.bpb = a.bpb or 4
     try:
         m = B.track(audio, bpb=a.bpb, bpm=a.bpm, downbeat=a.downbeat, mult=2.0 if a.double else 0.5 if a.half else 1.0)
     except ValueError as e:
@@ -193,9 +243,25 @@ def main():
     (od / "LOOPS.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     (od / "loops.json").write_text(json.dumps(dict(file=str(audio), bpm=round(m["bpm"], 2), loops=picked), indent=1), encoding="utf-8")
     print(f"\n→ {od}")
+    if a.cues:
+        from hypnomix.project import ardour_cues as AC
+        try:
+            after, tname = AC.track_id(eng, a.track) if is_ardour else (None, None)
+            name = f"{tname or audio.stem} loops"
+            tid, _ = AC.clip_track(eng, name, after)
+            placed = AC.fill(eng, tid, [dict(file=str(od / (re.sub(r'[\\/:*?"<>|]', "-", c["name"]) + ".wav")), name=c["name"],
+                                             beats=c["bars"] * a.bpb) for c in picked])
+        except (RuntimeError, AC.MCPError) as e:
+            sys.exit(f"the cue slots were not filled: {e}")
+        print(AC.report(placed, name))
+        if AC.not_placed(placed):
+            sys.exit(1)
+        return
     if not a.apply:
         if is_set:
             print("add --apply \"NEW.als\" to put these in the track's Session slots.")
+        elif is_ardour:
+            print("add --cues to put these in cue slots of the session open in the HypnoMix engine.")
         return
     if not is_set:
         sys.exit("--apply needs a Live set with the take on a track")

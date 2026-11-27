@@ -14,8 +14,9 @@
   const token = window.HX_TOKEN && !/^__/.test(window.HX_TOKEN) ? window.HX_TOKEN : '';
   const clientVersion = window.HX_VERSION && !/^__/.test(window.HX_VERSION) ? window.HX_VERSION : 'unknown';   // the app's own, put in the page by the server
 
-  /* tools that only look: everything else is taken as a change (the page shows "unsaved" at once; the app's own count decides) */
-  const READS = /(_get_|_get$|_list|_status|_describe)|^(transport_|meters_|session_(get|save|export|list)|export_)/;
+  /* tools that only look: everything else is taken as a change (the page shows "unsaved" at once; the app's own count decides).
+     Launching or stopping a clip or a scene plays, like the transport: it changes nothing that is saved. */
+  const READS = /(_get_|_get$|_list|_status|_describe)|^(transport_|meters_|session_(get|save|export|list)|export_)|^(cue_launch|cue_stop|scene_launch)$/;
 
   const mcp = (HX.mcp = {
     endpoint: viaProxy ? '/mcp' : DIRECT,
@@ -54,6 +55,15 @@
       return msg.result;
     },
 
+    /* a call sent while the page closes: kept alive by the browser, nothing waits for its answer */
+    beacon(name, args) {
+      try {
+        fetch(mcp.endpoint, { method: 'POST', keepalive: true,
+          headers: Object.assign({ 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, token && mcp.endpoint === '/mcp' ? { 'X-Hypnomix': token } : {}),
+          body: JSON.stringify({ jsonrpc: '2.0', id: ++mcp._id, method: 'tools/call', params: { name, arguments: args || {} } }) }).catch(() => {});
+      } catch (e) {}
+    },
+
     /* tools/call → the tool's structured JSON (structuredContent, or content[0].text parsed) */
     async call(name, args, opts) {
       const t0 = performance.now();
@@ -79,7 +89,7 @@
       const list = await mcp.rpc('tools/list', {});
       mcp.tools = (list && list.tools ? list.tools : []).map((t) => t.name);
       mcp.connected = true;
-      HX.log('mcp', 'initialize → ' + (mcp.serverInfo ? mcp.serverInfo.name + ' ' + mcp.serverInfo.version : '?') + ', ' + mcp.tools.length + ' tools');
+      HX.log('mcp', 'initialize → ' + (mcp.serverInfo && mcp.serverInfo.version ? 'version ' + mcp.serverInfo.version : 'no version') + ', ' + mcp.tools.length + ' tools');
       return init;
     },
     disconnect() { mcp.connected = false; mcp.serverInfo = null; },

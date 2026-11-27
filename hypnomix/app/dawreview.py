@@ -17,6 +17,10 @@
                                as `hypnomix fix --decide` and the Songs review
   POST /api/dawreview/apply    {dir}: `hypnomix fix SCAN --approved --out "<snapshot> (hypnomix).ardour"` in the
                                session folder (a new snapshot; the original is never written)
+  POST /api/dawreview/abset    {dir}: `hypnomix abset SCAN --out "<snapshot> (A-B).ardour"` (workflow/abset_ardour.py): one
+                               new snapshot with every proposed fix as a B the view switches over MCP; ab_ardour.json
+  GET  /api/dawreview/abstate  ?dir=   that A/B session (its items, match_db) and whether the engine has it open
+  POST /api/dawreview/blind    {dir, id, picked: X|Y, was: A|B}: one blind choice into the scan's blind.json
   POST /api/dawreview/ab       {dir, id}: `hypnomix ab SCAN --ids ID` (the before / after pair, where `ab` can build
                                one for a HypnoMix DAW session: repaired recordings; clip and mixer moves it cannot yet)
 
@@ -329,13 +333,56 @@ def handle_get(srv, path, q):
             return 200, dict(connected=False, error=str(e))
         d = scan_folder(srv, session)
         has = (d / "findings.json").exists()
+        ab_of = ""
+        if not has:                                   # the A/B snapshot of a scanned session: review that scan
+            o = ab_original(srv, session)
+            if o is not None:
+                d, has, ab_of = o, True, str(session)
         return 200, dict(connected=True, session=str(session), dirty=dirty, dir=str(d) if has else "",
-                         scanned=has, out=out_for(session).name)
+                         scanned=has, out=out_for(session).name, ab_session=ab_of)
     if path == "/api/dawreview/findings":
         return 200, findings(srv, srv.scan_dir(srv.need(q, "dir")))
     if path == "/api/dawreview/evidence":
         return 200, evidence(srv, srv.scan_dir(srv.need(q, "dir")), srv.need(q, "id"))
+    if path == "/api/dawreview/abstate":
+        return 200, ab_state(srv.scan_dir(srv.need(q, "dir")))
     return None
+
+
+def ab_original(srv, session):
+    """The scan folder whose A/B snapshot this session is ("Song (A-B).ardour" -> the scan of "Song"), or None."""
+    m = re.match(r"(.*) \(A-B\)(?: \d+)?$", Path(session).stem)
+    if not m:
+        return None
+    d = scan_folder(srv, Path(session).with_name(m.group(1) + ".ardour"))
+    from hypnomix.workflow import abset_ardour as AA
+    spec = AA.load(d, session) if (d / "findings.json").exists() else None
+    return d if spec else None
+
+
+def ab_state(d):
+    """The scan's A/B session for HypnoMix DAW (ab_ardour.json), and whether the engine has it open."""
+    from hypnomix.workflow import abset_ardour as AA
+    spec = AA.load(d)
+    if not spec:
+        return dict(built=False)
+    try:
+        cur, _ = open_session()
+        mine = AA.load(d, cur)                     # an earlier (numbered) build open in the engine: that one's switches
+        if mine:
+            spec = mine
+        is_open = Path(cur).resolve() == Path(spec["session"]).resolve()
+    except (RuntimeError, OSError, KeyError):
+        is_open = False
+    blind = {}
+    try:
+        from hypnomix.core import atomic
+        blind = atomic.load_json(Path(d) / "blind.json", {}, warn=False) or {}
+    except Exception:
+        pass
+    return dict(built=True, open=is_open, session=spec.get("session"), original=spec.get("original"),
+                exists=Path(spec.get("session") or "").exists(), items=spec.get("items", {}),
+                level_match=spec.get("level_match", ""), blind={k: v for k, v in blind.items() if isinstance(v, list)})
 
 
 DECIDE = ("approve", "skip", "change", "clear")
@@ -395,4 +442,43 @@ def handle_post(srv, path, body):
             raise ValueError("id is not a finding id")
         srv.run_job("abset", f"A/B: {fid}", [("Building the before / after pair", ["ab", str(d), "--ids", fid], True)], d)
         return 200, {"job": srv.JOB["id"]}
+    if path == "/api/dawreview/abset":
+        from hypnomix.core import atomic
+        d = srv.scan_dir(srv.need(body, "dir"))
+        meta = atomic.load_json(d / "findings.json", {}, warn=False) or {}
+        source = Path(str(meta.get("set") or ""))
+        if source.suffix.lower() != ".ardour":
+            raise ValueError("this scan is not of a HypnoMix DAW session")
+        out = ab_out_for(source)
+        srv.run_job("abset", f"A/B session: {source.name}",
+                    [("Building the A/B snapshot (every proposed fix as a B)", ["abset", str(d), "--out", str(out)], True)],
+                    d, [source.parent])
+        return 200, {"job": srv.JOB["id"], "out": str(out)}
+    if path == "/api/dawreview/blind":
+        from hypnomix.workflow import abset_ardour as AA
+        d = srv.scan_dir(srv.need(body, "dir"))
+        fid, picked, was = srv.need(body, "id", "picked", "was")
+        if not all(isinstance(v, str) for v in (fid, picked, was)):
+            raise ValueError("id, picked and was are text")
+        if not re.fullmatch(r"[\w.:-]{1,200}", fid):
+            raise ValueError("id is not a finding id")
+        if picked not in ("X", "Y") or was not in ("A", "B"):
+            raise ValueError("picked must be X or Y, and was A or B")
+        spec = AA.load(d) or {}
+        if fid not in (spec.get("items") or {}) and not any(fid in (b.get("items") or {}) for b in (spec.get("builds") or {}).values()
+                                                            if isinstance(b, dict)):
+            raise ValueError("that finding is not in this scan's A/B session")
+        return 200, {"choices": AA.save_blind(d, fid, picked, was)}
     return None
+
+
+def ab_out_for(session):
+    """"<snapshot> (A-B).ardour" beside it, numbered when that name is taken (nothing is overwritten)."""
+    s = Path(session)
+    base = re.sub(r" \(A-B\)( \d+)?$", "", s.stem)
+    out = s.with_name(f"{base} (A-B).ardour")
+    n = 2
+    while out.exists():
+        out = s.with_name(f"{base} (A-B) {n}.ardour")
+        n += 1
+    return out

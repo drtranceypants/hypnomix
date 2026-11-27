@@ -2,11 +2,15 @@
    Scan = session_save + a bounce of the mix (session_export_mix) + `hypnomix scan SESSION.ardour --mix`, run by the
    app (POST /api/dawreview/scan; progress from GET /api/job). Findings, decisions (the same decisions.json as
    `hypnomix fix --decide`) and Apply (`hypnomix fix --approved --out "<snapshot> (hypnomix).ardour"`) go through
-   hypnomix/app/dawreview.py. Opening the new snapshot is the supervisor's POST /api/daw/open, after a click. */
+   hypnomix/app/dawreview.py. Opening the new snapshot is the supervisor's POST /api/daw/open, after a click.
+   A/B of clip and mixer fixes: `hypnomix abset` writes "<snapshot> (A-B).ardour" (POST /api/dawreview/abset); once the
+   engine has it open, A / B / Blind switch each finding over MCP (ab_use_playlist, or the track's fader / pan / mute),
+   with the louder side turned down on the master fader by the measured match_db. */
 (function () {
   'use strict';
   const HX = window.HX, S = HX.S, h = HX.h;
-  const R = { st: null, data: null, cur: 0, job: null, busy: '', confirm: null, note: false, ev: {}, lastOut: '', err: '', log: [], applied: {}, abPlay: null, loading: false };
+  const R = { st: null, data: null, cur: 0, job: null, busy: '', confirm: null, note: false, ev: {}, lastOut: '', err: '', log: [], applied: {}, abPlay: null, loading: false,
+    ab: null, flip: null, want: null, blind: null };
   let root = null;
   const STAGES = 11;                                     // the scan's groups (names, files, clips, ... stems)
 
@@ -40,6 +44,7 @@
     R.data = await api.get('/api/dawreview/findings?' + qs({ dir }));
     R.applied = {}; (R.data.applied || []).forEach((id) => (R.applied[id] = true));   /* from the scan's fix-log.md */
     R.ev = {};
+    R.ab = await api.get('/api/dawreview/abstate?' + qs({ dir })).catch(() => null);
     const i = keep ? list().findIndex((f) => f.id === keep) : -1;
     R.cur = i >= 0 ? i : Math.max(0, list().findIndex((f) => statusOf(f) === 'open'));
     markers();
@@ -111,7 +116,7 @@
   /* ── select: the playhead goes to the finding, its track is selected ── */
   function select(i) {
     const L = list(); if (!L.length) return;
-    stopAB();
+    stopAB(); unflip();
     R.cur = HX.clamp(i, 0, L.length - 1); R.note = false;
     const f = L[R.cur], t = trackOf(f);
     if (t) HX.select(t.id);
@@ -195,12 +200,153 @@
     HX.emit('review', { what: 'ab', side });
   }
 
+  /* ── A/B of clip and mixer fixes on the engine (the A/B snapshot from `hypnomix abset`) ── */
+  const abItem = (f) => (R.ab && R.ab.built && R.ab.items && R.ab.items[f.id]) || null;
+  function buildABSession() {
+    R.err = '';
+    api.post('/api/dawreview/abset', { dir: R.data.dir }).then((r) => {
+      R.busy = 'abset'; draw();
+      follow(r.job, async (ok) => {
+        if (!ok) R.err = 'The A/B session could not be built: ' + R.log.filter((l) => l.trim()).slice(-2).join(' · ');
+        R.ab = await api.get('/api/dawreview/abstate?' + qs({ dir: R.data.dir })).catch(() => null);
+        draw();
+      });
+    }).catch((e) => HX.toast(e.message, 3200));
+  }
+  async function openABSession() {
+    const path = R.ab && R.ab.session; R.confirm = null; if (!path) return;
+    R.busy = 'open'; draw();
+    try {
+      await unflip();
+      if (!(await HX.guardedPost('/api/daw/open', { path }, 'Opening the A/B session closes this one.', { before: () => { HX.reopening = true; } }))) { R.busy = ''; HX.reopening = false; return draw(); }   // null: cancelled at Save / Don't save / Cancel
+      await HX.connectEngine();
+      HX.toast('Opened the A/B session: every finding plays A (as it is) until you press B', 3200);
+    } catch (e) { R.err = 'Could not open the A/B session: ' + e.message; }
+    HX.reopening = false; R.busy = '';
+    refresh(true);
+  }
+  /* one finding is flipped at a time; the master fader goes back to where it was when it is put back to A.
+     Every switch runs after the one before (one chain), so two never overlap (fast keys, a click and a key, a Save);
+     the master's level to come back to is read from the engine when a flip starts from A, never from the view's own
+     copy, which a refresh can fill with the turned-down value. A switch that fails half-way puts A back.
+     A goes back before a Save or a scan (HX.onEnd), when the view leaves Review, and when the page closes. */
+  let chain = Promise.resolve();
+  function queue(fn) { const p = chain.then(fn); chain = p.catch(() => {}); return p; }
+  const flipCalls = (it, side) => { const v = side === 'B' ? it.b : it.a; return it.kind === 'playlist'
+    ? [['ab_use_playlist', { track_id: it.trackId, playlist_id: side === 'B' ? it.b_playlist_id : it.a_playlist_id }]]
+    : [['track_set_fader_db', { id: it.trackId, db: HX.clamp(v.fader_db, -193, 6) }], ['track_set_pan', { id: it.trackId, position: HX.clamp((1 - v.pan) / 2, 0, 1) }], ['track_set_mute', { id: it.trackId, value: !!v.mute }]]; };
+  async function masterNow(master) {
+    try { const ti = await HX.mcp.trackInfo(master.id); const db = ti && ti.fader && ti.fader.db; if (db != null && isFinite(db)) return Math.max(-193, db); } catch (e) {}
+    return master.faderDb;
+  }
+  /* R.want: the side last asked for, so B pressed again before the first switch is done means A (the key toggles it) */
+  function flip(f, side) { R.want = { id: f.id, side }; return queue(() => doFlip(f, side)); }
+  function unflip() { R.want = null; return queue(doUnflip); }
+  async function doFlip(f, side) {
+    const it = abItem(f); if (!it || !it.kind || !(R.ab && R.ab.open)) return;
+    const M = HX.mcp, master = S.session.master;
+    if (R.flip && R.flip.id !== f.id) await doUnflip();
+    if (!R.flip) R.flip = { id: f.id, side: 'A', base: master ? await masterNow(master) : 0 };
+    const m = +it.match_db || 0;
+    /* the louder side is turned down by the difference, so the change is heard, not the level */
+    const trim = side === 'B' ? -Math.max(0, m) : Math.min(0, m);
+    try {
+      for (const [name, args] of flipCalls(it, side)) await M.call(name, args);
+      if (master) { await M.setFaderDb(master.id, R.flip.base + trim); HX.liveEngine && HX.liveEngine.touch && HX.liveEngine.touch(master.id); }
+      R.flip.side = side;
+    } catch (e) {
+      HX.toast('A/B: ' + e.message + ' · A is put back', 3600);
+      R.want = null;
+      await doUnflip();
+    }
+    draw();
+  }
+  async function doUnflip() {
+    const fl = R.flip; if (!fl) return;
+    R.flip = null;
+    const f = list().find((x) => x.id === fl.id), it = f && abItem(f), M = HX.mcp, master = S.session.master;
+    if (!it || !HX.mcp.connected) return;
+    try {
+      for (const [name, args] of flipCalls(it, 'A')) await M.call(name, args);
+      if (master) { await M.setFaderDb(master.id, fl.base); master.faderDb = fl.base; HX.liveEngine && HX.liveEngine.touch && HX.liveEngine.touch(master.id); }
+    } catch (e) { HX.toast('A/B: putting A back: ' + e.message, 3600); }
+  }
+  /* the page is closing: there is no time to wait, so the calls that put A back go out as they are (kept alive) */
+  function unflipNow() {
+    const fl = R.flip; if (!fl || !HX.mcp.connected) return;
+    const f = list().find((x) => x.id === fl.id), it = f && abItem(f), master = S.session.master;
+    if (!it || !HX.mcp.beacon) return;
+    for (const [name, args] of flipCalls(it, 'A')) HX.mcp.beacon(name, args);
+    if (master) HX.mcp.beacon('track_set_fader_db', { id: master.id, db: HX.clamp(fl.base, -193, 6) });
+    R.flip = null; R.want = null;
+  }
+  /* always through the chain: a switch asked for a moment ago (not started yet) is put back too */
+  HX.onEnd(() => unflip().then(() => draw()));
+  window.addEventListener('pagehide', unflipNow);
+  function blindStart(f) {
+    const xIsB = Math.random() < 0.5;
+    R.blind = { id: f.id, X: xIsB ? 'B' : 'A', Y: xIsB ? 'A' : 'B', on: null, picked: null };
+    draw();
+  }
+  async function blindPick(f, which) {
+    const b = R.blind; if (!b || b.id !== f.id) return;
+    b.picked = which;
+    try { await api.post('/api/dawreview/blind', { dir: R.data.dir, id: f.id, picked: which, was: b[which] }); }
+    catch (e) { HX.toast('Not saved: ' + e.message, 3200); }
+    draw();
+  }
+  function engineAB(f) {
+    const box = h('div.rv-actions'), note = (t) => h('span.tool.mono', { style: { color: 'var(--tx3)', fontSize: 'var(--fs-xs)' } }, t);
+    const ab = R.ab;
+    if (!ab || !ab.built || !ab.exists) {
+      add(box, h('button.btn', { disabled: !!R.busy, onclick: buildABSession, 'data-info': 'hypnomix abset: ONE new snapshot beside the original where every proposed fix can be switched A / B here, level-matched (the open session is not touched)' }, 'Build A/B session'),
+        note('every clip and mixer fix as a switchable B, in a new snapshot'));
+      return box;
+    }
+    const it = abItem(f);
+    if (!it || !it.kind) { add(box, note(it && it.note ? it.note : 'not in the A/B session (built before this finding: build it again)')); return box; }
+    if (!ab.open) {
+      add(box, h('button.btn', { disabled: !!R.busy, onclick: () => { R.confirm = 'abopen'; draw(); }, 'data-info': 'The engine opens ' + ab.session.split('/').pop() + ' (it plays exactly like the original until you press B)' }, 'Open A/B session'),
+        note((it.kind === 'playlist' ? 'a fixed copy of ' + it.track + '’s playlist' : it.track + '’s fader, pan, mute') + ', B ' + HX.fmtDb(abLevel(it).d, true) + ' dB' + (abLevel(it).capped ? ' (matched by ' + abLevel(it).m + ' dB at most)' : '')));
+      return box;
+    }
+    const side = R.flip && R.flip.id === f.id ? R.flip.side : 'A', bl = R.blind && R.blind.id === f.id ? R.blind : null;
+    if (bl) {
+      const on = (w) => bl.on === w;
+      add(box, h('div.seg', { 'data-info': 'Blind: X and Y are A and B in a random order. Listen, then choose.' },
+        h('button.a' + (on('X') ? '.on' : ''), { onclick: () => { bl.on = 'X'; flip(f, bl.X); } }, 'X'),
+        h('button.b' + (on('Y') ? '.on' : ''), { onclick: () => { bl.on = 'Y'; flip(f, bl.Y); } }, 'Y')));
+      if (!bl.picked) add(box, h('button.btn', { onclick: () => blindPick(f, 'X') }, 'I prefer X'), h('button.btn', { onclick: () => blindPick(f, 'Y') }, 'I prefer Y'));
+      else add(box, note('you chose ' + bl.picked + ': it was ' + (bl[bl.picked] === 'B' ? 'B (fixed)' : 'A (as it is)') + ' · saved in blind.json'),
+        h('button.btn.ghost', { onclick: () => { R.blind = null; draw(); } }, 'Done'));
+      return box;
+    }
+    add(box, h('div.seg', { 'data-info': 'A = as it is, B = with the fix; switched in the engine while it plays, level-matched on the master · B' },
+      h('button.a' + (side === 'A' ? '.on' : ''), { onclick: () => flip(f, 'A') }, 'A  original'),
+      h('button.b' + (side === 'B' ? '.on' : ''), { onclick: () => flip(f, 'B') }, 'B  fixed')),
+      h('button.btn', { onclick: () => blindStart(f), 'data-info': 'Hear X and Y without knowing which is the fix, choose, then see' }, 'Blind'),
+      note(abLevelText(it) + ' · P plays from the spot'));
+    return box;
+  }
+  /* the measured difference (level_db when the match was capped), and how much the master takes back
+     (match_db, at most 12 dB: abset_ardour.MAX_MATCH_DB) */
+  function abLevel(it) {
+    const m = +it.match_db || 0, capped = !!it.match_capped && it.level_db != null;
+    return { d: capped ? +it.level_db : m, m: Math.abs(m), capped };
+  }
+  function abLevelText(it) {
+    const l = abLevel(it), side = l.d >= 0 ? 'B' : 'A', by = HX.fmtDb(Math.abs(l.d));
+    if (l.capped) return side + ' is ' + by + ' dB louder: turned down on the master by ' + l.m + ' dB, the most it is, while you listen';
+    return side + ' is ' + by + ' dB louder: turned down on the master while you listen';
+  }
+  HX.abLevelText = abLevelText;
+
   /* ── render ── */
   function draw() { root = root || HX.$('#viewReview'); if (root && S.ui.view === 'review') render(root); }
   function render(el) {
     root = el; el.innerHTML = '';
     const L = list(), nApp = approvedN();
-    const busyWord = { scan: 'Scanning…', apply: 'Writing the snapshot…', open: 'Opening the snapshot…', ab: 'Building A/B…' }[R.busy];
+    const busyWord = { scan: 'Scanning…', apply: 'Writing the snapshot…', open: 'Opening the snapshot…', ab: 'Building A/B…', abset: 'Building the A/B session…' }[R.busy];
     el.append(h('div.rv-bar', null, h('span.t', null, 'Review'),
       L.length ? h('div.stat', null, h('span', null, h('b', null, String(count('open'))), 'open'), h('span.a', null, h('b', null, String(count('approved'))), 'approved'), h('span.c', null, h('b', null, String(count('changed'))), 'changed'), h('span.s', null, h('b', null, String(count('skipped'))), 'skipped'), count('applied') ? h('span', null, h('b', null, String(count('applied'))), 'applied') : null)
         : h('span.stat', null, R.data ? 'No findings' : 'Not scanned yet'),
@@ -240,7 +386,7 @@
     });
     const f = L[R.cur] || L[0], det = h('div.rv-detail');
     if (err) det.append(err);
-    if (R.busy === 'apply' || R.busy === 'ab' || R.busy === 'open') det.append(h('div.rv-confirm', null, h('span', null, busyWord + ' ', h('span.scanstage.mono', { style: { color: 'var(--tx3)' } }, (R.job && R.job.step) || '')), h('div.scanbar', null, h('i', { style: { width: pct().toFixed(0) + '%' } }))));
+    if (R.busy === 'apply' || R.busy === 'ab' || R.busy === 'abset' || R.busy === 'open') det.append(h('div.rv-confirm', null, h('span', null, busyWord + ' ', h('span.scanstage.mono', { style: { color: 'var(--tx3)' } }, (R.job && R.job.step) || '')), h('div.scanbar', null, h('i', { style: { width: pct().toFixed(0) + '%' } }))));
     if (R.confirm === 'scan') {
       det.append(h('div.rv-confirm', null, h('span', null, 'Save the session, bounce the mix and scan again? Your decisions stay with the findings that are still there.' + (R.st && R.st.dirty ? ' Unsaved changes are saved first.' : '')),
         h('button.btn.primary', { onclick: () => scan(true) }, 'Save and scan ', h('kbd', null, '⏎')), h('button.btn', { onclick: () => { R.confirm = null; draw(); } }, 'Cancel')));
@@ -253,6 +399,10 @@
     if (R.confirm === 'open') {
       det.append(h('div.rv-confirm', null, h('span', null, 'Wrote “' + R.lastOut.split('/').pop().replace(/\.ardour$/, '') + '”. Open it in the engine? The engine restarts on it and the view reads it again.'),
         h('button.btn.primary', { onclick: openSnap }, 'Open snapshot'), h('button.btn', { onclick: () => { R.confirm = null; draw(); } }, 'Stay here')));
+    }
+    if (R.confirm === 'abopen' && R.ab) {
+      det.append(h('div.rv-confirm', null, h('span', null, 'Open “' + R.ab.session.split('/').pop().replace(/\.ardour$/, '') + '” in the engine? It closes ' + (S.session.name || 'this session') + ': what you have not saved there is not kept. The A/B session plays exactly like the original until you press B.'),
+        h('button.btn.primary', { onclick: openABSession }, 'Open A/B session'), h('button.btn', { onclick: () => { R.confirm = null; draw(); } }, 'Stay here')));
     }
     const t = trackOf(f);
     det.append(h('h2', null, f.problem),
@@ -290,7 +440,7 @@
   }
   function abBox(f) {
     const row = abRow(f), box = h('div.rv-actions');
-    if (f.handling === 'written') return h('div.rv-actions', null, h('span.tool.mono', { style: { color: 'var(--tx3)', fontSize: 'var(--fs-xs)' } }, 'A/B is not available for HypnoMix DAW sessions yet for clip and mixer fixes: apply to a new snapshot, then compare it with the original.'));
+    if (f.handling === 'written') return engineAB(f);
     if (row && row.a) {
       const p = R.abPlay && R.abPlay.id === f.id ? R.abPlay : null, on = (s) => p && p.side === s && !(s === 'A' ? p.a : p.b).paused;
       add(box, h('div.seg', { 'data-info': 'A = as it is, B = with the fix (level-matched) · B' }, h('button.a' + (on('A') ? '.on' : ''), { onclick: () => playAB(f, 'A') }, 'A  original'), h('button.b' + (on('B') ? '.on' : ''), { onclick: () => playAB(f, 'B') }, 'B  fixed')),
@@ -345,12 +495,13 @@
     if (!list().length) return;
     const f = list()[R.cur];
     const map = { j: () => select(R.cur + 1), arrowdown: () => select(R.cur + 1), k: () => select(R.cur - 1), arrowup: () => select(R.cur - 1), y: () => decide('approve'), n: () => decide('skip'), c: () => { R.note = !R.note; draw(); },
-      b: () => { const row = abRow(f); if (row && row.a) playAB(f, R.abPlay && R.abPlay.side === 'A' ? 'B' : 'A'); },
+      b: () => { const it = abItem(f); if (it && it.kind && R.ab.open && !R.blind) return flip(f, R.want && R.want.id === f.id && R.want.side === 'B' ? 'A' : 'B');
+        const row = abRow(f); if (row && row.a) playAB(f, R.abPlay && R.abPlay.side === 'A' ? 'B' : 'A'); },
       p: () => { if (f.at_s != null) { HX.locate(HX.secToBeats(Math.max(0, f.at_s - 2))); HX.play(); } } };
     if (map[k]) { e.preventDefault(); e.stopImmediatePropagation(); map[k](); }
   }
 
-  HX.realReview = { render, scan, select, key, refresh: (force) => refresh(force), reset: () => { stopAB(); R.st = null; R.data = null; R.confirm = null; R.err = ''; } };
+  HX.realReview = { render, scan, select, key, refresh: (force) => refresh(force), leave: () => { stopAB(); if (R.flip || R.want) unflip().then(() => draw()); }, reset: () => { stopAB(); R.flip = null; R.blind = null; R.ab = null; R.st = null; R.data = null; R.confirm = null; R.err = ''; } };
 })();
 
 /* Hypnomix · the review loop as a view: Scan → findings → A/B → Approve / Skip / Change →
@@ -677,7 +828,7 @@
   }, true);
 
   HX.on('findings', () => { const b = HX.$('#reviewBadge'); if (b) b.textContent = S.findings.filter((f) => f.status === 'open').length || ''; });
-  HX.on('view', (v) => { if (real()) { if (v === 'review') RR.refresh(); return; } if (v !== 'review' && S.findings[cur]) leave(S.findings[cur]); if (v === 'review') render(); });
+  HX.on('view', (v) => { if (real()) { if (v === 'review') RR.refresh(); else RR.leave(); return; } if (v !== 'review' && S.findings[cur]) leave(S.findings[cur]); if (v === 'review') render(); });
   HX.on('session', () => { cur = 0; confirm = null; if (real()) RR.refresh(true); else { RR.reset(); render(); } });
   HX.on('theme', () => render());
   HX.reviewSelect = (i) => (real() ? RR.select(i) : select(i));

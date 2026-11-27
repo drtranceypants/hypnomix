@@ -449,7 +449,8 @@ class Unsaved(Exception):
 
 def unsaved():
     """True while the open DAW session has unsaved changes. The server keeps that flag (daw.dirty(): any changing engine
-    call since the last save, from the page or the Assistant). An app that has no such function, or no session, or no
+    call since the last save, from the page or the Assistant, or the engine's own unsaved flag for a change a command
+    made straight in the engine). An app that has no such function, or no session, or no
     engine, has nothing to lose; a function that fails is read as 'nothing to lose' too, so a fault in the optional DAW
     side can never stop an update for good (the person can still quit the app and download the new one)."""
     try:

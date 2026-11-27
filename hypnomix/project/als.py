@@ -9,7 +9,7 @@ from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from hypnomix.project.model import Clip, Device, Project, Take, Track
+from hypnomix.project.model import Clip, Device, Project, Take, TakeLane, Track, quarters_per_bar
 
 KIND = {"AudioTrack": "audio", "MidiTrack": "midi", "GroupTrack": "folder", "ReturnTrack": "return"}
 NOT_DEVICES = {"On", "LomId", "LomIdView", "IsExpanded", "ParametersListWrapper", "Pointee", "UserName"}
@@ -39,24 +39,39 @@ def read(path):
     from hypnomix.session import liveversion as LV
     LV.warn_read(root)                           # a set from a newer Live: one warning line, never a refusal
     tempo = _v(root, ".//Tempo/Manual", float, 120.0)
-    bpb = _v(root, ".//TimeSignatures/RemoteableTimeSignature/Numerator", int, 4)
+    sig = (_v(root, ".//TimeSignatures/RemoteableTimeSignature/Numerator", int, 4),
+           _v(root, ".//TimeSignatures/RemoteableTimeSignature/Denominator", int, 4))
+    bpb = quarters_per_bar(*sig)                     # quarter notes per bar: 6/8 is 3
     spb = 60.0 / tempo
-    proj = Project(path=path, daw="live", tempo=tempo, beats_per_bar=bpb, native=root)
+    proj = Project(path=path, daw="live", tempo=tempo, beats_per_bar=bpb, native=root, meter=(sig[0] or 4, sig[1] or 4))
     proj.warnings = []
     by_id = {}
     for i, t in enumerate(root.find(".//Tracks")):
         name = _v(t, "./Name/EffectiveName", str, f"Track {i + 1}")
         clips = []
-        for c in t.iter("AudioClip"):
-            if c.find("./CurrentStart") is None:
-                continue
+
+        def audio_clip(c):
             ci = S.clip_info(c, path.parent, tempo)
             take = Take(name=ci["name"], path=ci["path"], gain=ci["gain"], kind="audio", native=c)
-            clips.append(Clip(name=ci["name"], start=ci["start"] * spb, length=(ci["end"] - ci["start"]) * spb,
-                              takes=[take], gain=1.0, loop=ci["loop_on"], fade_in=ci["fade_in"] * spb,
-                              fade_out=ci["fade_out"] * spb, muted=ci["disabled"],
-                              stretch_markers=max(0, len(ci["markers"]) - 2) if ci["warped"] else 0, native=c))
+            return Clip(name=ci["name"], start=ci["start"] * spb, length=(ci["end"] - ci["start"]) * spb,
+                        takes=[take], gain=1.0, loop=ci["loop_on"], fade_in=ci["fade_in"] * spb,
+                        fade_out=ci["fade_out"] * spb, muted=ci["disabled"],
+                        stretch_markers=max(0, len(ci["markers"]) - 2) if ci["warped"] else 0, native=c)
+        # take lanes: the takes the comp was made from (not heard); their clips are not the track's clips
+        lanes, in_lanes = [], set()
+        for k, tl in enumerate(t.findall("./TakeLanes/TakeLanes/TakeLane"), 1):
+            lc = [c for c in tl.iter("AudioClip") if c.find("./CurrentStart") is not None]
+            in_lanes.update(id(c) for c in tl.iter("AudioClip"))
+            in_lanes.update(id(c) for c in tl.iter("MidiClip"))
+            lanes.append(TakeLane(name=_v(tl, "./Name", str, "") or f"Take {k}", number=k,
+                                  clips=sorted((audio_clip(c) for c in lc), key=lambda c: c.start), native=tl))
+        for c in t.iter("AudioClip"):
+            if c.find("./CurrentStart") is None or id(c) in in_lanes:
+                continue
+            clips.append(audio_clip(c))
         for c in t.iter("MidiClip"):
+            if id(c) in in_lanes:
+                continue
             s, e = _v(c, "./CurrentStart", float), _v(c, "./CurrentEnd", float)
             if s is None or e is None:
                 continue
@@ -81,7 +96,7 @@ def read(path):
                    volume=_v(t, "./DeviceChain/Mixer/Volume/Manual", float, 1.0),
                    pan=_v(t, "./DeviceChain/Mixer/Pan/Manual", float, 0.0),
                    muted=not S.track_on(t), solo=_v(t, "./DeviceChain/Mixer/Solo/Manual", _bool, False) or False,
-                   native=t)
+                   take_lanes=lanes, native=t)
         tr.group_id = _v(t, "./TrackGroupId", str, "-1")
         by_id[t.get("Id")] = tr
         proj.tracks.append(tr)

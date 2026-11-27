@@ -409,7 +409,19 @@ def g_files(p, R, od, a):
         out.append(_f("files", n, tool="files", kind="missing-audio", severity="high", track=t.name,
                       where=_where(p, c.start), problem=f"{W['item']} '{c.name}' plays {path}, which is not there",
                       fix="find the file and re-link it before anything else"))
-    notes = [f"files: {sum(len(t.clips) for t in p.tracks)} items checked, {len(out)} missing"]
+    heard = len(out)
+    takes = p.missing_takes() if hasattr(p, "missing_takes") else []
+    for n, (t, lane, c, path) in enumerate(takes, heard + 1):
+        num = f"take {lane.number}" if getattr(lane, "number", 0) else f"the take lane '{lane.name}'"
+        out.append(_f("files", n, tool="files", kind="missing-take-audio", severity="medium", track=t.name,
+                      where=_where(p, c.start),
+                      problem=f"{num} of {t.name} uses {path}, which is not there; the comp does not play it, but you "
+                              "cannot comp from it",
+                      fix="find the file and re-link it before you comp from that take"))
+    n_lane = sum(len(lane.clips) for t in p.tracks for lane in t.take_lanes)
+    notes = [f"files: {sum(len(t.clips) for t in p.tracks) + n_lane} items checked"
+             + (f" ({n_lane} on take lanes)" if n_lane else "") + f", {heard} missing"
+             + (f", {len(takes)} more file{'s' if len(takes) != 1 else ''} only takes use" if takes else "")]
     if out:
         notes.append(f"files: to re-link, {W['relink']}")
     return out, notes
@@ -554,6 +566,12 @@ def g_clips(p, R, od, a, vocals=()):
     if onsets:
         notes.append(f"clips: {onsets} loud consonant(s) opening a phrase left alone (part of the singing)")
     # item edges and fades that cut into a word, on the vocal tracks (Live's `edges`, on the model)
+    comped = [t for t in p.audio_tracks(include_off=True) if t.comped]
+    if comped:
+        notes.append("clips: comped from takes: " + ", ".join(f"{t.name} ({len(t.take_lanes)} take{'s' if len(t.take_lanes) != 1 else ''})"
+                                                         for t in comped)
+                     + "; the checks and fixes work on the comp's own clips (each still plays its take's file, so the "
+                       "edges check opens it past the edge), the takes are never changed")
     if vocals:
         from hypnomix.workflow import edges_project as EP
         try:
@@ -736,7 +754,7 @@ def g_effects(p, R, od, a):
     for t in p.tracks:
         if not t.devices:
             continue
-        chain_off = all(not d.on for d in t.devices) and t.native is not None and \
+        chain_off = p.daw == "reaper" and all(not d.on for d in t.devices) and t.native is not None and \
             t.native.get("FX", cast=int, default=1) == 0
         if chain_off:
             n += 1
@@ -763,7 +781,10 @@ def g_effects(p, R, od, a):
         from hypnomix.workflow import sidechain_project as SCP
         res = SCP.analyse(p)
         out += SCP.findings(p, res, W)
-        if res:
+        if res and p.daw == "ardour":
+            notes.append(f"sidechain: {len(res)} sidechained ACE Compressor(s) measured hit by hit; the suggested "
+                         "settings are listed to set in the device (other compressors: not checked)")
+        elif res:
             notes.append(f"sidechain: {len(res)} sidechained ReaComp(s) measured hit by hit; suggestions are written "
                          "into the ReaComp by `fix` (other compressors: only listed)")
     except Exception:

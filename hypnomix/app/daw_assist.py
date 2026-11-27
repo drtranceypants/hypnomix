@@ -25,7 +25,12 @@ READ_ONLY = frozenset({
     "hello_world", "session_get_info", "session_list_snapshots", "transport_get_state", "markers_list",
     "tracks_list", "track_get_info", "track_get_regions", "track_get_fader", "region_get_info", "region_get_peaks",
     "plugin_get_description", "plugin_list_available", "midi_note_list", "midi_note_get_json", "meters_get",
-    "export_status", "region_get_warp",
+    "export_status", "region_get_warp", "playlist_list", "take_list", "plugin_get_sidechain", "group_list",
+    "session_get_card", "cue_list", "ab_list",
+    # MIDI inputs and MPE (only an engine that lists them has them): the port list, a track's MPE setting and the
+    # per-note input monitor. The monitor's first read attaches a tap to the track's MIDI input port: nothing in the
+    # session, and nothing that is heard, changes (its `reset` only clears the monitor's own counts).
+    "midi_ports_list", "midi_monitor_get", "track_get_mpe",
 })
 
 
@@ -152,7 +157,13 @@ def invalid(sch, args):
         return f"missing {', '.join(miss)} (required)"
     for k, v in a.items():
         p = props.get(k) or {}
-        want = _TYPES.get(p.get("type"))
+        ty = p.get("type")
+        if isinstance(ty, list):                         # ["string", "null"]: any of them, and null clears the field
+            if v is None or any(isinstance(v, _TYPES[x]) and not (isinstance(v, bool) and bool not in _TYPES[x])
+                                for x in ty if isinstance(x, str) and x in _TYPES):
+                continue
+            return f"{k} must be a {' or '.join(str(x) for x in ty)}, not {json.dumps(v)[:40]}"
+        want = _TYPES.get(ty) if isinstance(ty, str) else None
         if want and v is not None and (not isinstance(v, want) or (isinstance(v, bool) and bool not in want)):
             return f"{k} must be a {p['type']}, not {json.dumps(v)[:40]}"
         if isinstance(v, float) and not math.isfinite(v):
@@ -264,6 +275,13 @@ def preview(tool, args, read):
             r = read("region_get_info", {"regionId": a.get("region_id")}) or {}
             rows.append(dict(what=f"region {r.get('name') or a.get('region_id')} · mute", before=_onoff(r.get("muted")),
                              after=_onoff(a.get("muted", True))))
+        elif tool == "comp_range":
+            sr = (read("session_get_info", {}) or {}).get("sampleRate") or 48000
+            t0 = a["start_sample"] / sr if isinstance(a.get("start_sample"), (int, float)) else a.get("start")
+            t1 = a["end_sample"] / sr if isinstance(a.get("end_sample"), (int, float)) else a.get("end")
+            src = f"take {a['take']}" if a.get("take") is not None else f"take playlist {a.get('take_playlist_id')}"
+            rows.append(dict(what=f"{name()} · comp {_num(t0)}–{_num(t1)} s", before="what the comp plays there now",
+                             after=f"{src}, {_num(a.get('xfade_ms', 10))} ms crossfades (one undo step)"))
         elif tool in ("session_undo", "session_redo"):
             n = a.get("count") or 1
             rows.append(dict(what="session", before="as it is", after=f"{tool[8:]} {n} step{'s' if n != 1 else ''}"))
@@ -378,7 +396,33 @@ def _more_rows(tool, a, read, ti, name, plugins):
         rows.append(dict(what="the mix", before="-", after="bounced to a new file: " + os.path.basename(str(a.get("path") or "?"))))
     elif tool == "session_rename":
         rows.append(dict(what="session name", before="as it is", after=str(a.get("newName"))))
+    elif tool == "track_set_mpe":
+        m = read("track_get_mpe", {"track_id": str(a.get("track_id"))}) or {}
+        rows.append(dict(what=f"{m.get('name') or name()} · MPE", before=_mpe_words(m.get("zone"), m.get("members")) if m else "?",
+                         after=_mpe_words(a.get("zone"), a.get("members"))))
+    elif tool == "midi_port_set_flags":
+        port = str(a.get("port") or "")
+        p = next((x for x in (read("midi_ports_list", {"direction": "all"}) or {}).get("ports") or []
+                  if port in (x.get("name"), x.get("prettyName"))), {})
+        now = p.get("flags") or {}
+        keys = [k for k in ("music", "control", "selection", "mpe") if isinstance(a.get(k), bool)]
+        flags = lambda f: ", ".join(f"{k} {'on' if f.get(k) else 'off'}" for k in keys) or "as they are"
+        rows.append(dict(what=f"MIDI port {p.get('prettyName') or port}", before=flags(now) if p else "?",
+                         after=flags({k: a[k] for k in keys})))
+    elif tool == "midi_track_connect_input":
+        rows.append(dict(what=f"{name()} · MIDI input", before="as it is" if not a.get("exclusive") else "its connections now",
+                         after=("only " if a.get("exclusive") else "also ") + f"from {a.get('port')}"))
+    elif tool == "midi_track_disconnect_input":
+        rows.append(dict(what=f"{name()} · MIDI input", before="as it is",
+                         after=f"no longer from {a['port']}" if a.get("port") else "connected to nothing"))
     return rows
+
+
+def _mpe_words(zone, members):
+    """A track's MPE mode in words: 'off', or the zone and how many member channels."""
+    if zone in (None, "", "off"):
+        return "off"
+    return f"{zone} zone" + (f", {members} member channels" if isinstance(members, int) and not isinstance(members, bool) else "")
 
 
 def _num(v):
@@ -455,6 +499,19 @@ TITLES = {
     "midi_note_edit": "Edit MIDI notes", "midi_note_import_json_into_region": "Import MIDI notes into a region",
     "midi_note_import_json_to_new_region_samples": "Import MIDI notes as a new region",
     "midi_note_import_json_to_new_region_bbt": "Import MIDI notes as a new region",
+    "playlist_new": "Make a new take", "playlist_select": "Choose which take a track plays",
+    "comp_range": "Comp a stretch from a take",
+    "plugin_set_sidechain": "Key a plug-in from another track",
+    "group_create": "Make a group track", "group_add": "Add tracks to a group", "group_remove": "Take tracks out of a group",
+    "group_delete": "Ungroup", "group_set": "Change a group",
+    "track_bounce": "Bounce one track to a new audio file", "session_set_card": "Change the song card",
+    "meters_stream_info": "Open the meter stream",
+    "cue_set_clip": "Put a clip into a cue slot", "cue_set_props": "Change a cue slot's settings",
+    "cue_launch": "Launch a clip", "cue_stop": "Stop clips", "scene_launch": "Launch a scene",
+    "ab_use_playlist": "Switch which playlist a track plays",
+    "midi_port_set_flags": "Mark a MIDI port", "midi_track_connect_input": "Connect a track's MIDI input",
+    "midi_track_disconnect_input": "Disconnect a track's MIDI input", "midi_monitor_stop": "Stop the MIDI input monitor",
+    "track_set_mpe": "Set MPE on a track",
 }
 
 
@@ -474,10 +531,11 @@ UNDO_STEP = frozenset("""
     markers_hide_auto_punch markers_delete_by_location_id markers_delete_by_name markers_rename_by_location_id
     markers_rename_by_name midi_region_add_samples midi_region_add_bbt midi_note_add_region_beat midi_note_add_sample
     midi_note_add_bbt midi_note_edit midi_note_import_json_into_region midi_note_import_json_to_new_region_samples
-    midi_note_import_json_to_new_region_bbt
+    midi_note_import_json_to_new_region_bbt comp_range track_set_mpe
 """.split())
 PLAYBACK = frozenset("""transport_play transport_stop transport_goto_start transport_goto_end transport_locate_sample
-    transport_locate_bbt transport_prev_marker transport_next_marker transport_set_speed""".split())
+    transport_locate_bbt transport_prev_marker transport_next_marker transport_set_speed cue_launch cue_stop
+    scene_launch""".split())
 # Said in their own words: these are not taken back by an undo step, or not by anything. (Verified against the engine's
 # source: a plug-in or a send added or removed is not a reversible command, so Undo does not touch it; a warp is, it
 # replaces the region in the playlist as one undo step.)
@@ -501,7 +559,34 @@ UNDO_NOTES = {
     "session_undo": ("none", "Undoes the engine's own last step; Redo puts it back."),
     "session_redo": ("none", "Redoes the engine's own last undone step."),
     "session_store_mixer_scene": ("none", "Overwrites the stored scene; it is not an undo step."),
+    "playlist_new": ("none", "Not an engine undo step: the new take stays with the track (it is not heard unless chosen)."),
+    "playlist_select": ("back", "Not an engine undo step: choose the comp again to take it back."),
+    "plugin_set_sidechain": ("back", "Not an engine undo step: choose the old source again (or none) to take it back."),
+    "group_create": ("none", "Not an engine undo step: Ungroup (another card) puts the tracks back on the master."),
+    "group_add": ("none", "Not an engine undo step: take the tracks out of the group again with another card."),
+    "group_remove": ("none", "Not an engine undo step: add the tracks to the group again with another card; taking the last ones out removes the group bus."),
+    "group_delete": ("none", "Cannot be undone from here: the group bus is removed (with any plug-ins on it); make the group again to get it back."),
+    "group_set": ("back", "Not an engine undo step: set the old values again to take it back."),
+    "track_bounce": ("none", "Writes a new audio file; delete the file to take it back. The session itself does not change."),
+    "session_set_card": ("back", "Not an engine undo step: set the old values again (the card is kept in the session file when it is saved)."),
+    "meters_stream_info": ("none", "The app's own: never offered."),
+    "cue_set_clip": ("none", "Not an engine undo step: clear the slot with another card. While any slot of a track holds a "
+                             "clip (launched or not), that track's Arrangement regions do not play; clearing its "
+                             "last clip brings them back at once."),
+    "cue_set_props": ("back", "Not an engine undo step: set the old values again to take it back."),
+    "ab_use_playlist": ("back", "Not an engine undo step: switch back to the playlist it played before."),
     "session_recall_mixer_scene": ("back", "Sets every fader and switch to the scene; not an undo step. Store a scene first to be able to come back."),
+    # MIDI inputs (the engine's own words: port flags and connections are not undo steps; its reply lists what was before)
+    "midi_port_set_flags": ("back", "Not an engine undo step, and not kept in the session: the flags are saved at once in "
+                                    "this computer's MIDI port settings. To put them back, set the old flags again with "
+                                    "another card (the card shows them; the engine's reply lists them too)."),
+    "midi_track_connect_input": ("back", "Not an engine undo step (connections never are). To put it back, disconnect "
+                                         "this port with another card, or connect the ports it had before again (the "
+                                         "engine's reply lists them). Kept in the session when it is saved."),
+    "midi_track_disconnect_input": ("back", "Not an engine undo step (connections never are). To put it back, connect "
+                                            "the port again with another card (the engine's reply lists what was connected)."),
+    "midi_monitor_stop": ("back", "Changes nothing in the session or in what is heard: it only stops watching the "
+                                  "track's MIDI input. Reading the monitor again starts it again."),
 }
 UNDO_TEXT = {
     "step": "One undo step in the engine: Undo takes it back.",
@@ -618,7 +703,7 @@ def export_problem(args):
 
 
 # ---------------------------------------------------------------- what the model needs of the tool list, and no more
-# Every step of a conversation carries the tool definitions: all 111 of the engine's cost about 16,000 tokens each time.
+# Every step of a conversation carries the tool definitions: all of the engine's (more than 100) cost about 16,000 tokens or more each time.
 # A request carries the CORE (the reads and the mixing moves of most requests), plus the groups the DAW view needs;
 # daw_more_tools {group} asks for another group (it stays for the conversation), so nothing is out of reach.
 CORE = frozenset("""
@@ -627,20 +712,38 @@ CORE = frozenset("""
     track_set_fader_db track_set_pan track_set_mute track_set_solo track_set_send_level_db plugin_add_by_plugin_id
     plugin_set_enabled plugin_set_parameter_by_index_value plugin_remove
 """.split())
-GROUPS = ("regions", "markers", "transport", "plugins", "tracks", "session", "midi", "other")
+GROUPS = ("regions", "markers", "transport", "plugins", "tracks", "session", "midi", "cues", "mpe", "other")
 GROUP_ABOUT = {
     "regions": "regions on the timeline: gain, move, copy, split, resize, fades, envelope, warp, peaks, remove",
     "markers": "markers and the loop / punch ranges",
     "transport": "play, stop, move the playhead, loop and speed",
     "plugins": "the rest of the plug-in tools: other ways to set a parameter, reorder, place, add by unique id",
-    "tracks": "add, rename, select, arm, colour, reorder or remove tracks and buses, sends, fader by position, import audio",
+    "tracks": "add, rename, select, arm, colour, reorder or remove tracks and buses, sends, fader by position, import audio, takes and comping, group tracks",
     "session": "rename, snapshots, mixer scenes, bounce the mix to a file",
     "midi": "MIDI regions and notes",
+    "cues": "the Session view's clip slots: list, fill, launch, stop, scenes",
+    "mpe": "MIDI inputs and MPE: the controller ports and their flags, a track's MIDI input, the per-note input monitor, a track's MPE mode",
     "other": "any tool the engine has that the groups above do not cover",
 }
-VIEW_GROUPS = {"mixer": ("plugins",), "arrange": ("regions",), "session": (), "review": ()}
+VIEW_GROUPS = {"mixer": ("plugins",), "arrange": ("regions",), "session": ("cues",), "review": ()}
 SESSION_EXTRA = ("session_rename", "session_quick_snapshot", "session_store_mixer_scene", "session_recall_mixer_scene",
                  "session_export_mix", "hello_world")
+
+
+# The MIDI input and MPE tools: their own group, offered only when the engine lists at least one of them (an engine
+# built without them shows no such group, so nothing about it reaches the model).
+MPE_TOOLS = frozenset("""
+    midi_ports_list midi_port_set_flags midi_track_connect_input midi_track_disconnect_input midi_monitor_get
+    midi_monitor_stop track_get_mpe track_set_mpe
+""".split())
+OPTIONAL_GROUPS = {"mpe": MPE_TOOLS}
+
+
+def groups_for(names):
+    """The groups daw_more_tools may offer for an engine that lists these tools: every group, less an optional one
+    (mpe) the engine has none of."""
+    have = {str(n) for n in names or ()}
+    return tuple(g for g in GROUPS if g not in OPTIONAL_GROUPS or have & OPTIONAL_GROUPS[g])
 
 
 def group_of(tool):
@@ -648,8 +751,12 @@ def group_of(tool):
     t = str(tool)
     if t in CORE:
         return "core"
+    if t in MPE_TOOLS:
+        return "mpe"
     for pre, g in (("region_", "regions"), ("markers_", "markers"), ("transport_", "transport"), ("plugin_", "plugins"),
-                   ("midi_", "midi"), ("track_", "tracks"), ("tracks_", "tracks"), ("buses_", "tracks")):
+                   ("midi_", "midi"), ("track_", "tracks"), ("tracks_", "tracks"), ("buses_", "tracks"),
+                   ("playlist_", "tracks"), ("take_", "tracks"), ("comp_", "tracks"), ("group_", "tracks"),
+                   ("ab_", "tracks"), ("cue_", "cues"), ("scene_", "cues")):
         if t.startswith(pre):
             return g
     if t == "session_import_audio":
@@ -659,11 +766,57 @@ def group_of(tool):
     return "other"
 
 
-def offered(names, view=None, enabled=()):
+# A provider takes at most 128 tools in one request (the app's own come on top of these). With every group on, the engine
+# has more than that, so the other forms of a tool (another unit, another way to address the same thing) are left out
+# first, in this order, until the request fits; the form kept does the same job.
+MAX_OFFERED = 112
+SECOND_FORMS = """
+    plugin_set_parameter_by_index_interface plugin_set_parameter_by_control_value plugin_set_parameter_by_control_interface
+    region_set_gain_linear track_set_fader_position track_set_send_level_position plugin_add_by_unique_id hello_world
+    markers_delete_by_location_id markers_rename_by_location_id
+    transport_locate_bbt transport_loop_location_bbt markers_add_range_bbt markers_set_auto_loop_bbt
+    markers_set_auto_punch_bbt region_resize_bbt region_copy_to_bbt region_move_to_bbt midi_region_add_bbt
+    midi_note_add_bbt midi_note_import_json_to_new_region_bbt ab_list ab_use_playlist
+    transport_loop_location_samples region_copy_by_beats region_move_by_beats region_copy_by_samples
+    region_move_by_samples midi_note_add_sample track_get_fader midi_note_import_json_to_new_region_samples
+""".split()                       # ab_list / ab_use_playlist: playlist_list / playlist_select do the same for a track
+# The last eight are needed only by an engine with the MIDI input and MPE tools (144 with every group on): the loop range
+# by samples is markers_set_auto_loop_samples (the same handler), a copy or move by beats or by a distance is the copy or
+# move to a sample, a note at a sample is a note at a beat of its region, track_get_info reads the fader too, and a new
+# region from JSON is midi_region_add_samples then midi_note_import_json_into_region. Kept last, so an engine without
+# those tools loses none of them.
+
+
+# Engine tools never offered to the model: the meter stream's address and token are the app's own (daw_meters.py).
+NEVER_OFFERED = frozenset({"meters_stream_info"})
+
+
+def offered(names, view=None, enabled=(), limit=MAX_OFFERED, cut=None):
     """The engine tools (by engine name) one request carries: the core, the groups the view needs and the groups the
-    conversation asked for. A tool the core or a group does not cover (a new one from the engine) is in 'other'."""
-    want = set(VIEW_GROUPS.get(str(view or ""), ())) | set(enabled or ())
-    return [n for n in names if group_of(n) == "core" or group_of(n) in want]
+    conversation asked for. A tool the core or a group does not cover (a new one from the engine) is in 'other'.
+    Never more than `limit`: past it, the SECOND_FORMS go first; if that is not enough, by priority (the core and the
+    view's groups are kept; the 'other' group goes before the groups asked for), never silently: what was left out is
+    added to `cut` (a list) so the person and the model can be told."""
+    view_groups = set(VIEW_GROUPS.get(str(view or ""), ()))
+    want = view_groups | set(enabled or ())
+    out = [n for n in names if n not in NEVER_OFFERED and (group_of(n) == "core" or group_of(n) in want)]
+    dropped = []
+    for n in SECOND_FORMS:
+        if len(out) <= limit:
+            break
+        if n in out:
+            out.remove(n)
+            dropped.append(n)
+    if len(out) > limit:
+        def rank(n):
+            g = group_of(n)
+            return 0 if g == "core" else 1 if g in view_groups else 3 if g == "other" else 2
+        keep = set(sorted(out, key=lambda n: (rank(n), out.index(n)))[:limit])
+        dropped += [n for n in out if n not in keep]
+        out = [n for n in out if n in keep]
+    if isinstance(cut, list):
+        cut.extend(dropped)
+    return out
 
 
 def short_text(text, limit=200):
@@ -694,12 +847,17 @@ def attached_schema(s):
     for k, p in (s.get("properties") if isinstance(s.get("properties"), dict) else {}).items():
         if not isinstance(k, str) or not _SAFE_KEY.match(k) or not isinstance(p, dict):
             continue
-        q = {"type": p["type"]} if p.get("type") in _TYPES else {}
+        ty = p.get("type")
+        if isinstance(ty, list):                         # ["string", "null"] (a field that null clears)
+            ty = [x for x in ty if isinstance(x, str) and (x in _TYPES or x == "null")]
+            q = {"type": ty} if ty else {}
+        else:
+            q = {"type": ty} if isinstance(ty, str) and ty in _TYPES else {}
         for lim in _LIMITS:
             if isinstance(p.get(lim), (int, float)) and not isinstance(p.get(lim), bool) and math.isfinite(p[lim]):
                 q[lim] = p[lim]
         it = p.get("items")
-        if q.get("type") == "array" and isinstance(it, dict) and it.get("type") in _TYPES:
+        if q.get("type") == "array" and isinstance(it, dict) and isinstance(it.get("type"), str) and it["type"] in _TYPES:
             q["items"] = {"type": it["type"]}
         props[k] = q
     out = {"type": "object", "properties": props}

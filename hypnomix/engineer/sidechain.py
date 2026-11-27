@@ -26,6 +26,9 @@ Usage:
   hypnomix sidechain SET.als --glue-to-compressor --apply "SET (compressor).als"
                      # swap sidechained Glue Compressors for Live's Compressor (same routing, lookahead on)
   hypnomix sidechain --trigger kick.wav --target bass.wav --bpm 92 [--style ...]   # any two files
+  hypnomix sidechain SONG.rpp | SESSION.ardour [--style ...]
+                     # a REAPER project (ReaComp keyed by a send) or a HypnoMix DAW session (a compressor keyed
+                     # from another track): the same measurement, listed as findings; --apply writes Live sets only
 
 Trigger audio: audio tracks are rendered straight from the set. MIDI tracks (drum racks, synths) need
 their audio: export them (File > Export Audio/Video > All Individual Tracks) into a folder and pass
@@ -821,6 +824,24 @@ def main():
     if not a.als:
         ap.error("give a set (.als), or --trigger/--target files")
     src = Path(a.als)
+    from hypnomix import project as PJ
+    if PJ.daw_of(src) in ("ardour", "reaper"):
+        # ACE Compressor keyed from another track (Ardour / HypnoMix DAW), ReaComp listening to a send (REAPER)
+        from hypnomix.workflow import sidechain_project as SCP
+        if a.apply:
+            sys.exit("--apply writes Live sets; for this project run `hypnomix scan` and `fix` (REAPER), or set the "
+                     "suggested values in the device (HypnoMix DAW)")
+        if a.use or a.stems or a.glue_to_compressor:
+            sys.exit("--use, --stems and --glue-to-compressor are for Live sets: this project's own tracks are "
+                     "rendered from the session")
+        p = PJ.load(src)
+        fs = SCP.findings(p, SCP.analyse(p, a.style if a.style != "auto" else "auto"), None)
+        if a.host:
+            fs = [f for f in fs if a.host.lower() in str(f.get("host") or f.get("track") or "").lower()]
+        print(f"{src.name}: {len(fs)} sidechained compressor(s)" + (f" on tracks named like {a.host!r}" if a.host else ""))
+        for f in fs:
+            print(f"  {f['id']}: {f['problem']}\n    -> {f['fix']}")
+        return
     if a.apply and Path(a.apply).resolve().parent != src.resolve().parent:
         sys.exit(f"write the new set in the same folder as the original ({src.resolve().parent}): "
                  "samples linked by relative path go offline elsewhere")

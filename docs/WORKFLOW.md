@@ -195,7 +195,14 @@ the track through its own model of the device. It cannot preview a device it has
 racks, plug-ins), a MIDI note moved by a nudge, or a return track: `ab.json` and the review page say why, and for
 those you apply that one fix into a new set and listen in Live. Clip previews are the track alone, without effects.
 `ab` plays Live sets and folders of recordings; on a REAPER project it plays repaired recordings and says, for each other fix, why it has no clip, and `abset`
-builds a project with each fix switched off next to yours (guide 8).
+builds a project with each fix switched off next to yours (guide 8). On a HypnoMix DAW session `abset` writes one new
+snapshot, `<Song> (A-B).ardour`, where each clip fix (fade, cut, spike dip) is another playlist of its track
+(`<playlist>.B <id>`) and each mixer move is a pair of A/B values (`ab_ardour.json`); the DAW view's Review switches
+them over MCP (`ab_use_playlist`, the track's fader / pan / mute), turning the louder side down on the master by the
+measured `match_db` (a rough mix without plug-ins, around the spot; muted tracks are left out, so a mute fix is
+matched too), with a blind test (`blind.json`).
+This needs the HypnoMix DAW add-on, which is not available yet (docs/APP.md, DAW mode); the switching has not been
+judged by ear.
 
 The page shows every finding with its players and saves each click to `decisions.json` (with `--serve`, on this
 computer only). Without `--serve` it is a static `REVIEW.html`: download your decisions from it, then
@@ -474,6 +481,13 @@ gain, gain dips over spikes and the eased level at a comp cut into **one new `.a
 original inside the same session folder (where the DAW keeps its snapshots and finds the session's audio; nothing is
 copied or moved). The original is never touched. Track names and order, vocal stacks, timing, sidechain and tuning
 stay by hand. The new file is written and read back by HypnoMix and has not yet been opened in a released DAW.
+
+Takes: a track's other playlists named `<track>.take N` (HypnoMix DAW records each pass into one and comps from
+them) are read as its take lanes (`Track.take_lanes`, like a Live set's take lanes, which are read the same way
+since this change instead of as ordinary clips). They are not heard; the scan names the comped tracks, and its checks
+and fixes work on the comp's own regions only. A take is never written. A missing file the comp plays is one
+high finding however many takes share it; a file only takes use is a medium one ("take 2 of Lead uses ..., which is
+not there"), once per file, and the files note counts take-lane regions apart.
 
 ## Other DAWs
 

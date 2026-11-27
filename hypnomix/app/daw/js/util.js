@@ -113,9 +113,11 @@
 
   /* ── dialogs ──
      HX.dialog({ title, body, buttons: [{ label, value, kind, focus }], cancel }) → a promise of the chosen button's value
-     (cancel: Esc, a click outside). Focus starts on the button marked `focus` (the safe one), Tab and Shift+Tab stay inside
-     and work as usual, and Enter / Space press the FOCUSED button only (never a default one). The page's own shortcuts
-     are dead while a dialog is open (HX.modalOpen), and focus goes back to where it was. */
+     (cancel: Esc, a click outside). Focus starts on the button marked `focus` (the safe one). Tab and Shift+Tab go round
+     every control of the dialog in page order (a name box, check boxes, the buttons) and stay inside it. Enter and Space
+     press the FOCUSED button only (never a default one); in a text box Space types a space and on a check box it ticks
+     it, and Enter there does nothing. The page's own shortcuts are dead while a dialog is open (HX.modalOpen), and focus
+     goes back to where it was. */
   HX.dialog = function (o) {
     return new Promise((resolve) => {
       const before = document.activeElement;
@@ -125,17 +127,23 @@
       const done = (v) => { ov.remove(); document.removeEventListener('keydown', key, true); try { before && before.focus && before.focus(); } catch (e) {} resolve(v); };
       const btns = (o.buttons || [{ label: 'OK', value: true }]).map((b) => HX.h('button.btn' + (b.kind ? '.' + b.kind : ''), { type: 'button', onclick: () => done(b.value) }, b.label));
       const first = (o.buttons || []).findIndex((b) => b.focus);
+      /* the dialog's controls in page order, looked up on each Tab (the body can change) */
+      const ring = () => [...ov.querySelectorAll('button, input, select, textarea, a[href], [tabindex]')]
+        .filter((el) => !el.disabled && el.tabIndex >= 0 && !el.closest('[hidden]'));
       const key = (e) => {
         if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); done(o.cancel); return; }
-        if (e.key === 'Tab') {                         // the buttons in order, round and round, kept inside the dialog (also where the browser's own Tab skips buttons)
+        if (e.key === 'Tab') {                         // every control in page order, round and round, kept inside the dialog (also where the browser's own Tab skips buttons)
           e.stopPropagation(); e.preventDefault();
-          const list = btns.filter((b) => !b.disabled), i = list.indexOf(document.activeElement);
-          list[i < 0 ? (e.shiftKey ? list.length - 1 : 0) : (i + (e.shiftKey ? -1 : 1) + list.length) % list.length].focus();
+          const list = ring(), i = list.indexOf(document.activeElement);
+          if (list.length) list[i < 0 ? (e.shiftKey ? list.length - 1 : 0) : (i + (e.shiftKey ? -1 : 1) + list.length) % list.length].focus();
           return;
         }
-        if (e.key === 'Enter' || e.key === ' ') {      // the focused button does its own click; nothing else reacts
+        if (e.key === 'Enter' || e.key === ' ') {      // the focused button does its own click; a text box types the space, a check box ticks
           e.stopPropagation();
-          if (!btns.includes(document.activeElement)) e.preventDefault();
+          const t = document.activeElement;
+          if (btns.includes(document.activeElement)) return;
+          if (e.key === ' ' && t && ov.contains(t) && t.matches && t.matches('input, textarea, select')) return;
+          e.preventDefault();
           return;
         }
         if (!e.metaKey && !e.ctrlKey) e.stopPropagation();
@@ -147,6 +155,12 @@
       (btns[first >= 0 ? first : 0]).focus();
     });
   };
+  /* things a Save, a scan or a closing page must put back first (the Assistant's Hear it, the Review's A/B flip):
+     HX.onEnd(fn) adds one; HX.endAuditions(why) runs them all and waits for every one, a failing one included */
+  const endHooks = [];
+  HX.onEnd = (fn) => { endHooks.push(fn); };
+  HX.endAuditions = (why) => Promise.all(endHooks.map((fn) => Promise.resolve().then(() => fn(why)).catch(() => {}))).then(() => undefined);
+
   /* a dialog, the shortcuts list or a popover is open: the page's keys (play, mute, delete a clip…) do nothing */
   HX.modalOpen = () => !!document.querySelector('.hx-confirm, .connect-pop, #helpOverlay:not([hidden])');
 

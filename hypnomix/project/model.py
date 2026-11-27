@@ -15,6 +15,15 @@ import threading
 import numpy as np
 
 
+def quarters_per_bar(numerator, denominator):
+    """A time signature -> quarter notes per bar (the unit tempo and beats are in): 4/4 -> 4, 6/8 -> 3, 5/8 -> 2.5.
+    A missing or zero denominator counts as 4; a whole number comes back as an int."""
+    n = float(numerator or 4) or 4.0
+    d = float(denominator or 4) or 4.0
+    q = n * 4.0 / d
+    return int(round(q)) if abs(q - round(q)) < 1e-9 else q
+
+
 @dataclass
 class Device:
     name: str                      # what the person sees ("ReaEQ (Cockos)", "EQ Eight")
@@ -23,6 +32,11 @@ class Device:
     preset: str = ""
     params: dict = field(default_factory=dict)   # readable parameters only (name -> value)
     native: object = None
+    uid: str = ""                  # the plug-in's own id when the DAW stores one (Ardour: "urn:ardour:a-comp")
+    sidechain: list = field(default_factory=list)  # names of the tracks that key it (Ardour sidechain feeds)
+    sidechain_tap: str = ""        # where the key is taken: "pre_fader" (after the source's effects), "post_fader"
+    sidechain_feeds: list = field(default_factory=list)  # [(track name, tap, send gain linear)] one per feed
+    sidechain_off: list = field(default_factory=list)    # names of tracks whose send to its key is switched off
 
 
 @dataclass
@@ -85,6 +99,18 @@ class Clip:
 
 
 @dataclass
+class TakeLane:
+    """One take a track was recorded or comped from, kept beside what it plays (Live's take lanes; a HypnoMix DAW
+    take playlist "<track>.take N"). Its clips are not heard: the track plays its comp (`Track.clips`),
+    whose clips were copied from the takes. Tools read takes (the edges check compares a take with the comp) and
+    never change them; fixes stay clip edits on the comp."""
+    name: str
+    number: int = 0                # 1-based take number (Ardour "<track>.take N"); lane order for Live
+    clips: list = field(default_factory=list)
+    native: object = None
+
+
+@dataclass
 class Track:
     name: str
     index: int
@@ -98,7 +124,16 @@ class Track:
     solo: bool = False
     polarity: bool = False         # phase flipped on the track
     parent: "Track" = None         # the folder / group this track sits in
+    take_lanes: list = field(default_factory=list)   # [TakeLane] the comp was made from (not heard)
     native: object = None
+    group: str = ""                # HypnoMix DAW: the route group it belongs to (its bus is `parent` when routed there)
+    route_id: str = ""             # HypnoMix DAW: the route id (what the engine's MCP tools take)
+    active: bool = True            # HypnoMix DAW: the route is active (a switched-off route plays nothing)
+
+    @property
+    def comped(self):
+        """The track plays a comp made from take lanes (Live take lanes, HypnoMix DAW take playlists)."""
+        return any(lane.clips for lane in self.take_lanes)
 
     @property
     def on(self):
@@ -115,8 +150,27 @@ class Track:
         return 20 * math.log10(self.volume) if self.volume > 0 else -math.inf
 
     @property
+    def fader_db(self):
+        """The fader alone in dB (volume is fader x trim where the DAW has a trim, as HypnoMix DAW does)."""
+        g = self.volume / (getattr(self, "trim", None) or 1.0)
+        return 20 * math.log10(g) if g > 0 else -math.inf
+
+    @property
     def safe_name(self):
         return re.sub(r'[\\/:*?"<>|]', "-", self.name)
+
+
+@dataclass
+class Group:
+    """A route group: with a subgroup bus it is what Live calls a group track."""
+    name: str
+    id: str = ""
+    bus: "Track" = None            # the subgroup bus (None for a plain route group)
+    members: list = field(default_factory=list)   # [Track] in track order
+    shares: dict = field(default_factory=dict)    # gain / relative / mute / solo / recenable / select / color -> bool
+    folded: bool = False           # the group's "hidden" flag: the DAW hides the members' lanes
+    active: bool = True
+    native: object = None
 
 
 @dataclass
@@ -124,12 +178,19 @@ class Project:
     path: Path
     daw: str                       # "live" | "reaper" | "ardour"
     tempo: float = 120.0
-    beats_per_bar: int = 4
+    beats_per_bar: float = 4       # quarter notes per bar (6/8: 3, 5/8: 2.5); whole numbers stay int
     sample_rate: int = 44100
     tracks: list = field(default_factory=list)
     tempo_changes: int = 0         # points on a tempo map (bars are only exact with a constant tempo)
+    meter: tuple = (4, 4)          # the first time signature (numerator, denominator)
+    meter_changes: int = 0         # later time signatures that differ from the first (bars after them are not exact)
     native: object = None
     renderer: object = None        # DAW-specific track renderer, set by the reader: f(track, N, sr, warn) -> mono
+    groups: list = field(default_factory=list)   # route groups: [Group]
+
+    @property
+    def meter_text(self):
+        return f"{self.meter[0]:g}/{self.meter[1]:g}"
 
     # ------------------------------------------------------------ lookups
     def track(self, name):
@@ -161,13 +222,30 @@ class Project:
         return f"{b + 1}.{int(rem) + 1}.{int((rem % 1) * 4) + 1:02d}"
 
     def missing(self):
-        """[(track, clip, path)] for every clip whose audio file can't be found."""
+        """[(track, clip, path)] for every clip on the tracks (what plays) whose audio file can't be found. Take-lane
+        clips are not heard: missing_takes() lists theirs."""
         out = []
         for t in self.tracks:
             for c in t.clips:
                 for tk in c.takes:
                     if tk.kind == "audio" and tk.path is not None and not Path(tk.path).exists():
                         out.append((t, c, tk.path))
+        return out
+
+    def missing_takes(self):
+        """[(track, take lane, clip, path)] for take-lane clips whose audio file can't be found and that no clip on a
+        track plays (those are in missing()): one entry per file."""
+        heard = {str(x[2]) for x in self.missing()}
+        out, seen = [], set()
+        for t in self.tracks:
+            for lane in t.take_lanes:
+                for c in lane.clips:
+                    for tk in c.takes:
+                        k = str(tk.path)
+                        if tk.kind == "audio" and tk.path is not None and k not in heard and k not in seen \
+                                and not Path(tk.path).exists():
+                            seen.add(k)
+                            out.append((t, lane, c, tk.path))
         return out
 
     # ------------------------------------------------------------ render

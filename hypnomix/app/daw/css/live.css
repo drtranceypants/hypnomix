@@ -57,10 +57,6 @@
 /* the time signature field: one line (the shared .num wraps "4 / 4" at the space) */
 #timeSig { white-space: nowrap; }
 
-/* Session view on the engine: launching is not wired */
-.sg-note { padding: var(--s3) var(--s5); background: var(--bg2); border-bottom: 1px solid var(--line); color: var(--tx2); font-size: var(--fs-s); }
-.sg-note[hidden] { display: none; }
-
 /* saving, the demo song, and the no-engine screen */
 .btn.save { height: 24px; padding: 0 var(--s5); position: relative; }
 .btn.save.dirty { border-color: var(--acc); color: var(--tx0); }

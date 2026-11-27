@@ -1,0 +1,22 @@
+/* Hypnomix · group tracks (js/groups.js) and the sidechain picker (js/sidechain.js) */
+.th.th-group { box-shadow: inset 3px 0 0 var(--acc); }
+.th.th-group .th-name b { letter-spacing: .01em; }
+.th.th-member { padding-left: 18px; }
+.th.th-member .chip { opacity: .85; }
+.grp-fold { background: none; border: 0; color: var(--tx1); cursor: pointer; font: inherit; padding: 0 4px 0 0; line-height: 1; }
+.grp-fold:hover { color: var(--acc); }
+.grp-x { position: absolute; right: 6px; bottom: 4px; background: none; border: 1px solid var(--line); border-radius: 3px;
+  color: var(--tx2); font-size: 10px; padding: 0 5px; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.th.th-group { position: relative; }
+.th.th-group:hover .grp-x, .grp-x:focus-visible { opacity: 1; }
+.strip.strip-group { box-shadow: inset 0 3px 0 var(--acc); }
+/* a group bus strip: the accent bar on top and "group" in its name's hover info (no label over a narrow strip's name) */
+.strip.strip-member { box-shadow: inset 0 3px 0 var(--line2); }
+.grp-form { display: grid; gap: 8px; min-width: 260px; text-align: left; }
+.grp-form .grp-list { display: grid; gap: 4px; max-height: 240px; overflow: auto; padding: 4px 0; }
+.grp-form input[type=text] { width: 100%; box-sizing: border-box; }
+.grp-form small { color: var(--tx2); }
+.sc-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 11px; }
+.sc-row select { max-width: 140px; background: var(--bg2); color: var(--tx0); border: 1px solid var(--line); border-radius: 3px; font: inherit; }
+.sc-sw { color: var(--tx3); }
+.sc-sw.on { color: var(--acc); }

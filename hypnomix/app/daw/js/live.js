@@ -1,8 +1,11 @@
 /* Hypnomix · the live link to the engine: real meters and transport, the mixer's state read back,
    the device chain's real plug-ins, track colours, order and removal.
 
-   One poll loop: meters_get (it also carries the transport's sample and rolling), about 15 Hz while playing and
-   2 Hz when stopped, one request in flight at a time. A light refresh (tracks_list + track_get_info per route +
+   The meter stream first: the engine's WebSocket (relayed by the app at /api/daw/meters, the page's token) pushes
+   every route's meters, the master's loudness, the playhead and the Hypnomix devices' readings about 20 times a
+   second, with no request per frame. Without it (an engine that has none, or it drops), one poll loop: meters_get (it
+   also carries the transport's sample and rolling), about 15 Hz while playing and 2 Hz when stopped, one request in
+   flight at a time. A light refresh (tracks_list + track_get_info per route +
    session_get_info) every few seconds picks up changes made elsewhere (the Assistant, another client), and every
    change made here is read back from the engine a moment later. Nothing here ever blocks a frame: the frame
    loop only draws what the last replies said. */
@@ -37,6 +40,7 @@
     L.on = true; gen++; fails = 0; ensureRms = true; T.speed = 1; clk.s = null;
     L.metersLive = HX.mcp.has('meters_get');
     loadMeta(); loadPlugins(); readLoop(); L.readExport();
+    ST.tries = 0; L.openStream();
     tick(gen);
     refreshTimer = setTimeout(refreshLoop, REFRESH_MS);
     devTimer = setTimeout(devLoop, DEV_STOP_MS);
@@ -44,6 +48,7 @@
   };
   L.stop = function () {
     L.on = false; gen++; T.trim = 0; T.speed = 1; clearTimeout(timer); clearTimeout(refreshTimer); clearTimeout(devTimer);
+    closeStream(); L.master = null; showLoudness(null);
     L.metersLive = false; L.plugins = null; restoreMockBrowser();
     clearTimeout(expTimer); if (L.exporting) { L.exporting = null; HX.emit('exporting', null); }
     HX.allTracks().forEach((t) => { t._mt = null; });
@@ -57,8 +62,12 @@
   };
   async function tick(g) {
     if (g !== gen || !HX.mcp.connected) return;
-    inFlight = true; soon = false;
     const t0 = performance.now();
+    if (streamFresh()) {          // the stream carries meters and the playhead: only look now and then that it still does
+      timer = setTimeout(() => tick(g), 500);
+      return;
+    }
+    inFlight = true; soon = false;
     try {
       if (L.metersLive) {
         const r = await quiet('meters_get', ensureRms ? { ensure_rms: true } : {});
@@ -83,6 +92,104 @@
     L.rateHz = ticks.length / 2;
     const every = document.hidden ? HIDDEN_MS : fails ? 1000 : T.playing ? PLAY_MS : STOP_MS;   // a hidden tab asks rarely
     timer = setTimeout(() => tick(g), soon ? 0 : Math.max(0, every - (now - t0)));
+  }
+
+  /* ── 1b. the meter stream ── */
+  const ST = (L.stream = { ws: null, live: false, frames: 0, last: 0, hello: null, layout: null, tries: 0, times: [] });
+  let stTimer = null, loudT = 0, expAskedAt = 0;
+  const streamFresh = () => ST.live && performance.now() - ST.last < 1000;
+  L.openStream = function () {
+    clearTimeout(stTimer);
+    const tok = window.HX_TOKEN;
+    if (!L.on || !HX.api.inApp || HX.mcp.endpoint !== '/mcp' || !tok || typeof WebSocket !== 'function') return;
+    if (ST.ws) return;
+    let ws;
+    try { ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/daw/meters?t=' + encodeURIComponent(tok)); }
+    catch (e) { return; }
+    const g = gen;
+    ST.ws = ws;
+    ws.onmessage = (ev) => {
+      if (g !== gen || ST.ws !== ws) return;
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      onStream(m);
+    };
+    ws.onclose = () => {
+      if (ST.ws !== ws) return;
+      ST.ws = null;
+      const was = ST.live; ST.live = false;
+      if (was) { L.metersLive = HX.mcp.has('meters_get'); L.master = null; showLoudness(null); HX.emit('live'); L.kick(); }   // back to the poll at once; the loudness readout goes (it only comes with the stream)
+      if (L.on && g === gen) { ST.tries++; stTimer = setTimeout(L.openStream, Math.min(30000, 1000 * Math.pow(2, Math.min(ST.tries, 5)))); }
+    };
+  };
+  function closeStream() {
+    clearTimeout(stTimer);
+    const w = ST.ws; ST.ws = null; ST.live = false; ST.layout = null;
+    if (w) { try { w.close(); } catch (e) {} }
+  }
+  function streamChans(rt) {
+    const v = (x) => (x == null || !isFinite(x) ? -120 : x);
+    const pk = rt.peakDb || [], rm = rt.rmsDb || [];
+    const l = v(pk[0]), r = v(pk[1] != null ? pk[1] : pk[0]);
+    return { l, r, rl: v(rm[0]), rr: v(rm[1] != null ? rm[1] : rm[0]), max: Math.max(l, r) };
+  }
+  function loudOf(rt) {
+    return { m: rt.momentaryLufs, s: rt.shortTermLufs, i: rt.integratedLufs, tp: rt.truePeakDb, tpMax: rt.maxTruePeakDb, corr: rt.correlation, bands: rt.bandsDb };
+  }
+  /* the Hypnomix devices' readings (Probe, Main): the stream sends a device's values when they change */
+  function applyStreamDevices(t, rt) {
+    if (!t || !rt.devices) return;
+    for (const sd of rt.devices) {
+      const di = t.devices.findIndex((d) => d.real && d.index === sd.pluginIndex);
+      const d = di >= 0 ? t.devices[di] : null;
+      if (!d || !d.outs || !d.outs.length || !sd.values) continue;
+      let changed = false;
+      for (const o of d.outs) {
+        const v = sd.values[o.realIndex];
+        if (v !== undefined && v !== o.v) { o.v = v; changed = true; }
+      }
+      if (changed) HX.emit('device-outs', { trackId: t.id, di });
+    }
+  }
+  function onStream(m) {
+    if (m.type === 'hello') { ST.hello = m; return; }
+    if (m.type === 'layout') { ST.layout = m; return; }
+    if (m.type !== 'meters') return;
+    const now = performance.now();
+    if (!ST.live) { ST.live = true; ST.tries = 0; L.metersLive = true; HX.emit('live'); }
+    ST.frames++; ST.last = now;
+    ST.times.push(now); while (ST.times.length && now - ST.times[0] > 2000) ST.times.shift();
+    L.rateHz = ST.times.length / 2;
+    (m.routes || []).forEach((rt) => {
+      const t = HX.track(rt.id);
+      if (!t) return;
+      t._mt = streamChans(rt); t._loud = loudOf(rt);
+      applyStreamDevices(t, rt);
+    });
+    if (m.master) {
+      const t = HX.track(m.master.id) || S.session.master;
+      if (t) { t._mt = streamChans(m.master); t._loud = loudOf(m.master); applyStreamDevices(HX.track(m.master.id), m.master); }
+      L.master = loudOf(m.master);
+    }
+    /* the frame left the engine timeMs ago (same computer, same clock): count that as half a round trip */
+    const age = Math.max(0, Math.min(200, Date.now() - (m.timeMs || Date.now())));
+    if (m.exporting && !L.exporting && now - expAskedAt > 1000) { expAskedAt = now; L.readExport(); }   /* at most once a second, not on every frame */
+    applyTransport(m.rolling, m.sample, 2 * age);
+    if (now - loudT > 200) { loudT = now; showLoudness(L.master); }
+  }
+  /* the master's loudness (only with the stream): one number in the transport bar (short-term LUFS); momentary LUFS,
+     true peak and correlation in the status bar, so the top bar stays narrow at every width (no width rule hides it) */
+  function showLoudness(x) {
+    const el = HX.$ && HX.$('#loudField');
+    const st = HX.$ && HX.$('#loudStatus');
+    if (!el) return;
+    if (st) st.hidden = !x;
+    if (!x) { el.hidden = true; return; }
+    el.hidden = false;
+    const f = (v, d) => (v == null || !isFinite(v) ? '–' : v.toFixed(d == null ? 1 : d));
+    HX.$('#loudM').textContent = f(x.m);
+    HX.$('#loudS').textContent = f(x.s);
+    HX.$('#loudTP').textContent = f(x.tp);
+    HX.$('#loudC').textContent = f(x.corr, 2);
   }
 
   /* the playhead: the engine's sample, corrected for half the round trip, re-anchors the local clock;
@@ -424,13 +531,16 @@
     clearTimeout(expTimer);
     if (x && L.on) expTimer = setTimeout(() => L.readExport(), 1000);
   }
+  let expReading = false;
   L.readExport = async function () {
-    if (!L.on || !HX.mcp.connected || !HX.mcp.has('export_status')) return;
+    if (!L.on || !HX.mcp.connected || !HX.mcp.has('export_status') || expReading) return;
+    expReading = true;
     try {
       const r = await quiet('export_status');
       const run = ((r && r.jobs) || []).find((j) => j.state === 'running');
       setExporting(run ? { jobId: run.jobId, progress: run.progress || 0 } : null);
     } catch (e) { if (L.exporting) { clearTimeout(expTimer); expTimer = setTimeout(() => L.readExport(), 1000); } }
+    finally { expReading = false; }
   };
   /* a transport call's error: true when it was refused because an export runs (it is then said plainly) */
   HX.exportRefused = function (e) {

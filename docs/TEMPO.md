@@ -31,7 +31,17 @@ set they write, and can be previewed without opening Live. Nothing here snaps a 
 - **tempomap --follow**: tempo automation, one value per bar; the take is left unwarped. Every warped clip in
   the set follows the new tempo; unwarped clips do not.
 - **loops**: adds looping clips to empty Session slots of the take's track. The Arrangement is untouched.
-  Windows where the beat was filled in rather than played are never offered.
+  Windows where the beat was filled in rather than played are never offered. In HypnoMix DAW, `loops
+  SESSION.ardour --track T --cues` (or `loops TAKE.wav --cues`) puts them into the clip slots of a track "T
+  loops" (a new one, or the empty slots of one already there) in the session the engine has open, over MCP
+  (`cue_set_clip`): looping, launched on the bar, stretched to the session tempo from their length in beats (bars
+  times the session's own beats per bar; a session whose bar is not a whole number of quarter notes, or whose
+  meter changes, needs `--bpb`). While any slot of a track holds a clip (launched or not), that track's
+  Arrangement does not play, which is why they never go on the take's own track. `--engine URL` (else
+  `HYPNOMIX_ENGINE_URL`, else 127.0.0.1:4820). With a session file, the engine must have that very file open (a
+  same-named copy in another folder is refused); a loop that finds no empty slot makes it exit 1. HypnoMix then
+  shows the session as unsaved: save it to keep the clips. `--cues` needs the HypnoMix DAW add-on, which is not
+  available yet (docs/APP.md, DAW mode); not yet heard by ear.
 - **tighten**: a warp marker on every hit. Hits within `--keep-within` ms stay put; the rest move
   `--strength` of the way (0.1 to 0.9, default 0.5; a full snap is refused). Unwarped clips get warp
   switched on first (they play the same).
@@ -44,6 +54,12 @@ set they write, and can be previewed without opening Live. Nothing here snaps a 
   a new track next to it, in the same group, with the same devices, **switched off**. Turn it on to hear the
   variation over the mix; delete it to undo. `--mode replace` builds a full alternate part instead.
   Takes that do not lock to the song's tempo are reported, not used: try `loops` on them.
+  A HypnoMix DAW session is read the same way (regions pasted again and again are the repeats; regions do not
+  loop). Nothing is written into it: `variations SESSION.ardour --cues` puts each proposal's A (the loop) and B
+  (the unused take; with `--mode layer`, loop and take together) into clip slot pairs on a track "<Part>
+  variations" next to the part (a new one, or the empty slots of one already there), so launching A then B
+  switches on the bar line. The engine must have that very session file open, and HypnoMix then shows the
+  session as unsaved: save it to keep the clips.
 
 ## For an AI agent
 
@@ -51,7 +67,11 @@ set they write, and can be previewed without opening Live. Nothing here snaps a 
 - Say "measured" for fit and steadiness scores; the person decides by ear.
 - Before `breathe --apply --warp-clips`, tell the person which clips will have warp switched on, and that
   exposed vocals can pick up warp artefacts.
-- `tighten` and `variations` need a constant tempo; run them before `breathe`, not after.
+- `tighten` and `variations` need a constant tempo; run them before `breathe`, not after. `variations` on a HypnoMix DAW
+  session also needs one time signature (it stops when the meter changes). Bar numbers count quarter notes per bar
+  from the time signature (6/8 is 3 quarters a bar, 5/8 2.5), in HypnoMix DAW sessions, REAPER projects and Live
+  sets alike; a session whose meter changes gets a warning, since its bars after the change are not exact, and its
+  A/B level match then trusts only positions given in seconds.
 - Opened in Live 12: a `tighten` set and a `breathe` set (with `--warp-clips`) load with every sample online,
   and Live reads the new tempo at the right bars. Nobody has judged them by ear yet: listen for warp artefacts.
 - Not yet verified in Live (say so): the sets `tempomap`, `loops` and `variations` write. They pass the

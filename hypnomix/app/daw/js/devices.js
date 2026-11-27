@@ -125,6 +125,7 @@
       body.append(outs);
       syncOuts(d);
     }
+    if (HX.sidechain) HX.sidechain.decorate(t, d, body);   /* sidechain source picker: js/sidechain.js */
     el.append(body);
     return el;
   }

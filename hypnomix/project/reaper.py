@@ -21,7 +21,7 @@ import re
 from pathlib import Path
 
 from hypnomix.project import rpp
-from hypnomix.project.model import Clip, Device, Project, Take, Track
+from hypnomix.project.model import Clip, Device, Project, Take, Track, quarters_per_bar
 
 AUDIO_SOURCES = {"WAVE", "FLAC", "MP3", "VORBIS", "OPUS", "WAVPACK", "AIFF", "OGG", "CAF"}
 FX_TAGS = {"VST", "AU", "JS", "CLAP", "DX", "LV2", "VIDEO_EFFECT"}
@@ -270,12 +270,14 @@ def read(path):
     rec = root.get("RECORD_PATH", default="") or ""
     tempo_ln = root.line("TEMPO")
     tempo = num(tempo_ln.tokens[1], 120.0) if tempo_ln is not None else 120.0
-    bpb = int(num(tempo_ln.tokens[2], 4)) if tempo_ln is not None and len(tempo_ln.tokens) > 2 else 4
+    sig = (num(tempo_ln.tokens[2], 4) if tempo_ln is not None and len(tempo_ln.tokens) > 2 else 4,
+           num(tempo_ln.tokens[3], 4) if tempo_ln is not None and len(tempo_ln.tokens) > 3 else 4)
+    bpb = quarters_per_bar(*sig)                     # quarter notes per bar: 6/8 is 3
     sr = root.get("SAMPLERATE", cast=int, default=44100) or 44100
     tmap = root.chunk("TEMPOENVEX")
     tchanges = len(tmap.lines("PT")) if tmap is not None else 0
     proj = Project(path=path, daw="reaper", tempo=tempo, beats_per_bar=bpb, sample_rate=sr,
-                   tempo_changes=tchanges, native=root)
+                   tempo_changes=tchanges, native=root, meter=(sig[0] or 4, sig[1] or 4))
     proj.warnings = []
     stack = []
     for i, tr in enumerate(root.chunks("TRACK")):

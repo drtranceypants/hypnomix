@@ -276,13 +276,15 @@ class GuiServer(unittest.TestCase):
             self.assertEqual(code, 200, j)
             self.assertEqual(self.runs[-1][1], want)
 
-    def test_abset_says_ardour_has_no_a_b_build_and_does_not_ask_for_a_live_set(self):
-        from hypnomix.workflow import abset
+    def test_abset_builds_a_hypnomix_daw_session_and_does_not_ask_for_a_live_set(self):
+        from hypnomix.workflow import abset, abset_ardour as AA
         d = self.scan("Sess", self.music / "Sess.ardour", [F("smooth-1")], mode="ardour")
         (self.music / "Sess.ardour").write_text("<Session/>", encoding="utf-8")
-        with self.assertRaises(RuntimeError) as cm:
+        with mock.patch.object(AA, "build", return_value=("built", [])) as b:
+            self.assertEqual(abset.build(d), ("built", []))                                  # the HypnoMix DAW A/B snapshot
+        self.assertEqual(b.call_args.kwargs["session"], self.music / "Sess.ardour")
+        with self.assertRaises((RuntimeError, SystemExit)) as cm:                             # a session the reader cannot read
             abset.build(d)
-        self.assertIn("HypnoMix DAW has no A/B build yet", str(cm.exception))
         self.assertNotIn("Live", str(cm.exception))
         text = (Path(abset.__file__).with_name("ab.py")).read_text(encoding="utf-8")
         self.assertIn("build the A/B project with `hypnomix abset`", text)                    # the REAPER note points at the build

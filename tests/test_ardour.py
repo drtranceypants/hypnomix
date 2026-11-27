@@ -188,6 +188,126 @@ class ArdourTest(unittest.TestCase):
         self.assertAlmostEqual(k.start, 60 / 85); self.assertAlmostEqual(k.length, 2 * 60 / 85)
         self.assertEqual(k.fade_in, 0.0)
 
+    def test_take_playlists_are_take_lanes(self):
+        """A track's playlists named "<track>.take N" (HypnoMix DAW records each pass into one and comps from them)
+        are its take lanes, in take order; the active playlist stays the comp and is what plays."""
+        takes = f"""
+    <Playlist id="510" name="Lead.take 2" type="audio" orig-track-id="200">
+      <Region name="t2" muted="0" opaque="1" start="{a(0)}" length="{a(3)}@{a(0)}" layering-index="0"
+              scale-amplitude="0.5" fade-in-active="0" fade-out-active="0" type="audio" source-0="11"/>
+    </Playlist>
+    <Playlist id="511" name="Lead.take 1" type="audio" orig-track-id="200">
+      <Region name="t1" muted="0" opaque="1" start="{a(0)}" length="{a(3)}@{a(0)}" layering-index="0"
+              scale-amplitude="1" fade-in-active="0" fade-out-active="0" type="audio" source-0="10"/>
+    </Playlist>
+    <Playlist id="512" name="Lead.2" type="audio" orig-track-id="200"/>
+    <Playlist id="513" name="Guitar.take 1" type="audio" orig-track-id="999"/>
+  </Playlists>"""
+        f = self.dir / "Song.ardour"
+        f.write_text(SESSION.replace("\n  </Playlists>", takes, 1), encoding="utf-8")
+        p = project.load(self.dir)
+        lead, gtr = p.tracks[0], p.tracks[3]
+        self.assertEqual([(k.name, k.number) for k in lead.take_lanes], [("Lead.take 1", 1), ("Lead.take 2", 2)])
+        self.assertTrue(lead.comped); self.assertFalse(gtr.comped); self.assertEqual(gtr.take_lanes, [])
+        t2 = lead.take_lanes[1].clips[0]
+        self.assertAlmostEqual(t2.start, 0.0); self.assertAlmostEqual(t2.length, 3.0)
+        self.assertAlmostEqual(t2.take.gain, 0.5); self.assertEqual(t2.path.name, "comp.wav")
+        self.assertEqual(len(lead.clips), 2)                          # the comp is unchanged by the takes
+        y0 = project.load(self.dir).render(lead, SR, length=3)
+        f.write_text(SESSION, encoding="utf-8")
+        y1 = project.load(self.dir).render(lead, SR, length=3)
+        self.assertTrue(np.array_equal(y0, y1))                       # takes are not heard
+        (self.dir / "interchange" / "Song" / "audiofiles" / "comp.wav").unlink()
+        f.write_text(SESSION.replace("\n  </Playlists>", takes, 1), encoding="utf-8")
+        p = project.load(self.dir)
+        self.assertEqual([(t.name, c.name) for t, c, _ in p.missing()], [("Lead", "comp.1")])   # heard clips only
+        self.assertEqual(p.missing_takes(), [])                      # the comp's own file: said once, above
+
+    def test_missing_files_count_take_lanes_apart(self):
+        from hypnomix.workflow import scan_project as SP
+        takes = f"""
+    <Playlist id="510" name="Lead.take 1" type="audio" orig-track-id="200">
+      <Region name="t1" muted="0" opaque="1" start="{a(0)}" length="{a(3)}@{a(0)}" layering-index="0"
+              scale-amplitude="1" fade-in-active="0" fade-out-active="0" type="audio" source-0="11"/>
+    </Playlist>
+    <Playlist id="511" name="Lead.take 2" type="audio" orig-track-id="200">
+      <Region name="t2" muted="0" opaque="1" start="{a(0)}" length="{a(3)}@{a(0)}" layering-index="0"
+              scale-amplitude="1" fade-in-active="0" fade-out-active="0" type="audio" source-0="11"/>
+      <Region name="t2b" muted="0" opaque="1" start="{a(0)}" length="{a(1)}@{a(0)}" layering-index="1"
+              scale-amplitude="1" fade-in-active="0" fade-out-active="0" type="audio" source-0="12"/>
+    </Playlist>
+  </Playlists>"""
+        (self.dir / "Song.ardour").write_text(SESSION.replace("\n  </Playlists>", takes, 1), encoding="utf-8")
+        af = self.dir / "interchange" / "Song" / "audiofiles"
+        (af / "comp.wav").unlink()                                   # the comp and both takes use it
+        SP.W.update(SP.WORDS["ardour"])
+        fs, notes = SP.g_files(project.load(self.dir), None, None, None)
+        self.assertEqual([(f["kind"], f["severity"]) for f in fs], [("missing-audio", "high")])   # one finding, not three
+        self.assertIn("comp.1", fs[0]["problem"])
+        self.assertEqual(notes[0], "files: 7 items checked (3 on take lanes), 1 missing")
+        (af / "gtr-L.wav").unlink()                                  # Guitar's file: heard, and take 2 uses it too
+        fs, _ = SP.g_files(project.load(self.dir), None, None, None)
+        self.assertEqual([f["kind"] for f in fs], ["missing-audio", "missing-audio"])
+        only = SESSION.replace("\n  </Playlists>", takes.replace('source-0="12"', 'source-0="15"'), 1).replace(
+            "</Sources>", '<Source name="take.wav" type="audio" flags="" id="15" channel="0" origin=""/></Sources>', 1)
+        (self.dir / "Song.ardour").write_text(only, encoding="utf-8")                  # a file only take 2 uses (it was never there)
+        fs, notes = SP.g_files(project.load(self.dir), None, None, None)
+        self.assertEqual([(f["kind"], f["severity"]) for f in fs],
+                         [("missing-audio", "high"), ("missing-audio", "high"), ("missing-take-audio", "medium")])
+        self.assertIn("take 2 of Lead uses", fs[2]["problem"])
+        self.assertNotIn("plays", fs[2]["problem"])
+        self.assertIn("1 more file only takes use", notes[0])
+
+    def test_bars_count_quarter_notes_for_any_meter(self):
+        m34 = '<Meters><Meter note-value="4" divisions-per-bar="3" sclock="0" quarters="0:0" bbt="1|1|0"/></Meters>'
+        self.assertIn(m34, SESSION)
+        f = self.dir / "Song.ardour"
+        for meter, at, bar in (('note-value="8" divisions-per-bar="6"', 60 / 85 * 6, 3.0),   # 6/8: 3 quarters a bar
+                               ('note-value="8" divisions-per-bar="5"', 60 / 85 * 2.5, 2.0),  # 5/8: 2.5
+                               ('divisions-per-bar="7"', 60 / 85 * 7, 2.0)):                 # no note value: x/4
+            f.write_text(SESSION.replace('note-value="4" divisions-per-bar="3"', meter, 1), encoding="utf-8")
+            p = project.load(self.dir)
+            self.assertAlmostEqual(p.bar(at), bar, places=6, msg=meter)
+            self.assertEqual(p.meter_changes, 0)
+            self.assertFalse(any("meter" in w for w in p.warnings))
+        self.assertEqual(project.load(self.dir).meter_text, "7/4")
+        f.write_text(SESSION.replace('note-value="4" divisions-per-bar="3"', 'note-value="8" divisions-per-bar="6"', 1), encoding="utf-8")
+        p = project.load(self.dir)
+        self.assertEqual((p.beats_per_bar, p.meter_text, p.where(60 / 85 * 3)), (3, "6/8", "2.1.01"))
+        two = m34.replace("</Meters>", '<Meter note-value="4" divisions-per-bar="4" sclock="1411200000" quarters="5:0" bbt="3|1|0"/></Meters>')
+        f.write_text(SESSION.replace(m34, two, 1), encoding="utf-8")
+        p = project.load(self.dir)
+        self.assertEqual(p.meter_changes, 1)
+        self.assertTrue(any("meter changes (3/4, 4/4)" in w for w in p.warnings), p.warnings)
+
+    def test_reaper_bars_count_quarter_notes_and_the_ab_span_distrusts_bars(self):
+        from hypnomix.project import reaper
+        from hypnomix.workflow import abset_ardour as AA
+        f = Path(self._td.name) / "x.rpp"
+        f.write_text('<REAPER_PROJECT 0.1 "7.27/macOS-arm64" 1\n  TEMPO 120 6 8\n  SAMPLERATE 44100 0 0\n>\n', encoding="utf-8")
+        p = reaper.read(f)
+        self.assertEqual((p.beats_per_bar, p.meter_text, p.bar(3.0)), (3, "6/8", 3.0))
+        self.assertEqual(AA._span(dict(where="bar 3"), 120, 4, 30.0), (3.0, 5.5))
+        self.assertEqual(AA._span(dict(where="bar 3"), 120, 4, 30.0, bars_ok=False), (0.0, 30.0))
+        self.assertEqual(AA._span(dict(where="bar 3 (7.0 s)"), 120, 4, 30.0, bars_ok=False), (6.0, 8.5))
+
+    def test_variations_refuses_a_session_whose_meter_changes(self):
+        import sys
+        from unittest import mock
+        from hypnomix.session import variations as V
+        p = project.load(self.dir)
+        p.meter_changes = 1
+        with mock.patch.object(sys, "argv", ["variations", str(self.dir / "Song.ardour")]), \
+                mock.patch.object(project, "load", lambda src: p), self.assertRaises(SystemExit) as e:
+            V.main()
+        self.assertIn("time signature changes", str(e.exception))
+
+    def test_take_number(self):
+        from hypnomix.project.ardour import take_number
+        self.assertEqual(take_number("Lead Vocal.take 12"), 12)
+        for n in ("Lead.1", "Lead.take", "Lead.take 0", ".take 3", "Lead.take 3 (copy)", None):
+            self.assertIsNone(take_number(n), n)
+
     def test_render_layers_fades_envelope(self):
         p = project.load(self.dir / "Song.ardour")
         lead, gtr = p.tracks[0], p.tracks[3]

@@ -55,6 +55,9 @@ FAKE = textwrap.dedent('''\
         import time
         time.sleep(600)
     log = os.environ.get("HYPNOMIX_FAKE_ENGINE_CALLS")
+    own_dirty = os.environ.get("HYPNOMIX_FAKE_ENGINE_DIRTY")   # keep its own unsaved flag, like Session::dirty()
+    STATE = {{"dirty": False}}
+    READS = {{"session_list_snapshots", "session_get_info", "tracks_list", "track_get_info", "meters_get", "transport_play"}}
     TOOLS = [
         {{"name": "session_get_info", "title": "Session Info", "description": "Return basic session info.",
          "inputSchema": {{"type": "object", "properties": {{}}, "additionalProperties": False}}}},
@@ -84,7 +87,17 @@ FAKE = textwrap.dedent('''\
                 if log:
                     with open(log, "a") as f:
                         f.write(json.dumps(p) + "\\n")
-                if p["name"] == "session_get_info":
+                if own_dirty and p["name"] == "session_save":
+                    if not (p.get("arguments") or {{}}).get("snapshotName"):
+                        STATE["dirty"] = False
+                elif own_dirty and p["name"] == "meters_get":
+                    if (p.get("arguments") or {{}}).get("ensure_rms"):
+                        STATE["dirty"] = True       # it switches every route's meter type: kept in the session file
+                elif own_dirty and p["name"] not in READS and p["name"] != "will_fail":
+                    STATE["dirty"] = True
+                if own_dirty and p["name"] == "session_list_snapshots":
+                    res = {{"structuredContent": {{"sessionName": "Song", "current": "Song", "dirty": STATE["dirty"]}}}}
+                elif p["name"] == "session_get_info":
                     res = {{"structuredContent": {{"sessionName": "Song", "argv": opts, "cwd": os.getcwd(),
                                                    "envkeys": sorted(os.environ)}}}}
                 elif p["name"] == "will_fail":
@@ -719,6 +732,229 @@ class Hardening(unittest.TestCase):
             self.assertIn(Path("/some/checkout/hypnomix/engine/engine-dev"), DW.candidates())
 
 
+class EngineOwnDirty(unittest.TestCase):
+    """A change that reaches the engine without the app (`hypnomix tidy --engine`, `loops --cues`: the engine's port,
+    not POST /mcp) is unsaved work too: the app reads the engine's own flag (session_list_snapshots "dirty")."""
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.calls = Path(self.td.name) / "calls.jsonl"
+        self.env = mock.patch.dict(os.environ, {"HYPNOMIX_FAKE_ENGINE_CALLS": str(self.calls), "HYPNOMIX_FAKE_ENGINE_DIRTY": "1"})
+        self.env.start()
+        os.environ.pop("HYPNOMIX_ENGINE_ARGS", None)
+        self.eng = with_session(DW.Engine(binary=make_fake(self.td.name), attach_url="http://127.0.0.1:9/mcp"), self.td.name)
+        self.patch = mock.patch.object(DW, "ENGINE", self.eng)
+        self.patch.start()
+        self.eng.start()
+
+    def tearDown(self):
+        self.patch.stop()
+        self.eng.stop()
+        self.env.stop()
+        self.td.cleanup()
+
+    def outside(self, _tool, **args):
+        """A command line tool's call: straight to the engine's own port, never through the app."""
+        return DW.post_json(self.eng.url(), {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                             "params": {"name": _tool, "arguments": args}})
+
+    def state(self):
+        return DW.handle_get("/api/daw/state", {}, "t")[1]
+
+    def fresh(self):
+        """Forget the last reading (as if ENGINE_DIRTY_TTL had passed): the next look asks the engine."""
+        self.eng._eseen = 0.0
+        return self
+
+    def looks(self):
+        if not self.calls.exists():
+            return 0
+        return [c["name"] for c in map(json.loads, self.calls.read_text(encoding="utf-8").splitlines())].count("session_list_snapshots")
+
+    def test_a_change_made_without_the_app_is_unsaved_and_protected(self):
+        self.assertFalse(self.state()["dirty"])
+        self.outside("group_create", name="Drums")
+        self.assertFalse(self.eng.dirty)                              # the app's own count never saw it...
+        time.sleep(DW.ENGINE_DIRTY_TTL + 0.1)
+        self.assertTrue(DW.dirty())                                   # ...the engine's flag did: quitting or updating asks
+        self.assertTrue(self.state()["dirty"])                        # the page shows it (the Save button, the title)
+        pid = self.eng.status()["pid"]
+        for path, body in [("/api/daw/stop", {}), ("/api/daw/restart", {}),
+                           ("/api/daw/new", {"folder": self.td.name, "name": "Fresh"})]:
+            self.assertEqual(DW.handle_post(path, body), (409, {"error": "unsaved", "dirty": True}), path)
+            self.assertEqual(self.eng.status()["pid"], pid)
+        self.assertEqual(DW.handle_post("/api/daw/save", {}), (200, {"ok": True, "dirty": False}))   # the app's save clears it
+        self.assertFalse(self.state()["dirty"])
+        self.assertFalse(DW.dirty())
+        self.assertEqual(DW.handle_post("/api/daw/stop", {})[0], 200)
+
+    def test_a_save_made_without_the_app_clears_only_the_engine_flag(self):
+        self.outside("cue_set_clip", track_id="5", slot=0)
+        self.assertTrue(DW.dirty())
+        self.outside("session_save")
+        self.assertFalse(self.fresh() and DW.dirty())                 # the engine saved it all
+        self.eng.rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "track_set_fader_db",
+                                                                                  "arguments": {"id": "1", "db": -3}}})
+        self.outside("session_save", snapshotName="Take 2")           # another snapshot: this one is still unsaved
+        self.assertTrue(self.fresh() and DW.dirty())
+
+    def test_reads_and_the_look_itself_never_make_it_unsaved(self):
+        for name in ("tracks_list", "track_get_info", "meters_get", "transport_play", "session_list_snapshots"):
+            self.eng.rpc({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": name, "arguments": {}}})
+            self.outside(name)
+        for _ in range(3):
+            self.assertFalse(DW.dirty())
+        self.assertFalse(self.eng.dirty)
+        self.assertFalse(self.state()["dirty"])
+
+    def test_the_page_poll_reads_the_engine_at_most_every_ttl(self):
+        self.state()
+        n = self.looks()
+        for _ in range(5):
+            self.state()
+        self.assertEqual(self.looks(), n)                            # within ENGINE_DIRTY_TTL: the last reading
+        time.sleep(DW.ENGINE_DIRTY_TTL + 0.1)
+        self.state()
+        self.assertEqual(self.looks(), n + 1)
+
+    def test_an_engine_that_does_not_answer_keeps_the_last_reading(self):
+        self.outside("group_create", name="Drums")
+        self.assertTrue(DW.dirty())
+        with mock.patch.object(DW, "post_json", side_effect=TimeoutError("busy exporting")):
+            self.assertTrue(self.fresh() and DW.dirty())
+        with mock.patch.object(DW.Engine, "call", return_value={"structuredContent": {"sessionName": "Song"}}):
+            self.assertTrue(self.eng.engine_dirty(max_age=0))          # an engine that does not say: no guess either way
+        self.outside("session_save")
+        self.assertFalse(self.fresh() and DW.dirty())
+
+    def test_a_reading_from_before_a_save_does_not_undo_it(self):
+        def look_then_save(*a, **k):
+            self.eng._saves += 1                                      # the app's save went through while the look was out
+            return {"structuredContent": {"dirty": True}}
+        with mock.patch.object(DW.Engine, "call", side_effect=look_then_save):
+            self.assertFalse(self.eng.engine_dirty(max_age=0))
+
+    def meters(self, rid=7):
+        return self.eng.rpc(json.dumps({"jsonrpc": "2.0", "id": rid, "method": "tools/call",
+                                        "params": {"name": "meters_get", "arguments": {"ensure_rms": True}}}).encode())
+
+    def sent_meters(self):
+        return [c.get("arguments") for c in map(json.loads, self.calls.read_text(encoding="utf-8").splitlines()) if c["name"] == "meters_get"]
+
+    def test_the_views_meter_switch_waits_while_the_session_is_clean(self):
+        code, raw = self.meters()                                     # the view connects: its first meters_get
+        self.assertEqual(code, 200)
+        self.assertEqual(self.sent_meters(), [{}])                    # sent without the switch...
+        self.assertFalse(DW.dirty())                                  # ...so a session only looked at stays clean
+        self.eng.rpc({"jsonrpc": "2.0", "id": 8, "method": "tools/call",
+                      "params": {"name": "track_set_fader_db", "arguments": {"id": "1", "db": -3}}})
+        self.assertEqual(self.sent_meters(), [{}, {"ensure_rms": True}])   # it goes in with the first real change
+        self.meters(9)
+        self.assertEqual(self.sent_meters()[-1], {"ensure_rms": True})     # unsaved anyway: passed on as it is
+
+    def test_the_meter_switch_goes_in_once_a_change_made_without_the_app_is_seen(self):
+        self.meters()
+        self.outside("group_create", name="Drums")
+        self.assertTrue(DW.dirty())
+        self.assertEqual(self.sent_meters(), [{}])                    # a check before Stop or quit only reads
+        self.eng._eseen = 0.0
+        self.assertTrue(self.state()["dirty"])                        # the page poll sees it: the switch goes in then
+        self.assertEqual(self.sent_meters(), [{}, {"ensure_rms": True}])
+
+    def test_only_unsaved_and_the_state_route_look_at_the_engine(self):
+        n = self.looks()
+        self.meters()                                                 # the held-back switch uses the last reading
+        self.eng.rpc({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "tracks_list", "arguments": {}}})
+        self.eng.status()
+        self.assertEqual(self.looks(), n)                             # no look of its own on any call or status
+        DW.dirty()
+        self.assertEqual(self.looks(), n + 1)                         # unsaved(): a look of its own when none is recent...
+        for _ in range(3):
+            DW.dirty()
+            self.state()
+        self.assertEqual(self.looks(), n + 1)                         # ...and one reading shared with the page poll
+        self.eng._eseen = 0.0
+        self.state()
+        self.assertEqual(self.looks(), n + 2)
+
+    def test_an_attached_window_is_never_asked_and_never_shown_as_the_apps(self):
+        self.outside("group_create", name="Drums")
+        self.eng.edirty = True
+        mode = self.eng.mode
+        try:
+            self.eng.mode, self.eng.state = "attached", "attached"
+            n = self.looks()
+            self.assertFalse(self.eng.engine_dirty(max_age=0))
+            self.assertFalse(DW.dirty())
+            self.assertFalse(self.eng.status()["dirty"])              # the window's own flag is the window's business
+            self.assertEqual(self.looks(), n)
+        finally:
+            self.eng.mode, self.eng.state = mode, "running"
+
+    def test_the_engines_clean_flag_never_clears_the_apps_own_count(self):
+        self.eng.rpc({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                      "params": {"name": "track_set_mute", "arguments": {"id": "1", "mute": True}}})
+        with mock.patch.object(DW.Engine, "call", return_value={"structuredContent": {"dirty": False}}):
+            self.assertFalse(self.eng.engine_dirty(max_age=0))
+            self.assertTrue(DW.dirty())
+        self.assertEqual(DW.handle_post("/api/daw/stop", {}), (409, {"error": "unsaved", "dirty": True}))
+
+    def test_only_the_switch_is_taken_out(self):
+        body, found = DW._without_meter_switch(json.dumps([
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "meters_get", "arguments": {"ensure_rms": True, "route_ids": ["1"]}}},
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "tracks_list", "arguments": {"ensure_rms": True}}}]).encode())
+        self.assertTrue(found)
+        msg = json.loads(body)
+        self.assertEqual(msg[0]["params"]["arguments"], {"route_ids": ["1"]})
+        self.assertEqual(msg[1]["params"]["arguments"], {"ensure_rms": True})   # not meters_get: left alone
+        same = b'{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "meters_get", "arguments": {}}}'
+        self.assertEqual(DW._without_meter_switch(same), (same, False))
+        self.assertEqual(DW._without_meter_switch(b"not json ensure_rms"), (b"not json ensure_rms", False))
+
+    def test_a_crash_after_a_change_made_without_the_app_says_it_was_lost(self):
+        self.outside("group_create", name="Drums")
+        self.assertTrue(DW.dirty())
+        os.kill(self.eng.status()["pid"], signal.SIGKILL)
+        self.assertTrue(wait(lambda: self.eng.status()["restarts"] == 1 and self.eng.state == "running"))
+        st = self.eng.status()
+        self.assertFalse(st["dirty"])
+        self.assertEqual(st["notice"], DW.LOST_NOTICE)
+
+
+class EveryToolIsAChangeOrARead(unittest.TestCase):
+    """Every tool the engine has is either a read (or playback) or a change that marks the session unsaved. The reads
+    are written out here by hand, not taken from daw.READ_ONLY_TOOLS: moving a tool onto that list needs this test
+    edited too, and a tool the engine adds later counts as a change until someone says otherwise."""
+    EXPECTED_READS = frozenset("""
+        ab_list cue_launch cue_list cue_stop export_status group_list hello_world markers_list meters_get
+        meters_stream_info midi_note_get_json midi_note_list playlist_list plugin_get_description plugin_get_sidechain
+        plugin_list_available region_get_info region_get_peaks region_get_warp scene_launch session_export_mix
+        session_get_card session_get_info session_list_snapshots session_quick_snapshot take_list track_bounce
+        track_get_fader track_get_info track_get_regions tracks_list transport_get_state transport_goto_end
+        transport_goto_start transport_locate_bbt transport_locate_sample transport_next_marker transport_play
+        transport_prev_marker transport_set_speed transport_stop
+        midi_ports_list track_get_mpe midi_monitor_get midi_monitor_stop
+    """.split())
+
+    def test_the_read_list_is_exactly_this(self):
+        self.assertEqual(DW.READ_ONLY_TOOLS, self.EXPECTED_READS)
+
+    def test_every_engine_tool_is_one_or_the_other(self):
+        shape = json.loads((Path(__file__).parent / "data" / "engine_tools_shape.json").read_text(encoding="utf-8"))["tools"]
+        names = [t["name"] for t in shape]
+        self.assertTrue(self.EXPECTED_READS <= set(names), sorted(self.EXPECTED_READS - set(names)))
+        for name in names:
+            with self.subTest(tool=name):
+                got = DW._events({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": {}}})
+                want = [] if name in self.EXPECTED_READS else [(1, "save" if name == "session_save" else "change")]
+                self.assertEqual(got, want)
+        for name in ("group_create", "group_add", "group_remove", "group_delete", "group_set", "plugin_set_sidechain",
+                     "comp_range", "playlist_new", "playlist_select", "cue_set_clip", "cue_set_props", "ab_use_playlist"):
+            self.assertIn(name, names)                                # the round-2 changes are in the engine's list...
+            self.assertNotIn(name, self.EXPECTED_READS)               # ...and they count as changes
+        self.assertEqual(DW._events({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                     "params": {"name": "a_tool_from_next_year"}}), [(2, "change")])
+
+
 class Unsaved(unittest.TestCase):
     """Dirty tracking for every call that goes through the app, Save, and the 409 that protects unsaved work."""
     def setUp(self):
@@ -774,6 +1010,18 @@ class Unsaved(unittest.TestCase):
     def test_a_tool_nobody_listed_counts_as_a_change(self):
         self.tool("some_new_tool_next_year")
         self.assertTrue(self.eng.dirty)
+
+    def test_the_midi_reads_and_the_input_monitor_leave_it_saved(self):
+        """An engine with MIDI inputs and MPE: the port list, a track's MPE mode and the per-note monitor (attach, read,
+        stop: a tap on the input port, nothing the session file keeps) never make the session unsaved; the rest do."""
+        for name in ("midi_ports_list", "track_get_mpe", "midi_monitor_get", "midi_monitor_stop"):
+            self.tool(name, track_id="1")
+        self.assertFalse(self.eng.status()["dirty"])
+        for name in ("track_set_mpe", "midi_track_connect_input", "midi_track_disconnect_input", "midi_port_set_flags"):
+            self.tool(name, track_id="1", port="p", zone="lower")
+            self.assertTrue(self.eng.dirty, name)
+            self.tool("session_save")
+            self.assertFalse(self.eng.dirty, name)
 
     def test_a_save_clears_it_and_a_failed_change_does_not_set_it(self):
         self.tool("will_fail")                                       # the engine said no: nothing changed
@@ -1554,6 +1802,34 @@ class Security(unittest.TestCase):
             self.assertEqual(code, 400, body)
         self.assertEqual(DW.check_rpc(b'{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}'), "")
         self.assertEqual(DW.check_rpc(b'[{"jsonrpc": "2.0", "method": "notifications/initialized"}]'), "")
+
+    def test_what_is_checked_is_what_is_sent(self):
+        dup = [b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"meters_stream_info","name":"tracks_list"}}',
+               b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"track_set_mute","name":"tracks_list","arguments":{}}}',
+               b'{"jsonrpc":"2.0","id":1,"method":"tools/call","method":"tools/list"}',
+               b'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"x","arguments":{}},"params":{"name":"y"}}',
+               b'[{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"x","arguments":{"a":1,"a":2}}}]']
+        sent = []
+        def fake_post(url, payload, timeout=DW.RPC_TIMEOUT):
+            sent.append(payload)
+            return 200, b'{"jsonrpc":"2.0","id":1,"result":{}}'
+        with mock.patch.object(DW, "post_json", side_effect=fake_post), \
+                mock.patch.object(DW.ENGINE, "url", return_value="http://127.0.0.1:9/mcp"):
+            for body in dup:
+                code, raw, _ = call(self.base, "/mcp", headers=self.tok, raw=body)
+                self.assertEqual(code, 400, body)
+                self.assertIn("repeated name", json.loads(raw)["error"])
+            for body in ('{"jsonrpc":"2.0","id":1,"method":"tools/list","x":NaN}'.encode(), "\ufeff{}".encode(),
+                         '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'.encode("utf-16"),
+                         b'{"jsonrpc":"2.0","id":1,"method":"tools/list","x":1e999}', b'{"jsonrpc":"2.0","id":1,"method":"tools/list","x":-1e999}'):
+                self.assertEqual(call(self.base, "/mcp", headers=self.tok, raw=body)[0], 400, body)
+            self.assertEqual(sent, [])                                # none of them reached the engine
+            body = b'{"jsonrpc":"2.0", "id":3,  "method":"tools/call","params":{"name":"tracks_list","arguments":{"n":"\\u00e9"}}}'
+            code, raw, _ = call(self.base, "/mcp", headers=self.tok, raw=body)
+            self.assertEqual(code, 200)
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0], json.loads(body))                   # the message as checked, written out again
+        self.assertNotIsInstance(sent[0], (bytes, bytearray))         # never the client's own bytes
 
     def test_upload_checks_before_reading(self):
         import http.client

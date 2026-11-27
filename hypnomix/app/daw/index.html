@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/live.css">
 <link rel="stylesheet" href="css/tour.css">
+<link rel="stylesheet" href="css/groups.css">
 <script>
   /* served by the hypnomix app (/daw/): its token goes with every engine call (POST /mcp) and Assistant request */
   window.HX_TOKEN = "__TOKEN__";
@@ -74,6 +75,9 @@
         <span class="num big" id="posBBT">1. 1. 1</span>
       </div>
       <div class="field pos" data-info="Song position (minutes:seconds)"><span class="num" id="posTime">0:00.000</span></div>
+      <div class="field loud" id="loudField" hidden data-info="The master's loudness (short-term LUFS, the last 3 seconds) from the engine's meter stream. Momentary loudness, true peak and correlation are in the status bar">
+        <span class="sr-only">Master loudness, short-term: </span><span class="num" id="loudS">–</span><span class="unit">LUFS</span>
+      </div>
     </div>
 
     <nav class="appnav seg" id="appNav" data-info="The rest of the HypnoMix app: songs and their reviews, the Assistant tab, the Wiki">
@@ -116,6 +120,7 @@
   <!-- ───────────── status / info view ───────────── -->
   <footer class="status">
     <span class="info" id="infoLine">Hover any control to see what it does.</span>
+    <span class="status-loud" id="loudStatus" hidden data-info="The master from the engine's meter stream: momentary loudness (M, the last 0.4 seconds, LUFS), true peak (TP, dBTP, estimated) and stereo correlation (C: 1 mono-like, 0 wide, below 0 out of phase). The short-term LUFS is in the transport bar"><span class="unit" aria-hidden="true">M</span><span class="sr-only">Master momentary loudness: </span><span class="num" id="loudM">–</span><span class="unit">LUFS</span><span class="unit" aria-hidden="true">TP</span><span class="sr-only">, true peak: </span><span class="num" id="loudTP">–</span><span class="unit">dBTP</span><span class="unit" aria-hidden="true">C</span><span class="sr-only">, stereo correlation: </span><span class="num" id="loudC">–</span></span>
     <span class="status-engine" id="engineStatus">Looking for the engine…</span>
     <span class="status-sel" id="selStatus"></span>
   </footer>
@@ -132,7 +137,7 @@
 </section>
 
 <div class="overlay" id="helpOverlay" hidden></div>
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="js/util.js"></script>
 <script src="js/mock.js"></script>
@@ -142,9 +147,13 @@
 <script src="js/transport.js"></script>
 <script src="js/live.js"></script>
 <script src="js/arrange.js"></script>
+<script src="js/takes.js"></script>
+<script src="js/cues.js"></script>
 <script src="js/clips.js"></script>
 <script src="js/mixer.js"></script>
 <script src="js/devices.js"></script>
+<script src="js/groups.js"></script>
+<script src="js/sidechain.js"></script>
 <script src="js/browser.js"></script>
 <script src="js/review.js"></script>
 <script src="js/assistant.js"></script>

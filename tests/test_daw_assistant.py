@@ -17,8 +17,9 @@ ENGINE_READS = ["hello_world", "session_get_info", "session_list_snapshots", "tr
                 "tracks_list", "track_get_info", "track_get_regions", "track_get_fader", "region_get_info",
                 "region_get_peaks", "plugin_get_description", "plugin_list_available", "midi_note_list",
                 "midi_note_get_json", "meters_get", "export_status",
-                "region_get_warp"]                 # says "Read only." but was not listed: it asked first (Gemini run)
-ENGINE_WRITES = ["session_save", "session_undo", "session_redo", "session_rename", "session_quick_snapshot",
+                "region_get_warp",                 # says "Read only." but was not listed: it asked first (Gemini run)
+                "session_get_card"]
+ENGINE_WRITES = ["session_set_card", "track_bounce", "meters_stream_info", "session_save", "session_undo", "session_redo", "session_rename", "session_quick_snapshot",
                  "session_store_mixer_scene", "session_recall_mixer_scene", "transport_locate_sample", "transport_play",
                  "transport_stop", "transport_set_record_enable", "markers_add", "markers_delete_by_name", "tracks_add",
                  "buses_add", "region_set_gain_db", "region_normalize", "region_split", "region_move_to_sample",
@@ -544,9 +545,10 @@ class Flow(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# The rules against the REAL tool list (its shape, tests/data/engine_tools_shape.json: 111 tools, their names, arguments,
+# The rules against the REAL tool list (its shape, tests/data/engine_tools_shape.json: every tool, their names, arguments,
 # limits and the length of their texts; none of the engine's own wording is kept in this repository).
 SHAPE = json.loads((Path(__file__).parent / "data" / "engine_tools_shape.json").read_text(encoding="utf-8"))["tools"]
+N_TOOLS = len(SHAPE)                     # the count the note of that file states
 
 
 def filler(n):
@@ -576,7 +578,7 @@ class RealToolList(unittest.TestCase):
         self.names = [t["name"] for t in self.tools]
 
     def test_the_stand_in_is_the_real_list(self):
-        self.assertEqual(len(self.tools), 111)
+        self.assertEqual(len(self.tools), N_TOOLS)
         meters = next(t for t in self.tools if t["name"] == "meters_get")
         self.assertIn("ensure_rms", meters["inputSchema"]["properties"])          # the argument that would change a read
 
@@ -584,7 +586,7 @@ class RealToolList(unittest.TestCase):
         self.assertEqual(sorted(DA.READ_ONLY - set(self.names)), [], "a read-only name the engine does not have")
         for t in self.tools:
             self.assertEqual(DA.read_only(t), t["name"] in DA.READ_ONLY, t["name"])
-        self.assertEqual(len([t for t in self.tools if not DA.read_only(t)]), 111 - len(DA.READ_ONLY))
+        self.assertEqual(len([t for t in self.tools if not DA.read_only(t)]), N_TOOLS - len(DA.READ_ONLY))
 
     def test_no_read_has_an_argument_that_changes_something(self):
         """A tool is read-only whatever its arguments: meters_get's ensure_rms switches every meter, so it is taken
@@ -628,6 +630,24 @@ class RealToolList(unittest.TestCase):
             self.assertIn("remove", DA.undo_info(n)[1])
         self.assertEqual(DA.undo_info("transport_play")[0], "play")
         self.assertIn("cannot be undone", DA.undo_info("track_remove")[1])
+
+    def test_cue_card_and_docs_agree_on_what_a_filled_slot_does(self):
+        # the engine (triggerbox-overrides-disk-monitoring, on by default; its own cues test, step 6): while any slot
+        # of a track holds a clip, launched or not, that track's Arrangement is silent; clearing the slot brings it back
+        words = DA.undo_info("cue_set_clip")[1]
+        self.assertIn("Arrangement regions do not play", words)
+        self.assertIn("launched or not", words)
+        self.assertIn("last clip", words)
+        self.assertNotIn("on top of", words)
+        root = Path(__file__).resolve().parents[1]
+        for rel in ("docs/APP.md", "docs/TEMPO.md", "hypnomix/app/wiki/articles/18-daw.html",
+                    "hypnomix/project/ardour_cues.py", "hypnomix/session/loops.py", "hypnomix/session/variations.py"):
+            text = " ".join((root / rel).read_text(encoding="utf-8").split())
+            for wrong in ("does not silence", "MIXED with", "mixed with the track's Arrangement",
+                          "plays on top of its track", "plays on top of what its track"):
+                self.assertNotIn(wrong, text, rel)
+        app = " ".join((root / "docs/APP.md").read_text(encoding="utf-8").split())
+        self.assertIn("that track's Arrangement regions do not play", app)
 
     def engine_with(self, tools=None):
         e = FakeEngine()
@@ -1310,7 +1330,7 @@ class Attached(unittest.TestCase):
         self.assertNotIn("IGNORE", json.dumps(tools))
         mine = [t for t in tools if t["engine"]]
         self.assertNotIn("evil_tool", {t["engine"] for t in mine})
-        self.assertEqual(len(mine), 111)                                            # every real tool is still offered
+        self.assertEqual(len(mine), N_TOOLS)                                          # every real tool is still offered
         for t in mine:
             blob = json.dumps(t["input_schema"])
             self.assertNotIn('"enum"', blob, t["engine"])
@@ -1362,6 +1382,9 @@ function text(n) { return (typeof n === 'string') ? n : (n && n.kids ? n.kids.ma
 function find(n, f, out) { out = out || []; if (n && typeof n === 'object') { if (f(n)) out.push(n); (n.kids || []).forEach(function (k) { find(k, f, out); }); } return out; }
 var HX = window.HX = {
   S: { ui: { view: 'mixer' }, session: { name: 'Harbor', tracks: [], returns: [], tempo: 120 }, history: [], future: [], log: [] },
+  /* util.js's list of things a Save puts back first (the Assistant's Hear it registers there) */
+  onEnd: function (f) { (HX.endHooks = HX.endHooks || []).push(f); },
+  endAuditions: function (why) { return Promise.all((HX.endHooks || []).map(function (f) { return f(why); })); },
   h: function (sel, attrs) {
     var n = { sel: sel, attrs: attrs || {}, kids: [], append: function () { var add = Array.prototype.slice.call(arguments); n.kids = n.kids.concat.apply(n.kids, add.map(function (k) { return Array.isArray(k) ? k : [k]; }).map(function (a) { return a.filter(function (x) { return x != null && x !== false; }); })); } };
     n.append.apply(null, Array.prototype.slice.call(arguments, 2)); return n; },
@@ -1603,6 +1626,180 @@ chatPoll(false).then(function () {
         self.assertNotIn("Live", r["scan"])                                           # it was told "save and close the set in Live"
         self.assertIn("Expired unanswered", r["scan"])
         self.assertIn("Keep going", r["budget"])
+
+
+class NullableFieldsAndTheToolLimit(unittest.TestCase):
+    """Round-2 engine tools have fields that null clears ("type": ["string", "null"]), and with every group on the
+    engine has more tools than a provider takes in one request."""
+
+    def test_a_list_of_types_is_kept_and_checked(self):
+        sch = DA.attached_schema({"properties": {"key": {"type": ["string", "null"], "description": "x"},
+                                                 "odd": {"type": [["x"]]}, "tags": {"type": "array", "items": {"type": ["string"]}}}})
+        self.assertEqual(sch["properties"]["key"], {"type": ["string", "null"]})
+        self.assertEqual(sch["properties"]["odd"], {})
+        self.assertEqual(sch["properties"]["tags"], {"type": "array"})
+        self.assertEqual(DA.invalid(sch, {"key": None}), "")
+        self.assertEqual(DA.invalid(sch, {"key": "A minor"}), "")
+        self.assertIn("must be a string or null", DA.invalid(sch, {"key": 3}))
+
+    def test_every_group_on_still_fits_and_the_second_forms_go_first(self):
+        names = [t["name"] for t in SHAPE]
+        full = DA.offered(names, enabled=DA.GROUPS)
+        self.assertLessEqual(len(full), DA.MAX_OFFERED)
+        self.assertEqual(len(set(full)), len(full))
+        for keep in ("track_set_fader_db", "region_move_to_sample", "plugin_set_parameter_by_index_value", "session_save"):
+            self.assertIn(keep, full)
+        gone = [n for n in names if n not in full]
+        self.assertTrue(set(gone) <= set(DA.SECOND_FORMS) | DA.NEVER_OFFERED, gone)
+        few = DA.offered(names, enabled=("regions",))
+        self.assertIn("region_move_to_bbt", few)                  # under the limit nothing is left out
+
+    def test_a_bigger_engine_keeps_the_core_and_the_view_and_says_what_was_cut(self):
+        names = [t["name"] for t in SHAPE] + [f"zz_new_tool_{i}" for i in range(80)] + [f"region_more_{i}" for i in range(40)]
+        cut = []
+        got = DA.offered(names, view="mixer", enabled=DA.GROUPS, cut=cut)
+        self.assertEqual(len(got), DA.MAX_OFFERED)
+        self.assertTrue({n for n in names if n in DA.CORE} <= set(got))           # session_save and the rest of the core
+        self.assertTrue({n for n in names if DA.group_of(n) == "plugins"} - set(DA.SECOND_FORMS) <= set(got))   # the view's
+        self.assertEqual(sorted(cut), sorted(n for n in names if n not in got and n not in DA.NEVER_OFFERED))
+        self.assertEqual([n for n in got if DA.group_of(n) == "other"], [])     # 'other' goes first...
+        self.assertIn("region_move_to_sample", got)                                # ...before a group that was asked for
+
+    def test_more_tools_never_names_a_tool_that_is_not_offered(self):
+        tools = {f"daw_{n}": {"name": f"daw_{n}", "engine": n} for n in ("meters_stream_info", "session_rename", "session_get_info")}
+        with mock.patch.dict(CH.CHAT, {"daw_tools": tools, "daw_groups": set(), "view": "mixer"}):
+            out = CH.more_tools({"group": "session"})
+        self.assertIn("daw_session_rename", out)
+        self.assertNotIn("meters_stream_info", out)               # app-only: never said to be offered
+
+
+class MidiInputsAndMpe(unittest.TestCase):
+    """The eight MIDI input and MPE tools a newer engine lists (ports and their flags, a track's MIDI input, the per-note
+    input monitor, a track's MPE mode): their shape, cards, group and reads, and an engine without them (136 tools)."""
+    MPE = ("midi_ports_list", "midi_port_set_flags", "midi_track_connect_input", "midi_track_disconnect_input",
+           "midi_monitor_get", "midi_monitor_stop", "track_get_mpe", "track_set_mpe")
+
+    def setUp(self):
+        self.tools = real_tools()
+        self.names = [t["name"] for t in self.tools]
+
+    def engine_with(self, tools):
+        e = FakeEngine()
+        e.listed = tools
+        return e
+
+    def without(self):
+        return [t for t in self.tools if t["name"] not in self.MPE]
+
+    def engine_request(self, tools, groups=()):
+        """The tools one request carries and the daw_more_tools definition, for an engine listing `tools`."""
+        with mock.patch.object(DW, "ENGINE", self.engine_with(tools)):
+            CH.CHAT.update(daw_tools={}, view=None, daw_groups=set(groups), engine_mark=None)
+            sent = CH._load_daw_tools()
+        return sent, CH.CHAT["daw_tools"]["daw_more_tools"]
+
+    # 1. the shape file has them, as the engine lists them, and still stands for an engine without them
+    def test_the_shape_has_the_eight_and_its_note_says_how_many(self):
+        note = json.loads((Path(__file__).parent / "data" / "engine_tools_shape.json").read_text(encoding="utf-8"))["note"]
+        self.assertIn(f"({N_TOOLS} tools)", note)
+        self.assertEqual(N_TOOLS, 144)
+        self.assertEqual(self.names[-8:], list(self.MPE))                 # the engine's own order, at the end of its list
+        self.assertEqual(set(self.MPE), DA.MPE_TOOLS)
+        self.assertEqual(len(self.without()), 136)
+        mpe = next(t for t in self.tools if t["name"] == "track_set_mpe")["inputSchema"]
+        self.assertEqual(mpe["required"], ["track_id", "zone"])
+        self.assertEqual(mpe["properties"]["zone"]["enum"], ["off", "lower", "upper"])
+        self.assertEqual((mpe["properties"]["members"]["minimum"], mpe["properties"]["members"]["maximum"]), (1, 15))
+
+    # 2. cards: titles, plain words, and what undo can really do
+    def test_each_change_has_a_title_and_true_undo_words(self):
+        self.assertIn("MPE", DA.title_of("track_set_mpe"))
+        kind, words = DA.undo_info("track_set_mpe")
+        self.assertEqual(kind, "step")
+        self.assertIn("One undo step", words)
+        for n in ("midi_port_set_flags", "midi_track_connect_input", "midi_track_disconnect_input"):
+            kind, words = DA.undo_info(n)
+            self.assertEqual(kind, "back", n)
+            self.assertIn("Not an engine undo step", words, n)
+            self.assertIn("another card", words, n)                      # ...and how to put it back
+            self.assertNotIn("One undo step", words, n)
+        self.assertIn("not kept in the session", DA.undo_info("midi_port_set_flags")[1])
+        self.assertIn("Changes nothing in the session", DA.undo_info("midi_monitor_stop")[1])
+        for n in self.MPE:
+            self.assertEqual(DA.group_of(n), "mpe", n)
+            if n not in DA.READ_ONLY:
+                self.assertIn(n, DA.TITLES, n)
+
+    def test_the_cards_say_before_and_after_in_words(self):
+        replies = {"track_get_mpe": {"trackId": "149", "name": "Keys", "on": False, "zone": "off", "members": None},
+                   "midi_ports_list": {"ports": [{"name": "system:midi_capture_1", "prettyName": "Pads", "flags": {"music": True, "mpe": False}}]},
+                   "track_get_info": {"name": "Keys"}}
+        read = lambda tool, a: replies.get(tool)
+        rows = DA.preview("track_set_mpe", {"track_id": "149", "zone": "lower", "members": 15}, read)
+        self.assertEqual(rows, [dict(what="Keys · MPE", before="off", after="lower zone, 15 member channels")])
+        title, summary = DA.describe("track_set_mpe", {"track_id": "149", "zone": "lower", "members": 15}, rows)
+        self.assertEqual((title, summary), ("Set MPE on a track", "Keys · MPE: from off to lower zone, 15 member channels."))
+        rows = DA.preview("midi_port_set_flags", {"port": "Pads", "mpe": True}, read)
+        self.assertEqual(rows, [dict(what="MIDI port Pads", before="mpe off", after="mpe on")])
+        rows = DA.preview("midi_track_connect_input", {"track_id": "149", "port": "Pads", "exclusive": True}, read)
+        self.assertEqual(rows[0]["after"], "only from Pads")
+        rows = DA.preview("midi_track_disconnect_input", {"track_id": "149"}, read)
+        self.assertEqual(rows[0]["after"], "connected to nothing")
+
+    # 3. what runs unasked, and what never makes the session unsaved
+    def test_the_reads_and_the_never_unsaved_ones(self):
+        self.assertEqual(DA.READ_ONLY & DA.MPE_TOOLS, {"midi_ports_list", "midi_monitor_get", "track_get_mpe"})
+        self.assertEqual(DW.READ_ONLY_TOOLS & DA.MPE_TOOLS, {"midi_ports_list", "midi_monitor_get", "track_get_mpe", "midi_monitor_stop"})
+        for n in self.MPE:
+            got = DW._events({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": n, "arguments": {"track_id": "1"}}})
+            self.assertEqual(got, [] if n in DW.READ_ONLY_TOOLS else [(1, "change")], n)
+        # the engine marks midi_monitor_stop as writing: the Assistant asks first, though it changes nothing saved
+        stop = {"name": "midi_monitor_stop", "annotations": {"readOnlyHint": False}}
+        self.assertFalse(DA.read_only(stop))
+        self.assertTrue(DA.read_only({"name": "midi_monitor_get", "annotations": {"readOnlyHint": True}}))
+
+    # 4. an engine without them shows nothing about them
+    def test_an_engine_without_them_shows_nothing_mpe(self):
+        sent, more = self.engine_request(self.without(), groups=DA.GROUPS)
+        self.assertNotIn("mpe", more["input_schema"]["properties"]["group"]["enum"])
+        text = json.dumps(CH.anthropic_tools(sent))
+        for word in ("MPE", "mpe", "midi_port", "midi_monitor", "midi_track_"):
+            self.assertNotIn(word, text)
+        self.assertNotIn("mpe", CH.more_tools({"group": "regions"}))
+        self.assertTrue(CH.more_tools({"group": "mpe"}).startswith("error"))
+        self.assertNotIn("MPE", CH._daw_note())
+        self.assertEqual(DA.groups_for(t["name"] for t in self.without()), tuple(g for g in DA.GROUPS if g != "mpe"))
+
+    def test_an_engine_with_them_offers_the_group_on_request(self):
+        sent, more = self.engine_request(self.tools)
+        self.assertIn("mpe", more["input_schema"]["properties"]["group"]["enum"])
+        self.assertIn("MPE", more["description"])
+        self.assertNotIn("daw_track_set_mpe", {t["name"] for t in sent})       # not in the core: asked for
+        out = CH.more_tools({"group": "mpe"})
+        for n in self.MPE:
+            self.assertIn("daw_" + n, out)
+        names = {t["name"] for t in CH._reoffer()}
+        self.assertTrue({"daw_" + n for n in self.MPE} <= names)
+
+    # 5. every group on still fits a small provider's limit, with them and without them
+    def test_every_group_on_fits_with_and_without_them(self):
+        cut = []
+        full = DA.offered(self.names, enabled=DA.GROUPS, cut=cut)
+        self.assertLessEqual(len(full), DA.MAX_OFFERED)
+        self.assertTrue(set(self.MPE) <= set(full))                          # the new group is not what gets cut
+        self.assertTrue(DA.CORE <= set(full))
+        self.assertIn("session_save", full)
+        self.assertTrue(set(cut) <= set(DA.SECOND_FORMS) | DA.NEVER_OFFERED, cut)
+        older = [n for n in self.names if n not in self.MPE]
+        cut_older = []
+        full_older = DA.offered(older, enabled=DA.GROUPS, cut=cut_older)
+        self.assertLessEqual(len(full_older), DA.MAX_OFFERED)
+        self.assertTrue(DA.CORE <= set(full_older))
+        for n in ("transport_loop_location_samples", "region_move_by_samples", "track_get_fader", "midi_note_add_sample"):
+            self.assertIn(n, full_older)                                     # needed only for the bigger list
+        self.assertTrue(set(cut_older) <= set(DA.SECOND_FORMS[:-8]) | DA.NEVER_OFFERED, cut_older)
+        sent = CH.anthropic_tools(self.engine_request(self.tools, groups=DA.GROUPS)[0])
+        self.assertLess(len(sent), 128)
 
 
 if __name__ == "__main__":

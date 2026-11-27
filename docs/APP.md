@@ -128,6 +128,14 @@ that plays no sound, saves nothing and sends nothing, and is labelled **Demo** w
 place of a session you have open: leaving the engine's session for it is **Show the demo song** in the engine panel, and
 that asks first.
 
+**Top bar and status bar.** The page never scrolls sideways: at every width, whatever does not fit in the top bar scrolls
+inside the bar (the tours scroll a control they point at into view). At 1520 px wide or less the top bar gives way first:
+the DSP meter, the clock and the time signature are hidden, and the name block may shrink down to the mark. The engine's loudness in the top bar is
+one number (short-term LUFS) at every width; momentary LUFS, true peak and correlation are in the status bar. The status
+bar names the engine **HypnoMix engine** and its version (`MCP · HypnoMix engine 0.1.0 · … tools · … kHz · meters
+streaming`): never the name the engine's MCP surface gives itself in its `initialize` reply, so renaming that surface
+changes nothing on the page. Tests: `tests/test_daw_topbar.py`.
+
 **Guided tours.** The DAW view can show people around on its own screen, optionally: the first time it opens, a small
 card offers **Show me around** or **Not now** (it takes no focus, and the answer is remembered); the **Tour** button in the
 top bar (and **Take a tour** in the `?` list) opens the six tours (First look, Edit a region, Mix, Scan and review, Ask the
@@ -193,7 +201,21 @@ unsaved; before anything that would lose it (Stop, Restart, Open, New, quitting,
 **Don't save** or **Cancel**. The same is in the routes: `GET /api/daw/state` carries `dirty`, `POST /api/daw/save`
 saves through the engine, and `stop`, `restart`, `open` and `new` answer HTTP 409 `{"error": "unsaved", "dirty": true}`
 while there is unsaved work, unless the request says `"discard": true` (go on without saving) or `"save": true` (save,
-then go on).
+then go on). A change that reaches the engine without going through the app counts too: `hypnomix tidy`, `order` and
+`duck` with `--engine`, `hypnomix loops` and `variations` with `--cues`, or any script on the engine's own port. The
+engine keeps its own unsaved flag (the `dirty` of its read-only `session_list_snapshots`), and the app reads it before
+every Stop, Restart, Open and New, for quitting and the updater (`daw.dirty()`), and for `GET /api/daw/state`: one
+reading shared by all of them, at most every 2 s, so the view's Save button and title show it within a few seconds. Unsaved is the app's own count or the
+engine's flag; a save clears both, the engine's flag never clears the app's own count, and an engine that does not
+answer keeps its last answer (no answer is no information: it neither blocks nor clears; a look waits at most 3 s). A
+command that wrote less than 2 s before Stop or quit can be missed if the last reading came just before it. It is read only for an engine the app
+started: a HypnoMix DAW window the app only attached to is that window's to save, and its flag is not shown. Those
+commands find the app's engine with `--engine URL`: the address is shown in the engine panel and is the `url`
+of `GET /api/daw/state`. Checked on the engine itself (Dummy backend): a session just opened reports clean,
+`session_save` clears the flag, and none of the read-only tools set it. Not checked live: the native app's Quit dialog
+and the updater's refusal (both go through `daw.dirty()`, which the unit tests cover). The engine's flag never
+comes from reading: the view's one change on connecting, switching the meters to RMS + Peak (`meters_get`'s
+`ensure_rms`), is held back while the session is clean and goes in with the first real change (see Meters below).
 
 **Adding and removing HypnoMix DAW** (`hypnomix/app/engine_addon.py`). The engine is published as an archive of its own
 for each platform (`mac-arm64`, `mac-intel` now; the manifest's structure allows `windows-x64` later, and `linux-x64` for people who build it: the project does not test on Linux).
@@ -219,13 +241,18 @@ on its silent test backend (no sound). Nobody has yet run it with a real sound c
 device, and recording, are untested), opened the native **File** menu and its panels in a running test build, added the
 engine from a real published archive (none is published yet), signed and notarised a build (the Developer ID build has not been tried), or
 run any of it on an Intel Mac. Read the sentences about sound and the File menu in this section as what the code is
-written to do.
+written to do. Round 2 (take lanes and comping, groups and sidechains, the meter stream, the Session view's cue slots, the A/B session, and the `--engine` / `--cues` forms of `tidy`, `order`, `duck`, `loops` and `variations`) was tested against stand-in engines in the unit tests and against a development build of the engine on its silent test backend with a made-up session. Not verified: the meter stream inside the Mac app's own window (a same-origin WebSocket under the page's `connect-src 'self'`; if that window refuses it, the meters fall back to polling) and its reconnect after an engine restart, any of it on Windows or with real audio hardware, and anything by ear (comp crossfades, cue launches, the A/B level match, the duck and sidechain settings).
 
 **The browser never talks to the engine directly.** The page sends its MCP calls (JSON-RPC 2.0) to the app,
 `POST /mcp` on the same address, with the page's token; the app passes them to the engine it runs and the reply
-back unchanged. The same rules as the rest of the app: this computer only, requests from other sites refused, and
+back unchanged. The app reads each call strictly (UTF-8 JSON only, no NaN and no number too big to write back such as 1e999, and no name given twice in one object:
+`400 bad request: repeated name in the message`), and what it sends on is that message written out again, never the
+bytes it came as, so the tool the app checked (and counted for unsaved work) is the tool the engine runs. The same rules as the rest of the app: this computer only, requests from other sites refused, and
 nothing without the page's token. The engine routes are `GET /api/daw/state` and `POST /api/daw/start`, `stop`,
-`restart`, `save`, `open {path}`, `new {folder, name}` (the ones that would lose unsaved work answer 409: see Saving).
+`restart`, `save`, `open {path}`, `new {folder, name}` (the ones that would lose unsaved work answer 409: see Saving). The meter stream is `GET /api/daw/meters?t=<token>`
+(a WebSocket upgrade; 403 without the token, 400 when it is not a WebSocket request, 429 when four streams are already
+open, 503 when the engine has no stream, 502 when the engine's stream does not answer or refuses:
+see "The meter stream" below).
 
 **The Assistant in the DAW.** With a model key set (the Assistant tab's settings) and the engine connected, the
 Assistant column is the app's real Assistant, the same conversation as the Assistant tab. It gets the engine's own
@@ -234,13 +261,13 @@ through the app's engine connection (`hypnomix/app/chat.py`, with its rules in `
 
 | rule | what it means |
 |---|---|
-| reads run at once, from an explicit list | `session_get_info`, `tracks_list`, `track_get_info`, `track_get_fader`, `track_get_regions`, `region_get_info`, `region_get_peaks`, `plugin_list_available`, `plugin_get_description`, `markers_list`, `meters_get`, `transport_get_state`, MIDI note reads, `export_status`, `region_get_warp`, … plus `daw_session_overview` (the whole session in one read). Any other tool, and any tool the engine adds later, asks; so does a listed one the engine marks as writing. A listed read must be unable to change anything whatever its arguments: `meters_get`'s `ensure_rms` (it switches every meter) is taken out of the call and out of what the model is offered |
-| every change is a **proposal card** | a title and a sentence in plain words (*Change a fader: Drums · fader, from 0.0 dB to -2.0 dB*), what changes, before → after, read from the engine just then, the exact call under a disclosure, what undo can do for it (only region, marker, loop-range, warp and MIDI edits are engine undo steps; a fader, pan, mute, solo, send level or plug-in setting is taken back by setting the old value again; adding or removing a plug-in or a send is not an undo step, and a removed plug-in or send loses its settings, so adding it again starts from the defaults; removing or reordering tracks cannot be undone: the card says which, in each case from the engine's source), **Approve** and **Cancel** (Esc). Nothing reaches the engine until you approve; then the card shows how it ended: applied and what the engine reads back, failed (with the engine's words, and whether it may have happened), cancelled or expired, in the DAW column and in the Assistant tab alike |
+| reads run at once, from an explicit list | `session_get_info`, `tracks_list`, `track_get_info`, `track_get_fader`, `track_get_regions`, `region_get_info`, `region_get_peaks`, `plugin_list_available`, `plugin_get_description`, `markers_list`, `meters_get`, `transport_get_state`, MIDI note reads, `export_status`, `region_get_warp`, `session_get_card` (the song card), `cue_list`, `ab_list`, and on an engine with MIDI inputs and MPE `midi_ports_list`, `track_get_mpe` and `midi_monitor_get` (the per-note input monitor: its first read attaches a tap to the track's input port, which changes nothing saved or heard), … plus `daw_session_overview` (the whole session in one read). Any other tool, and any tool the engine adds later, asks; so does a listed one the engine marks as writing. A listed read must be unable to change anything whatever its arguments: `meters_get`'s `ensure_rms` (it switches every meter) is taken out of the call and out of what the model is offered |
+| every change is a **proposal card** | a title and a sentence in plain words (*Change a fader: Drums · fader, from 0.0 dB to -2.0 dB*), what changes, before → after, read from the engine just then, the exact call under a disclosure, what undo can do for it (only region, marker, loop-range, warp, take-comp (`comp_range`) and MIDI edits are engine undo steps; a fader, pan, mute, solo, send level or plug-in setting is taken back by setting the old value again; adding or removing a plug-in or a send is not an undo step, and a removed plug-in or send loses its settings, so adding it again starts from the defaults; removing or reordering tracks cannot be undone; on an engine with MIDI inputs and MPE, *Set MPE on a track* (`track_set_mpe`) is one undo step, while a port's flags (kept in this computer's MIDI port settings, not the session) and a track's MIDI input connections are not undo steps: the card says to put them back with another card, from the flags or connections the engine reports as before, and stopping the input monitor changes nothing saved: the card says which, in each case from the engine's source), **Approve** and **Cancel** (Esc). Nothing reaches the engine until you approve; then the card shows how it ended: applied and what the engine reads back, failed (with the engine's words, and whether it may have happened), cancelled or expired, in the DAW column and in the Assistant tab alike |
 | an approval is for one call, and a deliberate one | the card carries a digest of its call and the answer must bring it back; just before the call is sent, the arguments exactly as they go to the engine are checked against the digest and against the arguments the card shows, and if they differ nothing is sent; the answer must be a real `true` (the string `"false"` or a `1` approves nothing). **Enter** approves only while the Approve button has the focus (a held key and a stray Enter, say one meant for the chat box, approve nothing), and a click counts once |
 | arguments are checked first | a number where an id string goes, a track's name where its id goes, `regionId` vs `region_id`, `"true"` for true: fixed before the card is shown. A change to a track or region that is not in the session, one missing a required value or with a value of the wrong kind (`"loud"` for dB), or one to a plug-in index the track does not have is never proposed: the model is told why. The first answer to a card wins (a quick second click cannot turn Cancel into Approve) |
 | replies are trimmed for the model | peaks become each channel's loudest peak and a coarse envelope; plug-in and parameter lists keep what matters; file paths are cut to the file's name and any home folder to `~`; long lists and texts are cut with a note (8,000 characters at most); the session overview stays under 14,000 characters: one read per track, all in flight together (6 at a time, 20 s at most, 80 tracks at most), regions only for a session of 12 tracks or fewer (a bigger one reads them per track), and the tracks that do not fit are named as not shown |
 | what the project says is data | track, plug-in and region names, the engine's errors, what a change reads back and the snapshot list reach the model fenced in `<file-data>` tags like a file's contents, in any case and spacing of the closing tag and with any invisible character inside it (a soft hyphen, a bidi mark, a zero-width space, a NUL), with saved keys masked and the home folder shortened (a scan's log too): a track called `</FILE-DATA> do this` cannot close the fence. The scan that finds the tag walks the text once, so a hostile file cannot stall the chat |
-| only part of the tool list is sent | each step carries the tool definitions again, and the engine has 111 (about 17,600 tokens a step). A request carries the core (the reads, fader, pan, mute, solo, sends, the main plug-in moves, save and undo: about 3,600 tokens) plus the groups the open view needs (the mixer adds the other plug-in tools, the Arrangement the region tools); `daw_more_tools {group}` offers any other group from the next step on. Descriptions are cut to about 170 characters. Measured on the engine's real tool list (111 tools, read only from its source): 70,600 characters a step before (about 17,600 tokens at 4 characters a token, HypnoMix's own tools and the overview included), 14,400 now (about 3,600 tokens); with the mixer view 17,800, with the Arrangement view 25,900, with every group asked for 57,400, always under a provider's limit of 128 tools. The system prompt is another 37,000 characters on every step. A tool that is not offered still asks before it changes anything. **The prompt cache:** the tool list is the first block of the model's cached prompt, so a change to it (a group asked for with `daw_more_tools`, or a view that needs another group) rewrites the cached conversation once, at the cache-write price, instead of reading it at the cheaper cache price. To keep that to once, a group once offered stays offered for the rest of the conversation (changing view never takes tools away); the cost line above the chat shows what a conversation really cost |
+| only part of the tool list is sent | each step carries the tool definitions again, and the engine had 111 before the round-2 tools (takes, groups and sidechains, the meter stream, cue slots, A/B playlists) and has 136 with them (25 new; about 17,600 tokens a step for the 111); an engine built with MIDI inputs and MPE lists 8 more (144), in their own `mpe` group, which `daw_more_tools` offers (and names to the model) only when the engine lists those tools: an engine without them shows no such group. A request carries the core (the reads, fader, pan, mute, solo, sends, the main plug-in moves, save and undo: about 3,600 tokens) plus the groups the open view needs (the mixer adds the other plug-in tools, the Arrangement the region tools); `daw_more_tools {group}` offers any other group from the next step on. Descriptions are cut to about 170 characters. Measured on the engine's real tool list (111 tools, read only from its source): 70,600 characters a step before (about 17,600 tokens at 4 characters a token, HypnoMix's own tools and the overview included), 14,400 now (about 3,600 tokens); with the mixer view 17,800, with the Arrangement view 25,900, with every group asked for 57,400 (all on the 111-tool list). A provider takes at most 128 tools in one request: with every group asked for, the engine's own part is held to `MAX_OFFERED` (112, `daw_assist.py`) by leaving out the second forms of a tool first (`SECOND_FORMS`: the bars-and-beats and fader-position forms, parameter setters by control, a gain in linear units, markers by id, and `ab_list` / `ab_use_playlist`, which `playlist_list` / `playlist_select` cover; for the 144-tool engine also the loop range by samples, copies and moves by beats or by a distance, a note at a sample, `track_get_fader` and a new MIDI region from JSON, each done by a form that stays, and listed last so a 136-tool engine keeps them), the form kept doing the same job; under the limit nothing is left out. If that is still not enough (a bigger engine), the core and the open view's groups are always kept, the `other` group goes before the groups asked for, and what was left out is said in a note in the chat, to the model in an app note, and in the `daw_more_tools` reply, which only ever names tools that are really offered (never the app-only `meters_stream_info`). The system prompt is another 37,000 characters on every step. A tool that is not offered still asks before it changes anything. **The prompt cache:** the tool list is the first block of the model's cached prompt, so a change to it (a group asked for with `daw_more_tools`, or a view that needs another group) rewrites the cached conversation once, at the cache-write price, instead of reading it at the cheaper cache price. To keep that to once, a group once offered stays offered for the rest of the conversation (changing view never takes tools away); the cost line above the chat shows what a conversation really cost |
 | a bounce never replaces a file | `session_export_mix` onto a path that exists is not proposed (the engine would replace it): the model picks a new name. The file checked is the one the engine would write (its name without the suffix, plus `.wav`, in any letter case), and a path with a control or invisible character in it (a NUL cuts a name short in the engine) is refused. A file that appears while the card waits stops it too. A running export is polled with `export_status`, which waits a few seconds when the job is still running, and a poll is not "the same call three times" (it is a circle only after 12 identical answers, and the note then says 12) |
 | **Hear it** (the scripted demo's cards, with an engine) | really changes the open session, so it counts as an unsaved change, and the card says plainly **LIVE NOW** while it is being heard (it is never saved: Hear it again, Cancel or Approve puts it back first). The app holds what puts each value back and does it when the card is cancelled, approved or replaced by another card's Hear it, when the session is saved (however the save reaches the engine: the Save button and Ctrl/Cmd+S, a "save and go on" answer before a stop, restart, open or new, the Review panel's scan, and the Assistant's own save and scan: all put it back first, so a tried value is never written into the session file), when the page reloads or closes (the page's heartbeat stops for 8 s, or the next page load asks at once) and never into an engine that restarted. Only faders, pans, mutes, solos, sends and plug-in settings can be held |
 | a window the app only attached to | the Assistant uses it only when it answers the handshake with the engine's own name and has the engine's core tools; nothing a foreign window wrote reaches the model as words: only the engine's own tool names are offered, each with this app's own title, and its schemas are rebuilt from property names, types and numeric limits (no description, enum, default or odd property name is copied; a newer tool this app does not know is not offered through an attached window). The name check is not authentication: a program of the same user can copy the name, which is why it is given no words of its own and why every change still needs your card. A stranger on the port is named as such and nothing is sent to it; the handshake is checked again before the overview and every call |
@@ -256,11 +283,40 @@ mute, solo or plug-in on/off is read back until the engine shows it (it applies 
 key, without the engine, or with the page opened outside the app, the Assistant column is the scripted demo
 (marked **DEMO · SCRIPTED**): its proposals are real edits on the same path as yours, but its replies are canned.
 
-**Mixer, meters, devices and transport on the engine** (`daw/js/live.js`). One poll loop asks `meters_get` (it also
+**Mixer, meters, devices and transport on the engine** (`daw/js/live.js`). **The meter stream** comes first: the
+engine measures every route off the audio thread and pushes about 20 frames a second over a WebSocket on a loopback
+port of its own (MCP `meters_stream_info` gives `ws://127.0.0.1:PORT/meters?token=T`). The page opens
+`ws://<the app>/api/daw/meters?t=<the page's token>` (`hypnomix/app/daw_meters.py`): the app checks the token (and
+Host and Origin, as for every request), asks the engine where its stream is, opens it, and copies the bytes both
+ways, so the page never learns the engine's port or token, and the engine refuses any browser Origin that is not
+loopback. How another web page is kept out: both the app and the engine's stream listen on 127.0.0.1 only; the app
+refuses a Host that is not 127.0.0.1 or localhost (a DNS-rebinding page carries its own name there), any Origin but
+its own two (`http://127.0.0.1:PORT`, `http://localhost:PORT`; a browser always sends Origin with a WebSocket) and a
+request a browser marks `Sec-Fetch-Site: cross-site`; then `t` must be the page's token (written into the app's own
+page, which another page cannot read), compared in constant time, or it answers 403. The engine's address comes from
+`meters_stream_info`, which only the app calls: the page's `POST /mcp` refuses that tool (`daw.APP_ONLY_TOOLS`) and
+the Assistant is never offered it. At most four streams are open at once (each holds one of the app's threads): a
+fifth closes the one open longest (so streams nobody reads cannot keep the page out), and only when none gives way
+does it answer 429. A stream is closed when nothing comes from either side for 15 s (the engine sends about 20 frames
+a second, so quiet means it has gone) or when one side takes nothing for 5 s, and the engine's answer to the upgrade
+must come within 3 s in all; the page then polls `meters_get` and tries the stream again. The token travels in the query because a browser's WebSocket cannot send a header of its own;
+the app does not log request lines. Each frame carries, for every route and the master: peak and RMS per channel (dBFS, at the route's meter
+point), momentary / short-term / integrated LUFS (integrated since the transport last started), the estimated true
+peak and its maximum, stereo correlation and 8 band levels (the Hypnomix Probe's own measuring and band splits), the
+playhead `sample`, `rolling`, `speed` and `exporting`, and the readings of each Hypnomix Probe / Main (output
+values, by parameter index, when they change). The meters, the playhead's clock and the devices' readings take
+their values from it, the transport bar shows one number, the master's short-term loudness (LUFS), at every width,
+and the status bar the rest: **M** (momentary LUFS), **TP** (dBTP) and **C** (correlation); no width rule hides or
+reshapes the loudness readouts. A screen reader hears them in words (master loudness short-term, momentary loudness,
+true peak, stereo correlation). When the stream drops, the loudness readouts go until it is back (they only come with
+the stream), so no stale number looks live. The status line also says **meters streaming**. With no stream (an engine without it: the relay answers 503), or when it
+drops (it is opened again with a growing pause, up to 30 s), one poll loop asks `meters_get` (it also
 carries the transport's `sample` and `rolling`) about 15 times a second while playing and twice a second when stopped,
 never with two requests out; the first call passes `ensure_rms:true`, which switches the routes' meter type to
 RMS + Peak so the meters draw peak (light) over RMS (solid) with a held peak on the track headers, the Mixer and the
-master. The status line says **meters live**. The playhead is interpolated between polls by a gentle phase-locked
+master. The meter type is kept in the session file, so on a session with nothing unsaved the app takes `ensure_rms`
+out of that call and sends it with the first change (from the view, the Assistant or a command): looking at a session
+never makes it unsaved, and until then a session whose meters were never switched shows peak only. The status line says **meters live**. The playhead is interpolated between polls by a gentle phase-locked
 clock: it learns the engine's real speed (a dummy or busy backend runs slower than the wall clock), never steps
 backwards, and snaps only on a jump (locate, loop). Every mixer change (fader, pan, mute, solo, arm, send level,
 colour, order) and every device change is read back from the engine (`track_get_info`, `plugin_get_description`)
@@ -272,11 +328,38 @@ real plug-ins: knobs (log, integer, toggle and list parameters as the plug-in de
 `plugin_set_parameter_by_index_value`, the light `plugin_set_enabled`, dragging a title `plugin_reorder`, × twice
 `plugin_remove`, and **+** or a double-click in the browser (whose Audio Effects, Plug-ins and Hypnomix Tools lists
 are the engine's `plugin_list_available`) `plugin_add_by_plugin_id`. Output parameters (the Hypnomix Probe's
-loudness and peaks, a compressor's gain reduction) are shown as readings, refreshed every second while playing.
+loudness and peaks, a compressor's gain reduction) are shown as readings, refreshed every second while playing (the
+Hypnomix devices' readings also arrive with the meter stream, as they change).
 Transport: play, stop, locate, loop (the range is set from the view first: `transport_loop_location_samples`) and
 record, with the loop range read from the session's markers. The time signature and track colours come from the
 saved session file (`POST /api/daw/meta`, `hypnomix/app/daw_meta.py`), since no MCP tool reports them; a colour set
 since the last save is remembered by the browser for that session.
+
+**Group tracks and sidechains on the engine** (`daw/js/groups.js`, `daw/js/sidechain.js`). A group track is what
+Live has: on the engine a route group plus its subgroup bus, made together by `group_create` (the tracks'
+outputs go to the bus, the bus goes to the master and sits right above its tracks). The view reads `group_list`
+with the session and every 3 s: the bus is the group's header in the Arrangement and the Mixer (its fader is the
+group fader), its tracks are indented under it, and **▸ / ▾** on the header folds them away (`group_set folded`,
+the route group's hidden flag, so it is saved with the session). **Group…** in the Arrangement's tools (⌘G) asks for
+a name and the tracks (every selected track ticked: shift-click a track header, mixer strip or Session column
+header for the range from the last plain click, ⌘-click (Ctrl-click on Windows) to add or take away one; `HX.selectClick`
+in `daw/js/store.js`; a press on a button, a value, or the Mixer's fader or knobs inside a header or strip keeps the
+selection, so shift-dragging a fader stays the fine drag) and makes the group. The dialog works by keyboard: Tab and
+Shift+Tab go round the name box, each track's tick box and the buttons (the focus starts on Cancel), Space types a space
+in the name and ticks a box, and Enter only presses a focused button. ⌘G with no engine says groups need the engine.
+If the group is made but reading the session again fails, the view says so ("Grouped as …, but the view could not read
+the session again") instead of "Not grouped", and reads it again within a few seconds. A track folded away is never the
+selected one: the up and down arrows skip it, M and S do nothing to one, and folding a group that holds the selected
+track (from this view or from the engine) selects the group's header instead. **Ungroup** on the header (`group_delete`, named
+"Ungroup <group>" for a screen reader)
+sends the tracks to the master again and removes the bus. Both ask first: the engine keeps routing, route groups and
+plug-ins out of its undo history, so neither is a step of ⌘Z. A device that can take a key (`plugin_get_sidechain`:
+an ACE Compressor, Expander, any plug-in with sidechain pins) shows **Sidechain: none / <track>** (every other track and bus but the master and its own group's bus, which would feed back): choosing a track
+calls `plugin_set_sidechain` (a pre-fader send from that track into the plug-in's key input, and the plug-in's own
+Sidechain switch on), **none** removes the send; that choice is an ordinary op, so ⌘Z sends the previous source
+again. The Assistant reads `group_list` and `plugin_get_sidechain` at once; every group and sidechain change is a
+proposal it asks about. Not done yet: dragging a strip in the Mixer while a group is folded counts only the strips
+shown; nested groups are made by the engine but drawn one level deep.
 
 **The Arrangement on the engine** (`daw/js/regions.js`, `daw/js/arrange.js`). Regions come from
 `track_get_regions` (place, length, name, mute) and `region_get_info` (gain, and the fades: `fadeInSamples`,
@@ -313,6 +396,28 @@ on undo and redo, and read back with `track_get_info` a moment later. Edits, und
 after another, so an undo never overtakes the edit it undoes, and an op the engine refuses is taken out of the view's
 history (it is not in the engine's either). With the demo song the same ops apply locally.
 
+**Takes and comping** (`daw/js/takes.js`, with small hooks in `arrange.js`, `store.js` and `regions.js`). On the
+engine a track's takes are its playlists named `<track>.take N` (`take_list`); the track plays its comp, its active
+playlist. A recording pass lands on the comp and also goes into a new take (the engine's session option
+`hx-record-takes`, on by default); `playlist_new` makes an empty take (or one copied from the comp with
+`copy_active`). A track with takes gets a **T** button on its header: it shows one lane per take under the track,
+drawn from the engine's peaks like any region, with the stretches the comp plays from that take lit (a comp region
+that plays the take's file at the take's alignment). Dragging across a take lane (snapped; ⌘ = no snap) comps that
+range: op `takeComp` → `comp_range {track_id, take, start_sample, end_sample, xfade_ms: 10}`, ONE engine undo step
+("comp range", undone and redone with `session_undo` / `session_redo` like the region edits). The take plays alone
+from start + 5 ms to end − 5 ms, the comp is untouched outside start − 5 ms .. end + 5 ms, and each join is a 10 ms
+crossfade centred on it; comp regions inside the range are removed, those across a join trimmed (or split). The view
+then reads the track's regions and takes again. The comp's pieces are ordinary regions playing the take's own file,
+so fixes stay clip edits on the comp and the takes are never changed. With the mock session the first vocal track
+gets three invented takes and the comp is done locally (undo puts the clips back). The Assistant reads takes at once
+(`playlist_list`, `take_list`); `comp_range`, `playlist_new` and `playlist_select` are proposals ("Vocals · comp
+10–14 s: take 1, 10 ms crossfades (one undo step)"). **By keyboard** each take's header is a group named "Take 2 of
+Vocals" (", in the comp" when the comp plays from it) with a **Comp** button: it asks for the bars (from the loop range,
+or four bars from the playhead when there is none) in a dialog and makes the same comp as a drag, one undo step. A drag
+that is under way when the session is read again (a group made, an engine restart) is dropped quietly. After the T
+button, a fold button or any redraw of the track headers, the control that had the focus has it again (found by its
+track and its kind, not its name, which changes with its state); a track folded away hands it to its group's header.
+
 **Import.** A page cannot see a dropped file's path, so a drop sends the file to the app first:
 `POST /api/daw/upload?name=F` (the raw bytes, the page's token; audio types only, up to 4 GB) saves it in
 `daw-uploads/<random>/F` in the app's work folder (`~/Documents/Hypnomix`, or `HYPNOMIX_APP_HOME`; `HYPNOMIX_DAW_UPLOADS`
@@ -331,12 +436,52 @@ the engine has open (`hypnomix/app/dawreview.py`; the demo song keeps its script
 | the findings | the real `findings.json` as master and detail: each with its track, where it is, what Apply does with it, and its evidence (the short-term level of its track, from the scan's render or the recording it names, and of the bounced mix, with the spot shaded). Selecting one moves the playhead to it (`transport_locate_sample`) and selects its track; the findings are also marked on the Arrangement |
 | **Approve** / **Skip** / **Change** | saved at once in the scan's `decisions.json`, the same as `hypnomix fix --decide` and the Songs review (clicking the same one again clears it). **Change** takes a note: saved as a change request, or (for a fix Apply writes) **Approve with this note**, where settings such as `fade-ms=20` or `amount=0.3` tune the fix. Tuning cannot be approved here yet (it is not written into a HypnoMix DAW session) |
 | **Apply** (asks first) | `hypnomix fix SCAN --approved --out "<snapshot> (hypnomix).ardour"`: ONE new snapshot in the session folder (numbered when that name exists; the open snapshot is never written). It writes region fades, cuts, spike dips and mixer moves; repaired recordings (de-ess, breaths) are made as new files beside the originals; the rest stays by hand, as the detail says. Then **Open snapshot** restarts the engine on the new snapshot (the supervisor's `open`) and the view reads it again; nothing opens without that click |
-| **A/B** | where `hypnomix ab` can build a pair for a HypnoMix DAW session: repaired recordings and tuning (**Build A/B**, then A and B, level-matched). Clip and mixer fixes have no A/B for HypnoMix DAW sessions yet: apply to a new snapshot and compare it with the original |
+| **A/B** | where `hypnomix ab` can build a pair for a HypnoMix DAW session: repaired recordings and tuning (**Build A/B**, then A and B, level-matched). Clip and mixer fixes (fades, cuts, spike dips, fader / pan / mute): **Build A/B session** runs `hypnomix abset SCAN --out "<snapshot> (A-B).ardour"` (`workflow/abset_ardour.py`: one new snapshot, each clip fix as another playlist of its track named `<playlist>.B <id>`, each mixer move as A/B values, `match_db` from a rough mix without plug-ins around the spot, muted tracks left out so a mute or unmute fix is matched too; mixer A/B fader values are the fader alone, without the track's trim; `ab_ardour.json` in the scan keeps every snapshot built from it, so a numbered rebuild leaves the earlier one reviewable; the snapshot is written to a hidden name, checked, and only then put in place, never over a file or through a link). **Open A/B session** (asks first) restarts the engine on it; the view then still reviews the original's scan. **A** / **B** (or `B`) switch the finding over MCP while it plays (`ab_use_playlist`, or `track_set_fader_db` / `track_set_pan` / `track_set_mute`), the louder side turned down on the master fader by `match_db` (at most 12 dB: a fix that silences or brings in most of what plays at the spot keeps its measured difference as `level_db`, with `match_capped`, and the note under A and B shows that difference and the 12 dB it is turned down by) and put back when you move on, before a Save or a scan, when you leave Review and when the page closes (kept-alive calls, nothing waits for them). The switches run one after another, so fast presses never overlap; the master's level to come back to is read from the engine (`track_get_info`) when a flip starts from A, never from the view's own copy; a switch that fails half-way puts A back and says so (checked against a stand-in engine in `tests/test_daw_review_ab.py`, not yet with a real A/B session open). `HX.onEnd` (`daw/js/util.js`) is the one list of things a Save, a scan or a closing page puts back first (the Assistant's **Hear it** is the other); **Blind** plays X and Y in a random order, you choose, then it says which was which (kept in the scan's `blind.json`) |
 
 If the session is changed while the mix is bounced, the scan stops and says so (its findings would not match the mix). Apply writes its new snapshot whole or not at all.
 
-The routes are `POST /api/dawreview/scan`, `decide`, `apply`, `ab` (with the page's token) and `GET /api/dawreview/state`,
-`findings?dir=`, `evidence?dir=&id=`; progress is the app's `GET /api/job`.
+The routes are `POST /api/dawreview/scan`, `decide`, `apply`, `ab`, `abset {dir}`, `blind {dir, id, picked: X|Y, was: A|B}`
+(with the page's token) and `GET /api/dawreview/state` (with `ab_session` when the engine has a scan's A/B snapshot open),
+`findings?dir=`, `evidence?dir=&id=`, `abstate?dir=`; progress is the app's `GET /api/job`.
+
+**The Session view on the engine** (`daw/js/cues.js`, `daw/js/clips.js`). The grid is the engine's cue slots: every
+audio and MIDI track's 16 slots from `cue_list`, read about every 600 ms while the Session view is open (every 150 ms
+while a clip is queued or playing, never two requests out), and not polled in the other views (read once when the
+session or the engine changes, and soon after play or stop in the Session view; a read that is already due sooner is
+never put off, so frequent events cannot hold it back). A failed read is said under the grid at once ("cue slots: …"), and the
+playing slots' bars stop moving until a read works again. Launching and stopping change nothing that is saved, so they
+do not mark the session unsaved; filling or clearing a slot does. A click on a clip is `cue_launch` (it starts on the slot's
+quantization, the next bar by default, and rolls the transport if it is stopped; a clip playing on the track hands
+over there); an empty slot or a track's stop button is `cue_stop {track_id}`, the bottom-right stop `cue_stop {}`, a
+scene (or keys 1-8) `scene_launch`. Slots light as the engine reports them: queued (`waiting_to_start`), playing, and
+stopping or switching on the next bar, with the clip's position between polls moved on by the clock. To fill a slot,
+drag a region from the strip under the grid (the selected track's regions) onto it, or drop an audio file (uploaded
+as for an import, then `cue_set_clip {file}`); × clears it. `cue_set_clip` answers once the clip is loaded, so the app
+gives it 90 s. While any slot of a track holds a clip (launched or not), that track's Arrangement regions do not
+play (the engine's default; clearing the track's last clip brings them back at once), so loops go on their own track: `hypnomix loops SESSION.ardour --track T --cues` and `hypnomix variations SESSION.ardour --cues`
+make one next to the part (`hypnomix/project/ardour_cues.py`). Slot changes are not undo steps; save to keep them.
+The command-line writers into the open engine (these two with `--cues`, and `tidy`, `order` and `duck` on a
+session with `--engine --ids`) first check that the engine has that very session file open, by its full path: a
+copy of the same name in another folder, another session, or an engine that names no saved file is refused with
+one sentence and nothing is written. `duck` also checks that each route id still carries the track name the scan
+saw, and for a tune that the plug-in at its index is the ACE Compressor. A clip that finds no empty slot, or an
+option not written, makes the command exit 1; an id given to `--ids` that is not among the options listed is
+refused before the engine is asked anything. The engine's address for `--engine URL` is in the engine panel.
+**By keyboard** the slots are one Tab stop, together with each row's scene (at its right) and the stop buttons under
+them (a roving tabindex: the cell last focused keeps it, also when the grid is drawn again after a poll). The arrow keys
+move as the grid looks: left and right between tracks (and on to the scene), up and down between slots (and on to the
+stop buttons; Home / End to the row's ends, Page Up / Down to the column's ends). Moving onto a track's slot selects
+that track, so the strip under the grid shows its regions. The region chips in the strip are buttons: Enter on one
+picks it (it shows pressed, the focus goes back to the grid), then Enter on a slot puts it there, the same
+`cue_set_clip {region_id}` as a drop; Esc lets it go. Scenes are named "Launch scene 2, 3 clips", stop buttons "Stop the
+clip of Drums" and "Stop all clips". Messages (the toasts) are a polite live region, so a screen reader hears them.
+When less motion is asked for (the system setting), the slots' lights hold still instead of blinking. The names were
+read from the page, not with a real screen reader, and the still lights were not looked at with the setting on. Enter or Space is a click on the slot
+(launch, or stop the track on an empty one) and Delete or Backspace is the slot's × (the same `cue_set_clip {clear}`,
+toast and unsaved mark; there is no confirmation, as for ×). The slots are buttons named for a screen reader as
+"Drums, slot 2, Loop A" or "Drums, slot 3, empty", with ", playing", ", queued" or ", stopping" while lit, and the
+focus ring is 2 px in the text colour around a band of the page colour, so it reads on every clip colour in both
+themes. A slot the mouse clicked does not take the keys (Space still plays, the arrows still move the playhead).
 
 **While an export runs** (Review's scan bounces the mix with `session_export_mix`; the Assistant or another client
 may too), the engine refuses every `transport_*` tool but `transport_get_state` with `-32003`, so a bounce cannot be
@@ -354,7 +499,7 @@ playback, as in HypnoMix DAW), track colours since the last save (as above), the
 changing (read at connect). Region envelopes are read (`envelopeActive`) but not drawn. With an older engine whose
 `region_get_info` has no fade fields, the view falls back to remembering the fade lengths it set in this browser (per
 session and region; after a split each part keeps the fade on its outer edge and the engine's 64-sample fade at the
-cut). Demo-song only: clip launching (Session view) and tempo changes (no MCP tool for tempo yet). On the demo song,
+cut). Demo-song only: tempo changes (no MCP tool for tempo yet). On the demo song,
 Review's findings are scripted.
 
 **Environment variables** (the ones DAW mode, the Store and `chain --ardour` read, and the folders a test run moves):

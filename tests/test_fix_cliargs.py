@@ -458,11 +458,13 @@ class NotLiveSets(Tmp):
 
     def test_a_live_only_command_given_a_project_ends_in_one_sentence(self):
         rpp, _ = self.files()
-        for cmd in ("audit", "sidechain", "edges", "timing"):
+        for cmd in ("audit", "edges", "timing"):
             code, text = hx(self.d, cmd, rpp)
             self.assertIn(code, (1, 2), (cmd, text))
             self.assertNotIn("Traceback", text, cmd)
             self.assertNotIn("BadGzipFile", text, cmd)
+        code, text = hx(self.d, "sidechain", rpp)                    # sidechain reads REAPER projects and HypnoMix DAW sessions too
+        self.assertEqual((code, text.strip()), (0, "Song.rpp: 0 sidechained compressor(s)"))
 
     def test_masking_given_a_project_says_it_reads_a_folder_of_stems(self):
         rpp, _ = self.files()

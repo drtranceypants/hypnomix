@@ -420,14 +420,17 @@ OVERVIEW = dict(name=DAW_PREFIX + "session_overview", engine="", title="Session 
                 input_schema={"type": "object", "properties": {}, "additionalProperties": False})
 
 
-def _more_tool():
+def _more_tool(groups=None):
+    """daw_more_tools for an engine whose groups are these (DA.groups_for: an optional group the engine has no tools
+    for, such as mpe, is not offered or named)."""
     from hypnomix.app import daw_assist as DA
-    about = "; ".join(f"{g}: {DA.GROUP_ABOUT[g]}" for g in DA.GROUPS)
+    groups = tuple(groups) if groups is not None else tuple(g for g in DA.GROUPS if g not in DA.OPTIONAL_GROUPS)
+    about = "; ".join(f"{g}: {DA.GROUP_ABOUT[g]}" for g in groups)
     return dict(name=DAW_PREFIX + "more_tools", engine="", title="More engine tools", read_only=True, local="more",
                 description=("[HypnoMix DAW engine, reads only] Offers more of the engine's tools from your next step on "
                              "(only the ones for the open view are offered at first, to keep each step cheap). Groups: "
                              + about + "."),
-                input_schema={"type": "object", "properties": {"group": {"type": "string", "enum": list(DA.GROUPS)}},
+                input_schema={"type": "object", "properties": {"group": {"type": "string", "enum": list(groups)}},
                               "required": ["group"], "additionalProperties": False})
 
 
@@ -435,14 +438,22 @@ def more_tools(inp):
     """daw_more_tools {group}: the group is offered from the next step on (for this conversation); what is in it."""
     from hypnomix.app import daw_assist as DA
     g = str((inp or {}).get("group") or "").strip().lower()
-    if g not in DA.GROUPS:
-        return f"error: group must be one of {', '.join(DA.GROUPS)}"
+    groups = DA.groups_for(t.get("engine") for t in (CHAT.get("daw_tools") or {}).values())
+    if g not in groups:
+        return f"error: group must be one of {', '.join(groups)}"
     with LOCK:
         CHAT.setdefault("daw_groups", set()).add(g)
         CHAT["daw_more"] = True
-    names = [t["name"] for t in (CHAT.get("daw_tools") or {}).values() if t.get("engine") and DA.group_of(t["engine"]) == g]
-    return (f"The {g} tools are offered from your next step on: " + ", ".join(names)
-            + ". Call one then; each changing one still waits for the person's approval.")
+    dt = list((CHAT.get("daw_tools") or {}).values())
+    cut = []
+    with LOCK:
+        groups = set(CHAT.get("daw_groups") or ())
+    keep = set(DA.offered([t["engine"] for t in dt if t.get("engine")], CHAT.get("view"), groups, cut=cut))
+    names = [t["name"] for t in dt if t.get("engine") in keep and DA.group_of(t["engine"]) == g]   # never an app-only one
+    left = [t["name"] for t in dt if t.get("engine") in set(cut) and DA.group_of(t["engine"]) == g]
+    return (f"The {g} tools are offered from your next step on: " + (", ".join(names) or "none")
+            + ". Call one then; each changing one still waits for the person's approval."
+            + (f" Left out to stay under the provider's limit of tools in one request: {', '.join(left)}." if left else ""))
 
 
 def _engine_is_ours(e):
@@ -508,7 +519,7 @@ def engine_tools():
                         description=f"{what} " + DA.short_text(t.get("description") or t.get("title") or name, 170),
                         input_schema=DA.slim_schema(sch)))
     if out:
-        out.insert(0, _more_tool())
+        out.insert(0, _more_tool(DA.groups_for(t["engine"] for t in out)))
         out.insert(0, dict(OVERVIEW))
     return out
 
@@ -663,6 +674,8 @@ def daw_tool(name, inp):
     t = (CHAT.get("daw_tools") or {}).get(name)
     if t is None:
         return "that engine tool is not available now: is the engine still connected?"
+    if t.get("engine") in DA.NEVER_OFFERED:          # the meter stream's address and token are the app's own
+        return "that engine tool is the app's own and is not used from the Assistant"
     if not _engine_back():
         st = DW.ENGINE.status()
         return (f"error: the engine is not connected now ({st['state']}). "
@@ -699,7 +712,7 @@ def daw_tool(name, inp):
         reg = inp.get("regionId") or inp.get("region_id")
         if not bad and isinstance(reg, str) and reg and _engine_read("region_get_info", {"regionId": reg}) is None:
             bad = f"region {reg!r}: " + DA.plain("region not found")
-        if not bad and t["engine"] == "session_export_mix":
+        if not bad and t["engine"] in ("session_export_mix", "track_bounce"):
             bad = DA.export_problem(inp)             # a bounce never replaces a file that is there: the model picks a new name
         if bad:                                      # a card that cannot work is not shown: the model is told why
             return "error (nothing was proposed): " + bad
@@ -743,7 +756,7 @@ def daw_tool(name, inp):
         if not late and not (DA.digest(t["engine"], wire) == digest == shown.get("digest")
                              and DA.digest(t["engine"], shown.get("arguments")) == digest):
             late = "the call that would be sent is not the one the card showed"      # sent == shown == approved
-        elif not late and t["engine"] == "session_export_mix":
+        elif not late and t["engine"] in ("session_export_mix", "track_bounce"):
             late = DA.export_problem(wire)          # a file may have appeared while the card waited
         if late:
             _set_item(pid, answer="failed", error=late + ": nothing was done")
@@ -1981,7 +1994,17 @@ def _offered(dt):
     # The tool list is the first block of the model's prompt cache: a group once offered stays offered for the whole
     # conversation (also the ones a view asked for), so changing view never rewrites the cached conversation.
     CHAT.setdefault("daw_groups", set()).update(DA.VIEW_GROUPS.get(str(CHAT.get("view") or ""), ()))
-    keep = set(DA.offered([t["engine"] for t in dt if t.get("engine")], CHAT.get("view"), CHAT.get("daw_groups") or ()))
+    cut = []
+    keep = set(DA.offered([t["engine"] for t in dt if t.get("engine")], CHAT.get("view"), CHAT.get("daw_groups") or (), cut=cut))
+    left = sorted(set(cut) - set(DA.SECOND_FORMS))     # another form of a tool that is kept does the same job: not a loss
+    if left and left != CHAT.get("daw_cut"):
+        msg = (f"{len(left)} engine tools are not offered to the model in this conversation, to stay under the "
+               "provider's limit of tools in one request: " + ", ".join(left) + ".")
+        say("note", msg)
+        h = CHAT["history"][-1] if CHAT.get("history") else None
+        if h and h.get("role") == "user" and isinstance(h.get("content"), str):
+            h["content"] = f"[app note: {msg}]\n\n" + h["content"]          # the model is told too, not only the person
+    CHAT["daw_cut"] = left
     return [t for t in dt if not t.get("engine") or t["engine"] in keep]
 
 

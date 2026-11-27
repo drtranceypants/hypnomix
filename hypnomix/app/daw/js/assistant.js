@@ -165,7 +165,7 @@
     } else c.ops.forEach((o) => HX.live(o, o.before));   /* the mock: nothing real was changed */
     HX.log(HX.mcp.connected ? 'mcp' : 'mock', 'audition A · ' + c.title + ' (' + why + ')');
   }
-  HX.endAuditions = (why) => Promise.all(cards.filter((c) => c.audition).map((c) => stopAudition(c, why || 'ended').catch(() => {}))).then(() => renderBody());
+  HX.onEnd((why) => Promise.all(cards.filter((c) => c.audition).map((c) => stopAudition(c, why || 'ended').catch(() => {}))).then(() => renderBody()));
   async function audition(c) {
     if (c.audition) { await stopAudition(c, 'pressed again'); renderBody(); return; }
     for (const x of cards.filter((y) => y !== c && y.audition)) await stopAudition(x, 'another card was tried', true);   /* the app replaces it too */

@@ -157,6 +157,7 @@
   /* region info (its gain: track_get_regions does not carry it), then one coarse pass into clip.peaks */
   const coarse = [];
   let coarseBusy = 0;
+  HX.loadClipPeaks = (c) => loadClip(c);   // take lanes (js/takes.js)
   function loadClip(c) { if (c.real && !c.temp && c.kind === 'audio') { coarse.push(c); pumpCoarse(); } }
   function pumpCoarse() {
     while (coarseBusy < 2 && coarse.length) {
@@ -197,7 +198,7 @@
       if (s >= c.lenS) break;
       let res;
       for (let tries = 0; ; tries++) {
-        try { res = await getPeaks({ region_id: c.id, samples_per_pixel: sppB, start_samples: s, length_samples: Math.min(c.lenS - s, Math.round(cnt * sppB)) }, 1); break; }
+        try { res = await getPeaks({ region_id: c.id, samples_per_pixel: sppB, start_samples: s, length_samples: Math.min(c.lenS - s, Math.floor(cnt * sppB)) }, 1); break; }
         catch (e) {                         // -32002: the file's peaks are still being built; wait for them (up to ~2 minutes)
           if (!/-32002/.test(e.message) || tries >= 60) throw e;
           if (!c.building) { c.building = true; HX.arrange.dirty = true; }

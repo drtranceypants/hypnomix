@@ -10,7 +10,7 @@
     scenes: [],
     findings: [],
     scanned: false,
-    ui: { view: 'arrange', trackId: 't1', clipId: null, zoom: 7, scrollX: 0, theme: 'dark', bottom: 'devices' },
+    ui: { view: 'arrange', trackId: 't1', clipId: null, zoom: 7, scrollX: 0, theme: 'dark', bottom: 'devices', trackSel: [], selAnchor: null },
     history: [],
     future: [],
     log: [],
@@ -21,7 +21,7 @@
   HX.track = (id) => HX.allTracks().find((t) => t.id === id);
   HX.findClip = (clipId) => {
     for (const t of HX.allTracks()) { const c = t.clips.find((c) => c.id === clipId); if (c) return { track: t, clip: c }; }
-    return null;
+    return (HX.takes && HX.takes.findClip(clipId)) || null;   // a region on a take lane (js/takes.js)
   };
   HX.trackByName = (name) => HX.allTracks().find((t) => t.name.toLowerCase() === String(name).toLowerCase());
   HX.beatsToSec = (b) => (b * 60) / S.session.tempo;
@@ -213,16 +213,55 @@
   });
 
   HX.select = function (trackId, clipId) {
-    if (trackId) S.ui.trackId = trackId;
+    if (trackId) { S.ui.trackId = trackId; S.ui.trackSel = [trackId]; S.ui.selAnchor = trackId; }
     S.ui.clipId = clipId || null;
     HX.emit('select');
+  };
+  /* more than one track selected, as in the app's other lists: shift-click picks the range from the last plain click
+     (in the order the tracks are shown), ⌘-click (Ctrl-click on Windows) adds or takes away one. S.ui.trackId stays
+     the focused track (the device chain, M / S, the strip under the Session grid); Group… ticks every selected one. */
+  HX.selectedTrackIds = function () {
+    const ids = (S.ui.trackSel || []).filter((id) => HX.track(id));
+    if (S.ui.trackId && HX.track(S.ui.trackId) && !ids.includes(S.ui.trackId)) ids.unshift(S.ui.trackId);
+    return ids;
+  };
+  HX.isTrackSelected = (id) => id === S.ui.trackId || (S.ui.trackSel || []).includes(id);
+  HX.selectClick = function (e, trackId) {
+    const shift = !!(e && e.shiftKey), mod = !!(e && (e.metaKey || e.ctrlKey));
+    if (!shift && !mod) return HX.select(trackId);
+    const order = HX.allTracks().filter((t) => !t.isMaster).map((t) => t.id);
+    let sel = HX.selectedTrackIds();
+    if (shift) {
+      const a = order.indexOf(S.ui.selAnchor && HX.track(S.ui.selAnchor) ? S.ui.selAnchor : S.ui.trackId), b = order.indexOf(trackId);
+      if (a < 0 || b < 0) return HX.select(trackId);
+      const range = order.slice(Math.min(a, b), Math.max(a, b) + 1);
+      sel = mod ? [...new Set([...sel, ...range])] : range;
+      S.ui.trackId = trackId;
+    } else if (sel.includes(trackId)) {
+      if (sel.length === 1) return;                            /* the last selected track stays selected */
+      sel = sel.filter((id) => id !== trackId);
+      if (S.ui.trackId === trackId) S.ui.trackId = sel[sel.length - 1];
+      S.ui.selAnchor = trackId;
+    } else { sel = sel.concat(trackId); S.ui.trackId = trackId; S.ui.selAnchor = trackId; }
+    S.ui.trackSel = sel;
+    S.ui.clipId = null;
+    HX.emit('select');
+  };
+  /* a press on a track header or strip: a control inside it (a button, a value to drag, the Mixer's fader and knobs,
+     where shift means fine) keeps a selection the track is already in, so shift-dragging a fader never picks a range */
+  HX.selectPress = function (e, trackId) {
+    if (e && e.target && e.target.closest && e.target.closest('button, input, select, .val, .fader, .knob')) {
+      if (!HX.isTrackSelected(trackId) || HX.selectedTrackIds().length === 1) HX.select(trackId);
+      return;
+    }
+    HX.selectClick(e, trackId);
   };
 
   HX.loadMock = function () {
     S.session = HX.makeMockSession();
     S.scenes = HX.buildScenes(S.session);
     S.history = []; S.future = [];
-    S.ui.trackId = 't1'; S.ui.clipId = null;
+    S.ui.trackId = 't1'; S.ui.clipId = null; S.ui.trackSel = []; S.ui.selAnchor = null;
     HX.emit('session');
   };
 
@@ -292,7 +331,7 @@
     S.session = sess;
     S.scenes = HX.buildScenes(sess);
     S.history = []; S.future = [];
-    S.ui.trackId = sess.tracks[0] ? sess.tracks[0].id : sess.master.id; S.ui.clipId = null;
+    S.ui.trackId = sess.tracks[0] ? sess.tracks[0].id : sess.master.id; S.ui.clipId = null; S.ui.trackSel = []; S.ui.selAnchor = null;
     S.findings = []; S.scanned = false;
     HX.emit('session');
     return sess;

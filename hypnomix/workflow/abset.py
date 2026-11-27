@@ -4,6 +4,9 @@ hear it with every plug-in, in place, instantly, and nothing is rendered or expo
 
   hypnomix abset SCAN_DIR [--ids ID,ID,...] [--out "Song (A-B).als"]
 
+(A scan of a REAPER project: workflow/abset_project.py; of a HypnoMix DAW session: workflow/abset_ardour.py,
+one new snapshot whose B versions the DAW view's Review switches over MCP.)
+
 For each finding that changes the set, the fix is built on its own (in a temporary copy of the scan) and
 compared with the original, then written into ONE new set like this:
 
@@ -335,6 +338,11 @@ def fixed_copy(sd, fid, orig, extra=(), suffix=".als"):
     return out, []
 
 
+def _ardour_session(path):
+    from hypnomix.project import ardour_session
+    return ardour_session(path)
+
+
 def build(sd, ids=None, out=None, extra=()):
     sd = Path(sd)
     from hypnomix.workflow import oversight as O
@@ -343,8 +351,11 @@ def build(sd, ids=None, out=None, extra=()):
     if orig.suffix.lower() == ".rpp":            # a REAPER project: workflow/abset_project.py
         from hypnomix.workflow import abset_project as AP
         return AP.build(sd, ids, out, extra)
-    if orig.suffix.lower() == ".ardour" or (orig.is_dir() and any(orig.glob("*.ardour"))):
-        raise RuntimeError("HypnoMix DAW has no A/B build yet: use `hypnomix ab` for a before / after clip of each fix it can model")
+    if orig.is_dir() and _ardour_session(orig) is not None:   # a HypnoMix DAW session folder: its .ardour
+        orig = _ardour_session(orig)
+    if orig.suffix.lower() == ".ardour":         # a HypnoMix DAW session: workflow/abset_ardour.py
+        from hypnomix.workflow import abset_ardour as AA
+        return AA.build(sd, ids, out, session=orig)
     if not str(orig).endswith(".als") or not orig.exists():
         raise RuntimeError("this scan has no Live set to build an A/B set from (folder scans: use `hypnomix ab`)")
     cands = candidates(data["findings"], ids)
@@ -383,13 +394,17 @@ def main():
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     ap.add_argument("scan_dir")
     ap.add_argument("--ids", default="", help="only these findings (ids or numbers); default: every audible set change")
-    ap.add_argument("--out", help='the A/B set to write (default "<Song> (A-B).als", next to the original)')
+    ap.add_argument("--out", help='the A/B set to write (default "<Song> (A-B).als", "(A-B).rpp" or "(A-B).ardour" by the scanned project, next to the original)')
     ap.add_argument("--key", help="confirmed key, passed to fix for tuning findings")
     a = ap.parse_args()
     try:
         out, spec = build(a.scan_dir, a.ids, a.out, ["--key", a.key] if a.key else [])
     except RuntimeError as e:
         sys.exit(str(e))
+    if spec.get("daw") == "ardour":
+        from hypnomix.workflow import abset_ardour as AA
+        print("\n" + AA.summary(out, spec))
+        return
     if spec.get("daw") == "reaper":
         ok = sum(1 for it in spec["items"].values() if it["parts"])
         print(f"\nwrote {out}\n  {ok} of {len(spec['items'])} findings can be switched A/B in REAPER; the original is unchanged")
