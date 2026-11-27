@@ -8,7 +8,7 @@ yet); MIDI and regions placed in music time follow the bars. So:
                       tempo a bar (or a beat, --per beat), a bar or more of steady lead-in so the take's first bar line
                       lands on a bar line; bar lines then land on the take's within a millisecond or so
   breathe             the grid (and MIDI) breathe: each section a little faster or slower, a ramp into it (the
-                      --glide beats, an Ardour ramp: linear per beat, as the plan is). The recorded audio does NOT
+                      --glide beats, a HypnoMix DAW ramp: linear per beat, as the plan is). The recorded audio does NOT
                       breathe with it, so a session with audio regions needs --grid-only to say that is what you want
 """
 import math

@@ -18,15 +18,15 @@ Level automation (the fader, trim, a send):
 Plug-in parameters (motion's filter sweeps) are not level moves: write_engine / write_file take them too
 (`plugin:<processorId>:<index>` in the engine, the Processor's parameter-N list in the file), with curve linear.
 
-The tempo map (Ardour 7 and later):
+The tempo map (sessions in the format of version 7 and later):
   from_beats(pts) -> [dict(beat, bpm, bpm_end)]   a tempo line of (beat from the start, BPM) pairs, as HypnoMix's
                          tempo writers build it (two pairs on one beat = a step, a change between beats = a glide), as
-                         tempo points: a glide becomes a ramp (Ardour ramps change the tempo linearly per beat, the
+                         tempo points: a glide becomes a ramp (HypnoMix DAW ramps change the tempo linearly per beat, the
                          same line), the last point never ramps. Beats are quarter notes; positions are rounded to whole
                          beats (the engine places tempo points on beats)
   engine_points(pts, bpb) / write_tempo_engine(eng, pts, bpb)   tempo_set_points, replace-all, ONE engine undo step
   write_tempo_file(p, pts, bpb)   the session's <Tempos> replaced: each point's sclock, quarters, BBT and omega
-                         computed as Ardour stores them (a ramp's omega = (1/end - 1/start superclocks per quarter) /
+                         computed as the session stores them (a ramp's omega = (1/end - 1/start superclocks per quarter) /
                          its length in quarters); a session with meter changes, a meter that is not x/4, or BBT
                          markers is refused
   seconds(pts, beats)    where beats land on that map (constant tempos and ramps exactly)
@@ -158,7 +158,7 @@ def _list_of(rt, control):
 
 def write_file(p, track, control, pts, step=0.05):
     """The points into the route's AutomationList in the loaded session (save it with ardour_edit.save). Level moves
-    are written as S-curves point by point (the file has no curve to ask for), gains as Ardour stores them (linear)."""
+    are written as S-curves point by point (the file has no curve to ask for), gains as the session stores them (linear)."""
     import xml.etree.ElementTree as ET
     from hypnomix.project import ardour_edit as AE
     if not pts:
