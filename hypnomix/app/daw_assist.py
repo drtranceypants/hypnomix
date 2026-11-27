@@ -31,6 +31,9 @@ READ_ONLY = frozenset({
     # per-note input monitor. The monitor's first read attaches a tap to the track's MIDI input port: nothing in the
     # session, and nothing that is heard, changes (its `reset` only clears the monitor's own counts).
     "midi_ports_list", "midi_monitor_get", "track_get_mpe",
+    # automation and the tempo map (only an engine that lists them has them): a route's automatable controls and the
+    # facts about what it carries, one control's points, and the tempo map. None of them has an argument that writes.
+    "automation_list", "automation_get", "tempo_get_map",
 })
 
 
@@ -415,7 +418,63 @@ def _more_rows(tool, a, read, ti, name, plugins):
     elif tool == "midi_track_disconnect_input":
         rows.append(dict(what=f"{name()} · MIDI input", before="as it is",
                          after=f"no longer from {a['port']}" if a.get("port") else "connected to nothing"))
+    elif tool in ("automation_write", "automation_clear", "automation_set_state"):
+        rows.extend(_auto_rows(tool, a, read))
+    elif tool in ("tempo_set_points", "tempo_set_meter"):
+        rows.extend(_tempo_rows(tool, a, read))
     return rows
+
+
+def _secs(t):
+    return "?" if not isinstance(t, (int, float)) or isinstance(t, bool) else f"{t:.1f} s"
+
+
+def _auto_rows(tool, a, read):
+    """A card's rows for an automation call: the control on its route, the points there now and after."""
+    from hypnomix.engineer import automation_rules as AR
+    rid, ctl = str(a.get("track_id") or ""), str(a.get("control") or "")
+    facts = read("automation_list", {"track_id": rid}) or {}
+    c = next((x for x in facts.get("controls") or [] if x.get("control") == ctl), {})
+    what = f"{facts.get('trackName') or 'route ' + rid} · {c.get('name') or ctl} automation"
+    if tool == "automation_set_state":
+        return [dict(what=what, before=str(c.get("state") or "?"), after=str(a.get("state")))]
+    rng = {k: a[k] for k in ("start", "end") if isinstance(a.get(k), (int, float))}
+    now = read("automation_get", dict(track_id=rid, control=ctl, **rng)) or {}
+    have = now.get("pointList") or []
+    before = (f"{len(have)} point{'s' if len(have) != 1 else ''}" + (f", {_secs(have[0].get('time'))} to {_secs(have[-1].get('time'))}" if have else "")
+              + f", {now.get('state') or c.get('state') or '?'}") if now else "?"
+    if tool == "automation_clear":
+        return [dict(what=what, before=before, after="no points" + (f" from {_secs(rng.get('start'))} to {_secs(rng.get('end'))}" if rng else ""))]
+    pts = AR.points_of(a.get("points"))
+    unit = " dB" if AR.kind(ctl) in AR.LEVEL_KINDS else ""
+    moves = AR.moves(pts)
+    words = (f"{len(pts)} point{'s' if len(pts) != 1 else ''} from {_secs(pts[0][0])} to {_secs(pts[-1][0])}" if pts else "no points")
+    if moves and unit:
+        big = max(abs(d) for _, _, d in moves)
+        words += f", largest move {big:.1f} dB, steepest {AR.steepest(pts, a.get('curve')):.1f} dB/s"
+    words += f", {a.get('curve') or 'linear'}" + (f", {a['state']}" if a.get("state") else ", play")
+    return [dict(what=what, before=before, after=words)]
+
+
+def _tempo_rows(tool, a, read):
+    """A card's rows for a tempo map call: the map now (its points, ramps shown as from -> to) and after."""
+    m = read("tempo_get_map", {}) or {}
+    def bpm(p, end=None):
+        b, e = p.get("bpm"), p.get("bpmEnd" if end is None else end)
+        if not isinstance(b, (int, float)):
+            return "?"
+        return f"{b:g}" + (f"->{e:g}" if isinstance(e, (int, float)) and abs(e - b) > 1e-6 else "")
+    if tool == "tempo_set_meter":
+        now = ", ".join(f"bar {x.get('bbt', {}).get('bar', '?')}: {x.get('divisionsPerBar')}/{x.get('noteValue')}" for x in m.get("meters") or []) or "?"
+        after = (f"no meter change at bar {a.get('bar')}" if a.get("remove") else
+                 f"{a.get('divisions_per_bar')}/{a.get('note_value') or 4} from bar {a.get('bar')}")
+        return [dict(what="time signature", before=now, after=after)]
+    now = ", ".join(f"bar {x.get('bbt', {}).get('bar', '?')}: {bpm(x)} BPM" for x in (m.get("tempos") or [])[:8]) or "?"
+    pts = [x for x in a.get("points") or [] if isinstance(x, dict)]
+    where = lambda x: (f"bar {x['bar']}" + (f" beat {x['beat']}" if x.get("beat") else "")) if x.get("bar") else f"{_secs(x.get('time'))}"
+    after = ", ".join(f"{where(x)}: {bpm(x, 'bpm_end')} BPM" for x in pts[:8]) + (f" and {len(pts) - 8} more" if len(pts) > 8 else "")
+    mode = " (the whole map)" if a.get("mode") == "replace-all" else ""
+    return [dict(what="tempo map" + mode, before=now, after=after or "no points")]
 
 
 def _mpe_words(zone, members):
@@ -512,6 +571,9 @@ TITLES = {
     "midi_port_set_flags": "Mark a MIDI port", "midi_track_connect_input": "Connect a track's MIDI input",
     "midi_track_disconnect_input": "Disconnect a track's MIDI input", "midi_monitor_stop": "Stop the MIDI input monitor",
     "track_set_mpe": "Set MPE on a track",
+    "automation_write": "Write automation", "automation_clear": "Clear automation",
+    "automation_set_state": "Switch automation playback on or off",
+    "tempo_set_points": "Change the tempo map", "tempo_set_meter": "Change the time signature",
 }
 
 
@@ -532,6 +594,7 @@ UNDO_STEP = frozenset("""
     markers_rename_by_name midi_region_add_samples midi_region_add_bbt midi_note_add_region_beat midi_note_add_sample
     midi_note_add_bbt midi_note_edit midi_note_import_json_into_region midi_note_import_json_to_new_region_samples
     midi_note_import_json_to_new_region_bbt comp_range track_set_mpe
+    automation_write automation_clear tempo_set_points tempo_set_meter
 """.split())
 PLAYBACK = frozenset("""transport_play transport_stop transport_goto_start transport_goto_end transport_locate_sample
     transport_locate_bbt transport_prev_marker transport_next_marker transport_set_speed cue_launch cue_stop
@@ -587,6 +650,15 @@ UNDO_NOTES = {
                                             "the port again with another card (the engine's reply lists what was connected)."),
     "midi_monitor_stop": ("back", "Changes nothing in the session or in what is heard: it only stops watching the "
                                   "track's MIDI input. Reading the monitor again starts it again."),
+    # automation and the tempo map (the engine's own words: a write or a clear, with its state, is one undo step; a state
+    # change alone is not, as in the editor; a tempo or meter change is one undo step and audio keeps its time)
+    "automation_write": ("step", "One undo step in the engine: Undo takes back the points and the playback state together."),
+    "automation_clear": ("step", "One undo step in the engine: Undo puts the points back. The playback state stays as it is."),
+    "automation_set_state": ("back", "Not an engine undo step (as in the editor): set the old state again with another "
+                                     "card (the engine's reply says what it was)."),
+    "tempo_set_points": ("step", "One undo step in the engine: Undo puts the old tempo map back. Audio regions keep "
+                                 "their time; MIDI follows the bars."),
+    "tempo_set_meter": ("step", "One undo step in the engine: Undo puts the old time signature back."),
 }
 UNDO_TEXT = {
     "step": "One undo step in the engine: Undo takes it back.",
@@ -670,6 +742,23 @@ def digest(tool, args):
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
 
 
+def automation_problem(args, read):
+    """Why an automation_write must not be proposed (hypnomix's smooth-automation rules, read against the route's facts
+    and its line as it is now through read(tool, args)), or ''. The app checks the same again as it is sent."""
+    from hypnomix.engineer import automation_rules as AR
+    a = args or {}
+    if AR.kind(a.get("control")) not in AR.LEVEL_KINDS:
+        return ""
+    rid, ctl = str(a.get("track_id") or ""), str(a.get("control") or "")
+    facts = read("automation_list", {"track_id": rid})
+    if facts is None:
+        return f"route {rid}: what it carries could not be read (automation_list); read it first"
+    cur = next((c.get("current") for c in facts.get("controls") or [] if c.get("control") == ctl), None)
+    line = None if a.get("mode") == "replace-all" else AR.line_from(read("automation_get", {"track_id": rid, "control": ctl}), cur)
+    problems = AR.check(a, facts, line)
+    return AR.sentence(problems) if problems else ""
+
+
 # The mixer settings Hear it may set (and put back): plain setters whose value the page knows.
 PREVIEW_UNDO_TOOLS = ("track_set_fader_db", "track_set_fader_position", "track_set_pan", "track_set_mute", "track_set_solo",
                       "track_set_send_level_db", "track_set_send_level_position", "plugin_set_enabled",
@@ -712,7 +801,8 @@ CORE = frozenset("""
     track_set_fader_db track_set_pan track_set_mute track_set_solo track_set_send_level_db plugin_add_by_plugin_id
     plugin_set_enabled plugin_set_parameter_by_index_value plugin_remove
 """.split())
-GROUPS = ("regions", "markers", "transport", "plugins", "tracks", "session", "midi", "cues", "mpe", "other")
+GROUPS = ("regions", "markers", "transport", "plugins", "tracks", "session", "midi", "cues", "mpe", "automation", "tempo",
+          "other")
 GROUP_ABOUT = {
     "regions": "regions on the timeline: gain, move, copy, split, resize, fades, envelope, warp, peaks, remove",
     "markers": "markers and the loop / punch ranges",
@@ -723,6 +813,8 @@ GROUP_ABOUT = {
     "midi": "MIDI regions and notes",
     "cues": "the Session view's clip slots: list, fill, launch, stop, scenes",
     "mpe": "MIDI inputs and MPE: the controller ports and their flags, a track's MIDI input, the per-note input monitor, a track's MPE mode",
+    "automation": "automation lanes: a route's controls and what it carries, read and write points (level moves as gentle S-curves), clear, playback state",
+    "tempo": "the tempo map: read it, set tempo points and ramps, time signatures",
     "other": "any tool the engine has that the groups above do not cover",
 }
 VIEW_GROUPS = {"mixer": ("plugins",), "arrange": ("regions",), "session": ("cues",), "review": ()}
@@ -736,12 +828,15 @@ MPE_TOOLS = frozenset("""
     midi_ports_list midi_port_set_flags midi_track_connect_input midi_track_disconnect_input midi_monitor_get
     midi_monitor_stop track_get_mpe track_set_mpe
 """.split())
-OPTIONAL_GROUPS = {"mpe": MPE_TOOLS}
+# Automation and the tempo map: the same, each its own group, never in the core (asked for when a request needs them).
+AUTOMATION_TOOLS = frozenset("automation_list automation_get automation_write automation_clear automation_set_state".split())
+TEMPO_TOOLS = frozenset("tempo_get_map tempo_set_points tempo_set_meter".split())
+OPTIONAL_GROUPS = {"mpe": MPE_TOOLS, "automation": AUTOMATION_TOOLS, "tempo": TEMPO_TOOLS}
 
 
 def groups_for(names):
     """The groups daw_more_tools may offer for an engine that lists these tools: every group, less an optional one
-    (mpe) the engine has none of."""
+    (mpe, automation, tempo) the engine has none of."""
     have = {str(n) for n in names or ()}
     return tuple(g for g in GROUPS if g not in OPTIONAL_GROUPS or have & OPTIONAL_GROUPS[g])
 
@@ -753,6 +848,10 @@ def group_of(tool):
         return "core"
     if t in MPE_TOOLS:
         return "mpe"
+    if t in AUTOMATION_TOOLS or t.startswith("automation_"):
+        return "automation"
+    if t in TEMPO_TOOLS or t.startswith("tempo_"):
+        return "tempo"
     for pre, g in (("region_", "regions"), ("markers_", "markers"), ("transport_", "transport"), ("plugin_", "plugins"),
                    ("midi_", "midi"), ("track_", "tracks"), ("tracks_", "tracks"), ("buses_", "tracks"),
                    ("playlist_", "tracks"), ("take_", "tracks"), ("comp_", "tracks"), ("group_", "tracks"),
@@ -767,8 +866,9 @@ def group_of(tool):
 
 
 # A provider takes at most 128 tools in one request (the app's own come on top of these). With every group on, the engine
-# has more than that, so the other forms of a tool (another unit, another way to address the same thing) are left out
-# first, in this order, until the request fits; the form kept does the same job.
+# has more than that. Past the limit, first the other forms of a tool (another unit, another way to address the same
+# thing) are left out, in this order; the form kept does the same job. If that is not enough, whole groups are put away
+# (offered(): the one asked for longest ago first), never a few tools of a group at random.
 MAX_OFFERED = 112
 SECOND_FORMS = """
     plugin_set_parameter_by_index_interface plugin_set_parameter_by_control_value plugin_set_parameter_by_control_interface
@@ -791,14 +891,28 @@ SECOND_FORMS = """
 NEVER_OFFERED = frozenset({"meters_stream_info"})
 
 
-def offered(names, view=None, enabled=(), limit=MAX_OFFERED, cut=None):
+def _order(enabled):
+    """The groups asked for, oldest first: a list or tuple as given (its last one is the newest), a set in GROUPS order."""
+    if isinstance(enabled, (list, tuple)):
+        return list(dict.fromkeys(str(g) for g in enabled))
+    en = {str(g) for g in enabled or ()}
+    return [g for g in GROUPS if g in en] + sorted(en - set(GROUPS))
+
+
+def offered(names, view=None, enabled=(), limit=MAX_OFFERED, cut=None, put_away=None):
     """The engine tools (by engine name) one request carries: the core, the groups the view needs and the groups the
-    conversation asked for. A tool the core or a group does not cover (a new one from the engine) is in 'other'.
-    Never more than `limit`: past it, the SECOND_FORMS go first; if that is not enough, by priority (the core and the
-    view's groups are kept; the 'other' group goes before the groups asked for), never silently: what was left out is
-    added to `cut` (a list) so the person and the model can be told."""
+    conversation asked for (`enabled`: oldest first when it is a list or tuple, GROUPS order when it is a set). A tool
+    the core or a group does not cover (a new one from the engine) is in 'other'. Never more than `limit`; past it:
+      1. the SECOND_FORMS go first (another form of a tool that stays does the same job);
+      2. then whole groups that were asked for are put away: 'other' first, then the one asked for longest ago. Never
+         the core, the view's groups or the last named group asked for (the one the conversation is working on). Each one
+         put away is added to `put_away` (a list), so the model can be told that daw_more_tools brings it back;
+      3. only if one group alone is still too big, tool by tool by priority (the core and the view's groups are
+         kept; the 'other' group goes before the groups asked for).
+    Never silently: every tool left out is added to `cut` (a list) so the person and the model can be told."""
     view_groups = set(VIEW_GROUPS.get(str(view or ""), ()))
-    want = view_groups | set(enabled or ())
+    order = _order(enabled)
+    want = view_groups | set(order)
     out = [n for n in names if n not in NEVER_OFFERED and (group_of(n) == "core" or group_of(n) in want)]
     dropped = []
     for n in SECOND_FORMS:
@@ -807,6 +921,20 @@ def offered(names, view=None, enabled=(), limit=MAX_OFFERED, cut=None):
         if n in out:
             out.remove(n)
             dropped.append(n)
+    if len(out) > limit:
+        newest = next((g for g in reversed(order) if g not in view_groups and g != "other"), None)
+        for g in (["other"] if "other" in order else []) + [g for g in order if g != "other"]:
+            if len(out) <= limit:
+                break
+            if g in view_groups or g == newest:
+                continue
+            gone = [n for n in out if group_of(n) == g]
+            if not gone:
+                continue
+            out = [n for n in out if group_of(n) != g]
+            dropped += gone
+            if isinstance(put_away, list):
+                put_away.append(g)
     if len(out) > limit:
         def rank(n):
             g = group_of(n)

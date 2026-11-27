@@ -1642,28 +1642,62 @@ class NullableFieldsAndTheToolLimit(unittest.TestCase):
         self.assertEqual(DA.invalid(sch, {"key": "A minor"}), "")
         self.assertIn("must be a string or null", DA.invalid(sch, {"key": 3}))
 
-    def test_every_group_on_still_fits_and_the_second_forms_go_first(self):
+    def test_every_group_on_still_fits_the_second_forms_go_first_then_the_oldest_group(self):
+        """With every group asked for (GROUPS order: regions longest ago), the other forms go first; the rest is made
+        to fit by putting away the group asked for longest ago, whole, and saying so. Never the core or the newest."""
         names = [t["name"] for t in SHAPE]
-        full = DA.offered(names, enabled=DA.GROUPS)
+        away, cut = [], []
+        full = DA.offered(names, enabled=DA.GROUPS, cut=cut, put_away=away)
         self.assertLessEqual(len(full), DA.MAX_OFFERED)
         self.assertEqual(len(set(full)), len(full))
-        for keep in ("track_set_fader_db", "region_move_to_sample", "plugin_set_parameter_by_index_value", "session_save"):
+        self.assertEqual(away, ["regions"])
+        for keep in ("track_set_fader_db", "plugin_set_parameter_by_index_value", "session_save", "tempo_set_points",
+                     "automation_write", "track_set_mpe"):
             self.assertIn(keep, full)
+        self.assertTrue(DA.CORE <= set(full))
         gone = [n for n in names if n not in full]
-        self.assertTrue(set(gone) <= set(DA.SECOND_FORMS) | DA.NEVER_OFFERED, gone)
+        self.assertEqual(sorted(gone), sorted(cut + ["meters_stream_info"]))
+        self.assertTrue(set(gone) <= set(DA.SECOND_FORMS) | DA.NEVER_OFFERED | {n for n in names if DA.group_of(n) == "regions"}, gone)
+        self.assertFalse([n for n in full if DA.group_of(n) == "regions"])       # a group is put away whole, never in part
+        # asked for regions last: it stays, and the group asked for longest ago (markers) is the one put away
+        order = [g for g in DA.GROUPS if g != "regions"] + ["regions"]
+        away = []
+        again = DA.offered(names, enabled=order, put_away=away)
+        self.assertEqual(away, ["markers"])
+        self.assertIn("region_move_to_sample", again)
+        self.assertLessEqual(len(again), DA.MAX_OFFERED)
         few = DA.offered(names, enabled=("regions",))
         self.assertIn("region_move_to_bbt", few)                  # under the limit nothing is left out
 
+    def test_the_view_and_the_newest_group_are_never_put_away(self):
+        names = [t["name"] for t in SHAPE]
+        away = []
+        got = DA.offered(names, view="arrange", enabled=DA.GROUPS, put_away=away)   # arrange's view group is regions
+        self.assertNotIn("regions", away)
+        self.assertIn("region_move_to_sample", got)
+        self.assertNotIn("tempo", away)                                             # the newest in this order
+        self.assertLessEqual(len(got), DA.MAX_OFFERED)
+
     def test_a_bigger_engine_keeps_the_core_and_the_view_and_says_what_was_cut(self):
         names = [t["name"] for t in SHAPE] + [f"zz_new_tool_{i}" for i in range(80)] + [f"region_more_{i}" for i in range(40)]
-        cut = []
-        got = DA.offered(names, view="mixer", enabled=DA.GROUPS, cut=cut)
-        self.assertEqual(len(got), DA.MAX_OFFERED)
+        cut, away = [], []
+        got = DA.offered(names, view="mixer", enabled=DA.GROUPS, cut=cut, put_away=away)
+        self.assertLessEqual(len(got), DA.MAX_OFFERED)
         self.assertTrue({n for n in names if n in DA.CORE} <= set(got))           # session_save and the rest of the core
         self.assertTrue({n for n in names if DA.group_of(n) == "plugins"} - set(DA.SECOND_FORMS) <= set(got))   # the view's
         self.assertEqual(sorted(cut), sorted(n for n in names if n not in got and n not in DA.NEVER_OFFERED))
         self.assertEqual([n for n in got if DA.group_of(n) == "other"], [])     # 'other' goes first...
-        self.assertIn("region_move_to_sample", got)                                # ...before a group that was asked for
+        self.assertEqual(away[:2], ["other", "regions"])                          # ...then the group asked for longest ago
+        self.assertIn("tempo_set_points", got)                                     # the newest stays
+
+    def test_one_group_alone_too_big_is_cut_tool_by_tool_keeping_the_core(self):
+        names = [t["name"] for t in SHAPE] + [f"region_more_{i}" for i in range(200)]
+        cut, away = [], []
+        got = DA.offered(names, enabled=("regions",), cut=cut, put_away=away)
+        self.assertEqual(len(got), DA.MAX_OFFERED)
+        self.assertEqual(away, [])                                                 # the only (newest) group is never put away
+        self.assertTrue(DA.CORE <= set(got))
+        self.assertTrue(cut)
 
     def test_more_tools_never_names_a_tool_that_is_not_offered(self):
         tools = {f"daw_{n}": {"name": f"daw_{n}", "engine": n} for n in ("meters_stream_info", "session_rename", "session_get_info")}
@@ -1702,10 +1736,10 @@ class MidiInputsAndMpe(unittest.TestCase):
     def test_the_shape_has_the_eight_and_its_note_says_how_many(self):
         note = json.loads((Path(__file__).parent / "data" / "engine_tools_shape.json").read_text(encoding="utf-8"))["note"]
         self.assertIn(f"({N_TOOLS} tools)", note)
-        self.assertEqual(N_TOOLS, 144)
-        self.assertEqual(self.names[-8:], list(self.MPE))                 # the engine's own order, at the end of its list
+        self.assertEqual(N_TOOLS, 152)
+        self.assertEqual(self.names[-16:-8], list(self.MPE))              # the engine's own order (automation and tempo after them)
         self.assertEqual(set(self.MPE), DA.MPE_TOOLS)
-        self.assertEqual(len(self.without()), 136)
+        self.assertEqual(len(self.without()), 144)
         mpe = next(t for t in self.tools if t["name"] == "track_set_mpe")["inputSchema"]
         self.assertEqual(mpe["required"], ["track_id", "zone"])
         self.assertEqual(mpe["properties"]["zone"]["enum"], ["off", "lower", "upper"])
@@ -1783,14 +1817,19 @@ class MidiInputsAndMpe(unittest.TestCase):
 
     # 5. every group on still fits a small provider's limit, with them and without them
     def test_every_group_on_fits_with_and_without_them(self):
-        cut = []
-        full = DA.offered(self.names, enabled=DA.GROUPS, cut=cut)
+        cut, away = [], []
+        full = DA.offered(self.names, enabled=DA.GROUPS, cut=cut, put_away=away)
         self.assertLessEqual(len(full), DA.MAX_OFFERED)
         self.assertTrue(set(self.MPE) <= set(full))                          # the new group is not what gets cut
         self.assertTrue(DA.CORE <= set(full))
         self.assertIn("session_save", full)
-        self.assertTrue(set(cut) <= set(DA.SECOND_FORMS) | DA.NEVER_OFFERED, cut)
-        older = [n for n in self.names if n not in self.MPE]
+        self.assertTrue(set(cut) <= set(DA.SECOND_FORMS) | DA.NEVER_OFFERED | {n for n in self.names if DA.group_of(n) in away}, cut)
+        mpe_engine = [n for n in self.names if n not in DA.AUTOMATION_TOOLS | DA.TEMPO_TOOLS]     # 144: no group put away
+        cut_mpe, away_mpe = [], []
+        self.assertLessEqual(len(DA.offered(mpe_engine, enabled=DA.GROUPS, cut=cut_mpe, put_away=away_mpe)), DA.MAX_OFFERED)
+        self.assertEqual(away_mpe, [])
+        self.assertTrue(set(cut_mpe) <= set(DA.SECOND_FORMS) | DA.NEVER_OFFERED, cut_mpe)
+        older = [n for n in mpe_engine if n not in self.MPE]
         cut_older = []
         full_older = DA.offered(older, enabled=DA.GROUPS, cut=cut_older)
         self.assertLessEqual(len(full_older), DA.MAX_OFFERED)
@@ -1800,6 +1839,216 @@ class MidiInputsAndMpe(unittest.TestCase):
         self.assertTrue(set(cut_older) <= set(DA.SECOND_FORMS[:-8]) | DA.NEVER_OFFERED, cut_older)
         sent = CH.anthropic_tools(self.engine_request(self.tools, groups=DA.GROUPS)[0])
         self.assertLess(len(sent), 128)
+
+
+
+class AutoEngine(FakeEngine):
+    """FakeEngine with automation and the tempo map: Bass 149 and Drums 252 as tracks, Vox 300 a group bus holding
+    only vocals, Band 301 a bus fed by Drums, Lead 302 a vocal track (memberOf Vox)."""
+
+    def __init__(self):
+        super().__init__()
+        self.lines = {}                                  # (route, control) -> [{time, value}]
+
+    def _call(self, n, a):
+        names = {"149": "Bass", "252": "Drums", "300": "Vox", "301": "Band", "302": "Lead Vocal"}
+        rid = str(a.get("track_id") or "")
+        if n == "automation_list":
+            if rid not in names:
+                return {"isError": True, "content": [{"type": "text", "text": "Route not found"}]}
+            sc = dict(trackId=rid, trackName=names[rid], isBus=rid in ("300", "301"), isMaster=False, memberOf=None,
+                      busOfGroup={"groupId": "9", "name": "Vox", "members": [{"trackId": "302", "name": "Lead Vocal",
+                                                                             "routeType": "audio_track"}]} if rid == "300" else None,
+                      feeders=[{"trackId": "252", "name": "Drums", "routeType": "audio_track", "via": "send"}] if rid == "301" else [],
+                      controls=[dict(control="gain", name="Fader", state="manual", points=len(self.lines.get((rid, "gain"), [])),
+                                     current=-2.0), dict(control="pan_azimuth", name="Pan", state="manual", points=0, current=0.0)])
+        elif n == "automation_get":
+            pts = self.lines.get((rid, a.get("control")), [])
+            sc = dict(trackId=rid, trackName=names.get(rid), control=a.get("control"), state="play" if pts else "manual",
+                      pointList=pts)
+        elif n == "automation_write":
+            self.lines[(rid, a["control"])] = [p if isinstance(p, dict) else {"time": p[0], "value": p[1]} for p in a["points"]]
+            sc = {"written": len(a["points"]), "undoable": True}
+        elif n == "tempo_get_map":
+            sc = {"tempos": [{"time": 0.0, "bbt": {"bar": 1, "beat": 1}, "bpm": 100.0, "bpmEnd": 120.0, "ramped": True},
+                             {"time": 8.7, "bbt": {"bar": 5, "beat": 1}, "bpm": 120.0, "bpmEnd": 120.0, "ramped": False}],
+                  "meters": [{"bbt": {"bar": 1, "beat": 1}, "divisionsPerBar": 4, "noteValue": 4}]}
+        else:
+            return super()._call(n, a)
+        return {"structuredContent": sc, "content": [{"type": "text", "text": json.dumps(sc)}]}
+
+
+def _read_of(e):
+    def read(tool, args):
+        r = e._call(tool, args or {})
+        return None if r.get("isError") else r.get("structuredContent")
+    return read
+
+
+class AutomationAndTempo(unittest.TestCase):
+    """The five automation and three tempo map tools a newer engine lists: their shape, cards, groups (never in the
+    core, asked for on request), what runs unasked and what never makes the session unsaved, an engine without them,
+    and the smooth-automation rules checked before any card."""
+    AUTO = ("automation_list", "automation_get", "automation_write", "automation_clear", "automation_set_state")
+    TEMPO = ("tempo_get_map", "tempo_set_points", "tempo_set_meter")
+
+    def setUp(self):
+        self.tools = real_tools()
+        self.names = [t["name"] for t in self.tools]
+
+    def without(self):
+        return [t for t in self.tools if t["name"] not in self.AUTO + self.TEMPO]
+
+    def engine_request(self, tools, groups=()):
+        e = FakeEngine()
+        e.listed = tools
+        with mock.patch.object(DW, "ENGINE", e):
+            CH.CHAT.update(daw_tools={}, view=None, daw_groups=set(groups), daw_group_order=[], engine_mark=None)
+            sent = CH._load_daw_tools()
+        return sent, CH.CHAT["daw_tools"]["daw_more_tools"]
+
+    def test_the_shape_has_them_at_the_end_in_the_engines_order(self):
+        self.assertEqual(self.names[-8:], list(self.AUTO + self.TEMPO))
+        self.assertEqual(set(self.AUTO), DA.AUTOMATION_TOOLS)
+        self.assertEqual(set(self.TEMPO), DA.TEMPO_TOOLS)
+        w = next(t for t in self.tools if t["name"] == "automation_write")["inputSchema"]
+        self.assertEqual(w["required"], ["track_id", "control", "points"])
+        self.assertEqual(w["properties"]["curve"]["enum"], ["linear", "s_curve"])
+        tp = next(t for t in self.tools if t["name"] == "tempo_set_points")["inputSchema"]
+        self.assertEqual(tp["properties"]["points"]["maxItems"], 4096)
+
+    def test_titles_groups_and_true_undo_words(self):
+        for n in self.AUTO:
+            self.assertEqual(DA.group_of(n), "automation", n)
+        for n in self.TEMPO:
+            self.assertEqual(DA.group_of(n), "tempo", n)
+        for n in ("automation_write", "automation_clear", "tempo_set_points", "tempo_set_meter"):
+            kind, words = DA.undo_info(n)
+            self.assertEqual(kind, "step", n)
+            self.assertIn("One undo step", words)
+        self.assertIn("points and the playback state together", DA.undo_info("automation_write")[1])
+        self.assertIn("Audio regions keep their time", DA.undo_info("tempo_set_points")[1])
+        kind, words = DA.undo_info("automation_set_state")
+        self.assertEqual(kind, "back")
+        self.assertIn("Not an engine undo step", words)
+        for n in self.AUTO + self.TEMPO:
+            if n not in DA.READ_ONLY:
+                self.assertIn(n, DA.TITLES, n)
+
+    def test_the_reads_and_what_never_makes_the_session_unsaved(self):
+        reads = {"automation_list", "automation_get", "tempo_get_map"}
+        self.assertEqual(DA.READ_ONLY & (DA.AUTOMATION_TOOLS | DA.TEMPO_TOOLS), reads)
+        self.assertEqual(DW.READ_ONLY_TOOLS & (DA.AUTOMATION_TOOLS | DA.TEMPO_TOOLS), reads)
+        for n in self.AUTO + self.TEMPO:
+            got = DW._events({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": n, "arguments": {"track_id": "1"}}})
+            self.assertEqual(got, [] if n in reads else [(1, "change")], n)
+
+    def test_an_engine_without_them_shows_nothing_about_them(self):
+        sent, more = self.engine_request(self.without(), groups=DA.GROUPS)
+        self.assertNotIn("automation", more["input_schema"]["properties"]["group"]["enum"])
+        self.assertNotIn("tempo", more["input_schema"]["properties"]["group"]["enum"])
+        text = json.dumps(CH.anthropic_tools(sent))
+        self.assertNotIn("automation_", text)
+        self.assertNotIn("tempo_", text)
+        self.assertNotIn("Automation (", CH._daw_note())
+        self.assertNotIn("daw_tempo_get_map", CH._daw_note())
+        self.assertTrue(CH.more_tools({"group": "automation"}).startswith("error"))
+
+    def test_an_engine_with_them_offers_both_groups_on_request_with_the_rules(self):
+        sent, more = self.engine_request(self.tools)
+        enum = more["input_schema"]["properties"]["group"]["enum"]
+        self.assertIn("automation", enum)
+        self.assertIn("tempo", enum)
+        self.assertIn("S-curves", more["description"])
+        self.assertFalse({t["name"] for t in sent} & {"daw_" + n for n in self.AUTO + self.TEMPO})   # never in the core
+        note = CH._daw_note()
+        for words in ("s_curve", "at most 3 dB", "4 dB", "7 dB/s", "never with force", "not a vocal", "daw_tempo_get_map"):
+            self.assertIn(words, note)
+        out = CH.more_tools({"group": "automation"})
+        for n in self.AUTO:
+            self.assertIn("daw_" + n, out)
+        out = CH.more_tools({"group": "tempo"})
+        for n in self.TEMPO:
+            self.assertIn("daw_" + n, out)
+        names = {t["name"] for t in CH._reoffer()}
+        self.assertTrue({"daw_" + n for n in self.AUTO + self.TEMPO} <= names)
+
+    def test_asking_for_every_group_puts_the_oldest_away_and_says_so(self):
+        self.engine_request(self.tools)
+        CH.CHAT.update(items=[], history=[{"role": "user", "content": "ride the vocals"}], daw_cut=None)
+        for g in DA.groups_for(self.names):
+            out = CH.more_tools({"group": g})
+        self.assertIn("Put away", out)
+        self.assertIn("regions", out)
+        sent = {t["name"] for t in CH._reoffer()}
+        self.assertFalse({n for n in sent if DA.group_of(n[4:]) == "regions"})
+        self.assertTrue({"daw_" + n for n in self.TEMPO} <= sent)                  # the newest stays
+        self.assertLess(len(CH.anthropic_tools(list(CH.CHAT["daw_tools"][n] for n in sent if n in CH.CHAT["daw_tools"]))), 128)
+        notes = [it["text"] for it in CH.CHAT["items"] if it.get("kind") == "note"]
+        self.assertTrue(any("regions group is put away" in n for n in notes), notes)
+        self.assertIn("put away", CH.CHAT["history"][-1]["content"])               # the model is told too
+        CH.more_tools({"group": "regions"})                                        # asked again: back, markers goes
+        sent = {t["name"] for t in CH._reoffer()}
+        self.assertIn("daw_region_move_to_sample", sent)
+        self.assertFalse({n for n in sent if DA.group_of(n[4:]) == "markers"})
+
+    def test_the_rules_are_checked_before_any_card(self):
+        e = AutoEngine()
+        read = _read_of(e)
+        ok = {"track_id": "302", "control": "gain", "curve": "s_curve",
+              "points": [{"time": 10, "value": -2.0}, {"time": 11.2, "value": -4.5}, {"time": 14, "value": -4.5}, {"time": 15.2, "value": -2.0}]}
+        self.assertEqual(DA.automation_problem(ok, read), "")
+        bus = dict(ok, track_id="301")
+        self.assertIn("Band carries Drums", DA.automation_problem(bus, read))
+        self.assertEqual(DA.automation_problem(dict(ok, track_id="300"), read), "")      # a bus of vocals only
+        self.assertIn("at most 3 dB", DA.automation_problem(dict(ok, points=[{"time": 10, "value": -2}, {"time": 12, "value": -6}]), read))
+        self.assertIn("S-curves", DA.automation_problem(dict(ok, curve="linear"), read))
+        self.assertIn("force", DA.automation_problem(dict(ok, force=True), read))
+        steep = dict(ok, points=[{"time": 10, "value": -2}, {"time": 10.4, "value": -5}])
+        self.assertIn("dB/s", DA.automation_problem(steep, read))
+        off = dict(ok, points=[{"time": 10, "value": 0.0}, {"time": 12, "value": -2.0}])
+        self.assertIn("line there is -2.0 dB", DA.automation_problem(off, read))
+        self.assertEqual(DA.automation_problem(dict(ok, control="pan_azimuth", curve="linear"), read), "")   # not a level
+
+    def test_a_card_for_a_write_shows_points_moves_and_steepness(self):
+        e = AutoEngine()
+        a = {"track_id": "302", "control": "gain", "curve": "s_curve",
+             "points": [{"time": 10, "value": -2.0}, {"time": 11.2, "value": -4.5}, {"time": 14, "value": -4.5}]}
+        rows = DA.preview("automation_write", a, _read_of(e))
+        self.assertEqual(rows[0]["what"], "Lead Vocal · Fader automation")
+        self.assertEqual(rows[0]["before"], "0 points, manual")
+        self.assertIn("3 points from 10.0 s to 14.0 s, largest move 2.5 dB, steepest 3.3 dB/s, s_curve", rows[0]["after"])
+        rows = DA.preview("tempo_set_points", {"points": [{"bar": 1, "bpm": 96, "bpm_end": 100}, {"bar": 9, "bpm": 100}]}, _read_of(e))
+        self.assertEqual(rows[0]["before"], "bar 1: 100->120 BPM, bar 5: 120 BPM")
+        self.assertEqual(rows[0]["after"], "bar 1: 96->100 BPM, bar 9: 100 BPM")
+        rows = DA.preview("automation_set_state", {"track_id": "302", "control": "gain", "state": "play"}, _read_of(e))
+        self.assertEqual((rows[0]["before"], rows[0]["after"]), ("manual", "play"))
+
+    def test_the_engine_connection_refuses_a_write_the_rules_refuse_before_sending_it(self):
+        e = AutoEngine()
+        eng = DW.Engine()
+        eng.mode, eng.port, eng.state = "engine", 1, "running"
+        sent = []
+        def post(url, payload, timeout=None):
+            sent.append(payload)
+            body = payload if isinstance(payload, dict) else json.loads(payload)
+            pr = body["params"]
+            return 200, json.dumps({"jsonrpc": "2.0", "id": body.get("id"), "result": e._call(pr["name"], pr["arguments"])}).encode()
+        bad = {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {"name": "automation_write", "arguments":
+               {"track_id": "301", "control": "gain", "curve": "s_curve", "points": [[10, -2], [12, -4]]}}}
+        with mock.patch.object(DW, "post_json", post):
+            code, raw = eng.rpc(json.dumps(bad).encode())
+        reply = json.loads(raw)
+        self.assertEqual((code, reply["id"], reply["result"]["isError"]), (200, 7, True))
+        self.assertIn("smooth-automation rules", reply["result"]["content"][0]["text"])
+        self.assertFalse([p for p in sent if "automation_write" in (p.decode() if isinstance(p, bytes) else json.dumps(p))])   # never sent
+        self.assertFalse(eng.unsaved())
+        good = json.loads(json.dumps(bad))
+        good["params"]["arguments"].update(track_id="302", points=[[10, -2], [11.2, -4], [13, -4], [14.2, -2]])
+        with mock.patch.object(DW, "post_json", post):
+            code, raw = eng.rpc(json.dumps(good).encode())
+        self.assertNotIn("isError", json.loads(raw)["result"])
+        self.assertTrue([p for p in sent if "automation_write" in (p.decode() if isinstance(p, bytes) else json.dumps(p))])
 
 
 if __name__ == "__main__":

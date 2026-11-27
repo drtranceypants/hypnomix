@@ -443,17 +443,32 @@ def more_tools(inp):
         return f"error: group must be one of {', '.join(groups)}"
     with LOCK:
         CHAT.setdefault("daw_groups", set()).add(g)
+        order = CHAT.setdefault("daw_group_order", [])
+        if g in order:
+            order.remove(g)
+        order.append(g)                              # the newest: never the one put away to make room
         CHAT["daw_more"] = True
     dt = list((CHAT.get("daw_tools") or {}).values())
-    cut = []
-    with LOCK:
-        groups = set(CHAT.get("daw_groups") or ())
-    keep = set(DA.offered([t["engine"] for t in dt if t.get("engine")], CHAT.get("view"), groups, cut=cut))
+    cut, away = [], []
+    keep = set(DA.offered([t["engine"] for t in dt if t.get("engine")], CHAT.get("view"), _group_order(), cut=cut,
+                          put_away=away))
     names = [t["name"] for t in dt if t.get("engine") in keep and DA.group_of(t["engine"]) == g]   # never an app-only one
     left = [t["name"] for t in dt if t.get("engine") in set(cut) and DA.group_of(t["engine"]) == g]
     return (f"The {g} tools are offered from your next step on: " + (", ".join(names) or "none")
             + ". Call one then; each changing one still waits for the person's approval."
+            + (f" Put away to stay under the provider's limit of tools in one request: the {', '.join(away)} "
+               f"group{'s' if len(away) > 1 else ''} (daw_more_tools offers {'them' if len(away) > 1 else 'it'} again)." if away else "")
             + (f" Left out to stay under the provider's limit of tools in one request: {', '.join(left)}." if left else ""))
+
+
+def _group_order():
+    """The groups this conversation offers, oldest first: the view's and any without a known order, then the ones
+    asked for, in the order they were asked for (the last is the newest)."""
+    from hypnomix.app import daw_assist as DA
+    with LOCK:
+        groups = set(CHAT.get("daw_groups") or ())
+        order = [g for g in CHAT.get("daw_group_order") or [] if g in groups]
+    return [g for g in DA.GROUPS if g in groups and g not in order] + sorted(groups - set(DA.GROUPS) - set(order)) + order
 
 
 def _engine_is_ours(e):
@@ -714,6 +729,8 @@ def daw_tool(name, inp):
             bad = f"region {reg!r}: " + DA.plain("region not found")
         if not bad and t["engine"] in ("session_export_mix", "track_bounce"):
             bad = DA.export_problem(inp)             # a bounce never replaces a file that is there: the model picks a new name
+        if not bad and t["engine"] == "automation_write":
+            bad = DA.automation_problem(inp, _engine_read)   # the smooth-automation rules: no card for a write they refuse
         if bad:                                      # a card that cannot work is not shown: the model is told why
             return "error (nothing was proposed): " + bad
         rows = DA.preview(t["engine"], inp, _engine_read)
@@ -1370,7 +1387,27 @@ def _daw_note():
             "existing scan only when they ask about its findings, and then say when it was made. Keep the human feel. "
             "If the person seems new to the DAW, you may suggest a guided tour by name in your answer: the Tour button at the "
             "top right of the DAW lists First look, Edit a region, Mix, Scan and review, Ask the Assistant, and Save and export. "
-            "Only suggest it: you cannot open or run a tour.")
+            "Only suggest it: you cannot open or run a tour." + _automation_note())
+
+
+def _automation_note():
+    """The smooth-automation rules, for an engine that lists the automation tools (and nothing about them otherwise)."""
+    from hypnomix.app import daw_assist as DA
+    have = {t.get("engine") for t in (CHAT.get("daw_tools") or {}).values()}
+    out = ""
+    if have & DA.AUTOMATION_TOOLS:
+        out += (" Automation (daw_more_tools {group: automation}): read daw_automation_list for a route's controls "
+                "and what it carries, daw_automation_get for a control's points (times in seconds, dB for the fader, "
+                "trim and sends). A level move (fader, trim, a send) is written as gentle S-curves (curve s_curve, "
+                "about 1.2 s each), a line move at most 3 dB and a trim at most 4 dB, the steepest point under 7 dB/s "
+                "(an S-curve peaks at 1.6 times its average slope), starting and ending on the line as it is, never "
+                "with force; never on a bus, a group's bus or the master that carries any track that is not a vocal "
+                "(ride the vocal tracks instead). The app refuses a write that breaks these, before any card.")
+    if have & DA.TEMPO_TOOLS:
+        out += (" The tempo map (group tempo): daw_tempo_get_map reads it; daw_tempo_set_points sets tempo points and "
+                "ramps (bpm_end) by bar; audio regions keep their time, MIDI follows the bars. Keep tempo changes "
+                "small and musical (human feel): never snap a played performance to a rigid grid.")
+    return out
 
 
 def _teacher_note():
@@ -1994,17 +2031,25 @@ def _offered(dt):
     # The tool list is the first block of the model's prompt cache: a group once offered stays offered for the whole
     # conversation (also the ones a view asked for), so changing view never rewrites the cached conversation.
     CHAT.setdefault("daw_groups", set()).update(DA.VIEW_GROUPS.get(str(CHAT.get("view") or ""), ()))
-    cut = []
-    keep = set(DA.offered([t["engine"] for t in dt if t.get("engine")], CHAT.get("view"), CHAT.get("daw_groups") or (), cut=cut))
-    left = sorted(set(cut) - set(DA.SECOND_FORMS))     # another form of a tool that is kept does the same job: not a loss
-    if left and left != CHAT.get("daw_cut"):
-        msg = (f"{len(left)} engine tools are not offered to the model in this conversation, to stay under the "
-               "provider's limit of tools in one request: " + ", ".join(left) + ".")
+    cut, away = [], []
+    keep = set(DA.offered([t["engine"] for t in dt if t.get("engine")], CHAT.get("view"), _group_order(), cut=cut,
+                          put_away=away))
+    gone = {n for n in cut if DA.group_of(n) in away}
+    left = sorted(set(cut) - set(DA.SECOND_FORMS) - gone)     # another form of a tool that is kept does the same job: not a loss
+    mark = sorted(away) + left
+    if mark and mark != CHAT.get("daw_cut"):
+        parts = []
+        if away:
+            parts.append(f"the {', '.join(away)} group{'s are' if len(away) > 1 else ' is'} put away for now (daw_more_tools "
+                         f"offers {'one' if len(away) > 1 else 'it'} again, and puts away the group asked for longest ago)")
+        if left:
+            parts.append(f"{len(left)} engine tools are not offered: " + ", ".join(left))
+        msg = ("To stay under the provider's limit of tools in one request, " + "; ".join(parts) + ".")
         say("note", msg)
         h = CHAT["history"][-1] if CHAT.get("history") else None
         if h and h.get("role") == "user" and isinstance(h.get("content"), str):
             h["content"] = f"[app note: {msg}]\n\n" + h["content"]          # the model is told too, not only the person
-    CHAT["daw_cut"] = left
+    CHAT["daw_cut"] = mark
     return [t for t in dt if not t.get("engine") or t["engine"] in keep]
 
 
@@ -2239,7 +2284,7 @@ def reset():
         if CHAT["busy"]:
             raise RuntimeError("stop the assistant first")
         CHAT.update(id=uuid.uuid4().hex[:8], items=[], history=[], provider=None, pending=None, error="", usage=new_usage(),
-                    msg={}, elided_at=0, engine_mark=None, daw_groups=set(), view=None)
+                    msg={}, elided_at=0, engine_mark=None, daw_groups=set(), daw_group_order=[], view=None)
     _save()
 
 

@@ -1,5 +1,5 @@
 {
- "note": "The SHAPE of the HypnoMix engine's tools/list (144 tools): each tool's name, its arguments (name, type, limits) and the LENGTH of its texts. Made from the engine's list; none of the engine's own wording is kept here. tests/test_daw_assistant.py rebuilds a stand-in list from it (filler words of the same length) to check the Assistant's rules against the real names and sizes. Regenerate it when the engine's tool list changes.",
+ "note": "The SHAPE of the HypnoMix engine's tools/list (152 tools): each tool's name, its arguments (name, type, limits) and the LENGTH of its texts. Made from the engine's list; none of the engine's own wording is kept here. tests/test_daw_assistant.py rebuilds a stand-in list from it (filler words of the same length) to check the Assistant's rules against the real names and sizes. Regenerate it when the engine's tool list changes.",
  "tools": [
   {
    "name": "hello_world",
@@ -3303,6 +3303,256 @@
     "zone"
    ],
    "title_len": 18
+  },
+  {
+   "name": "automation_list",
+   "desc_len": 649,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 70
+    },
+    "only_automated": {
+     "type": "boolean",
+     "desc_len": 54
+    }
+   },
+   "required": [
+    "track_id"
+   ],
+   "title_len": 15
+  },
+  {
+   "name": "automation_get",
+   "desc_len": 338,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 70
+    },
+    "control": {
+     "type": "string",
+     "desc_len": 193
+    },
+    "start": {
+     "type": "number",
+     "minimum": 0
+    },
+    "end": {
+     "type": "number",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "track_id",
+    "control"
+   ],
+   "title_len": 14
+  },
+  {
+   "name": "automation_write",
+   "desc_len": 948,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 70
+    },
+    "control": {
+     "type": "string",
+     "desc_len": 193
+    },
+    "points": {
+     "type": "array",
+     "items": {},
+     "maxItems": 20000,
+     "desc_len": 72
+    },
+    "mode": {
+     "type": "string",
+     "enum": [
+      "replace-range",
+      "replace-all"
+     ]
+    },
+    "curve": {
+     "type": "string",
+     "enum": [
+      "linear",
+      "s_curve"
+     ]
+    },
+    "state": {
+     "type": "string",
+     "enum": [
+      "manual",
+      "play",
+      "write",
+      "touch",
+      "latch",
+      "keep"
+     ]
+    },
+    "start": {
+     "type": "number",
+     "minimum": 0,
+     "desc_len": 22
+    },
+    "end": {
+     "type": "number",
+     "minimum": 0,
+     "desc_len": 22
+    },
+    "guard": {
+     "type": "boolean"
+    },
+    "force": {
+     "type": "boolean",
+     "desc_len": 49
+    }
+   },
+   "required": [
+    "track_id",
+    "control",
+    "points"
+   ],
+   "title_len": 16
+  },
+  {
+   "name": "automation_clear",
+   "desc_len": 167,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 70
+    },
+    "control": {
+     "type": "string",
+     "desc_len": 193
+    },
+    "start": {
+     "type": "number",
+     "minimum": 0
+    },
+    "end": {
+     "type": "number",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "track_id",
+    "control"
+   ],
+   "title_len": 16
+  },
+  {
+   "name": "automation_set_state",
+   "desc_len": 258,
+   "properties": {
+    "track_id": {
+     "type": "string",
+     "desc_len": 70
+    },
+    "control": {
+     "type": "string",
+     "desc_len": 193
+    },
+    "state": {
+     "type": "string",
+     "enum": [
+      "manual",
+      "play",
+      "write",
+      "touch",
+      "latch"
+     ]
+    }
+   },
+   "required": [
+    "track_id",
+    "control",
+    "state"
+   ],
+   "title_len": 20
+  },
+  {
+   "name": "tempo_get_map",
+   "desc_len": 275,
+   "properties": {},
+   "required": [],
+   "title_len": 13
+  },
+  {
+   "name": "tempo_set_points",
+   "desc_len": 756,
+   "properties": {
+    "points": {
+     "type": "array",
+     "maxItems": 4096,
+     "items": {
+      "type": "object"
+     }
+    },
+    "mode": {
+     "type": "string",
+     "enum": [
+      "replace-range",
+      "replace-all"
+     ]
+    },
+    "start": {
+     "type": "number",
+     "minimum": 0
+    },
+    "end": {
+     "type": "number",
+     "minimum": 0
+    },
+    "start_bar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "end_bar": {
+     "type": "integer",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "points"
+   ],
+   "title_len": 16
+  },
+  {
+   "name": "tempo_set_meter",
+   "desc_len": 140,
+   "properties": {
+    "bar": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "divisions_per_bar": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 32
+    },
+    "note_value": {
+     "type": "integer",
+     "enum": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32
+     ]
+    },
+    "remove": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "bar"
+   ],
+   "title_len": 9
   }
  ]
 }

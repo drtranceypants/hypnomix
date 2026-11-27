@@ -302,6 +302,8 @@ def is_engine(url, timeout=1.5):
 # monitor attaches a tap to a MIDI input PORT and detaches it again (midi_monitor_get / midi_monitor_stop): nothing the
 # session file keeps, and the engine does not mark its session dirty for it. Port flags (kept in the user's port
 # settings, not the session), track input connections (saved with the session) and track_set_mpe are changes.
+# Automation and the tempo map: automation_list, automation_get and tempo_get_map only read; a write, a clear, a state
+# change, a tempo or meter change are kept in the session file.
 READ_ONLY_TOOLS = frozenset("""
     hello_world session_get_info session_list_snapshots session_quick_snapshot session_export_mix export_status
     meters_get markers_list midi_note_get_json midi_note_list plugin_get_description plugin_list_available
@@ -311,6 +313,7 @@ READ_ONLY_TOOLS = frozenset("""
     playlist_list take_list plugin_get_sidechain group_list meters_stream_info session_get_card track_bounce
     cue_list ab_list cue_launch cue_stop scene_launch
     midi_ports_list track_get_mpe midi_monitor_get midi_monitor_stop
+    automation_list automation_get tempo_get_map
 """.split())
 # Tools the page may not call through POST /mcp: the meter stream's address and token are the app's (daw_meters.py
 # relays the stream on the app's own origin), so neither reaches a page or the Assistant.
@@ -347,6 +350,37 @@ def _events(payload):
 
 
 METER_SWITCH = ("ensure_rms", "ensureRms")
+
+
+def _auto_writes(payload):
+    """The automation_write calls in a JSON-RPC body (bytes, dict or list): [(id, arguments)]."""
+    if isinstance(payload, (bytes, bytearray, str)):
+        if b"automation_write" not in (payload if isinstance(payload, (bytes, bytearray)) else payload.encode("utf-8", "replace")):
+            return []
+        try:
+            payload = json.loads(payload)
+        except ValueError:
+            return []
+    out = []
+    for m in (payload if isinstance(payload, list) else [payload]):
+        pr = m.get("params") if isinstance(m, dict) and m.get("method") == "tools/call" else None
+        if isinstance(pr, dict) and str(pr.get("name") or "").replace("/", "_") == "automation_write":
+            out.append((m.get("id"), pr.get("arguments") if isinstance(pr.get("arguments"), dict) else {}))
+    return out
+
+
+def _refused(payload, text):
+    """The reply to a body that is not sent: each tools/call answered as a tool error with `text` (nothing reached
+    the engine, so nothing became unsaved)."""
+    if isinstance(payload, (bytes, bytearray, str)):
+        try:
+            payload = json.loads(payload)
+        except ValueError:
+            payload = {}
+    one = lambda m: {"jsonrpc": "2.0", "id": m.get("id") if isinstance(m, dict) else None,
+                     "result": {"isError": True, "content": [{"type": "text", "text": text}]}}
+    body = [one(m) for m in payload] if isinstance(payload, list) else one(payload)
+    return json.dumps(body).encode()
 
 
 def _without_meter_switch(payload):
@@ -968,6 +1002,9 @@ class Engine:
             return 503, _err(None, -32000, "the engine is not running" + (f" ({self.state})" if self.state != "stopped" else ""))
         if any(kind == "save" for _, kind in _events(payload)):   # however a save arrives (the page's proxy, the Assistant, a script):
             end_preview("the session is being saved")               # a value Hear it is trying is put back first, never written to the file
+        why = self.automation_refusal(payload, url)
+        if why:                                            # the smooth-automation rules: refused here, never sent
+            return 200, _refused(payload, why)
         held, switch = _without_meter_switch(payload)
         if switch and not self.dirty and not self.edirty:          # (the last reading: a call is never held up by a look)
             payload, self._meters_wanted = held, True          # a clean session stays clean: the switch waits for a change
@@ -986,6 +1023,45 @@ class Engine:
         if self._meters_wanted and self.dirty:
             self._switch_meters()
         return code, raw
+
+    def _read(self, url, tool, args):
+        """One read sent straight to the engine (no unsaved tracking: it only reads) -> its structured reply, or None."""
+        try:
+            code, raw = post_json(url, {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                        "params": {"name": tool, "arguments": args}}, RPC_TIMEOUT)
+            res = (json.loads(raw or b"{}") or {}).get("result") or {}
+        except Exception:
+            return None
+        if code != 200 or res.get("isError"):
+            return None
+        sc = res.get("structuredContent")
+        if sc is None:
+            try:
+                sc = json.loads("".join(c.get("text", "") for c in res.get("content") or [] if isinstance(c, dict)))
+            except ValueError:
+                return None
+        return sc if isinstance(sc, dict) else None
+
+    def automation_refusal(self, payload, url):
+        """Why a body's automation_write must not reach the engine (hypnomix's smooth-automation rules,
+        engineer/automation_rules.py), or "". Level controls only: the route's facts (is it a bus, what it carries)
+        and the line as it is now are read from the engine first."""
+        from hypnomix.engineer import automation_rules as AR
+        for _, a in _auto_writes(payload):
+            if AR.kind(a.get("control")) not in AR.LEVEL_KINDS:
+                continue
+            rid, ctl = str(a.get("track_id") or ""), str(a.get("control") or "")
+            facts = self._read(url, "automation_list", {"track_id": rid})
+            if facts is None:
+                return AR.sentence([f"what route {rid} carries could not be read from the engine (automation_list)"])
+            cur = next((c.get("current") for c in facts.get("controls") or [] if c.get("control") == ctl), None)
+            line = None
+            if str(a.get("mode") or "replace-range") != "replace-all":
+                line = AR.line_from(self._read(url, "automation_get", {"track_id": rid, "control": ctl}), cur)
+            problems = AR.check(a, facts, line)
+            if problems:
+                return AR.sentence(problems)
+        return ""
 
     def call(self, method, params=None, timeout=RPC_TIMEOUT):
         """One request -> its result (raises RuntimeError with the engine's message on an error)."""
