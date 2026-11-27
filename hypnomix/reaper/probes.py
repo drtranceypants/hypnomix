@@ -271,7 +271,9 @@ def main(argv=None):
     if a.cmd == "install":
         d = install()
         print(f"installed in {d}\nIn REAPER: Add FX → JS → HypnoMix Probe (last on each track), HypnoMix Main (on the "
-              "master). Or `hypnomix reaper probes insert SONG.rpp` puts them on every track.")
+              "master). Or `hypnomix reaper probes insert SONG.rpp` puts them on every track.\n"
+              "Updating from an older HypnoMix? In REAPER's Add FX window press F5 to rescan, so the list shows the "
+              "effects' current names.")
         return
     if not a.project:
         ap.error(f"{a.cmd} needs a project (.rpp)")

@@ -1,5 +1,8 @@
 """HypnoMix Probe / Main for REAPER: the JSFX, putting them into a project, and reading the menus back."""
 import collections
+import contextlib
+import io
+import os
 import re
 import tempfile
 import unittest
@@ -166,3 +169,23 @@ class HypnoMixWindows(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class InstallMessage(unittest.TestCase):
+    def test_install_tells_upgraders_to_rescan_with_f5(self):
+        """REAPER caches effect names, so after an update the Add FX list can show the old ones until a rescan."""
+        with tempfile.TemporaryDirectory() as td:
+            old = os.environ.get("HYPNOMIX_REAPER_RESOURCES")
+            os.environ["HYPNOMIX_REAPER_RESOURCES"] = td
+            try:
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    P.main(["install"])
+            finally:
+                if old is None:
+                    os.environ.pop("HYPNOMIX_REAPER_RESOURCES", None)
+                else:
+                    os.environ["HYPNOMIX_REAPER_RESOURCES"] = old
+            out = buf.getvalue()
+            self.assertIn("press F5 to rescan", out)
+            self.assertTrue((Path(td) / "Effects" / "hypnomix" / "hypnomix_main.jsfx").is_file())
