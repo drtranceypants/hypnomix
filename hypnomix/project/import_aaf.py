@@ -2,7 +2,7 @@
 
 AAF is what many DAWs and video editors can export for moving a project elsewhere (look for File > Export > AAF, or
 Project / Timeline as AAF). It is read by the engine's AAF reader (hypnomix-aafdump, which comes with the HypnoMix
-DAW add-on; the add-on is not available yet, so until then this cannot run). Audio embedded in the AAF is extracted;
+DAW add-on, for Apple-silicon Macs only so far; without it this cannot run). Audio embedded in the AAF is extracted;
 audio it only points to is looked for next to the AAF (keep the exported media folder beside it).
 
 What is carried: tracks (name, order, fader, pan, mute, solo where the AAF has them), clips (position, start in the

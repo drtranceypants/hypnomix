@@ -241,7 +241,7 @@
       title.textContent = 'There is no engine on this computer';
       const ad = st.addon || {};
       body.textContent = 'The DAW view drives the HypnoMix DAW engine, a separate audio program (under the GNU General Public License) that is not part of the app: it is added from Setup, only when you choose to. '
-        + (ad.available ? 'It is ready to add: press Add HypnoMix DAW (about 100 MB, fetched once and checked against a fingerprint), or use Setup → Extras. ' : 'HypnoMix DAW is not available yet, so there is nothing here to play, edit or save. ')
+        + (ad.available ? 'It is ready to add: press Add HypnoMix DAW (about 100 MB, fetched once and checked against a fingerprint), or use Setup → Extras. ' : 'HypnoMix DAW is not available for this computer yet (its first engine is for Apple-silicon Macs only), so there is nothing here to play, edit or save. ')
         + 'If you run an engine in a window of its own, switch on Preferences → Control Surfaces → MCPHttp there and press Look again. The demo song is made up: it plays no sound, saves nothing and sends nothing.';
       const add = ad.available ? mkBtn('Add HypnoMix DAW', 'primary', async () => {
         try { await HX.api.post('/api/setup/engine/install', {}); HX.toast('Adding HypnoMix DAW: the progress is in Setup → Extras', 6000); }

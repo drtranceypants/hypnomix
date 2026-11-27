@@ -68,7 +68,7 @@ GROUPS = [
         ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, mixer snapshots, loop takes and one-change A/Bs, diagnose, probes, the A/B review panel, the Align panel"),
         ("preflight", "hypnomix.session.preflight", "sanity of the files before any work: mixed sample rates or bit depths, stems of different length, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel; report first"),
         ("project", "hypnomix.project.show", "look inside a REAPER, HypnoMix DAW or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
-        ("import", "hypnomix.project.import_project", "import a project from another DAW into a NEW HypnoMix DAW session: .als, .logicx, .dawproject, .rpp, or .ptx and .aaf (with the HypnoMix DAW add-on, not available yet); audio copied in, the project only read, what was left out listed"),
+        ("import", "hypnomix.project.import_project", "import a project from another DAW into a NEW HypnoMix DAW session: .als, .logicx, .dawproject, .rpp, or .ptx and .aaf (with the HypnoMix DAW add-on, Apple-silicon Macs only so far); audio copied in, the project only read, what was left out listed"),
         ("als2ardour", "hypnomix.project.als2ardour", "import a Live set into a NEW HypnoMix DAW session folder: tracks, colours, clips as regions (gain, fades, envelopes), faders, sends, groups, tempo; audio copied in; devices listed, never guessed (the set is only read)"),
     ]),
     ("Session files (.als, Live closed or open)", [
@@ -117,7 +117,7 @@ GROUPS = [
         ("device", "hypnomix.app.device", "make the Max for Live device: review from inside Live, and jump Live to each finding"),
         ("aligndevice", "hypnomix.app.aligndevice", "make the Hypnomix Align device: align a vocal stack from inside Live"),
         ("store", "hypnomix.store.cli", "the HypnoMix store: search, install, update and uninstall free and open-source plug-ins, synths, drum kits and sample packs"),
-        ("engine", "hypnomix.app.engine_addon", "HypnoMix DAW, the add-on (not available yet: no archive is published): what is added, and (only with --yes) fetch it once, checked against a SHA-256 before it is used, or remove it; report first"),
+        ("engine", "hypnomix.app.engine_addon", "HypnoMix DAW, the add-on (engine 0.1.0, Apple-silicon Macs only; not available for Intel Macs or Windows yet): what is added, and (only with --yes) fetch it once, checked against a SHA-256 before it is used, or remove it; report first"),
     ]),
     ("Setup", [
         ("install", "hypnomix.install", "install the Live remote script into Live's User Library (--dry-run shows it first)"),

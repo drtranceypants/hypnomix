@@ -201,7 +201,7 @@ snapshot, `<Song> (A-B).ardour`, where each clip fix (fade, cut, spike dip) is a
 them over MCP (`ab_use_playlist`, the track's fader / pan / mute), turning the louder side down on the master by the
 measured `match_db` (a rough mix without plug-ins, around the spot; muted tracks are left out, so a mute fix is
 matched too), with a blind test (`blind.json`).
-This needs the HypnoMix DAW add-on, which is not available yet (docs/APP.md, DAW mode); the switching has not been
+This needs the HypnoMix DAW add-on, which is for Apple-silicon Macs only so far (docs/APP.md, DAW mode); the switching has not been
 judged by ear.
 
 The page shows every finding with its players and saves each click to `decisions.json` (with `--serve`, on this

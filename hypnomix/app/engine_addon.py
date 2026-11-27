@@ -18,8 +18,9 @@ for each platform and added from Setup (or with this command), only when you ask
 
 Where: <HypnoMix home>/engine/<version>/ (the home is ~/.hypnomix, or the folder HYPNOMIX_HOME names). The address and the
 SHA-256 come only from hypnomix/app/engine_addon.json, which ships inside this app; nothing in a request, a file on
-disk or an environment variable can name another address. Until the first archive is published the manifest has no
-address, and the command says "HypnoMix DAW is not available yet". A failed or interrupted add leaves nothing
+disk or an environment variable can name another address. The first engine, 0.1.0, is published for Apple-silicon Macs
+(mac-arm64) only. Where the manifest names no archive for this computer, the command says "HypnoMix DAW is not available
+for <place> yet" and fetches nothing. A failed or interrupted add leaves nothing
 half-added and can simply be run again. A newer app may name a newer engine: it says so, and adding it keeps the old one
 until the new one has run once, then removes the old one.
 
@@ -46,7 +47,7 @@ from pathlib import Path
 NAME = "hypnomix-engine"                       # the program, bin/hypnomix-engine inside a kit (also daw.NAME)
 MANIFEST = Path(__file__).with_name("engine_addon.json")
 NOT_YET = "HypnoMix DAW is not available yet."
-WHAT = ("HypnoMix DAW is HypnoMix's own DAW, built on Ardour, a free open-source DAW. It is expected to be about 100 MB, fetched once from "
+WHAT = ("HypnoMix DAW is HypnoMix's own DAW, built on Ardour, a free open-source DAW. It is a download of about 30 MB (about 105 MB once unpacked), fetched once from "
         "the project's release page and checked against a fingerprint before it is used, and it runs only while the DAW "
         "view is open. You can remove it any time.")
 LICENCE = ("HypnoMix DAW's engine is a separate program under the GNU General Public License (version 2 or later), "
@@ -137,6 +138,9 @@ def unavailable_message():
     plats = manifest()["platforms"]
     if not plats:
         return NOT_YET + ("" if platform_key().startswith("mac") else f" It is being made for the Mac first, so it is not yet for {_place()}.")
+    key = platform_key()
+    if key.startswith("mac") and any(k.startswith("mac") for k in plats):     # the other kind of Mac has one: say which has not
+        return f"HypnoMix DAW is not available for {'Intel Macs' if key == 'mac-intel' else 'Apple-silicon Macs'} yet."
     return f"HypnoMix DAW is not available for {_place()} yet."
 
 

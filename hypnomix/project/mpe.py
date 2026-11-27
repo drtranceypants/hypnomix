@@ -473,8 +473,8 @@ def checks(p, words=None):
                             "pressure or slide) but the track's MPE mode is off, so nothing tells the instrument to "
                             "treat each channel as one note",
                     fix="switch the instrument to MPE mode by hand (lower zone, 15 members and a member bend range "
-                        "of 48 unless the controller says otherwise). A track MPE switch is planned for HypnoMix "
-                        "DAW, which is not released yet")
+                        "of 48 unless the controller says otherwise). HypnoMix DAW's track MPE setting has passed "
+                        "its automated tests but has not yet been tried with real MPE controllers")
             zone = cfg["zone"] if cfg else ("upper" if 15 in facts.rpn6 and 0 not in facts.rpn6 else "lower")
             glob = 0 if zone == "lower" else 15
             members = cfg["members"] if cfg else (facts.rpn6.get(glob) or 15)

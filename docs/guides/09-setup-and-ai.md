@@ -9,13 +9,13 @@ teaser: The installers, the guided setup, and the four ways to work (just the ap
 
 There is one app and one installer for everyone. It carries every HypnoMix tool, for Live, REAPER, HypnoMix DAW or any DAW from
 exported tracks. **HypnoMix DAW** is HypnoMix's own DAW. It is an **add-on**, not a second download: you choose it in Setup (Your DAW) and press **Add
-HypnoMix DAW**, and only then is anything fetched (expected to be about 100 MB, once, from the project's release page, checked against a
-SHA-256 fingerprint before it is used; it runs only while the DAW view is open, and **Setup → Extras** removes it). It is
-**not available yet**: no archive of it is published, so today Setup says so and remembers your choice, and nothing is
-downloaded. Its engine is a separate program under the GNU General Public License (version 2 or later), a rebranded fork
-of the free open-source DAW it is built on (the wiki article "HypnoMix DAW" says what that is); HypnoMix itself stays MIT and contains none of its code, and the source will be published with the first
-release that includes the engine. What has been tried so far: it runs against the real engine on a silent test backend
-only (no sound card, no recording, no native File menu, no signed or Intel build, no download from a real release).
+HypnoMix DAW**, and only then is anything fetched (a download of about 30 MB (about 105 MB once unpacked), once, from the project's release page, checked against a
+SHA-256 fingerprint before it is unpacked; it runs only while the DAW view is open, and **Setup → Extras** removes it). The
+first engine, 0.1.0, is for **Apple-silicon Macs only**. On an Intel Mac or on Windows it is **not available yet**: no
+archive is published for them, so there Setup says so and remembers your choice, and nothing is downloaded. Its engine is a separate program under the GNU General Public License (version 2 or later), a rebranded fork
+of the free open-source DAW it is built on (the wiki article "HypnoMix DAW" says what that is); HypnoMix itself stays MIT and contains none of its code. The engine's source is public at
+https://github.com/drtranceypants/hypnomix-daw. Not tried yet: playback and recording through a real sound card, the native
+File menu clicked in the installed app, a signed and notarised engine, an Intel Mac, and real MPE controllers.
 
 There are two ways to install the app. The **installer** is for most people: download it, open it, done. It
 carries its own Python and ffmpeg, and the first time the app opens a short **guided setup** asks how you want to
@@ -76,7 +76,7 @@ on a Mac. On Windows that folder sits in your own user folder, which Windows kee
 | step | what it asks |
 |---|---|
 | How you work | just the app, an AI key, a model on your computer, or a desktop AI app (compared below) |
-| Your DAW | Ableton Live, REAPER, HypnoMix DAW or something else (the Wiki puts your DAW's pages first; choosing HypnoMix DAW shows what it is and an **Add HypnoMix DAW** button, or says it is not available yet), and **teacher mode**: no thanks, the tour of HypnoMix in your DAW (for engineers), the 101 crash course, or the complete course, A to Z (for people new to audio). The wiki's Teacher mode page has all three |
+| Your DAW | Ableton Live, REAPER, HypnoMix DAW or something else (the Wiki puts your DAW's pages first; choosing HypnoMix DAW shows what it is and an **Add HypnoMix DAW** button on an Apple-silicon Mac, or says it is not available there yet), and **teacher mode**: no thanks, the tour of HypnoMix in your DAW (for engineers), the 101 crash course, or the complete course, A to Z (for people new to audio). The wiki's Teacher mode page has all three |
 | Connect | for an AI key: which company, your key, a test. For a local model: Ollama or LM Studio, and a test. For a desktop app: a `hypnomix` command and an agent folder |
 | your DAW's step | Live: copies the AbletonOSC remote script into Live's User Library, on your click (and offers to update an older copy for teacher mode). REAPER: starts the bridge. HypnoMix DAW: the **Add HypnoMix DAW** button, when it is available. Another DAW: nothing to install |
 | Extras | the optional extras, each on a click, and a card for HypnoMix DAW with its state, an add button when an archive is published, and Remove |

@@ -49,7 +49,7 @@ def find(name):
         if c.is_file() and os.access(c, os.X_OK):
             return c
     raise ToolMissing(f"this kind of project is read by {name}, which comes with the HypnoMix DAW add-on; the add-on "
-                      f"is not available yet, so it cannot be imported here until then (a developer can set "
+                      f"is for Apple-silicon Macs only so far, so it cannot be imported here without it (a developer can set "
                       f"{ENV.get(name, 'its path')} to a reader they built)")
 
 

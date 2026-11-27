@@ -26,7 +26,7 @@ The Mac .dmg and Windows setup .exe also carry, unchanged, each under its own li
   LGPL/GPL software run as a separate program; its source is at https://ffmpeg.org/download.html and the build scripts
   at https://github.com/imageio/imageio-binaries
 
-## HypnoMix DAW: built on Ardour (the add-on; not available yet)
+## HypnoMix DAW: built on Ardour (the add-on; engine 0.1.0, Apple-silicon Macs only)
 HypnoMix DAW is HypnoMix's own DAW, built on **Ardour** (https://ardour.org), a free open-source DAW under the GNU General
 Public License. This is the notice of that origin and of its licence. HypnoMix DAW is an add-on to the one HypnoMix app,
 not a second download: its engine is published as an archive of its own and added from Setup on a click. The engine is a
@@ -43,8 +43,9 @@ licences of the libraries in its kit, GPL and LGPL ones among them). HypnoMix it
   `packaging/mac/build_engine_archive.sh` refuses to package it unless the kit carries its licence text (`COPYING`) and a
   source notice (`SOURCE.txt`), and refuses a kit with the builder's home path or login name inside it; the app checks the
   licence text and the source notice again on what it downloaded, and does not put the engine in place without them.
-- **Source:** the source will be published with the first release that includes the engine. No archive that carries
-  the engine is published before that (today the manifest names none, so the app offers nothing to add), and
-  `SOURCE.txt` must say where the exact source of that build is.
-- Not checked yet, and said so in the docs: playing through a real sound card (only the silent test backend was
-  run), recording, the app's native File menu, the add-on's download and unpacking from a real release, signing, and Intel Macs.
+- **Source:** the engine's source is public at https://github.com/drtranceypants/hypnomix-daw (GNU General Public
+  License, version 2 or later). The first archive, engine 0.1.0, is on the HypnoMix release page for Apple-silicon Macs
+  (`mac-arm64`) only; there is no engine for Intel Macs, Windows or Linux yet. Its `SOURCE.txt` says where the exact
+  source of that build is.
+- Not checked yet, and said so in the docs: playback and recording through a real sound card, real MPE controllers, signing and
+  notarising the engine, and Intel Macs.

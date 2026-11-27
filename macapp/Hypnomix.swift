@@ -6,7 +6,7 @@ import WebKit
 let port = Int(ProcessInfo.processInfo.environment["HYPNOMIX_PORT"] ?? "") ?? 8791   // a test copy can run beside the real one
 let home = URL(string: "http://127.0.0.1:\(port)/")!
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, WKUIDelegate, WKNavigationDelegate {
     var window: NSWindow!
     var web: WKWebView!
     var server: Process?
@@ -285,6 +285,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
     // supervisor (POST /api/daw/new or /api/daw/open, with the page's own token) through HX.menuSession
     var pendingSession: [String: String]?
 
+    /// HypnoMix DAW is there: added from Setup (<HypnoMix home>/engine/<version>/bin/hypnomix-engine), or inside a test build.
+    /// Looked up each time the File menu opens, so the items come alive as soon as the add-on is in, with no restart.
+    var engineThere: Bool {
+        if dawMode { return true }
+        let env = ProcessInfo.processInfo.environment
+        let root = (env["HYPNOMIX_HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory() + "/.hypnomix") + "/engine"
+        let fm = FileManager.default
+        for v in (try? fm.contentsOfDirectory(atPath: root)) ?? [] where fm.isExecutableFile(atPath: "\(root)/\(v)/bin/hypnomix-engine") { return true }
+        return false
+    }
+
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(newSession) || item.action == #selector(openSession) || item.action == #selector(importProject) { return engineThere }
+        return true                                            // (the three run in the DAW view, which is there only with the engine)
+    }
+
     @objc func newSession() {
         let panel = NSSavePanel()
         panel.title = "New Session"
@@ -358,7 +374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNaviga
         appMenu.addItem(withTitle: "Hide HypnoMix", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: "Quit HypnoMix", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         app.submenu = appMenu
-        if dawMode {
+        do {   // always there; its items are dimmed until HypnoMix DAW has been added (validateMenuItem)
             let file = NSMenuItem(); main.addItem(file)
             let fileMenu = NSMenu(title: "File")
             let n = fileMenu.addItem(withTitle: "New Session…", action: #selector(newSession), keyEquivalent: "n"); n.target = self

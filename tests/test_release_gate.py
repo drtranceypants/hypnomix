@@ -106,7 +106,7 @@ class RoadmapAndPages(unittest.TestCase):
         self.assertIn("One download today", new)                        # what 0.3.0 itself said: the add-on is 0.3.1's
         self.assertNotIn("add-on", new)
         built = t[t.index("## (a) Built"):t.index("### Why the review is the product")]
-        for word in ("`store`", "`als2ardour`", "`chain master --ardour`", "DAW mode, built but not available yet"):
+        for word in ("`store`", "`als2ardour`", "`chain master --ardour`", "DAW mode, for Apple-silicon Macs first"):
             self.assertIn(word, built)
         self.assertNotIn("`chain` (Live and REAPER)", built)
         checked = flat(t[t.index("## Checked where"):t.index("## (a) Built")])

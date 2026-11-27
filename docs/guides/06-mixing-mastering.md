@@ -134,8 +134,8 @@ hypnomix chain strips "hypnomix-out/automix/Song/recipe.json"      # a channel s
 (stem "Bass" finds the track "3-Detuned Lowpass Bass"). A stem with no matching track is listed, never
 guessed: name the track after the stem and run it again.
 
-**The same chain in HypnoMix DAW, over MCP** (HypnoMix DAW is not released yet, and the stock DAW it is built on has no such MCP
-surface, so this cannot be done today):
+**The same chain in HypnoMix DAW, over MCP** (this needs the HypnoMix DAW add-on, which is for Apple-silicon Macs only so far; the
+stock DAW it is built on has no such MCP surface):
 
 ```bash
 hypnomix chain master "Song bounce.wav" --target -14 --ardour --existing bypass

@@ -6,12 +6,12 @@ PROJECT is any of these (the kind is found from the file itself, or named with -
 
   live        a .als set                                  -> hypnomix als2ardour's full import
   logicx      a .logicx project (a folder; a .band too)   read natively (decoded from packages saved by version 10.7)
-  ptx         a .ptx / .ptf / .pts session                read by a reader that comes with the HypnoMix DAW add-on,
-                                                          which is not available yet: until then this kind cannot run
+  ptx         a .ptx / .ptf / .pts session                read by a reader that comes with the HypnoMix DAW add-on
+                                                          (Apple-silicon Macs only so far): without it this kind cannot run
   dawproject  a .dawproject file: the open project format several DAWs save and open
   reaper      a .rpp project
   aaf         an .aaf export: a project exchange file some DAWs and video editors can write. Read by the same
-              add-on as .ptx (not available yet)
+              add-on as .ptx (Apple-silicon Macs only so far)
 
 OUTDIR becomes the session folder (it must not exist yet, or be empty, and must not be inside the project). The
 audio is copied in; nothing points back into the old project. For every kind but .als only audio inside the

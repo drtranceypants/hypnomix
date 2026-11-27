@@ -587,30 +587,39 @@ class FindingIt(Base):
 
 
 class Shipped(unittest.TestCase):
-    """The manifest that ships in the app, today: nothing to download."""
+    """The manifest that ships in the app, today: the first engine, for Apple-silicon Macs only."""
 
-    def test_the_shipped_manifest_names_no_address(self):
+    def test_the_shipped_manifest_names_one_archive_for_apple_silicon(self):
         d = json.loads(EA.MANIFEST.read_text(encoding="utf-8"))
         self.assertEqual(d["format"], 1)
         self.assertRegex(d["engine"], EA.VERSION.pattern)
-        self.assertEqual(d["platforms"], {})                                       # unpublished: when it is, this test changes with it
-        self.assertEqual(EA.manifest()["platforms"], {})
+        self.assertEqual(sorted(d["platforms"]), ["mac-arm64"])                    # a new platform changes this test with it
+        e = EA.manifest()["platforms"]["mac-arm64"]                                # whole: an address, a fingerprint, a size
+        self.assertRegex(e["sha256"], EA.SHA.pattern)
+        self.assertGreater(e["size"], 10 << 20)
+        self.assertTrue(e["url"].endswith(f"/HypnoMix-engine-{d['engine']}-mac-arm64.tar.gz"), e["url"])
 
-    def test_the_state_says_it_is_not_available_yet_and_nothing_can_be_added(self):
+    def test_it_can_be_added_on_apple_silicon_and_nowhere_else_yet(self):
         with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"HYPNOMIX_HOME": td}):
-            for key in ("mac-arm64", "mac-intel", "windows-x64", "linux-x64"):
+            with mock.patch.object(EA, "platform_key", lambda: "mac-arm64"):
+                s = EA.state()
+                self.assertTrue(s["available"])
+                self.assertEqual((s["installed"], s["size"]), ("", EA.entry()["size"]))
+            said = {}
+            for key in ("mac-intel", "windows-x64", "linux-x64"):
                 with mock.patch.object(EA, "platform_key", lambda k=key: k):
                     s = EA.state()
                     self.assertFalse(s["available"], key)
-                    self.assertTrue(s["message"].startswith("HypnoMix DAW is not available yet"), (key, s["message"]))
+                    said[key] = s["message"]
                     self.assertEqual((s["installed"], s["size"]), ("", 0))
                     with self.assertRaises(EA.AddonError):
                         EA.install()
                     with self.assertRaises(EA.AddonError):
                         EA.start_install()
             self.assertEqual(os.listdir(td), [])                                   # not even a folder was made
-        with mock.patch.object(EA, "platform_key", lambda: "windows-x64"):
-            self.assertIn("not yet for Windows", EA.state()["message"])
+        self.assertEqual(said["mac-intel"], "HypnoMix DAW is not available for Intel Macs yet.")
+        self.assertEqual(said["windows-x64"], "HypnoMix DAW is not available for Windows yet.")
+        self.assertEqual(said["linux-x64"], "HypnoMix DAW is not available for Linux yet.")
 
     def test_nothing_is_fetched_without_a_click(self):
         """Starting the app, reading Setup's state and the DAW's state never download or write anything."""
@@ -635,7 +644,7 @@ class Shipped(unittest.TestCase):
         for t in (EA.WHAT, EA.LICENCE, EA.NOT_YET):
             self.assertNotIn("Hypnomix", t)                                            # the product is written HypnoMix
         self.assertIn("built on Ardour", EA.WHAT)
-        self.assertIn("expected to be about 100 MB", EA.WHAT)                           # no archive exists to measure
+        self.assertIn("a download of about 30 MB (about 105 MB once unpacked)", EA.WHAT)   # the first archive, measured
         self.assertEqual(EA._size_text(0), "expected to be about 100 MB")
         self.assertEqual(EA._size_text(104857600), "105 MB")                            # once there is one, its real size
         root = Path(__file__).resolve().parent.parent

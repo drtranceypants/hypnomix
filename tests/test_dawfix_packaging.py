@@ -184,7 +184,7 @@ class MacAppQuit(unittest.TestCase):
 
 
 class DownloadWording(unittest.TestCase):
-    """There is one app and one installer; HypnoMix DAW is an add-on that is not available yet. The pages say only that."""
+    """There is one app and one installer; HypnoMix DAW is an add-on, for Apple-silicon Macs only so far. The pages say only that."""
     PLAIN = [ROOT / f for f in ("hypnomix/app/setup.py", "hypnomix/app/setup.js", "packaging/README.md", "THIRD_PARTY.md",
                                 "hypnomix/app/wiki/articles/18-setup.html", "hypnomix/app/wiki/articles/20-install.html")]
 
@@ -217,14 +217,15 @@ class DownloadWording(unittest.TestCase):
             t = " ".join(re.sub(r"<[^>]+>", " ", (ROOT / f).read_text(encoding="utf-8")).split())
             self.assertRegex(t, r"GNU General Public License", f)
             self.assertRegex(t, r"HypnoMix DAW" if "/wiki/" in f else r"Ardour", f)      # Ardour is named only where the disclosure belongs
-            self.assertIn("source will be published with the first release that includes the engine", t, f)
+            self.assertIn("github.com/drtranceypants/hypnomix-daw", t, f)                     # the engine's public source
             self.assertNotRegex(t, r"https?://[^\s\"')]*(engine|daw)[^\s\"')]*source", f)        # no invented source address
 
     def test_what_is_true_today_is_said_plainly(self):
         for f in ("README.md", "docs/APP.md", "packaging/README.md", "hypnomix/app/wiki/articles/18-setup.html",
                   "hypnomix/app/wiki/articles/20-install.html", "hypnomix/app/wiki/articles/18-daw.html"):
             t = " ".join(re.sub(r"<[^>]+>", " ", (ROOT / f).read_text(encoding="utf-8")).split())
-            self.assertRegex(t, r"(?i)not available yet", f)
+            self.assertRegex(t, r"(?i)Apple[- ]silicon", f)
+            self.assertRegex(t, r"(?i)not available (for [^.]{1,40} |there )?yet", f)
             self.assertRegex(t, r"(?i)one (app|download|installer)", f)
 
     def test_what_was_not_verified_is_said_plainly(self):

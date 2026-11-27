@@ -2,5 +2,11 @@
   "format": 1,
   "about": "Which HypnoMix DAW engine this version of the app works with, and where each platform's archive is. A platform with no 'url' has nothing to download. To publish one: see packaging/README.md.",
   "engine": "0.1.0",
-  "platforms": {}
+  "platforms": {
+    "mac-arm64": {
+      "url": "https://github.com/drtranceypants/hypnomix/releases/download/v0.4.1/HypnoMix-engine-0.1.0-mac-arm64.tar.gz",
+      "sha256": "75d5020001be9c2ee716e7aadfdf7c45a18952ccb90965f6c33ff4c6155eb510",
+      "size": 29375481
+    }
+  }
 }

@@ -237,7 +237,7 @@ function engineAct(rich) {
   const rm = E.versions.length ? `<button class="act" style="background:transparent;color:var(--ink);border:1px solid var(--line)" data-engine="remove" ${E.running ? 'disabled' : ''}>Remove HypnoMix DAW</button>${E.running ? ' <span class="small">Close the DAW view first: it is running.</span>' : ''}` : '';
   if (E.available && E.current) return `<div class="msg ok" style="margin:4px 0">${esc(E.message)}</div>${err}${rm}`;
   if (E.available) return `<p style="margin:4px 0">${esc(E.message)}</p>${err}<button class="act" data-engine="install">${E.needs_update ? 'Update HypnoMix DAW' : 'Add HypnoMix DAW'}</button> ${rm}`;
-  return `<p style="margin:4px 0">${esc(E.message)}${rich ? ' Your choice is remembered, and nothing is downloaded. When it is published it is added from here, only when you click.' : ''}</p>${err}${rm}`;
+  return `<p style="margin:4px 0">${esc(E.message)}${rich ? ' Your choice is remembered, and nothing is downloaded. When one is published for this computer it is added from here, only when you click.' : ''}</p>${err}${rm}`;
 }
 
 async function refreshEngine() {

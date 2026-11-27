@@ -264,7 +264,7 @@ class NoNumpy(unittest.TestCase):
         self.assertGreater(int(r.stdout.strip() or 0), 100)
 
 
-HONESTY = "HypnoMix DAW is not released yet. Until it is, everything written here for it is written for Ardour 8 or 9, the free DAW it is built on, and has not yet been tried in either."
+HONESTY = "HypnoMix DAW is new: its first engine (0.1.0) is for Apple-silicon Macs. Steps written here for it were written against Ardour 8 or 9, the free DAW it is built on, and not every one has been tried in HypnoMix DAW yet."
 
 
 def texts(x, skip=("id", "more", "daws", "levels", "fx", "action", "app", "kind")):
@@ -307,7 +307,7 @@ class Naming(unittest.TestCase):
         for a in arts:
             for field in ("title", "sub", "html", "text"):
                 self.assertNotIn("Ardour", a[field], a["id"])
-                self.assertNotIn("not released yet", a[field], a["id"])
+                self.assertNotIn("HypnoMix DAW is new:", a[field], a["id"])
         self.assertIn('data-wiki="ardour"', T.wiki_article("ardour", "tour")["html"])
         self.assertIn('data-wiki="ardour"', T.wiki_article("ardour", "az")["html"])
         self.assertEqual(T.wiki_article("ardour", "tour")["title"], "Guided tour: HypnoMix DAW")
@@ -327,11 +327,11 @@ class Naming(unittest.TestCase):
             self.assertEqual(steps[0]["how"][0], HONESTY, lv)
             self.assertEqual(T.HONESTY, HONESTY)
             for s in steps[1:]:
-                self.assertNotIn("not released yet", " ".join(s["how"] + s["say"]), (lv, s["id"]))
+                self.assertNotIn("HypnoMix DAW is new:", " ".join(s["how"] + s["say"]), (lv, s["id"]))
         for d in ("live", "reaper"):
             for ch, s in all_steps():
                 for t in texts(s):
-                    self.assertNotIn("not released yet", t)
+                    self.assertNotIn("HypnoMix DAW is new:", t)
 
     def test_the_product_is_spelled_hypnomix_capital_m_in_prose(self):
         """A bare lower-case "hypnomix" may stay only in a command, a path, a file or a name another program looks up."""

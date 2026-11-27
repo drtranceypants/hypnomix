@@ -5,7 +5,8 @@ whether you'd like teacher mode: hypnomix/app/teacher.py, a guided course: a tou
 already engineer, or a 101 crash course for people new to audio), and sets that up. There is one app and one installer for
 everyone. HypnoMix DAW (HypnoMix's own DAW) is an add-on: choosing it shows what it is, and only the
 button "Add HypnoMix DAW" fetches it (hypnomix/app/engine_addon.py; the address and the SHA-256 come from the manifest
-shipped inside the app, never from a request). Until the first archive is published it says so and the choice is remembered:
+shipped inside the app, never from a request). The first engine is for Apple-silicon Macs only; where no archive is
+published for the computer it says so and the choice is remembered:
   app       just the app: you click through scan → review → apply. No AI, no account, free
   key       the app's Assistant with an AI service's key (Google Gemini's free tier, Claude, OpenRouter, OpenAI…)
   local     the Assistant with an open-source model on this computer (Ollama or LM Studio): free and private

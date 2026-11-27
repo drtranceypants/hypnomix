@@ -94,7 +94,8 @@ The ten changes you will notice most, in plain words:
 - DAW mode (the HypnoMix engine, the DAW view and the Assistant on it), the Store, `als2ardour`, `import` and
   `chain --ardour` were checked by unit tests on synthetic data and stand-in servers, and DAW mode against the real engine on its silent
   test backend only. No session written by `als2ardour` or `import` has been opened in a released DAW (for `import`: checked: .als through als2ardour's own tests; .logicx decoded from real packages saved by version 10.7, with fader values, mutes, plug-in names and region places compared with the window image each package stores of itself (the program that made them was not run), and one of them imported, opened in the HypnoMix engine on its silent test backend and its tracks, faders and regions read back; .dawproject, .rpp, .ptx and .aaf only with files made by the tests or stand-in readers.), and nothing was tried
-  through a real sound card, in recording, or by adding HypnoMix DAW from Setup (no archive is published yet).
+  through a real sound card, in recording, or with real MPE controllers. The first engine (0.1.0) is published for Apple-silicon
+  Macs only; adding it from Setup on an installed app, signing and notarising it, and Intel Macs have not been tried.
 - Round 2 (take lanes and comping, groups and sidechains, the meter stream, the Session view's cue slots, the A/B session, and the `--engine` / `--cues` forms of `tidy`, `order`, `duck`, `loops` and `variations`) was tested against stand-in engines in the unit tests and against a development build of the engine on its silent test backend with a made-up session. Not verified: the meter stream inside the Mac app's own window (a same-origin WebSocket under the page's `connect-src 'self'`; if that window refuses it, the meters fall back to polling) and its reconnect after an engine restart, any of it on Windows or with real audio hardware, and anything by ear (comp crossfades, cue launches, the A/B level match, the duck and sidechain settings).
 
 Items marked *(to verify)* below rest on research that has not been tested here yet.
@@ -122,8 +123,9 @@ One line per area. Each command's own help (`hypnomix <command> -h`) and its wik
 - **Free plug-ins and sounds (Mac only):** `store` (`search`, `info`, `install`, `uninstall`, `updates`, `check`).
 - **Live set into HypnoMix DAW, and mastering there:** `als2ardour` (a new session folder and an import report) and
   `chain master --ardour` (the chain built in the open HypnoMix DAW session).
-- **DAW mode, built but not available yet:** `app --daw` runs the HypnoMix engine (the DAW's audio engine, a separate program) and
-  drives its open session from the DAW view and the Assistant. It is an add-on added from Setup, and no archive is published yet.
+- **DAW mode, for Apple-silicon Macs first:** `app --daw` runs the HypnoMix engine (the DAW's audio engine, a separate program) and
+  drives its open session from the DAW view and the Assistant. It is an add-on added from Setup; the first engine (0.1.0) is
+  for Apple-silicon Macs only, and there is none for Intel Macs or Windows yet.
 - **Previews:** `ab` builds before and after pairs for clips, tuning, timing nudges, masking cuts and changes to six
   of Live's stock devices (labelled as a model of the device); `abset` puts every fix next to yours inside Live (or in a new REAPER project);
   `plugrender` and `plugins` bring your own VST3 and Audio Unit plug-ins in.
@@ -168,9 +170,9 @@ decisions, the same "new files only". What HypnoMix cannot change in a DAW becom
 4. **Space checks in `devices`:** delay times against the tempo, reverb low cuts.
 5. **A `comp` writer from ranked takes:** `takes` ranks them and lists the best take per section today; nothing
    writes the comp into a project yet.
-6. **HypnoMix DAW, hands-on:** DAW mode is built but not available yet (it needs the engine add-on, which is not
-   published). With it, the app drives the open HypnoMix DAW session (regions, mixer, plug-ins, the review loop) and
-   `chain master --ardour` builds the mastering chain there; next is releasing the engine, opening it on more real songs, and the DAW's own
+6. **HypnoMix DAW, hands-on:** DAW mode needs the engine add-on, whose first version (0.1.0) is for Apple-silicon Macs
+   only. With it, the app drives the open HypnoMix DAW session (regions, mixer, plug-ins, the review loop) and
+   `chain master --ardour` builds the mastering chain there; next is an engine for Intel Macs and Windows, opening it on more real songs, and the DAW's own
    plug-ins (EQ, compressor, expander, delay, reverb) in the chain beyond the test sessions.
 7. **Windows parity:** file pickers, and loopback capture without a macOS-only device for the loops that
    verify a chain.
@@ -200,7 +202,7 @@ decisions, the same "new files only". What HypnoMix cannot change in a DAW becom
 |---|---|---|---|
 | Ableton Live | yes (`.als`) | yes: a new `.als` | yes (AbletonOSC, the Max for Live devices) |
 | REAPER | yes (`.rpp`) | yes: a new `.rpp` | yes: through the bridge |
-| HypnoMix DAW | yes (`.ardour`) | yes: a new `.ardour` snapshot (not yet opened in a released DAW) | yes, in DAW mode: the open HypnoMix DAW session (built; an add-on, not available yet) |
+| HypnoMix DAW | yes (`.ardour`) | yes: a new `.ardour` snapshot (not yet opened in a released DAW) | yes, in DAW mode: the open HypnoMix DAW session (an add-on; Apple-silicon Macs only so far) |
 | A commercial DAW with a session-info text export | audio folders only today | audio folders only today | later |
 | A commercial DAW with a closed binary project | audio folders only today (there is no reader for it) | audio folders only today | later (a control surface) |
 

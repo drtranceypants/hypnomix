@@ -1020,6 +1020,8 @@ class Engine:
     def status(self):
         b = self.binary()
         with self.lock:
+            if b and self.mode is None and self.error.startswith("no engine program found"):
+                self.error = ""                           # HypnoMix DAW was added since that was said: it is no longer true
             pid = self.proc.pid if self.proc and self.proc.poll() is None else None
             return dict(state=self.state, mode=self.mode, connected=self.connected(), url=self.url(),
                         binary=str(b) if b else None, attach_url=self.attach_url, pid=pid, port=self.port,

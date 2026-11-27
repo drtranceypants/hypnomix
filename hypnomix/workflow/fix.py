@@ -52,7 +52,7 @@ folder (that is where HypnoMix DAW keeps its own snapshots, and where it looks f
 finds the same recordings; nothing is copied or moved). The original is never touched; the new file is read back and
 checked, and what changed is listed. Track names and order, vocal stacks, timing, sidechain and tuning stay by hand
 (harmony balance becomes balanced copies of the parts in SCAN_DIR/fixed/voices, not automation in the session).
-Written and re-read by HypnoMix; NOT YET OPENED IN A RELEASED DAW (HypnoMix DAW is not released yet; see the HypnoMix DAW wiki article for what to check there).
+Written and re-read by HypnoMix; NOT YET OPENED IN A RELEASED DAW (HypnoMix DAW is new and not every step has been tried in it; see the HypnoMix DAW wiki article for what to check there).
 
 What happens to each approved finding (see REVIEW.md for the ids):
   set     written into ONE new set next to the original, in this order: distortion parameter fixes,

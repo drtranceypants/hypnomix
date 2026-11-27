@@ -315,9 +315,10 @@ def old_spelling_counts():
     return left, used
 
 
-HONESTY_LINE = "HypnoMix DAW is not released yet. Until it is, everything written here for it is written for Ardour 8 or 9, the free DAW it is built on, and has not yet been tried in either."
+HONESTY_LINE = "HypnoMix DAW is new: its first engine (0.1.0) is for Apple-silicon Macs. Steps written here for it were written against Ardour 8 or 9, the free DAW it is built on, and not every one has been tried in HypnoMix DAW yet."
 DISCLOSURE_SENTENCE = "It is built on Ardour, a free open-source DAW under the GNU General Public License."
 WIKI = "hypnomix/app/wiki/articles"
+ENGINE_SOURCE = "https://github.com/drtranceypants/hypnomix-daw"
 
 
 @unittest.skipIf(FILES is None, "needs git and a checkout (git ls-files)")
@@ -403,7 +404,10 @@ class Disclosure(unittest.TestCase):
         t = squash(read("README.md"))
         self.assertEqual(t.count(DISCLOSURE_SENTENCE), 1)
         self.assertEqual(t.count(HONESTY_LINE), 1)
-        self.assertLess(t.index(DISCLOSURE_SENTENCE), 1500, "near the top, where the three DAWs are named")
+        install = t.index("## Install")
+        self.assertLess(install, t.index(DISCLOSURE_SENTENCE), "in Install, where the add-on is described")
+        self.assertLess(t.index(DISCLOSURE_SENTENCE), t.index(HONESTY_LINE), "the honesty line follows the disclosure")
+        self.assertLess(t.index(HONESTY_LINE) - install, 1500, "both near the start of Install")
         self.assertRegex(t, r"GNU General Public License,? \(?(version )?2 or later")          # the licence paragraph, with its notice of the engine
         self.assertIn("a rebranded fork of Ardour", t)
 
@@ -450,13 +454,18 @@ class Claims(unittest.TestCase):
                              rel + " must say the engine is under the GNU General Public License, version 2 or later")
             self.assertIn("separate program", t, rel + " must say the engine is a separate program")
 
-    def test_no_source_address_is_invented(self):
+    def test_the_engine_source_address_is_the_real_one(self):
+        """The engine's source is public at one address; no other address of it is invented. The archive itself is on
+        the project's own release page."""
         for rel in ("README.md", "docs/APP.md", "THIRD_PARTY.md", "packaging/README.md"):
             t = squash(read(rel))
-            self.assertIn("published with the first release that includes the engine", t, rel)
+            self.assertIn(ENGINE_SOURCE, t, rel)
+            self.assertNotIn("published with the first release that includes the engine", t, rel)
         for rel, text in FILES:
             for url in re.findall(r"https?://[^\s\"')<>]+", text):
-                self.assertNotRegex(url, r"(?i)hypnomix[-_]?(daw|engine)", f"{rel}: {url} is an address of the engine's source")
+                if url.rstrip(".,;:") == ENGINE_SOURCE or url.startswith("https://github.com/drtranceypants/hypnomix/releases/"):
+                    continue
+                self.assertNotRegex(url, r"(?i)hypnomix[-_]?(daw|engine)", f"{rel}: {url} is not the engine's source address")
 
     def test_als2ardour_is_said_to_be_unopened_in_a_released_daw_wherever_it_is_described(self):
         for rel in ("README.md", "AGENTS.md", "hypnomix/app/wiki/articles/26-features.html", "hypnomix/app/wiki/articles/25-chores.html"):
@@ -477,16 +486,17 @@ class Claims(unittest.TestCase):
                 self.assertIn(word, t, f"{rel} must say that '{word}' was not tried")
             self.assertRegex(t, r"signing|signed|notaris", f"{rel} must say that signing was not tried")
 
-    def test_hypnomix_daw_is_not_said_to_be_available_before_it_is(self):
-        """HypnoMix DAW is an add-on fetched from Setup, and the shipped manifest names no archive yet: a page that says it can
-        be added from Setup must say, in the same page, that it is not available yet; and none says it is."""
+    def test_hypnomix_daw_is_not_said_to_be_available_where_it_is_not(self):
+        """HypnoMix DAW is an add-on fetched from Setup, and its first engine is for Apple-silicon Macs only: a page that says
+        it can be added from Setup must say, in the same page, where it is (or is not) available; and none says it is out
+        without saying for what."""
         for rel, text in FILES:
             if rel.endswith((".md", ".html", ".js", ".py")) and not rel.startswith(("tests/", "docs/launch/")):
                 t = squash(text)
-                self.assertNotRegex(t, r"(?i)\bHypnoMix DAW (is|are) (now )?(available|out|ready|released)\b(?! (yet|for))", f"{rel}: it is not out")
+                self.assertNotRegex(t, r"(?i)\bHypnoMix DAW (is|are) (now )?(available|out|ready|released)\b(?! (yet|for|on))", f"{rel}: say for what")
                 if re.search(r"(?i)added? (it |HypnoMix DAW )?(from|in|with) \**Setup", t):
-                    self.assertRegex(t, r"(?i)not available yet|no archive|nothing is published|no address|names no address|not out",
-                                     f"{rel}: says it can be added from Setup, and not that it is not available yet")
+                    self.assertRegex(t, r"(?i)Apple[- ]silicon|not available (for [^.]{1,40} |there )?yet|no archive|names no address",
+                                     f"{rel}: says it can be added from Setup, and not where it is available")
 
     def test_numbers_written_by_hand_match_the_code(self):
         from hypnomix import cli

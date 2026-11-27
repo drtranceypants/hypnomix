@@ -47,8 +47,8 @@ approved fixes are written into a new file of the same kind. Any other DAW works
 ## Install
 
 Most people should use the **HypnoMix installer** for Mac or Windows from hypnomix.bradfieldenterprises.org/download (one
-installer for everyone; HypnoMix DAW, HypnoMix's own DAW, is an add-on you can add from Setup once it is
-published, and it is not available yet): no
+installer for everyone; HypnoMix DAW, HypnoMix's own DAW, is an add-on you can add from Setup on an Apple-silicon
+Mac, and it is not available for Intel Macs or Windows yet): no
 terminal, and a guided setup on first open. The guide "Setting Up, and Choosing an AI" covers it. The steps below are the
 **source install**, for the terminal and for working on HypnoMix itself. (The installed app also installs the
 optional extras from its setup, and gives Claude Code the HypnoMix skills.)

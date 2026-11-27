@@ -2550,7 +2550,7 @@ def main():
     ap.add_argument("--no-open", action="store_true", help="do not open the browser")
     ap.add_argument("--home", help="where scans are kept (default ~/Documents/Hypnomix)")
     ap.add_argument("--daw", action="store_true", default=os.environ.get("HYPNOMIX_DAW") == "1",
-                    help="DAW mode: open the DAW view first and start the HypnoMix DAW engine (or use a running HypnoMix DAW window); HypnoMix DAW is an add-on that is not available yet, so this needs an engine you already have")
+                    help="DAW mode: open the DAW view first and start the HypnoMix DAW engine (or use a running HypnoMix DAW window); HypnoMix DAW is an add-on from Setup, for Apple-silicon Macs only so far, so this needs an engine that was added or one you already have")
     ap.add_argument("--session", help="DAW mode: the session (.ardour, or its folder) to open in the engine")
     a = ap.parse_args()
     if a.home:

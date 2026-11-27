@@ -62,9 +62,9 @@ def _levels(ch, s=None):
 EXTRA = ("terms", "settings", "listen", "app", "mistakes", "try", "quiz", "hear", "more")
 
 
-# Said once, at the first step of each HypnoMix DAW course (tour, 101, A to Z), because that DAW can't be downloaded yet.
-HONESTY = ("HypnoMix DAW is not released yet. Until it is, everything written here for it is written for Ardour 8 or 9, "
-           "the free DAW it is built on, and has not yet been tried in either.")
+# Said once, at the first step of each HypnoMix DAW course (tour, 101, A to Z), because that DAW is new.
+HONESTY = ("HypnoMix DAW is new: its first engine (0.1.0) is for Apple-silicon Macs. Steps written here for it were written "
+           "against Ardour 8 or 9, the free DAW it is built on, and not every one has been tried in HypnoMix DAW yet.")
 
 
 def _hm_in(daw, how="in"):

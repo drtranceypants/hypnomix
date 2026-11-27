@@ -96,7 +96,7 @@ Tell me what it got wrong.
 github.com/drtranceypants/hypnomix
 
 **11/**
-New: a free course is built in. The app's Teacher tab teaches the loop in your own DAW (Live, REAPER, and HypnoMix DAW, which is not released yet): a tour, a 101 crash course and a complete course A to Z. No AI needed.
+New: a free course is built in. The app's Teacher tab teaches the loop in your own DAW (Live, REAPER, and HypnoMix DAW, new on Apple-silicon Macs): a tour, a 101 crash course and a complete course A to Z. No AI needed.
 
 Or practise on a 40-second demo song with six planted problems: hypnomix demo
 
@@ -107,7 +107,7 @@ Or practise on a 40-second demo song with six planted problems: hypnomix demo
 **Before/after**
 Raw stems in. Mastered song out. Every EQ cut, compressor setting and level explained in plain English.
 
-This is HypnoMix, a free open-source mix engineer for Ableton Live and REAPER, with a HypnoMix DAW add-on on the way.
+This is HypnoMix, a free open-source mix engineer for Ableton Live and REAPER, with a HypnoMix DAW add-on for Apple-silicon Macs.
 
 [video: 10 s raw rough mix → 10 s HypnoMix master, same section, level-matched]
 
