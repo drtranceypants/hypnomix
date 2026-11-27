@@ -69,7 +69,7 @@ GROUPS = [
         ("preflight", "hypnomix.session.preflight", "sanity of the files before any work: mixed sample rates or bit depths, stems of different length, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel; report first"),
         ("project", "hypnomix.project.show", "look inside a REAPER, HypnoMix Studio or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
         ("import", "hypnomix.project.import_project", "import a project from another DAW into a NEW HypnoMix Studio session: .als, .logicx, .dawproject, .rpp, or .ptx and .aaf (with the HypnoMix Studio add-on, Apple-silicon Macs only so far); audio copied in, the project only read, what was left out listed"),
-        ("als2ardour", "hypnomix.project.als2ardour", "import a Live set into a NEW HypnoMix Studio session folder: tracks, colours, clips as regions (gain, fades, envelopes), faders, sends, groups, tempo; audio copied in; devices listed, never guessed (the set is only read)"),
+        ("als2ardour", "hypnomix.project.als2ardour", "import a Live set into a NEW HypnoMix Studio session folder: tracks, colours, clips as regions (gain, fades, envelopes), faders, sends, groups, tempo; audio copied in; EQ Eight, Glue Compressor and Saturator as ACE EQ, ACE Compressor and Hypnomix Saturator, other devices listed, never guessed (the set is only read)"),
     ]),
     ("Session files (.als, Live closed or open)", [
         ("render", "hypnomix.session.render", "render tracks from a .als to stems without opening Live (clip gain, fades, warps)"),

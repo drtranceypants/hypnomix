@@ -30,13 +30,17 @@ What is carried
               group has devices, a fader, pan, sends or automation of its own; otherwise its tracks feed the
               master (or the group above) directly
   returns     buses, with an aux send from every track that sends to them at the same level (pre/post as Live)
+  devices     EQ Eight, Glue Compressor and Saturator, on tracks, groups, returns and the Main track, as ACE EQ, ACE
+              Compressor (stereo) and Hypnomix Saturator with their settings, in their place in the chain; what a
+              plug-in cannot do is listed with it, and a device it cannot be (EQ Eight in M/S, a keyed Glue, another
+              Saturator curve) is not carried (`als_devices.py`)
   tempo       the set's tempo and time signature; tempo automation as tempo points: steps exactly, and a ramp as a
               run of small constant steps (a quarter of a beat each) that are exact in time at every step, so the
               tempo map agrees with itself and a MIDI region placed in beats lands where Live plays it, to within
               the (tiny) amount the report states. Audio regions are placed in seconds exactly as Live plays them
 
-What is NOT carried (all listed in IMPORT-REPORT.md): devices and plug-ins (never guessed: each track's Live
-devices are listed), take lanes, Session-view clips, real warp maps, device automation, MIDI instruments, and the
+What is NOT carried (all listed in IMPORT-REPORT.md): every other device and plug-in (never guessed: each track's
+Live devices are listed), take lanes, Session-view clips, real warp maps, device automation, MIDI instruments, and the
 Live features that change what you hear and have no equivalent here: a clip's transpose (Transpose / Detune), the
 Re-Pitch warp mode (speed and pitch together), track delay, split stereo pan, clip grooves, the crossfader's A / B
 assignment, fade curve shapes and crossfades, MIDI note probability and controller envelopes, time-signature changes,
@@ -135,6 +139,35 @@ def device_label(d):
         path = _v(d, ".//PatchSlot//Path", str, "") or _v(d, ".//PatchSlot//RelativePath", str, "")
         return f"{Path(path).stem} (Max device)" if path else "Max device"
     return DEVICE_NAMES.get(d.tag, d.tag)
+
+
+def device_cells(tr):
+    """The track table's device column: each Live device, and what a carried one became ("EQ Eight -> ACE EQ")."""
+    ents = tr.get("device_entries") or []
+    if len(ents) != len(tr.get("devices") or []):
+        return list(tr.get("devices") or [])
+    return [f"{lab} -> {e['to']}" if e["carried"] else lab for lab, e in zip(tr["devices"], ents)]
+
+
+def device_section(song):
+    """IMPORT-REPORT.md's "Devices carried" section: per route, each carried device with its settings and what was
+    left out, and the stock devices that could not be carried and why."""
+    rows = [("Master (Main track)", song.get("main_entries") or [])] + \
+        [(tr["name"], tr.get("device_entries") or []) for tr in song["tracks"]]
+    out = []
+    for name, ents in rows:
+        for e in ents:
+            if e["carried"]:
+                out.append(f"- **{name}**: {e['label']} -> {e['to']} ({e['summary']})")
+                out += [f"  - {x}" for x in e["notes"]]
+            elif e.get("why"):
+                out.append(f"- **{name}**: {e['label']} NOT carried: " + "; ".join(e["notes"]))
+    if not out:
+        return []
+    return ["## Devices carried", "",
+            "EQ Eight, Glue Compressor and Saturator come across as HypnoMix DAW's ACE EQ, ACE Compressor (stereo) "
+            "and Hypnomix Saturator, in the same place in the chain, with their settings. Close to Live, not the same "
+            "sound: compare by ear. What a plug-in could not take is listed under it.", "", *out, ""]
 
 
 def devices(t):
@@ -356,7 +389,8 @@ def read_set(path):
     from hypnomix.session import liveversion as LV
     ver = LV.version_of(root)
     song = dict(path=path, name=path.stem, tempo=tempo, num=num, den=den, tracks=[], warnings=[], root=root,
-                live=ver[3] if ver else None, meter_changes=meter_changes(main, num, den),
+                live=ver[3] if ver else None, live_major=ver[0] if ver else None,
+                meter_changes=meter_changes(main, num, den),
                 locators=locators(root))
     song["main"] = mixer(main, "Main") if main is not None else mixer(None, "Main")
     song["groove_amount"] = _v(main, "./DeviceChain/Mixer/GlobalGrooveAmount/Manual", float, 100.0) if main is not None else 100.0
@@ -1126,6 +1160,10 @@ class Writer:
                      type="trim")
             alist(sub(tp, "Automation"), self.ids, "trim", None, "Logarithmic")
             sub(tp, "Controllable", name="trimcontrol", id=self.ids(), flags="GainLike", value=1)
+        if kind != "midi":                  # EQ Eight, Glue Compressor, Saturator: where Live has them, before the sends
+            from hypnomix.project import als_devices as AD
+            for plan in tr.get("plans", []):
+                AD.write(rt, plan, self.ids, channels=2)
         sends = tr.get("aux", []) if kind != "midi" else []      # no instrument here: nothing to send yet
         for s in [s for s in sends if s["pre"]]:
             self.send(rt, s)
@@ -1537,6 +1575,18 @@ class Writer:
             for k in kids:
                 k["route_group"] = tr["ardour_name"]
 
+        # devices HypnoMix DAW's own plug-ins can take (`als_devices.py`): planned per route, listed in the report
+        from hypnomix.project import als_devices as AD
+        main_el = song["root"].find(".//MainTrack")
+        if main_el is None:
+            main_el = song["root"].find(".//MasterTrack")
+        for tr, el in [(master, main_el)] + [(x, x["el"]) for x in tracks]:
+            if tr.get("kind") == "midi" or (tr.get("kind") == "group" and not tr.get("bus")) or el is None:
+                tr["plans"], tr["device_entries"] = [], []
+                continue
+            tr["plans"], tr["device_entries"] = AD.chain(el, song.get("live_major"), tr.get("other_auto"))
+        song["main_entries"] = master["device_entries"]
+
         # routes, in Live's order (master first)
         self.route(routes, master, "master", 0, None)
         order = 1
@@ -1638,10 +1688,11 @@ def report_md(song, w, f, sr):
                   f"up to {tp.ramp_error(segs):.2f} ms from where Live has it. This was not opened in HypnoMix Studio itself; "
                   f"check MIDI regions that follow a ramp."]
         L += [""]
+    L += device_section(song)
     L += ["## Not carried: rebuild by hand", "",
-          "- **Devices and plug-ins are not carried.** Each track's Live devices are listed below; no equivalent "
-          "was guessed. Levels here are the faders and clip gains only, so the session will not sound like the "
-          "Live mix until the processing is rebuilt.",
+          "- **Devices and plug-ins are not carried**, except EQ Eight, Glue Compressor and Saturator (above). "
+          "Each track's Live devices are listed below; no equivalent was guessed. Until the rest is rebuilt the "
+          "session will not sound like the Live mix.",
           "- **Pan law:** Live's pan and HypnoMix Studio's stereo panner differ off-centre; positions are carried as they "
           "are (centred tracks are identical).",
           "- Take lanes, Session-view clips and device automation are not carried (counts below).",
@@ -1700,7 +1751,7 @@ def report_md(song, w, f, sr):
               f"drive). They were copied into the session like the rest, so nothing here points back to them:", "",
               *[f"- `{x}` ({w.outside[x]} clip(s))" for x in shown],
               *([f"- ... and {len(w.outside) - 40} more"] if len(w.outside) > 40 else []), ""]
-    L += ["## Tracks", "", "| # | Track | Kind | Here | Fader | Regions | Live devices (not carried) | Other |",
+    L += ["## Tracks", "", "| # | Track | Kind | Here | Fader | Regions | Live devices (carried ones say what as) | Other |",
           "|---|---|---|---|---|---|---|---|"]
     for i, tr in enumerate(song["tracks"], 1):
         here = {"audio": "audio track", "midi": "MIDI track (no instrument)", "return": "bus + aux sends",
@@ -1723,14 +1774,14 @@ def report_md(song, w, f, sr):
         if tr["muted"]:
             other.append("switched off (muted)")
         fader = f"{20 * math.log10(tr['volume']):+.1f} dB" if tr["volume"] > 0 else "-inf"
-        devs = ", ".join(tr["devices"]) or "none"
+        devs = ", ".join(device_cells(tr)) or "none"
         nm = tr["name"] + (f" (here: {tr['ardour_name']})" if tr.get("ardour_name", tr["name"]) != tr["name"] else "")
         esc = lambda x: x.replace("|", "\\|")
         L.append(f"| {i} | {esc(nm)} | {tr['kind']} | {esc(here)} | {fader} | {tr.get('regions', 0)} | {esc(devs)} | "
                  f"{esc('; '.join(other))} |")
     m = song["main"]
     L += ["", f"Master: fader {20 * math.log10(m['volume']) if m['volume'] > 0 else -math.inf:+.1f} dB. "
-          f"Main-track devices (not carried): {', '.join(song.get('main_devices', [])) or 'none'}.", ""]
+          f"Main-track devices: {', '.join(device_cells(dict(devices=song.get('main_devices', []), device_entries=song.get('main_entries', [])))) or 'none'}.", ""]
     L += ["## Warped clips", ""]
     if not w.report["warped"] and not w.report["bent"]:
         L += ["Every warped clip plays at the set's own tempo along one straight line: carried exactly, no "
@@ -1876,7 +1927,10 @@ def main(argv=None):
                      (len(w.outside), "samples from outside the project folder (copied)")):
         if n:
             print(f"  ! {n} {label} (listed in the report)")
-    print("  devices are not carried: each track's Live devices are listed in the report")
+    carried = sum(1 for tr in w.song["tracks"] for e in tr.get("device_entries", []) if e["carried"]) + \
+        sum(1 for e in w.song.get("main_entries", []) if e["carried"])
+    print(f"  {carried} device(s) carried as HypnoMix DAW plug-ins (EQ Eight, Glue Compressor, Saturator); every "
+          "other device is listed in the report, not carried")
 
 
 if __name__ == "__main__":
