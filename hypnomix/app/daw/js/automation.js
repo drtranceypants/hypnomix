@@ -29,7 +29,7 @@
 (function () {
   'use strict';
   const HX = window.HX, S = HX.S, h = HX.h;
-  const LANE_H = 44, TEMPO_H = 34, EPS = 1e-4, MIN_GAP = 0.05;
+  const LANE_H = 44, TEMPO_H = 34, EPS = 1e-4, MIN_GAP = 0.05, EDGE = 1e-4;
   const LINE_DB = 3, TRIM_DB = 4, MAX_SLOPE = 7, S_PEAK = Math.PI / 2, ON_LINE = 0.1;
   const LEVEL = ['gain', 'trim', 'send'];
 
@@ -99,9 +99,17 @@
   function anchors(control, pts) {
     if (!isLevel(control) || pts.length < 3) return pts.map((_, i) => i);
     const sg = (i) => { const d = pts[i + 1].v - pts[i].v; return Math.abs(d) < EPS ? 0 : d > 0 ? 1 : -1; };
-    const out = [0];
-    for (let i = 1; i < pts.length - 1; i++) { const p = sg(i - 1), q = sg(i); if (p !== q || p === 0) out.push(i); }
-    out.push(pts.length - 1);
+    const raw = [0];
+    for (let i = 1; i < pts.length - 1; i++) { const p = sg(i - 1), q = sg(i); if (p !== q || p === 0) raw.push(i); }
+    raw.push(pts.length - 1);
+    /* the ends of an engine S-curve move by a hair: a handle within 0.12 s and 0.05 dB of the one before is the same
+       handle (a drag rewrites everything between its neighbours, so the point left out goes with it) */
+    const near = (a, b) => Math.abs(pts[b].t - pts[a].t) < 0.12 && Math.abs((pts[b].v == null ? -999 : pts[b].v) - (pts[a].v == null ? -999 : pts[a].v)) < 0.05;
+    const out = [];
+    for (const i of raw) {
+      if (out.length && near(out[out.length - 1], i)) { if (i === pts.length - 1 && out.length > 1) out[out.length - 1] = i; continue; }
+      out.push(i);
+    }
     return out;
   }
   A.anchors = anchors;
@@ -400,14 +408,20 @@
     }
     if (Math.abs(nt - p0.t) < 1e-6 && Math.abs((nv == null ? -999 : nv) - (p0.v == null ? -999 : p0.v)) < 1e-9) return { t: nt, v: nv, points: pts, call: null, held };
     let call;
-    const P = (q) => ({ time: Math.round(q.t * 1e6) / 1e6, value: q.v });
+    nt = Math.round(nt * 1e4) / 1e4;
+    /* the neighbours' times go back exactly as the engine gave them: a range edge a hair off one would leave the old
+       point beside the new edge, a jump the engine refuses */
+    const P = (q) => ({ time: q.t, value: q.v });
+    /* the range reaches a hair past the outer points, so they are written again as given (no guard point a hair from
+       them: the engine reports values to 0.001 dB, and a guard beside a point read that way is a jump it refuses) */
+    const edge = (x, dir) => Math.round((x + dir * EDGE) * 1e6) / 1e6;
     if (level) {
       const list = [a, { t: nt, v: nv }, b].filter(Boolean);
       const lo = Math.min(list[0].t, p0.t), hi = Math.max(list[list.length - 1].t, p0.t);
       if (!a) list.unshift({ t: lo, v: nv });
       if (!b) list.push({ t: hi, v: nv });
       const uniq = list.filter((q, j) => j === 0 || q.t - list[j - 1].t > 1e-6);
-      call = { tool: 'automation_write', args: { track_id: t.id, control, points: uniq.map(P), mode: 'replace-range', curve: 's_curve', start: P(uniq[0]).time, end: P(uniq[uniq.length - 1]).time } };
+      call = { tool: 'automation_write', args: { track_id: t.id, control, points: uniq.map(P), mode: 'replace-range', curve: 's_curve', start: edge(uniq[0].t, -1), end: edge(uniq[uniq.length - 1].t, 1), guard: false } };
     } else {
       const lo = Math.min(nt, p0.t) - EPS, hi = Math.max(nt, p0.t) + EPS;
       call = { tool: 'automation_write', args: { track_id: t.id, control, points: [P({ t: nt, v: nv })], mode: 'replace-range', curve: 'linear', start: lo, end: hi, guard: false } };
@@ -438,7 +452,7 @@
       if (a && b) {
         const why = problem(control, [a, b]);
         if (why) { HX.toast('Not removed: without this point ' + why + ' (smooth-automation rules)', 4200); return null; }
-        return A.write(t, control, { tool: 'automation_write', args: { track_id: t.id, control, points: [{ time: a.t, value: a.v }, { time: b.t, value: b.v }], mode: 'replace-range', curve: 's_curve', start: a.t, end: b.t } }, label);
+        return A.write(t, control, { tool: 'automation_write', args: { track_id: t.id, control, points: [{ time: a.t, value: a.v }, { time: b.t, value: b.v }], mode: 'replace-range', curve: 's_curve', start: Math.round((a.t - EDGE) * 1e6) / 1e6, end: Math.round((b.t + EDGE) * 1e6) / 1e6, guard: false } }, label);
       }
       const n = a || b;
       if (n && Math.abs((n.v == null ? -999 : n.v) - (p.v == null ? -999 : p.v)) > ON_LINE) { HX.toast('Not removed: this point leads into a move; remove the move’s middle point first', 4200); return null; }

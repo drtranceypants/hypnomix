@@ -406,7 +406,9 @@ automatable controls (`automation_list`: fader, trim, pan, width, mute, sends, p
 lane under the track (and under its take lanes), its points read with `automation_get` (seconds, natural units). Which
 lanes show is remembered per session in this browser. Every gesture is ONE engine call and ONE engine undo step on the
 shared op path: dragging a point writes the stretch from the point before it to the point after it again
-(`automation_write`, `replace-range`; level controls with `curve: s_curve`), a double-click adds one point on the line
+(`automation_write`, `replace-range` from a hair before the first to a hair after the last, `guard: false`, so the
+outer points are written again as read: the engine reports values to 0.001 dB, and a guard point beside a point read
+that way would be a jump it refuses; level controls with `curve: s_curve`), a double-click adds one point on the line
 as it is (nothing heard changes), ⌥-click or Delete removes a point (a level point by writing its neighbours again as
 one S-curve, any other with `automation_clear`), and Play / Off is `automation_set_state` (not an engine undo step, as
 in the editor: its undo sets the old state again). Undo and redo go through `session_undo` / `session_redo`, checked

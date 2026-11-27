@@ -90,7 +90,9 @@ class Gestures(unittest.TestCase):
         r = run_js(self, SETUP + r"""
 var s = A.sCurve([{ t: 0, v: 0 }, { t: 1.2, v: -3 }]);
 var dense = [{ t: 0, v: 0 }].concat(A.sCurve([{ t: 5, v: 0 }, { t: 6.2, v: -2.5 }])).concat([{ t: 9, v: -2.5 }, { t: 12, v: 0 }]);
-print(JSON.stringify({ n: s.length, mid: s[Math.floor(s.length / 2)].v, last: s[s.length - 1].v,
+var hair = [{ t: 7.7, v: 0 }, { t: 8.985, v: -3 }, { t: 9.034, v: -3 }, { t: 10, v: -2.8 }, { t: 11.65, v: -2.5 }, { t: 11.7, v: -2.5 }, { t: 12.9, v: 0 }];
+var hairAn = A.anchors('gain', hair).map(function (i) { return hair[i].t; });
+print(JSON.stringify({ hair: hairAn, n: s.length, mid: s[Math.floor(s.length / 2)].v, last: s[s.length - 1].v,
   an: A.anchors('gain', dense).map(function (i) { return dense[i].t; }), pan: A.anchors('pan_azimuth', dense).length, total: dense.length }));
 """)
         self.assertEqual(r["n"], 25)                                  # 24 points over 1.2 s (one every 50 ms) plus the start
@@ -98,6 +100,7 @@ print(JSON.stringify({ n: s.length, mid: s[Math.floor(s.length / 2)].v, last: s[
         self.assertEqual(r["last"], -3)
         self.assertEqual(r["an"], [0, 5, 6.2, 9, 12])                 # where the line turns or is flat; not the S's own points
         self.assertEqual(r["pan"], r["total"])                        # any other lane: every point
+        self.assertEqual(r["hair"], [7.7, 8.985, 11.65, 12.9])        # an S-curve's hair-thin ends are one handle
 
     def test_a_drag_stops_at_the_rules_and_sends_one_s_curve_write(self):
         r = run_js(self, SETUP + r"""
@@ -111,7 +114,8 @@ print(JSON.stringify({ far: far, steep: steep, edge: edge, trim: trim }));
         self.assertAlmostEqual(far["v"], -3, places=6)                # held to 3 dB from both neighbours
         self.assertIn("at most 3 dB", far["held"])
         a = far["call"]["args"]
-        self.assertEqual((far["call"]["tool"], a["curve"], a["mode"], a["start"], a["end"]), ("automation_write", "s_curve", "replace-range", 10, 20))
+        self.assertEqual((far["call"]["tool"], a["curve"], a["mode"], a["start"], a["end"], a["guard"]),
+                         ("automation_write", "s_curve", "replace-range", 9.9999, 20.0001, False))   # a hair past the outer points
         self.assertEqual([p["time"] for p in a["points"]], [10, 14, 20])
         steep = r["steep"]                                            # 0.4 s from the point before: under 7 dB/s at the S's peak
         self.assertLess(AR.rate(10, 10.4, steep["v"]), AR.MAX_SLOPE)
@@ -151,7 +155,8 @@ print(JSON.stringify({ add: add, rm: rm, refused: refused, inner: inner, pan: pa
         self.assertEqual(AR.check(a, None, line), [])                  # one point on the line: allowed
         self.assertEqual(r["add"]["op"]["param"], "autoPoints")
         rm = r["rm"]["op"]["after"]["call"]["args"]
-        self.assertEqual(([p["time"] for p in rm["points"]], rm["curve"], rm["start"], rm["end"]), ([10, 14], "s_curve", 10, 14))
+        self.assertEqual(([p["time"] for p in rm["points"]], rm["curve"], rm["start"], rm["end"], rm["guard"]),
+                         ([10, 14], "s_curve", 9.9999, 14.0001, False))
         self.assertIn("at most 3 dB", r["refused"])                    # without the middle point the move would be 5.5 dB
         self.assertIn("where the line turns", r["inner"])               # a point inside an S-curve is not one to remove
         self.assertEqual(r["pan"]["tool"], "automation_clear")
