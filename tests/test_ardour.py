@@ -363,6 +363,18 @@ class TempoRampTest(unittest.TestCase):
         self.assertAlmostEqual(clock.s_to_beats(clock.beats_to_s(5.5)), 5.5, places=9)
         self.assertAlmostEqual(clock.qpm_at(4), 110.0)
 
+    def test_a_continuing_ramp_ends_at_the_next_points_tempo(self):
+        # continuing: the engine ramps to the next point's start tempo, whatever this point's own end tempo says
+        import xml.etree.ElementTree as ET
+        from hypnomix.project import ardour as AR
+        root = ET.fromstring(f"""<Session version="7003"><TempoMap superclocks-per-second="{SC}"><Tempos>
+          <Tempo npm="100" enpm="120" note-type="4" type="Ramped" continuing="1" sclock="0" quarters="0:0" bbt="1|1|0"/>
+          <Tempo npm="140" enpm="140" note-type="4" type="Constant" sclock="2279182178" quarters="16:0" bbt="5|1|0"/>
+          </Tempos><Meters><Meter note-value="4" divisions-per-bar="4" sclock="0" quarters="0:0" bbt="1|1|0"/></Meters></TempoMap></Session>""")
+        clock, *_ = AR.tempo_map(root, SR, 7003, [])
+        self.assertAlmostEqual(clock.qpm_at(8), 120.0)
+        self.assertAlmostEqual(clock.beats_to_s(16), 2279182178 / SC, places=6)
+
 
 class ArdourWriteTest(unittest.TestCase):
     """`fix` writes a NEW .ardour: approved fades, gain, dips and mixer moves land, and nothing else does."""

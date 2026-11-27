@@ -147,11 +147,14 @@ def tempo_map(root, sr, version, warn):
             quarters = num(b) + num(k) / TICKS
             secs = int(num(t.get("sclock"), 0)) / scps
             ramped = t.get("type") == "Ramped" or (end > 0 and abs(end - qpm) > 1e-6)
-            raw.append((quarters, secs, qpm if qpm > 0 else 120.0, end if end > 0 else qpm, ramped, num(t.get("omega"), 0.0)))
+            cont = str(t.get("continuing") or "").strip().lower() in ("1", "yes", "true", "y")
+            raw.append((quarters, secs, qpm if qpm > 0 else 120.0, end if end > 0 else qpm, ramped, num(t.get("omega"), 0.0), cont))
         raw.sort()
         tempos = []
-        for i, (quarters, secs, qpm, end, ramped, omega) in enumerate(raw):
+        for i, (quarters, secs, qpm, end, ramped, omega, cont) in enumerate(raw):
             k = 0.0
+            if ramped and cont and i + 1 < len(raw):
+                end = raw[i + 1][2]                          # a continuing ramp ends at the next point's tempo
             if ramped and i + 1 < len(raw):
                 span = raw[i + 1][0] - quarters
                 if span > 0:
