@@ -17,11 +17,13 @@ FX, no faders) into raw/renders/, and the groups work from those renders and the
               vocal level line to line and upper parts under the melody (vocallevel)
   effects     plug-ins switched off or offline, whole FX chains off, several limiters on one track; sidechained
               ReaComps simulated hit by hit
-  devices     REAPER only: every ReaComp judged on its track's own audio (the Live Compressor check: too little,
-              too much, release bending the bass, drum transients clamped) with suggested settings `fix` writes into
-              it; a low cut suggested where a ReaEQ has none and the part rumbles under 80 Hz; ReaGate and ReaLimit
-              listed, not judged (their saved settings are not read); a ReaComp with Wet at 0 or a parallel
-              dry/wet mix is not judged; the master track's plug-ins are not read. See `devices_project.py`
+  devices     every ReaComp judged on its track's own audio (the Live Compressor check: too little, too much,
+              release bending the bass, drum transients clamped) with suggested settings `fix` writes into it; a low
+              cut suggested where a ReaEQ has none and the part rumbles under 80 Hz; ReaGate and ReaLimit listed,
+              not judged (their saved settings are not read); a ReaComp with Wet at 0 or a parallel dry/wet mix is
+              not judged; the master track's plug-ins are not read. HypnoMix DAW: each ACE Compressor judged the
+              same way (Range, Auto Release, Mix simulated; the settings listed by hand), ACE EQ's High Pass band
+              as the low cut, a hard-driven Hypnomix Saturator. See `devices_project.py`
   recordings  every source file the project plays: clipping, levels, noise floor, DC, sibilance, breaths, clicks
   noise       items boosted a lot: the boost lifts the take's own noise floor
   intent      "is this deliberate?": automation, hard pans, muted tracks with items, big item gains, polarity flips,
@@ -914,7 +916,8 @@ def g_stems(p, R, od, a):
 
 
 def g_devices(p, R, od, a, role):
-    """ReaComp, ReaEQ low cut, ReaGate / ReaLimit listed: `devices_project.py` (Live's `devices` on the model)."""
+    """ReaComp / ACE Compressor, ReaEQ / ACE EQ low cut, Hypnomix Saturator drive, ReaGate / ReaLimit listed:
+    `devices_project.py` (Live's `devices` on the model)."""
     from hypnomix.workflow import devices_project as DP
     return DP.g_devices(p, R, od, a, role)
 

@@ -11,7 +11,9 @@ The same check as for a Live set (`duck.py`), on the shared model (`project/ardo
   tune      an ACE Compressor on the return already keyed from the vocals: how far it ducks (measured on what its
             own key sends carry) while the singer sings and whether it lets go in the gaps; a new threshold (and
             release) when it is off. A switched-off compressor is switched on (the plug-in and its Enable control)
-            and a switched-off key send is made again from the source
+            and a switched-off key send is made again from the source. Its Range, Auto Release and Mix are read and
+            simulated (`sidechain_project.ace_settings`): a Mix under 100 % (the dry return mixed back in, so only part
+            of the duck is heard) is set to 100 %, and a Range that stops it short of the depth is set to Off (60)
   add       nothing ducks the return yet: an ACE Compressor at the end of its chain, keyed from the source
             (plugin_set_sidechain, pre-fader), ratio 4, 1 ms attack, 205 ms release, the threshold fitted to
             --depth dB (3) while the singer sings; reverbs a little lighter (2 dB)
@@ -157,9 +159,19 @@ def propose(p, labels=None, depth=3.0):
                 problems.append(f"it ducks hard ({cur['depth']:.1f} dB while the singer sings)")
             if cur["in_gaps"] > 1.5:
                 problems.append(f"it is still {cur['in_gaps']:.1f} dB down half a second into the gaps")
+            extra = {}
+            if c.get("dry_wet", 1.0) < 0.9995:
+                problems.append(f"its Mix is at {100 * c['dry_wet']:.0f} %, so the dry return is mixed back in and "
+                                "only part of the duck is heard")
+                extra["Mix"] = 100.0
+            if c.get("range_db") is not None and c["range_db"] < target + 1:
+                problems.append(f"its Range ({c['range_db']:g} dB) stops it short of {target:g} dB")
+                extra["Range"] = 60.0
             if not problems:
                 continue
             new = dict(c)
+            if extra:                      # fully wet and no cap, written along with the rest
+                new.update(dry_wet=1.0, range_db=None if "Range" in extra else new.get("range_db"), ace_extra=extra)
             if new["release"] < 100 or new["release"] > 400:
                 new["release"] = float(np.clip(new["release"], 150, 300))
             new, m = D.fit(key, act, new, target)

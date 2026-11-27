@@ -23,8 +23,28 @@ Any other plug-in (JS, third-party) changes the level in a way this check does n
 listed but not judged. ReaComp's output (wet / dry) gain is not modelled either: a second compressor after a
 ReaComp is judged on the level after the first one's gain reduction. Folder tracks and MIDI tracks have no render
 of their own here, so their plug-ins are not judged. The master track's plug-ins (MASTERFXLIST) are not read by
-the project model, so they are not judged and are not listed. HypnoMix Studio sessions: the plug-ins' settings are not in the shared
-model, so the group is skipped there with a note.
+the project model, so they are not judged and are not listed.
+
+HypnoMix Studio sessions (.ardour), the plug-ins' saved controls (`project/ardour.py`):
+
+  ACE Compressor  judged like a ReaComp: Threshold, Ratio, Attack, Release, Knee (6 x Knee dB), Makeup; Range caps
+                  the reduction and Auto Release runs as the plug-in's two envelopes (`sidechain.gain_reduction`);
+                  Mix under 97 % is parallel compression: listed with what is heard, not judged, and the level after
+                  it modelled (Mix mixes the dry signal back in phase). One with its Sidechain switch on is the
+                  effects group's sidechain check (keyed) or does nothing (nothing keys it). The suggestion is listed
+                  with the controls to set (`manual`).
+  ACE EQ          its High Pass band switched on counts as a low cut, as does an ACE High/Low Pass Filter with its
+                  high pass on; a part with rumble, an EQ and no low cut gets the low-cut suggestion (by hand).
+  Hypnomix        Drive, Curve, Output, Mix: the peak going into the curve (the level reaching it plus Drive) against
+  Saturator       where the curves saturate (-1.5 dBFS): over it by more than 9 dB into Soft Sine or Analog Clip, or 4
+                  dB into Hard Clip, is heavy clipping, and a lower Drive is suggested (by hand). Its level is modelled
+                  (the curve without the oversampling), so the plug-ins after it are still judged.
+  Hypnomix Probe  measuring only: the audio passes untouched.
+  and Main
+
+Any other plug-in (ACE Amplifier, Hypnomix Utility and Limiter, third-party ones) makes the level after it unknown, as
+in REAPER. A session saved before ACE Compressor had Range / Auto Release / Mix or ACE EQ its High Pass band is read
+with the plug-in's defaults (no Range, no Auto Release, Mix 100 %, the band off).
 """
 import math
 
@@ -41,6 +61,42 @@ UNREAD = {"reagate": "gate", "realimit": "limiter"}
 FULL_DRY = 10 ** (-30 / 20)        # Dry at or under -30 dB counts as no dry signal (REAPER's default is -150 dB)
 FULL_WET = 10 ** (-1 / 20)         # Wet at or over -1 dB counts as fully wet (REAPER's default is 0 dB)
 NO_WET = 10 ** (-60 / 20)          # Wet under -60 dB: the compressed path is not heard
+SAT_CLIP_DB = 20 * math.log10(0.8413951)     # where Hypnomix Saturator's curves saturate (-1.5 dBFS)
+SAT_CURVES = {0: "Soft Sine", 1: "Analog Clip", 2: "Hard Clip"}
+METERS = ("hypnomix probe", "hypnomix main")  # measuring devices: the audio passes untouched
+
+
+def ace_eq_low_cut(d):
+    """Does this ACE EQ, or ACE High/Low Pass Filter, cut the lows? (ACE EQ's High Pass band on; the filter's High
+    Pass Steepness above 0, which is off.) None when it is neither."""
+    low = d.name.lower()
+    if (d.uid or "").startswith("urn:ardour:a-eq") or low.startswith("ace eq"):
+        return float(d.params.get("High Pass", 0.0)) > 0.5
+    if "high/low pass" in low:
+        return float(d.params.get("High Pass Steepness", 0.0)) > 0.5
+    return None
+
+
+def is_saturator(d):
+    return (d.uid or "") == "urn:hypnomix:saturator" or d.name.lower().startswith("hypnomix saturator")
+
+
+def saturate(x, d):
+    """Hypnomix Saturator's level on `x` (its curves at the plain rate, without the 4x oversampling): Drive into the
+    curve, Mix against the dry signal, then Output. Returns (output, settings)."""
+    g = lambda k, dflt: float(d.params.get(k, dflt))
+    drive, curve, out_db, mix = g("Drive", 0.0), int(round(g("Curve", 0.0))), g("Output", 0.0), g("Mix", 100.0) / 100
+    c = 10 ** (SAT_CLIP_DB / 20)
+    u = x * 10 ** (drive / 20)
+    if curve == 2:
+        wet = np.clip(u, -c, c)
+    elif curve == 1:
+        wet = c * np.tanh(u / c)
+    else:
+        wet = np.where(np.abs(u) < c * np.pi / 2, c * np.sin(np.clip(u / c, -np.pi / 2, np.pi / 2)), np.sign(u) * c)
+    y = (x * (1 - mix) + wet * mix) * 10 ** (out_db / 20)
+    return y, dict(drive=drive, curve=SAT_CURVES.get(curve, f"curve {curve}"), hard=curve == 2, output=out_db,
+                   mix=mix * 100)
 
 
 def mix(vals):
@@ -80,6 +136,57 @@ def _label(d):
     return renamed or d.name
 
 
+def ardour_device(p, t, d, k, x, kind, f0, base, items, notes, known, eqs, lo_cut):
+    """One plug-in of a HypnoMix DAW track, in chain order, on the signal `x` it gets. Returns the signal after it and
+    the walk's state (known level, EQs seen, low cut seen)."""
+    label = d.name
+    cut = ace_eq_low_cut(d)
+    if cut is not None:
+        eqs += 1
+        return x, known, eqs, lo_cut or cut             # its own level change is not modelled (as ReaEQ's)
+    if any(d.name.lower().startswith(m) for m in METERS):
+        return x, known, eqs, lo_cut
+    if SCP.is_ace_comp(d):
+        c = SCP.ace_settings(d)
+        if not c["on"]:
+            return x, known, eqs, lo_cut                # its Enable control is off: the audio passes untouched
+        if c["switch"]:
+            if d.sidechain or d.sidechain_off:
+                notes.append(f"devices: '{label}' on {t.name} is keyed from {', '.join(d.sidechain or d.sidechain_off)} "
+                             "(a sidechain): the effects group's sidechain check covers it")
+                return x, False, eqs, lo_cut            # ducking: the level after it follows the key
+            notes.append(f"devices: '{label}' on {t.name} has its Sidechain switch on and nothing keys it, so it "
+                         "does not compress")
+            return x, known, eqs, lo_cut
+        if not known:
+            items.append(dict(base, kind="unknown", problem=f"after a plug-in this check does not model: the level "
+                              f"reaching '{label}' is unknown, so it isn't judged"))
+            return x, known, eqs, lo_cut
+        act, _, _ = DV.active(x)
+        makeup = 10 ** (c.get("makeup_db", 0.0) / 20)
+        if c["dry_wet"] < DV.FULL_WET:
+            gr, m = DV.measure_comp(x, act, c)
+            items.append(dict(base, kind="unknown", fkind="ace-parallel", problem=DV.parallel_text(label, c, m)))
+            return x * (10 ** (gr / 20)) * makeup, known, eqs, lo_cut
+        gr, m, new, m2, problems, target = DV.judge_compressor(x, act, dict(c), kind, p.tempo, f0)
+        items.append(dict(base, kind="compressor", cur=c, new=new, m=m, m2=m2, problems=problems, target=target,
+                          route_id=t.route_id))
+        return x * (10 ** (gr / 20)) * makeup, known, eqs, lo_cut
+    if is_saturator(d):
+        if float(d.params.get("Enable", 1.0)) <= 0.5:
+            return x, known, eqs, lo_cut
+        y, st = saturate(x, d)
+        if known:
+            peak = 20 * math.log10(max(float(np.max(np.abs(x))) if len(x) else 0.0, 1e-9))
+            over = peak + st["drive"] - SAT_CLIP_DB
+            allow = 4.0 if st["hard"] else 9.0
+            if over > allow:
+                items.append(dict(base, kind="saturator-drive", sat=st, over=over, allow=allow,
+                                  new_drive=round(max(-12.0, st["drive"] - (over - allow + 3.0)) * 2) / 2))
+        return y, known, eqs, lo_cut
+    return x, False, eqs, lo_cut                        # the level after it is not modelled
+
+
 def review(p, R, role):
     """[item dicts], [notes] for every heard audio track with plug-ins."""
     items, notes, skipped, dup = [], [], [], []
@@ -97,7 +204,7 @@ def review(p, R, role):
         if t.kind == "folder" or t.name not in R.files:
             skipped.append(t.name)
             continue
-        if t.native is not None and t.native.get("FX", cast=int, default=1) == 0:
+        if p.daw == "reaper" and t.native is not None and t.native.get("FX", cast=int, default=1) == 0:
             continue                                   # the effects group says the chain is off
         x = SC.load_mono(str(R.files[t.name]))
         kind = part(role.get(t.name))
@@ -109,6 +216,9 @@ def review(p, R, role):
             low = d.name.lower()
             label = _label(d)
             base = dict(track=t.name, index=t.index, fx=k, device=label, role=kind)
+            if p.daw == "ardour":
+                x, known, eqs, lo_cut = ardour_device(p, t, d, k, x, kind, f0, base, items, notes, known, eqs, lo_cut)
+                continue
             if "reaeq" in low:
                 try:
                     st = E.ReaEQ(d.native)
@@ -163,7 +273,8 @@ def review(p, R, role):
             fr = np.fft.rfftfreq(min(len(x), SC.SR * 60), 1 / SC.SR)
             e_low = 10 * math.log10(max(1e-12, (spec[fr < 80] ** 2).sum() / max(1e-12, (spec ** 2).sum())))
             if e_low > -25:
-                items.append(dict(track=t.name, index=t.index, fx=None, device="ReaEQ", role=kind, kind="eq-lowcut",
+                items.append(dict(track=t.name, index=t.index, fx=None, role=kind, kind="eq-lowcut",
+                                  device="ACE EQ" if p.daw == "ardour" else "ReaEQ",
                                   e_low=e_low))
         if unread:
             notes.append(f"devices: {t.name}: {', '.join(unread)}: saved state not in a layout this check reads")
@@ -179,6 +290,8 @@ def review(p, R, role):
 
 def findings(p, items):
     out = []
+    ace = p.daw == "ardour"
+    comp = "ACE Compressor" if ace else "ReaComp"
     for n, it in enumerate(items, 1):
         base = dict(id=f"devices-{n}", tool="devices", track=it["track"], where="", device=it["device"])
         if it["kind"] == "compressor":
@@ -190,24 +303,47 @@ def findings(p, items):
                              f"release {s['release']:.0f} ms")
             ok = not it["problems"] and lo <= m["median"] <= hi * 1.25
             f = dict(base, kind="compressor", severity="info" if ok else ("medium" if len(it["problems"]) > 1 else "low"),
-                     problem=(f"ReaComp '{it['device']}' ({it['role']}): turns the part down {m['median']:.1f} dB while "
+                     problem=(f"{comp} '{it['device']}' ({it['role']}): turns the part down {m['median']:.1f} dB while "
                               f"it plays ({m['loud']:.0f} dB on loud moments, working {m['working']:.0%} of the time); now "
                               f"{fmt(c)}" + ("; " + "; ".join(it["problems"]) if it["problems"] else
                                              ("; within the usual range for this kind of part" if ok else ""))),
                      fix=(f"fine as it is (a suggestion for {lo}-{hi} dB anyway: {fmt(w)})" if ok else
-                          f"try {fmt(w)} in the ReaComp: about {m2['median']:.1f} dB while it plays ({lo}-{hi} dB is "
+                          f"try {fmt(w)} in the {comp}: about {m2['median']:.1f} dB while it plays ({lo}-{hi} dB is "
                           "usual for this kind of part). An option"),
                      applies="info" if ok else "manual", settings={k: float(w[k]) for k in KEYS})
             if not ok and p.daw == "reaper":
                 f.update(applies="set", edit=dict(op="reacomp", track=it["track"], index=it["index"], fx=it["fx"],
                                                   cur=it["vals"], settings=f["settings"]))
+            if ace:
+                vals = SCP.ace_values(w)
+                vals.pop("Sidechain", None)              # its own track: the key switch stays as it is (off)
+                f["ace"] = dict(track=it["track"], route_id=it.get("route_id"), plugin_index=it["fx"], values=vals)
+                if not ok:
+                    f["fix"] += (". Set these in the device in HypnoMix DAW ("
+                                 + ", ".join(f"{k} {v:g}" for k, v in vals.items()) + ")")
             out.append(f)
+        elif it["kind"] == "eq-lowcut" and ace:
+            out.append(dict(base, kind="eq-lowcut", severity="low",
+                            problem=f"{it['e_low']:.0f} dB of its energy is under 80 Hz and no ACE EQ on the track has "
+                                    "its High Pass band on: rumble under the bass",
+                            fix="switch on the High Pass band of the ACE EQ on the track, 24 dB/oct, at about 80-100 Hz, "
+                                "by ear: it clears room for the bass", applies="manual"))
         elif it["kind"] == "eq-lowcut":
             out.append(dict(base, kind="eq-lowcut", severity="low",
                             problem=f"{it['e_low']:.0f} dB of its energy is under 80 Hz and no ReaEQ band on the track "
                                     "is a high pass: rumble under the bass",
                             fix="open the ReaEQ on the track and set a free band's type to High Pass at about 80-100 Hz, "
                                 "by ear: it clears room for the bass", applies="manual"))
+        elif it["kind"] == "saturator-drive":
+            st = it["sat"]
+            out.append(dict(base, kind="saturator-drive", severity="high" if it["over"] - it["allow"] >= 6 else "medium",
+                            applies="manual",
+                            problem=f"'{it['device']}' ({st['curve']}, Drive {st['drive']:+.1f} dB, Mix {st['mix']:.0f} %) "
+                                    f"is driven {it['over']:.1f} dB past where its curve saturates (-1.5 dBFS) on the "
+                                    f"loudest peak: heavy clipping",
+                            fix=f"Drive {st['drive']:.1f} dB -> {it['new_drive']:.1f} dB in the device in HypnoMix DAW "
+                                "(then check its Output level), by ear. An option",
+                            settings=dict(Drive=it["new_drive"])))
         elif it["kind"] == "unread":
             how = ("a threshold just above the noise and under the quietest words" if it["what"] == "gate" else
                    "about 1-2 dB on the loudest moments catches peaks; more is crushing the part")
@@ -222,10 +358,14 @@ def findings(p, items):
 
 
 def g_devices(p, R, od, a, role):
-    if p.daw != "reaper":
-        return [], ["devices: skipped for a HypnoMix Studio session (its plug-ins' settings are not read yet)"]
     items, notes = review(p, R, role)
     fs = findings(p, items)
+    if p.daw == "ardour":
+        return fs, [f"devices: {sum(1 for f in fs if f['kind'] == 'compressor')} ACE Compressor(s) judged on their "
+                    "track's own audio (Range, Auto Release and Mix included); the suggestions are listed to set in the "
+                    "device; ACE EQ's High Pass band and the ACE High/Low Pass Filter count as a low cut; Hypnomix "
+                    "Saturator's drive is checked against where its curve saturates; plug-ins after one whose level "
+                    "is not modelled are listed, not judged"] + notes
     n_set = sum(1 for f in fs if f["applies"] == "set")
     return fs, [f"devices: {sum(1 for f in fs if f['kind'] == 'compressor')} ReaComp(s) judged on their track's own "
                 f"audio; {n_set} suggestion(s) `fix` can write into the ReaComp (threshold, ratio, attack, release); "

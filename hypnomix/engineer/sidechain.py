@@ -69,6 +69,9 @@ GLUE_ATTACK = [0.01, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0]
 GLUE_RELEASE = [100.0, 200.0, 400.0, 600.0, 800.0, 1200.0, None]
 GLUE_RATIO = [2.0, 4.0, 10.0]
 GLUE_AUTO_MS = 300.0      # Auto release is program-dependent; modelled as a fixed 300 ms
+# ACE Compressor's Auto Release (HypnoMix DAW): two envelopes, the deeper wins. A fast one (the Attack setting, 50 ms
+# release) and a slow one (350 ms attack, 1 s release): a short peak recovers fast, a long passage slowly
+ACE_AUTO_FAST_RELEASE_MS, ACE_AUTO_SLOW_ATTACK_MS, ACE_AUTO_SLOW_RELEASE_MS = 50.0, 350.0, 1000.0
 MODELS = ["Peak", "RMS", "Expand"]
 STYLES = {
     #             depth dB, ratio, knee, model, attack ms, lookahead index
@@ -316,8 +319,23 @@ def gain_reduction(lvl, c):
     gr = np.where(over <= -k / 2, 0.0,
                   np.where(over >= k / 2, -over * slope, -((over + k / 2) ** 2) / (2 * k) * slope))
     if c.get("range_db") is not None:
-        gr = np.maximum(gr, -float(c["range_db"]))   # Glue's Range caps the reduction
+        gr = np.maximum(gr, -float(c["range_db"]))   # Glue's Range (ACE Compressor's Range) caps the reduction
+    if c.get("release_model") == "ace-auto":
+        fast = dsp._smooth_db(gr, SR, max(c["attack"], 0.01), ACE_AUTO_FAST_RELEASE_MS, BLOCK)
+        slow = dsp._smooth_db(gr, SR, ACE_AUTO_SLOW_ATTACK_MS, ACE_AUTO_SLOW_RELEASE_MS, BLOCK)
+        return np.minimum(fast, slow)
     return dsp._smooth_db(gr, SR, max(c["attack"], 0.01), max(c["release"], 1.0), BLOCK)
+
+
+def heard(gr, c):
+    """The gain the listener hears (dB, <= 0) for gain reduction `gr` with settings `c`: its Dry/Wet (Live; ACE
+    Compressor's Mix as 0-1) mixes the dry signal back in, in phase, so 50 % of a 10 dB reduction is heard as 3.6 dB
+    and a fully dry one as nothing. Fully wet (the default) is `gr` itself."""
+    m = c.get("dry_wet", 1.0)
+    m = 1.0 if m is None else min(max(float(m), 0.0), 1.0)
+    if m >= 0.9995:
+        return gr
+    return 20 * np.log10(np.maximum((1 - m) + m * dsp.undb(gr), 1e-9))
 
 
 # ---------------------------------------------------------------- hits and metrics
@@ -457,6 +475,18 @@ def suggest(trig, hits, cur, style, decay, f0, gap_ms, beat_ms, is_vocal, active
         c.update(model=s["model"], knee=s["knee"], attack=s["attack"], lookahead=s["lookahead"])
         c["ratio"] = min(cur["ratio"], 6.0 if style == "clarity" else 10.0) \
             if cur["ratio"] >= 2 and style != "vocal-duck" and not cur.get("fresh") else s["ratio"]
+    if cur.get("kind") == "ace":
+        # ACE Compressor (HypnoMix DAW): the suggestion's release is a real one, so Auto Release goes off; a Range that
+        # would stop the duck short of the style's depth is lifted. Both are written only when they change
+        extra = dict(cur.get("ace_extra") or {})
+        if cur.get("auto_release"):
+            c.update(auto_release=False, release_model=None)
+            extra["Auto Release"] = 0
+        if cur.get("range_db") is not None and cur["range_db"] < s["depth"] + 3:
+            c["range_db"] = None
+            extra["Range"] = 60.0
+        if extra:
+            c["ace_extra"] = extra
     notes = []
     # release >= two cycles of the target's lowest note; unknown target: assume a 40 Hz bass (50 ms)
     floor = max(30.0, 2000.0 / f0) if f0 else 50.0

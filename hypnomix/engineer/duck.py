@@ -124,13 +124,13 @@ def fit(trig, act, c, target):
     lo, hi = float(np.percentile(lvl[act], 10)) - 30 if act.any() else -60.0, float(lvl.max()) + 1
     for _ in range(16):
         c["threshold_db"] = (lo + hi) / 2
-        d = SC.phrase_measure(SC.gain_reduction(lvl, c), act)["depth"]
+        d = SC.phrase_measure(SC.heard(SC.gain_reduction(lvl, c), c), act)["depth"]
         if d > target:
             lo = c["threshold_db"]
         else:
             hi = c["threshold_db"]
     c["threshold_db"] = (lo + hi) / 2
-    return c, SC.phrase_measure(SC.gain_reduction(lvl, c), act)
+    return c, SC.phrase_measure(SC.heard(SC.gain_reduction(lvl, c), c), act)
 
 
 def propose(set_path, names_json=None, renders=None, depth=3.0):
@@ -180,7 +180,7 @@ def propose(set_path, names_json=None, renders=None, depth=3.0):
         target = depth if r["kind"] == "delay" else max(1.0, depth - 1.0)
         if from_vocals:
             c = from_vocals[0]
-            cur = SC.phrase_measure(SC.gain_reduction(SC.detector(trig, c), c), act)
+            cur = SC.phrase_measure(SC.heard(SC.gain_reduction(SC.detector(trig, c), c), c), act)
             problems = []
             if not c["on"]:
                 problems.append("it is switched off")

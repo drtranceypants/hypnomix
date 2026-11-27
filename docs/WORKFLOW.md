@@ -476,7 +476,7 @@ hypnomix scan "Song.ardour"          # or the session folder
 hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).ardour"
 ```
 
-The scan runs the same groups as for a REAPER project, except `devices` (the plug-ins' settings are not read from a HypnoMix Studio session yet) and a `structure` group that checks only for nearly silent faders. `fix` writes the approved region fades (with their curve), region
+The scan runs the same groups as for a REAPER project, and a `structure` group that checks only for nearly silent faders. Its `devices` group reads the plug-ins' saved controls: each ACE Compressor is judged on its own track's audio like a ReaComp (Range caps the reduction, Auto Release runs as the plug-in's two envelopes, a Mix under 97 % is parallel compression: listed with what is heard, not judged), with the controls to set listed by hand; ACE EQ's High Pass band (or an ACE High/Low Pass Filter) counts as a low cut; a Hypnomix Saturator driven far past where its curve saturates gets a lower Drive suggested. The `sidechain` group and `hypnomix duck` read and simulate Range, Auto Release and Mix the same way. A session saved before those controls existed reads with the plug-in's defaults. `fix` writes the approved region fades (with their curve), region
 gain, gain dips over spikes and the eased level at a comp cut into **one new `.ardour` snapshot**, saved next to the
 original inside the same session folder (where the DAW keeps its snapshots and finds the session's audio; nothing is
 copied or moved). The original is never touched. Track names and order, vocal stacks, timing, sidechain and tuning

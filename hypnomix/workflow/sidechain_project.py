@@ -17,7 +17,10 @@ A fix rewrites only those floats in the new .rpp; everything else in the plug-in
 HypnoMix Studio sessions: an ACE Compressor whose sidechain input is fed from another track (the
 engine's `plugin_set_sidechain`, or the DAW's pin dialog), read by `project/ardour.py` from the port connections.
 Its controls map one to one: Threshold dB, Ratio, Attack ms, Release ms, Knee (a-comp's knee width is 6 x Knee dB),
-peak detector, no lookahead; "Sidechain" must be on for the key to be used. The key is what the send carries:
+peak detector, no lookahead; "Sidechain" must be on for the key to be used. Range (under 60 dB) caps the reduction in
+the simulation as Glue's Range does; Auto Release is simulated as the plug-in runs it (two envelopes: the Attack
+setting with a 50 ms release, and 350 ms / 1 s; the deeper wins); a Mix under 100 % (parallel) is listed, not judged.
+A session saved before those controls existed has none of them and is read with the plug-in's defaults. The key is what the send carries:
 the source track's own audio (its plug-ins are not simulated), at the send's level, times its fader for a
 post-fader send. A bus as the source carries its tracks at their faders (summed, nested buses too), times the bus
 fader for a post-fader send. Said and not measured: a compressor switched off (the plug-in, or its Enable control),
@@ -119,27 +122,52 @@ def is_ace_comp(d):
     return (d.uid or "").startswith("urn:ardour:a-comp") or "ace compressor" in d.name.lower()
 
 
+ACE_RANGE_OFF = 60.0          # ACE Compressor's Range at its top is "Off": no cap on the reduction
+
+
 def ace_settings(d):
+    """An ACE Compressor's saved controls -> the simulation's settings. Range (under 60 dB: a cap on the reduction),
+    Auto Release (the two-envelope release, `SC.gain_reduction`'s "ace-auto") and Mix (0-100 %, as Dry/Wet 0-1) are
+    read when the session has them; a session saved before those controls existed has none, and gets the defaults
+    the plug-in gives it then (Range off, Auto Release off, Mix 100 %)."""
     g = lambda k, dflt: float(d.params.get(k, dflt))
+    rng = g("Range", ACE_RANGE_OFF)
+    auto = g("Auto Release", 0.0) > 0.5
     return dict(kind="ace", on=d.on and g("Enable", 1.0) > 0.5, threshold_db=g("Threshold", 0.0),
                 ratio=g("Ratio", 4.0), attack=g("Attack", 10.0), release=g("Release", 80.0),
                 knee=6.0 * g("Knee", 0.0), model=0, lookahead=0, lookahead_ms=0.0, eq_on=False, eq_mode=SC.LOWPASS,
-                eq_freq=150.0, eq_q=0.707, eq_gain=0.0, sc_gain_db=0.0, dry_wet=1.0, makeup_db=g("Makeup", 0.0),
+                eq_freq=150.0, eq_q=0.707, eq_gain=0.0, sc_gain_db=0.0,
+                dry_wet=min(1.0, max(0.0, g("Mix", 100.0) / 100.0)), makeup_db=g("Makeup", 0.0),
+                range_db=None if rng >= ACE_RANGE_OFF - 1e-6 else max(0.0, rng),
+                auto_release=auto, release_model="ace-auto" if auto else None,
                 switch=g("Sidechain", 0.0) > 0.5)
 
 
 def ace_values(c):
-    """Settings -> the ACE Compressor's controls (clamped to its ranges)."""
+    """Settings -> the ACE Compressor's controls (clamped to its ranges). Range, Auto Release and Mix are written only
+    when the settings say so (`ace_extra`, or a Range / Mix / Auto Release that is not the plug-in's default), so an
+    older ACE Compressor without them is asked for nothing it does not have."""
     cl = lambda v, lo, hi: float(min(hi, max(lo, v)))
-    return {"Threshold": round(cl(c["threshold_db"], -60, 0), 1), "Ratio": round(cl(c["ratio"], 1, 20), 2),
-            "Attack": round(cl(c["attack"], 0.1, 100), 2), "Release": round(cl(c["release"], 1, 2000), 0),
-            "Knee": round(cl(c["knee"] / 6.0, 0, 8), 2), "Sidechain": 1}
+    out = {"Threshold": round(cl(c["threshold_db"], -60, 0), 1), "Ratio": round(cl(c["ratio"], 1, 20), 2),
+           "Attack": round(cl(c["attack"], 0.1, 100), 2), "Release": round(cl(c["release"], 1, 2000), 0),
+           "Knee": round(cl(c["knee"] / 6.0, 0, 8), 2), "Sidechain": 1}
+    if c.get("range_db") is not None:
+        out["Range"] = round(cl(c["range_db"], 0, ACE_RANGE_OFF), 1)
+    if c.get("auto_release"):
+        out["Auto Release"] = 1
+    if c.get("dry_wet", 1.0) < 0.9995:
+        out["Mix"] = round(cl(100 * c["dry_wet"], 0, 100), 1)
+    out.update(c.get("ace_extra") or {})
+    return out
 
 
 def describe_ace(c):
     v = ace_values(c)
     return (f"Threshold {v['Threshold']:.1f} dB, Ratio {v['Ratio']:g}:1, Attack {v['Attack']:g} ms, "
-            f"Release {v['Release']:.0f} ms, Knee {v['Knee']:g}")
+            + ("Auto Release" if v.get("Auto Release") else f"Release {v['Release']:.0f} ms")
+            + f", Knee {v['Knee']:g}"
+            + (f", Range {v['Range']:g} dB" if v.get("Range", ACE_RANGE_OFF) < ACE_RANGE_OFF else "")
+            + (f", Mix {v['Mix']:g}%" if v.get("Mix", 100) < 100 else ""))
 
 
 def find_ardour(p):
@@ -266,7 +294,14 @@ def analyse(p, style="auto"):
         if any(tr is s["track"] for tr, _, _ in s["sources"]):
             out.append((s, None, "the compressor listens to its own track: ordinary compression, not ducking"))
             continue
-        if s["state"] is not None:     # a ReaComp has a state; an ACE Compressor (HypnoMix Studio) has no Dry / Wet
+        if p.daw == "ardour" and s["c"].get("dry_wet", 1.0) < 0.9995:
+            pct = 100 * s["c"]["dry_wet"]
+            out.append((s, None, f"its Mix is at {pct:.0f} %, so no ducking is heard: not judged" if pct < 0.05 else
+                                 f"its Mix is at {pct:.0f} %, so {100 - pct:.0f} % of the dry signal is mixed back in "
+                                 "(parallel compression): not judged (the ducking model assumes a fully wet "
+                                 "compressor); set Mix to 100 % to duck"))
+            continue
+        if s["state"] is not None:     # a ReaComp has a state (Dry / Wet); an ACE Compressor's Mix is read above
             from hypnomix.workflow.devices_project import mix, _db     # the devices check's Dry / Wet reading (lazy: it imports this)
             how, dry, wet = mix(s["state"].vals)
             if how == "dry":
@@ -324,7 +359,8 @@ def findings(p, results, W):
                              vals=to_vals(s["state"].vals, r["sug"], r["new_eq"]))
         if ace:
             f["ace"] = dict(track=t.name, route_id=t.route_id, plugin_index=s["fx"], values=ace_values(r["sug"]))
-            f["fix"] += ". Set these in the device in HypnoMix Studio (Threshold, Ratio, Attack, Release, Knee)"
+            f["fix"] += (". Set these in the device in HypnoMix Studio (" + ", ".join(k for k in f["ace"]["values"]
+                                                                                if k != "Sidechain") + ")")
         out.append(f)
     return out
 

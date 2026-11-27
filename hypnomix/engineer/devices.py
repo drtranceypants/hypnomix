@@ -16,6 +16,11 @@ order, so each device is judged on the signal it really gets:
   Limiter            on a track: how hard it works (more than ~3 dB on the loud moments = turn its Gain down)
   EQ Eight           a part that isn't bass or kick with real energy under 80 Hz and no low cut: suggest one
 
+Glue's Range and Release Auto (as a 300 ms release) and both compressors' Dry/Wet are modelled: Range caps the
+reduction, and Dry/Wet mixes the dry signal back in, so what is measured is what is heard. A compressor with Dry/Wet under 97 % (parallel
+compression) is listed with what it does, not judged (the targets above are for a compressor on the whole signal),
+and the level after it is still modelled.
+
 Third-party plug-ins are skipped (their settings aren't readable from the set); after one, the level reaching the
 devices is unknown, so those devices are listed but not judged. Compressors with an external sidechain are
 ducking, not compressing their own track: see `hypnomix duck` / `hypnomix sidechain`. MIDI tracks need their
@@ -51,6 +56,7 @@ safe = lambda n: re.sub(r'[\\/:*?"<>|]', "-", n)
 PLUGINS = ("AuPluginDevice", "PluginDevice", "VstPluginDevice", "Vst3PluginDevice")
 NEW_COMP = dict(kind="compressor", model=0, ratio=4.0, knee=6.0, attack=10.0, release=100.0, lookahead=0, sc_gain_db=0.0,
                 eq_on=False, eq_mode=5, eq_freq=100.0, eq_q=0.707, eq_gain=0.0, dry_wet=1.0, range_db=None, threshold_db=-20.0)
+FULL_WET = 0.97          # Dry/Wet (Mix) at or over this is a compressor on the whole signal (dry under -30 dB)
 TARGET = {"lead": (3, 6), "harmony": (2, 5), "bass": (3, 6), "drums": (2, 4), "other": (2, 4), "group": (1, 3),
           "main": (0.5, 2)}
 
@@ -110,9 +116,21 @@ def comp_settings(d):
 
 
 def measure_comp(x, act, c):
-    gr = SC.gain_reduction(SC.detector(x, c), c)
+    """(gain heard per sample in dB, measures): the reduction with Range and the release model, and then Dry/Wet (Mix)
+    mixing the dry signal back in, so a parallel compressor is judged on what is really heard."""
+    gr = SC.heard(SC.gain_reduction(SC.detector(x, c), c), c)
     a = gr[act] if act.any() else gr
     return gr, dict(median=float(-np.median(a)), loud=float(-np.percentile(a, 5)), working=float(np.mean(a < -1.0)))
+
+
+def parallel_text(label, c, m):
+    """The line for a compressor whose Dry/Wet (Mix) mixes the dry signal back in: what is heard, not judged."""
+    pct = 100 * float(c.get("dry_wet", 1.0))
+    if pct < 0.05:
+        return f"'{label}' has Dry/Wet at 0 %, so none of its compression is heard: it isn't judged"
+    return (f"'{label}' mixes {100 - pct:.0f} % dry signal back in (Dry/Wet {pct:.0f} %): parallel compression, heard as "
+            f"{m['median']:.1f} dB while the part plays ({m['loud']:.0f} dB on loud moments). Its usual ranges are for a "
+            "fully wet compressor, so it isn't judged and nothing is changed; the level after it is modelled")
 
 
 def fit_threshold(x, act, c, target):
@@ -120,7 +138,7 @@ def fit_threshold(x, act, c, target):
     lo, hi = float(np.percentile(lvl[act], 5)) - 30 if act.any() else -60.0, float(lvl.max()) + 1
     for _ in range(16):
         c["threshold_db"] = (lo + hi) / 2
-        g = SC.gain_reduction(lvl, c)
+        g = SC.heard(SC.gain_reduction(lvl, c), c)
         dmed = float(-np.median(g[act])) if act.any() else 0.0
         if dmed > target:
             lo = c["threshold_db"]
@@ -192,7 +210,7 @@ def judge_compressor(x, act, c, role, tempo, f0):
         problems.append(f"it barely works ({m['median']:.1f} dB while the part plays; threshold above the signal)")
     elif m["median"] > 1.5 * hi:
         problems.append(f"it squashes the part ({m['median']:.1f} dB while it plays, {m['loud']:.0f} dB on loud moments)")
-    if f0 and c["release"] < 2 * 1000.0 / f0:
+    if f0 and not c.get("auto_release") and c["release"] < 2 * 1000.0 / f0:
         problems.append(f"its release ({c['release']:.0f} ms) is faster than two cycles of the lowest note "
                         f"({2000 / f0:.0f} ms): it bends the waveform (distortion on the low end)")
     if role == "drums" and c["attack"] < 3 and m["median"] > 1:
@@ -253,6 +271,11 @@ def review_track(name, role, t, x, tempo, root_tag="AudioTrack", probe=None):
             if not known:
                 out.append(dict(kind="unknown", device=label, el=d, problem=f"after a plug-in: the level reaching "
                                 f"'{label}' is unknown, so it isn't judged"))
+                continue
+            if c.get("dry_wet", 1.0) < FULL_WET:          # parallel: what is heard is modelled, the targets don't apply
+                gr, m = measure_comp(x, act, c)
+                out.append(dict(kind="unknown", device=label, el=d, problem=parallel_text(label, c, m)))
+                x = x * dsp.undb(gr) * dsp.undb(outgain)
                 continue
             if probe is not None and probe.get("light"):     # counting on the real audio: its path through the chain, no judging
                 gr, _ = measure_comp(x, act, c)

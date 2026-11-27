@@ -206,12 +206,14 @@ class Devices(Isolated):
         bass = g_devices(path, self.dir / "s3", {"Lead Vocal": "bass"})[0]   # the bass keeps its low end
         self.assertEqual([f for f in bass if f["kind"] == "eq-lowcut"], [])
 
-    def test_an_ardour_session_skips_the_group_with_a_note(self):
+    def test_an_ardour_session_runs_the_group(self):
+        # HypnoMix DAW sessions are judged too now (ACE Compressor, ACE EQ, Hypnomix Saturator:
+        # tests/test_ardour_devices3.py); a session with nothing renderable gives no findings and the note
         from tests.test_scan_parity import make_ardour
         p = PJ.load(make_ardour(self.dir))
-        out, notes = SP.g_devices(p, None, self.dir, SimpleNamespace(), {})
+        out, notes = SP.g_devices(p, SimpleNamespace(files={}), self.dir, SimpleNamespace(), {})
         self.assertEqual(out, [])
-        self.assertIn("skipped", notes[0])
+        self.assertIn("ACE Compressor(s) judged", notes[0])
 
     def test_apply_refuses_a_reacomp_changed_since_the_scan(self):
         path = lead_project(self.dir / "p", reacomp())
