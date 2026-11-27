@@ -198,23 +198,33 @@ class Install(Temp):
         self.assertFalse(install._same_tree(a, b))
 
 
-def als_like(device_xml):
-    return ET.fromstring(f"""<Ableton><LiveSet><Tracks>
+def als_like(device_xml, header="", main_xml=""):
+    hdr = f" {header}" if header else ""
+    return ET.fromstring(f"""<Ableton{hdr}><LiveSet><Tracks>
 <AudioTrack Id="1"><Name><EffectiveName Value="Guitar"/></Name>
 <DeviceChain><Mixer><Speaker><Manual Value="true"/></Speaker><Volume><Manual Value="1"/></Volume></Mixer>
 <DeviceChain><Devices>{device_xml}</Devices></DeviceChain></DeviceChain></AudioTrack></Tracks>
 <MainTrack Id="0"><Name><EffectiveName Value="Main"/></Name><DeviceChain><Mixer><Volume><Manual Value="1"/></Volume></Mixer>
-<DeviceChain><Devices/></DeviceChain></DeviceChain></MainTrack></LiveSet></Ableton>""")
+<DeviceChain><Devices>{main_xml}</Devices></DeviceChain></DeviceChain></MainTrack></LiveSet></Ableton>""")
 
 
 class Distortion(unittest.TestCase):
     FULL = ('<Saturator><Type><Manual Value="1"/></Type><PreDrive><Manual Value="24"/></PreDrive>'
             '<PostDrive><Manual Value="0"/></PostDrive><DryWet><Manual Value="1"/></DryWet></Saturator>')
     NOPRE = '<Saturator><Type><Manual Value="1"/></Type><PostDrive><Manual Value="0"/></PostDrive></Saturator>'
+    LIMITER = '<Limiter><Gain><Manual Value="0"/></Gain><Ceiling><Manual Value="-0.3"/></Ceiling></Limiter>'
+    LIVE11 = 'MajorVersion="5" MinorVersion="11.0_11300" Creator="Ableton Live 11.3.13"'
+    LIVE12 = 'MajorVersion="5" MinorVersion="12.0_12049" Creator="Ableton Live 12.0.5"'
+    LIVE12_MINOR = 'MajorVersion="5" MinorVersion="12.0_12049"'
 
-    def run_checks(self, xml):
+    def sat(self, typ, drive, post_clip=False):
+        pc = '<PostClip><Manual Value="true"/></PostClip>' if post_clip else ""
+        return (f'<Saturator><Type><Manual Value="{typ}"/></Type><PreDrive><Manual Value="{drive}"/></PreDrive>'
+                f'<PostDrive><Manual Value="0"/></PostDrive><DryWet><Manual Value="1"/></DryWet>{pc}</Saturator>')
+
+    def run_checks(self, xml, header="", main_xml=""):
         from hypnomix.session import distortion as D
-        return D.effects_findings(als_like(xml), {"Guitar": dict(peak=-3.0, beat=0.0)}, set(), None, False)
+        return D.effects_findings(als_like(xml, header, main_xml), {"Guitar": dict(peak=-3.0, beat=0.0)}, set(), None, False)
 
     def test_normal_saturator_still_found(self):
         f, notes = self.run_checks(self.FULL)
@@ -232,6 +242,77 @@ class Distortion(unittest.TestCase):
         f, notes = self.run_checks(self.NOPRE + self.FULL)
         self.assertEqual(len(f), 1)
         self.assertEqual(len(notes), 1)
+
+    def test_live_11_saturator_curves(self):
+        # peak -3 dB + PreDrive 8 dB = +5 dB: flags hard curves (target 1 dB, excess 4 dB), not soft (target 6 dB)
+        f3, _ = self.run_checks(self.sat(3, 8), self.LIVE11, self.LIMITER)
+        self.assertEqual([x.kind for x in f3], ["drive"])
+        self.assertIn("hard curve", f3[0].cause)
+
+        f4_low, _ = self.run_checks(self.sat(4, 8), self.LIVE11, self.LIMITER)
+        self.assertEqual(f4_low, [])
+        f4_hi, _ = self.run_checks(self.sat(4, 15), self.LIVE11, self.LIMITER)
+        self.assertEqual([x.kind for x in f4_hi], ["drive"])
+        self.assertIn("soft curve", f4_hi[0].cause)
+
+        f5, _ = self.run_checks(self.sat(5, 8), self.LIVE11, self.LIMITER)
+        by_kind = {x.kind: x for x in f5}
+        self.assertEqual(set(by_kind), {"drive", "stacked"})
+        self.assertIn("hard curve", by_kind["drive"].cause)
+        self.assertIn("Saturator digital clip", by_kind["stacked"].cause)
+
+        f6_low, _ = self.run_checks(self.sat(6, 8), self.LIVE11, self.LIMITER)
+        self.assertEqual(f6_low, [])
+        f6_hi, _ = self.run_checks(self.sat(6, 15), self.LIVE11, self.LIMITER)
+        self.assertEqual([x.kind for x in f6_hi], ["drive"])
+        self.assertIn("soft curve", f6_hi[0].cause)
+
+    def test_live_12_saturator_curves(self):
+        # Live 12+: 3 Medium Curve (soft), 4 Hard Curve (hard), 5 Sinoid Fold (soft folder), 6 Digital Clip (hard + digital clip)
+        f3_low, _ = self.run_checks(self.sat(3, 8), self.LIVE12, self.LIMITER)
+        self.assertEqual(f3_low, [])
+        f3_hi, _ = self.run_checks(self.sat(3, 15), self.LIVE12, self.LIMITER)
+        self.assertEqual([x.kind for x in f3_hi], ["drive"])
+        self.assertIn("soft curve", f3_hi[0].cause)
+        self.assertEqual(f3_hi[0].changes[0]["to"], 9.0)
+
+        f4, _ = self.run_checks(self.sat(4, 8), self.LIVE12, self.LIMITER)
+        self.assertEqual([x.kind for x in f4], ["drive"])
+        self.assertIn("hard curve", f4[0].cause)
+        self.assertEqual(f4[0].changes[0]["to"], 4.0)
+
+        for hdr in (self.LIVE12, self.LIVE12_MINOR):
+            f5_low, _ = self.run_checks(self.sat(5, 8), hdr, self.LIMITER)
+            self.assertEqual(f5_low, [])
+            f5_hi, _ = self.run_checks(self.sat(5, 15), hdr, self.LIMITER)
+            self.assertEqual([x.kind for x in f5_hi], ["drive"])
+            self.assertNotIn("clip", f5_hi[0].cause.lower())
+            self.assertIn("Sinoid Fold", f5_hi[0].cause)
+            self.assertEqual(f5_hi[0].changes[0]["to"], 9.0)
+
+        f6, _ = self.run_checks(self.sat(6, 8), self.LIVE12, self.LIMITER)
+        by_kind = {x.kind: x for x in f6}
+        self.assertEqual(set(by_kind), {"drive", "stacked"})
+        self.assertIn("hard curve", by_kind["drive"].cause)
+        self.assertEqual(by_kind["drive"].changes[0]["to"], 4.0)
+        self.assertIn("Saturator digital clip", by_kind["stacked"].cause)
+
+    def test_unknown_version_keeps_live_11_saturator_behaviour(self):
+        f3, _ = self.run_checks(self.sat(3, 8), "", self.LIMITER)
+        self.assertEqual([x.kind for x in f3], ["drive"])
+        self.assertIn("hard curve", f3[0].cause)
+
+        f4, _ = self.run_checks(self.sat(4, 8), "", self.LIMITER)
+        self.assertEqual(f4, [])
+
+        f5, _ = self.run_checks(self.sat(5, 8), "", self.LIMITER)
+        by_kind = {x.kind: x for x in f5}
+        self.assertEqual(set(by_kind), {"drive", "stacked"})
+        self.assertIn("hard curve", by_kind["drive"].cause)
+        self.assertIn("Saturator digital clip", by_kind["stacked"].cause)
+
+        f6, _ = self.run_checks(self.sat(6, 8), "", self.LIMITER)
+        self.assertEqual(f6, [])
 
 
 class OrderNames(Temp):

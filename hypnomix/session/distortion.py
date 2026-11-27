@@ -53,6 +53,7 @@ from scipy.signal import resample_poly
 from hypnomix.core.dsp import AUDIO_EXT, load
 from hypnomix.ears.clicks import find_clicks
 from hypnomix.session import automation as aa
+from hypnomix.session import liveversion as LV
 from hypnomix.session import smooth as sm
 
 SEV = {"low": 0, "medium": 1, "high": 2}
@@ -497,8 +498,13 @@ def _walk_device(d, s, add, path_stages):
     if tag == "Saturator":
         pre, typ, post = Param(d, "PreDrive"), int(pv(d, "Type")), pv(d, "PostDrive")
         wet = pv(d, "DryWet", 1)
-        hard = typ in (3, 5)
-        if pv(d, "PostClip") or typ == 5:
+        # Live 12 added Bass Shaper at index 2, shifting Medium Curve (3), Hard Curve (4),
+        # Sinoid Fold (5), Digital Clip (6) and Waveshaper (7) up by one.
+        live12 = (ctx.get("live_major") or 0) >= 12
+        hard = typ in ((4, 6) if live12 else (3, 5))
+        digital_clip = typ == (6 if live12 else 5)
+        folder = live12 and typ == 5
+        if pv(d, "PostClip") or digital_clip:
             path_stages.append((ctx["track"], lab + (" clip" if pv(d, "PostClip") else " digital clip")))
         into = s.peak + pre.v
         target = 1.0 if hard else 6.0
@@ -506,9 +512,10 @@ def _walk_device(d, s, add, path_stages):
         if excess >= 3:
             sev = "high" if excess >= 9 else "medium"
             new = max(-36.0, round((pre.v - excess) * 2) / 2)
+            curve = "into Sinoid Fold: heavy wavefolding" if folder else f"into a {'hard' if hard else 'soft'} curve: heavy clipping"
             add("drive", sev, lab, wet, s,
                 f"{lab} is driven to {into:+.1f} dB ({lvl_text(s)} in{boosts_text(s)} plus {pre.v:+.1f} dB Drive) "
-                f"into a {'hard' if hard else 'soft'} curve: heavy clipping",
+                f"{curve}",
                 f"{lab} Drive {pre.v:.1f} dB -> {new:.1f} dB (then check its output level)",
                 [change(lab, pre, new, f"Drive {pre.v:.1f} -> {new:.1f} dB")])
         s.peak = min(into, 0.0) + post
@@ -715,6 +722,8 @@ def effects_findings(root, track_info, pts, names, include_off):
         main = root.find(".//MasterTrack")
     by_id = {t.get("Id"): t for t in tracks}
     parent = {t.get("Id"): sm.val(t, "./TrackGroupId", str, "-1") for t in tracks}
+    ver = LV.version_of(root)
+    live_major = ver[0] if ver else None
     findings, notes = [], []
     out_peak, stages_of = {}, {}
 
@@ -739,7 +748,8 @@ def effects_findings(root, track_info, pts, names, include_off):
             assumed = not known or any(a for _, a in ps)
         else:
             peak, assumed = None, True
-        ctx = dict(track=nm, main=ismain, bassy=info.get("bassy", bool(BASSY.search(nm))), notes=notes)
+        ctx = dict(track=nm, main=ismain, bassy=info.get("bassy", bool(BASSY.search(nm))), notes=notes,
+                   live_major=live_major)
         s = Stage(peak, assumed, ctx)
         path = []
         on = sm.track_on(t) or ismain
@@ -1202,7 +1212,7 @@ def print_report(rep):
 
 def main():
     ap = argparse.ArgumentParser(prog="hypnomix distortion", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
+    LV.add_force_flag(ap)
     ap.add_argument("inputs", nargs="+", help="a .als and/or audio files or folders")
     ap.add_argument("--post", action="append", default=[], help="stem export (folder or files) to confirm effect findings")
     ap.add_argument("--mix", help="full-mix bounce of this set: true peak and clipping")
