@@ -16,26 +16,38 @@ PARAMS = {
               [x for n in range(1, 5) for x in ((f"Frequency {n}", 20, 20000), (f"Gain {n}", -20, 20),
                                                 (f"Bandwidth {n}", 0.1, 4))] +
               [("Frequency H", 20, 20000), ("Gain H", -20, 20), ("Master Gain", -20, 20)] +
-              [(f"Filter {k}", 0, 1) for k in ("L", "1", "2", "3", "4", "H")],
+              [(f"Filter {k}", 0, 1) for k in ("L", "1", "2", "3", "4", "H")] +
+              [("High Pass", 0, 1), ("High Pass Frequency", 10, 20000), ("High Pass Slope", 12, 48),
+               ("Low Pass", 0, 1), ("Low Pass Frequency", 10, 20000), ("Low Pass Slope", 12, 48)],
     "ACE Compressor (stereo)": [("Attack", 0.1, 100), ("Release", 1, 2000), ("Knee", 0, 8), ("Ratio", 1, 20),
-                                ("Threshold", -60, 0), ("Makeup", 0, 30), ("Sidechain", 0, 1)],
+                                ("Threshold", -60, 0), ("Makeup", 0, 30), ("Sidechain", 0, 1), ("Enable", 0, 1),
+                                ("Range", 0, 60), ("Auto Release", 0, 1), ("Mix", 0, 100)],
+    "Hypnomix Saturator": [("Drive", -12, 36), ("Curve", 0, 2), ("Output", -36, 12), ("Mix", 0, 100), ("Enable", 0, 1)],
     "Hypnomix Utility": [("Gain", -70, 35), ("Width", 0, 200), ("Mono", 0, 1), ("Bass Mono", 0, 1),
                          ("Bass Mono Frequency", 20, 500), ("Phase Invert L", 0, 1), ("Phase Invert R", 0, 1),
                          ("DC Filter", 0, 1), ("Mute", 0, 1), ("Balance", -100, 100)],
     "Hypnomix Limiter": [("Gain", -12, 24), ("Ceiling", -12, 0), ("Release", 5, 1000), ("Lookahead", 0.5, 10),
                          ("True Peak", 0, 1)],
 }
+# an ACE EQ and ACE Compressor from before the cut bands and Range / Auto Release / Mix (an older HypnoMix DAW)
+OLD = {"ACE EQ": 6, "ACE Compressor (stereo)": 3}           # how many controls at the end it lacks
 UNIQUE = {"urn:ardour:a-eq": "ACE EQ", "urn:ardour:a-comp#stereo": "ACE Compressor (stereo)",
+          "urn:hypnomix:saturator": "Hypnomix Saturator",
           "urn:hypnomix:utility": "Hypnomix Utility", "urn:hypnomix:limiter": "Hypnomix Limiter"}
 
 
 class FakeHypnomix:
     """The master bus's processor list and every tool call, behind a real HTTP MCP endpoint."""
 
-    def __init__(self, master_plugins=(), known=None):
+    def __init__(self, master_plugins=(), known=None, old=False):
         self.plugins = [dict(name=n, enabled=True) for n in master_plugins]
         self.calls, self.values = [], {}
         self.known = set(UNIQUE) if known is None else set(known)
+        self.old = old                    # ACE EQ / ACE Compressor without the new controls
+
+    def params(self, name):
+        ps = PARAMS.get(name, [])
+        return ps[:len(ps) - OLD[name]] if self.old and name in OLD else ps
 
     def tool(self, name, a):
         self.calls.append((name, a))
@@ -61,13 +73,13 @@ class FakeHypnomix:
         if name == "plugin_get_description":
             p = self.plugins[a["pluginIndex"]]
             ps = [dict(index=i, controlId=100 + i, label=lab, lower=lo, upper=hi, isInput=True, isOutput=False)
-                  for i, (lab, lo, hi) in enumerate(PARAMS.get(p["name"], []))]
+                  for i, (lab, lo, hi) in enumerate(self.params(p["name"]))]
             ps.append(dict(index=len(ps), controlId=999, label="Gain Reduction", lower=0, upper=40, isInput=False,
                            isOutput=True))
             return {"plugin": {"index": a["pluginIndex"], "name": p["name"]}, "parameters": ps}
         if name == "plugin_set_parameter_by_control_value":
             p = self.plugins[a["pluginIndex"]]
-            lab = PARAMS[p["name"]][a["controlId"] - 100][0]
+            lab = self.params(p["name"])[a["controlId"] - 100][0]
             self.values[(a["pluginIndex"], lab)] = a["value"]
             return {"id": a["id"], "pluginIndex": a["pluginIndex"], "parameterIndex": a["controlId"] - 100,
                     "controlId": a["controlId"], "value": a["value"], "interface": 0}
@@ -138,12 +150,13 @@ class ChainArdour(unittest.TestCase):
     def test_master_chain_order_and_values(self):
         f = FakeHypnomix()
         rows, notes = self.run_chain(f)
-        self.assertEqual([p["name"] for p in f.plugins], ["ACE High/Low Pass Filter", "ACE EQ",
-                         "ACE Compressor (stereo)", "Hypnomix Utility", "Hypnomix Limiter"])
+        self.assertEqual([p["name"] for p in f.plugins], ["ACE EQ", "ACE Compressor (stereo)", "Hypnomix Utility",
+                                                          "Hypnomix Saturator", "Hypnomix Limiter"])
         v = f.value
-        self.assertEqual(v("ACE High/Low Pass Filter", "High Pass Steepness"), 1)       # 12 dB/oct
-        self.assertEqual(v("ACE High/Low Pass Filter", "High Pass Cut off frequency"), 22)
-        self.assertEqual(v("ACE High/Low Pass Filter", "Low Pass Steepness"), 0)        # no low-pass
+        self.assertEqual(v("ACE EQ", "High Pass"), 1)                                  # EQ Eight's low cut, on the EQ
+        self.assertEqual(v("ACE EQ", "High Pass Frequency"), 22)
+        self.assertEqual(v("ACE EQ", "High Pass Slope"), 12)                           # Low Cut 12 = 12 dB/oct
+        self.assertEqual(v("ACE EQ", "Low Pass"), 0)                                   # no high cut
         self.assertEqual(v("ACE EQ", "Gain L"), 0.8)
         self.assertEqual(v("ACE EQ", "Frequency 1"), 550)
         self.assertAlmostEqual(v("ACE EQ", "Bandwidth 1"), 1.53, places=2)             # Q 0.9 in octaves
@@ -151,18 +164,27 @@ class ChainArdour(unittest.TestCase):
         self.assertEqual(v("ACE EQ", "Gain H"), 1.1)
         self.assertEqual(v("ACE Compressor (stereo)", "Release"), 200)
         self.assertEqual(v("ACE Compressor (stereo)", "Ratio"), 2)
+        self.assertEqual(v("ACE Compressor (stereo)", "Knee"), 1)                      # 6 x Knee dB: the plan's 6 dB
+        self.assertIsNone(v("ACE Compressor (stereo)", "Range"))                       # not in the plan: left at off
+        self.assertEqual(v("Hypnomix Saturator", "Drive"), 2.0)
+        self.assertEqual(v("Hypnomix Saturator", "Curve"), 1)                          # tanh warmth = Analog Clip
+        self.assertAlmostEqual(v("Hypnomix Saturator", "Output"), -1.2)                # as the Live chain trims it
+        self.assertEqual(v("Hypnomix Saturator", "Mix"), 35)
         self.assertEqual(v("Hypnomix Utility", "Bass Mono"), 1)
         self.assertEqual(v("Hypnomix Utility", "Bass Mono Frequency"), 120)
         self.assertEqual(v("Hypnomix Limiter", "Gain"), 3.0)
         self.assertEqual(v("Hypnomix Limiter", "Ceiling"), -1.0)
         self.assertEqual(v("Hypnomix Limiter", "True Peak"), 1)
         self.assertEqual(v("Hypnomix Limiter", "Release"), 80)
-        self.assertTrue(any("Saturator" in n for n in notes))                          # said, not faked
+        self.assertFalse(CA.incomplete(rows))
+        self.assertNotIn("(left out)", [r[0] for r in rows])
         self.assertNotIn("ReaLimit", json.dumps(rows))
-        # the LV2 devices are added by uniqueId, the Lua filter through the catalogue
+        # the LV2 devices are added by uniqueId; no Lua filter is needed for the cut any more
         adds = [(n, a.get("uniqueId") or a.get("pluginId")) for n, a in f.calls if n.startswith("plugin_add")]
-        self.assertEqual(adds[0], ("plugin_add_by_plugin_id", "lua:c9a4d2f1"))
+        self.assertEqual(adds[0], ("plugin_add_by_unique_id", "urn:ardour:a-eq"))
         self.assertIn(("plugin_add_by_unique_id", "urn:hypnomix:limiter"), adds)
+        self.assertIn(("plugin_add_by_unique_id", "urn:hypnomix:saturator"), adds)
+        self.assertNotIn("plugin_add_by_plugin_id", [n for n, _ in adds])
 
     def test_values_are_clamped_and_noted(self):
         f = FakeHypnomix()
@@ -175,7 +197,7 @@ class ChainArdour(unittest.TestCase):
         f = FakeHypnomix(master_plugins=["Hypnomix Main"])
         self.run_chain(f)
         self.assertEqual(f.plugins[-1]["name"], "Hypnomix Main")
-        self.assertEqual(f.plugins[0]["name"], "ACE High/Low Pass Filter")
+        self.assertEqual(f.plugins[0]["name"], "ACE EQ")
         self.assertTrue(f.plugins[-1]["enabled"])                                      # meters never bypassed
 
     def test_existing_plugins_refuse_bypass_keep(self):
@@ -203,10 +225,90 @@ class ChainArdour(unittest.TestCase):
         self.assertEqual(f.value("ACE EQ", "Frequency 1", nth=1), 500)
         self.assertEqual(f.value("ACE EQ", "Filter 3", nth=1), 0)
 
+    def test_cuts_go_on_the_eqs_own_bands_with_the_right_slope(self):
+        f = FakeHypnomix()
+        bands = [dict(type="lowcut48", freq=30, gain=0, q=0.71), dict(type="highcut12", freq=17000, gain=0, q=0.71)]
+        rows, notes = self.run_chain(f, [dict(device="EQ Eight", bands=bands, why="")])
+        self.assertEqual([p["name"] for p in f.plugins], ["ACE EQ"])                    # one device, as EQ Eight
+        v = lambda lab: f.value("ACE EQ", lab)
+        self.assertEqual((v("High Pass"), v("High Pass Frequency"), v("High Pass Slope")), (1, 30, 48))
+        self.assertEqual((v("Low Pass"), v("Low Pass Frequency"), v("Low Pass Slope")), (1, 17000, 12))
+        self.assertEqual([v(f"Filter {k}") for k in ("L", "1", "2", "3", "4", "H")], [0] * 6)   # tone bands off
+        self.assertIn("high-pass 30 Hz, 48 dB/oct; low-pass 17000 Hz, 12 dB/oct", rows[0][1])
+        self.assertFalse(CA.incomplete(rows))
+        self.assertEqual(notes, [])
+
+    def test_a_resonant_cut_is_built_butterworth_and_the_q_is_listed(self):
+        f = FakeHypnomix()
+        rows, notes = self.run_chain(f, [dict(device="EQ Eight", bands=[dict(type="lowcut12", freq=80, gain=0, q=2.0)],
+                                              why="")])
+        self.assertEqual(f.value("ACE EQ", "High Pass Slope"), 12)
+        self.assertTrue(any("Q 2 is not carried" in n for n in notes), notes)
+
+    def test_an_older_eq_without_cut_bands_gets_the_separate_filter(self):
+        f = FakeHypnomix(old=True)
+        rows, notes = self.run_chain(f, PLAN[:1])
+        self.assertEqual([p["name"] for p in f.plugins], ["ACE EQ", "ACE High/Low Pass Filter"])
+        self.assertEqual(f.value("ACE High/Low Pass Filter", "High Pass Steepness"), 1)
+        self.assertEqual(f.value("ACE High/Low Pass Filter", "High Pass Cut off frequency"), 22)
+        self.assertIsNone(f.value("ACE EQ", "High Pass"))
+        self.assertTrue(any("older build" in n for n in notes))
+        self.assertFalse(CA.incomplete(rows))
+        f = FakeHypnomix(old=True)                          # cuts only: the EQ it tried is taken back out
+        rows, notes = self.run_chain(f, [dict(device="EQ Eight", bands=PLAN[0]["bands"][:1], why="")])
+        self.assertEqual([p["name"] for p in f.plugins], ["ACE High/Low Pass Filter"])
+        self.assertEqual([r[0] for r in rows], ["ACE High/Low Pass Filter"])
+
+    def test_glue_range_release_auto_and_dry_wet(self):
+        f = FakeHypnomix()
+        glue = dict(PLAN[1], range_db=3.0, release_auto=True, dry_wet_pct=60)
+        rows, notes = self.run_chain(f, [glue])
+        v = lambda lab: f.value("ACE Compressor (stereo)", lab)
+        self.assertEqual((v("Range"), v("Auto Release"), v("Mix")), (3.0, 1, 60.0))
+        self.assertIn("release Auto", rows[0][1])
+        self.assertIn("range 3 dB", rows[0][1])
+        self.assertIn("mix 60%", rows[0][1])
+        f = FakeHypnomix()                                  # Range at 60 or more is off, Dry/Wet 100 % is the default
+        self.run_chain(f, [dict(PLAN[1], range_db=70.0, dry_wet_pct=100)])
+        self.assertIsNone(f.value("ACE Compressor (stereo)", "Range"))
+        self.assertIsNone(f.value("ACE Compressor (stereo)", "Mix"))
+        self.assertIsNone(f.value("ACE Compressor (stereo)", "Auto Release"))
+
+    def test_glue_extras_on_an_older_compressor_are_not_set(self):
+        f = FakeHypnomix(old=True)
+        rows, notes = self.run_chain(f, [dict(PLAN[1], range_db=3.0)])
+        self.assertIn("NOT SET: Range", rows[0][1])
+        self.assertTrue(CA.incomplete(rows))
+        rows, notes = self.run_chain(FakeHypnomix(old=True), [dict(PLAN[1])])        # nothing new asked: fine
+        self.assertFalse(CA.incomplete(rows))
+
+    def test_saturator_curves(self):
+        for curve, want in (("Soft Sine", 0), ("Analog Clip", 1), ("Digital Clip", 2), ("Hard Clip", 2)):
+            f = FakeHypnomix()
+            rows, _ = self.run_chain(f, [dict(PLAN[3], curve=curve, output_db=-0.5, dry_wet_pct=100)])
+            self.assertEqual(f.value("Hypnomix Saturator", "Curve"), want, curve)
+            self.assertEqual(f.value("Hypnomix Saturator", "Output"), -0.5)
+            self.assertEqual(f.value("Hypnomix Saturator", "Mix"), 100)
+            self.assertFalse(CA.incomplete(rows))
+        f = FakeHypnomix()                                  # a curve it does not have: listed, nothing built
+        rows, notes = self.run_chain(f, [dict(PLAN[3], curve="Sinoid Fold")])
+        self.assertEqual(f.plugins, [])
+        self.assertEqual(rows[0][0], "(left out)")
+        self.assertTrue(any("no Sinoid Fold curve" in n for n in notes))
+        self.assertFalse(CA.incomplete(rows))
+
+    def test_a_build_without_the_saturator_leaves_warmth_out_and_says_so_once(self):
+        f = FakeHypnomix(known=set(UNIQUE) - {"urn:hypnomix:saturator"})
+        rows, notes = self.run_chain(f)
+        self.assertNotIn("Hypnomix Saturator", [p["name"] for p in f.plugins])
+        self.assertIn("(left out)", [r[0] for r in rows])
+        self.assertEqual(sum("Saturator" in n for n in notes), 1, notes)
+        self.assertFalse(CA.incomplete(rows))
+
     def test_dry_run_touches_nothing(self):
         rows, notes = CA.build_master(None, [dict(s) for s in PLAN], dry=True)
-        self.assertEqual([r[0] for r in rows], ["ACE High/Low Pass Filter", "ACE EQ", "ACE Compressor (stereo)",
-                                                "Hypnomix Utility", "(left out)", "Hypnomix Limiter"])
+        self.assertEqual([r[0] for r in rows], ["ACE EQ", "ACE Compressor (stereo)", "Hypnomix Utility",
+                                                "Hypnomix Saturator", "Hypnomix Limiter"])
 
     def test_cli_plans_and_builds_over_mcp(self):
         """`hypnomix chain master BOUNCE --ardour --mcp-url URL`: the offline plan, then the chain in the session."""
@@ -291,12 +393,12 @@ class FailsPartWay(unittest.TestCase):
     """A call that fails in the middle of the build never leaves the master half built or the person's own plug-ins
     switched off: what this run added is removed and theirs are switched back on."""
 
-    def sweep(self, master, plan, existing="bypass"):
+    def sweep(self, master, plan, existing="bypass", **fake):
         total = 0
         for mode in ("before", "after"):
             n = 1
             while True:
-                f = FakeHypnomix(master_plugins=master)
+                f = FakeHypnomix(master_plugins=master, **fake)
                 before = state(f)
                 client = Direct(f, fail_at=n, mode=mode)
                 try:
@@ -318,6 +420,10 @@ class FailsPartWay(unittest.TestCase):
 
     def test_with_nothing_else_on_the_master(self):
         self.sweep([], MINI, existing="refuse")
+
+    def test_an_older_eq_whose_cut_moves_to_the_filter_comes_back_too(self):
+        cut_only = [dict(device="EQ Eight", bands=PLAN[0]["bands"][:1], why=""), MINI[0]]
+        self.assertGreater(self.sweep(["Some Limiter"], cut_only, old=True), 10)    # the EQ taken back out included
 
     def test_a_plugin_that_was_already_off_stays_off(self):
         f = FakeHypnomix(master_plugins=["Old Comp", "Some Limiter"])

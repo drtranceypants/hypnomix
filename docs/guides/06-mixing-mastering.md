@@ -141,12 +141,13 @@ stock DAW it is built on has no such MCP surface):
 hypnomix chain master "Song bounce.wav" --target -14 --ardour --existing bypass
 ```
 
-ACE High/Low Pass Filter → ACE EQ → ACE Compressor → Hypnomix Utility (bass mono below 120 Hz, width) →
-Hypnomix Limiter (holds a true-peak ceiling, measured with 4x oversampling) on the master bus, before Hypnomix
+ACE EQ (the low cut on its High Pass band, then the tone) → ACE Compressor → Hypnomix Utility (bass mono below
+120 Hz, width) → Hypnomix Saturator (the warmth stage, when you ask for warmth) → Hypnomix Limiter (holds a true-peak ceiling, measured with 4x oversampling) on the master bus, before Hypnomix
 Main if it is there. Open the session in HypnoMix Studio first, with its MCP server on (Preferences → Control Surfaces →
 MCPHttp; the address is `http://127.0.0.1:4820/mcp`, `--mcp-url` for another). It has been tried against a stand-in
-for the engine's MCP surface, not against the running engine. There is no saturator in HypnoMix Studio yet, so the warmth stage
-is listed instead of built, and `--verify` is Live and REAPER only for now: use Hypnomix Main's Match target.
+for the engine's MCP surface, not against the running engine. An older HypnoMix Studio without the EQ's cut bands or
+Hypnomix Saturator gets the separate ACE High/Low Pass Filter and no warmth stage, said in the notes; `--verify` is Live
+and REAPER only for now: use Hypnomix Main's Match target.
 
 No bounce yet? **HypnomixMain** on Main has its own mastering chain: **Build chain** puts an editable rack of
 Live's own devices (every gain at 0 dB) before it, **Match target** turns the Limiter until Main sits on the song

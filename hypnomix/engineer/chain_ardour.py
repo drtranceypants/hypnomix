@@ -1,16 +1,26 @@
 """`hypnomix chain --ardour`: the same mastering chain as in Live, built in the open HypnoMix Studio session over
 MCP, from its own ACE plug-ins and the two HypnoMix Studio devices (all free, all built into HypnoMix Studio).
 
-    Live device          HypnoMix Studio                             set by
-    EQ Eight (low cut)   ACE High/Low Pass Filter             High Pass Steepness 12 or 48 dB/oct, cut-off, Q 0.71
-    EQ Eight (tone)      ACE EQ                               low shelf (L), up to 4 bells (1-4, width in octaves
-                                                              from Q), high shelf (H); unused bells switched off.
-                                                              More than 4 bells: a second ACE EQ
-    Glue Compressor      ACE Compressor (stereo)              threshold, ratio, attack, release, knee 6 dB
+    Live device          HypnoMix Studio                         set by
+    EQ Eight             ACE EQ                               low cut / high cut on its High Pass / Low Pass bands
+                                                              (12 or 48 dB/oct, as EQ Eight's Low Cut 12 / 48; the
+                                                              cut is Butterworth, Q 0.71), low shelf (L), up to 4
+                                                              bells (1-4, width in octaves from Q), high shelf (H);
+                                                              unused bands switched off. More than 4 bells: a second
+                                                              ACE EQ. An older ACE EQ without the cut bands: the cuts
+                                                              go on a separate ACE High/Low Pass Filter (said so)
+    Glue Compressor      ACE Compressor (stereo)              threshold, ratio, attack, release, knee 6 dB (Knee 1:
+                                                              ACE's knee is 6 x Knee dB wide); Range, Release Auto
+                                                              and Dry/Wet on its Range, Auto Release and Mix when the
+                                                              plan has them
     Utility              Hypnomix Utility                     Bass Mono + its frequency (Linkwitz-Riley side
                                                               high-pass, mid all-pass: the highs keep their image),
                                                               Width %
-    Saturator            (none yet)                           left out, listed in the notes
+    Saturator            Hypnomix Saturator                   Drive, Curve, Output, Mix (Dry/Wet). Curves: Soft Sine,
+                                                              Analog Clip, Digital Clip (as Hard Clip); the plan's
+                                                              offline warmth is a tanh curve, which is Analog Clip.
+                                                              Any other curve is not built and is listed. An older
+                                                              HypnoMix DAW without it: left out and listed
     Limiter              Hypnomix Limiter                     Gain, Ceiling (true peak, 4x oversampled), Release
 
 The chain goes on the master bus, before Hypnomix Main if it is there (Main measures what the chain makes),
@@ -54,9 +64,15 @@ AEQ = ("lv2", "urn:ardour:a-eq", "ACE EQ")
 ACOMP = ("lv2", "urn:ardour:a-comp#stereo", "ACE Compressor (stereo)")
 UTILITY = ("lv2", "urn:hypnomix:utility", "Hypnomix Utility")
 LIMITER = ("lv2", "urn:hypnomix:limiter", "Hypnomix Limiter")
-LEVEL_CONTROLS = ("Ceiling", "Gain", "Threshold", "Makeup")     # a clamp here changes the loudness: the stage counts as not set
+SATURATOR = ("lv2", "urn:hypnomix:saturator", "Hypnomix Saturator")
+LEVEL_CONTROLS = ("Ceiling", "Gain", "Threshold", "Makeup", "Drive", "Output")     # a clamp here changes the loudness: the stage counts as not set
 METERS = ("Hypnomix Main", "Hypnomix Probe")          # measuring devices: never bypassed, the chain goes before Main
 STEEP = {"lowcut12": 1, "lowcut48": 4, "highcut12": 1, "highcut48": 4}
+SLOPE = {"lowcut12": 12, "lowcut48": 48, "highcut12": 12, "highcut48": 48}     # ACE EQ's High / Low Pass Slope, dB/oct
+BUTTERWORTH_Q = 0.7071
+CURVES = {"soft sine": 0, "analog clip": 1, "hard clip": 2, "digital clip": 2}  # Hypnomix Saturator's Curve
+CURVE_NAMES = {0: "Soft Sine", 1: "Analog Clip", 2: "Hard Clip"}
+ACE_RANGE_OFF = 60.0                  # ACE Compressor's Range at its top is off (no cap on the gain reduction)
 
 
 class MCPError(RuntimeError):
@@ -259,6 +275,17 @@ class Builder:
             raise MCPError(f"{label}: the engine's description of this control is damaged ({type(e).__name__})") from e
         return v
 
+    def take_back(self, pi):
+        """Remove plug-in `pi`, the last one this run added (it turned out not to be needed)."""
+        if self.dry or pi is None:
+            return
+        # out of the list first: if the answer is lost, the rollback finds it by position, never removes by a stale index
+        self.added = [x for x in self.added if x[0] != pi]
+        self._desc.pop(pi, None)
+        self.m.call("plugin_remove", id=self.rid, pluginIndex=pi)
+        if self.position is not None:
+            self.position = pi
+
     # ------------------------------------------------------------ stages
     def filters(self, bands):
         """Low and high cuts (EQ Eight types lowcut*/highcut*) on one ACE High/Low Pass Filter."""
@@ -277,22 +304,52 @@ class Builder:
             self.set(pi, "Low Pass Resonance", hi.get("q", 0.7071) or 0.7071)
         return pi
 
+    def has(self, pi, *labels):
+        """Does plug-in `pi` show every one of these controls? (A dry run plans for this build: yes.)"""
+        if self.dry or pi is None:
+            return True
+        have = self.params(pi)
+        return all(x in have for x in labels)
+
+    def cuts(self, pi, bands):
+        """Low and high cuts on ACE EQ's own High Pass / Low Pass bands (12 or 48 dB/oct, Butterworth). False when this
+        ACE EQ has no such bands (an older build): the caller puts them on an ACE High/Low Pass Filter instead."""
+        lo = next((x for x in bands if x["type"].startswith("lowcut")), None)
+        hi = next((x for x in bands if x["type"].startswith("highcut")), None)
+        if not self.has(pi, "High Pass", "High Pass Frequency", "High Pass Slope", "Low Pass", "Low Pass Frequency",
+                        "Low Pass Slope"):
+            return False
+        for word, band in (("High Pass", lo), ("Low Pass", hi)):
+            self.set(pi, word, 1 if band else 0)
+            if band:
+                self.set(pi, f"{word} Frequency", band["freq"])
+                self.set(pi, f"{word} Slope", SLOPE[band["type"]])
+                q = band.get("q") or BUTTERWORTH_Q
+                if abs(float(q) - BUTTERWORTH_Q) > 0.05:
+                    self.notes.append(f"{word.lower()} at {band['freq']:g} Hz: Q {float(q):g} is not carried (ACE EQ's "
+                                      f"cut is Butterworth, Q 0.71: no resonance peak)")
+        return True
+
     def eq(self, bands):
-        """Shelves and bells onto ACE EQ (low shelf, 4 bells, high shelf); a second one if there are more bells."""
-        tone = [b for b in bands if b["type"] in ("lowshelf", "highshelf", "bell", "notch")]
-        if not tone:
-            return []
-        ls = next((b for b in tone if b["type"] == "lowshelf"), None)
-        hs = next((b for b in tone if b["type"] == "highshelf"), None)
-        bells = [b for b in tone if b["type"] in ("bell", "notch")]
-        for b in bells:
-            if b["type"] == "notch":
-                self.notes.append(f"notch at {b['freq']:g} Hz: ACE EQ has no notch, a narrow -18 dB bell instead")
-        out = []
+        """Cuts, shelves and bells onto ACE EQ (high pass, low shelf, 4 bells, high shelf, low pass); a second one if
+        there are more bells. Returns (plug-in indexes, whether the cuts are on the first ACE EQ)."""
+        tone = [x for x in bands if x["type"] in ("lowshelf", "highshelf", "bell", "notch")]
+        cut = [x for x in bands if x["type"].startswith(("lowcut", "highcut"))]
+        if not tone and not cut:
+            return [], True
+        ls = next((x for x in tone if x["type"] == "lowshelf"), None)
+        hs = next((x for x in tone if x["type"] == "highshelf"), None)
+        bells = [x for x in tone if x["type"] in ("bell", "notch")]
+        for x in bells:
+            if x["type"] == "notch":
+                self.notes.append(f"notch at {x['freq']:g} Hz: ACE EQ has no notch, a narrow -18 dB bell instead")
+        out, on_eq = [], True
         for k in range(0, max(1, len(bells)), 4):
             part = bells[k:k + 4]
             pi = self.add(AEQ)
             first = k == 0
+            if first and cut:
+                on_eq = self.cuts(pi, cut)
             self.set(pi, "Filter L", 1 if first and ls else 0)
             self.set(pi, "Filter H", 1 if first and hs else 0)
             if first and ls:
@@ -301,18 +358,18 @@ class Builder:
                 self.set(pi, "Frequency H", hs["freq"]); self.set(pi, "Gain H", hs["gain"])
             for n in range(1, 5):
                 if n <= len(part):
-                    b = part[n - 1]
-                    notch = b["type"] == "notch"
+                    x = part[n - 1]
+                    notch = x["type"] == "notch"
                     self.set(pi, f"Filter {n}", 1)
-                    self.set(pi, f"Frequency {n}", b["freq"])
-                    self.set(pi, f"Gain {n}", -18.0 if notch else b["gain"])
-                    self.set(pi, f"Bandwidth {n}", 0.1 if notch else round(min(4.0, max(0.1, q_to_octaves(b.get("q", 0.9)))), 3))
+                    self.set(pi, f"Frequency {n}", x["freq"])
+                    self.set(pi, f"Gain {n}", -18.0 if notch else x["gain"])
+                    self.set(pi, f"Bandwidth {n}", 0.1 if notch else round(min(4.0, max(0.1, q_to_octaves(x.get("q", 0.9)))), 3))
                 else:
                     self.set(pi, f"Filter {n}", 0)
                     self.set(pi, f"Gain {n}", 0)
             self.set(pi, "Master Gain", 0)
             out.append(pi)
-        return out
+        return out, on_eq
 
 
 def _existing(m, rid):
@@ -328,7 +385,7 @@ def _name(p):
     return str(p.get("name", ""))
 
 
-OURS = {HPF[2], AEQ[2], ACOMP[2], UTILITY[2], LIMITER[2]}       # the plug-ins this command adds (never the person's own)
+OURS = {HPF[2], AEQ[2], ACOMP[2], UTILITY[2], LIMITER[2], SATURATOR[2]}       # the plug-ins this command adds (never the person's own)
 
 
 def _unknown_adds(before, now, position):
@@ -415,7 +472,8 @@ class Stage:
 
 
 def incomplete(rows):
-    """Did anything in the plan fail to be built or set (the Saturator is left out by design, not a failure)?"""
+    """Did anything in the plan fail to be built or set? (A warmth stage left out because the build has no Hypnomix
+    Saturator, or the curve is one it does not have, reads "(left out)": said in the notes, not a failure.)"""
     return any(r[0].startswith("NOT BUILT") or "NOT SET" in r[1] for r in rows)
 
 
@@ -491,30 +549,55 @@ def _build_stages(b, plan):
         if d == "EQ Eight":
             bands = step["bands"]
             cuts = [x for x in bands if x["type"].startswith(("lowcut", "highcut"))]
-            if cuts:
-                st = Stage(b, "ACE High/Low Pass Filter", step["why"])
-                st.pis = [b.filters(bands)]
-                rows.append(st.done("; ".join(
-                    f"{'high-pass' if x['type'].startswith('lowcut') else 'low-pass'} {x['freq']:g} Hz, "
-                    f"{12 if x['type'].endswith('12') else 48} dB/oct" for x in cuts)))
             tone = [x for x in bands if x["type"] in ("lowshelf", "highshelf", "bell", "notch")]
-            if tone:
+            cut_text = "; ".join(f"{'high-pass' if x['type'].startswith('lowcut') else 'low-pass'} {x['freq']:g} Hz, "
+                                 f"{SLOPE[x['type']]} dB/oct" for x in cuts)
+            tone_text = "; ".join(f"{x['type']} {x['freq']:g} Hz {x['gain']:+.1f} dB" for x in tone)
+            if cuts or tone:
                 st = Stage(b, "ACE EQ", step["why"])
-                eqs = b.eq(bands)
+                eqs, on_eq = b.eq(bands)
                 st.name = "ACE EQ" + (f" x{len(eqs)}" if len(eqs) > 1 else "")
-                rows.append(st.done("; ".join(f"{x['type']} {x['freq']:g} Hz {x['gain']:+.1f} dB" for x in tone), eqs))
+                if not on_eq and not tone:
+                    b.take_back(eqs[0])           # nothing but the cuts, and this ACE EQ cannot make them
+                elif on_eq:
+                    rows.append(st.done("; ".join(t for t in (cut_text, tone_text) if t), eqs))
+                else:
+                    rows.append(st.done(tone_text, eqs))
+                if not on_eq:
+                    # an older ACE EQ without the cut bands: the cuts on their own filter (filters in a row commute, so
+                    # it sounds the same after the EQ as before it)
+                    b.notes.append("this HypnoMix DAW's ACE EQ has no High Pass / Low Pass bands (an older build): "
+                                   "the cuts are on a separate ACE High/Low Pass Filter")
+                    st = Stage(b, "ACE High/Low Pass Filter", step["why"])
+                    st.pis = [b.filters(bands)]
+                    rows.append(st.done(cut_text))
         elif d == "Glue Compressor":
             st = Stage(b, "ACE Compressor (stereo)", step["why"])
             pi = b.add(ACOMP)
+            auto = bool(step.get("release_auto"))
             b.set(pi, "Attack", step["attack_ms"])
             b.set(pi, "Release", step["release_s"] * 1000)
-            b.set(pi, "Knee", 6)
+            b.set(pi, "Knee", 1)                  # ACE's knee is 6 x Knee dB wide: 1 is the plan's 6 dB
             b.set(pi, "Ratio", step["ratio"])
             b.set(pi, "Threshold", step["threshold_db"])
             b.set(pi, "Makeup", step.get("makeup_db", 0))
             b.set(pi, "Sidechain", 0)
+            extra = []
+            rng = step.get("range_db")
+            if rng is not None and float(rng) < ACE_RANGE_OFF:          # Glue's Range: at most this much reduction
+                b.set(pi, "Range", float(rng))
+                extra.append(f"range {float(rng):g} dB")
+            if auto:                                                     # Glue's Release "A": program-dependent
+                b.set(pi, "Auto Release", 1)
+                extra.append("release Auto")
+            mix = step.get("dry_wet_pct")
+            if mix is not None and float(mix) < 100:                     # Glue's Dry/Wet
+                b.set(pi, "Mix", float(mix))
+                extra.append(f"mix {float(mix):g}%")
             rows.append(st.done(f"threshold {step['threshold_db']} dB, {step['ratio']}:1, attack "
-                                f"{step['attack_ms']} ms, release {step['release_s'] * 1000:.0f} ms, knee 6 dB", [pi]))
+                                f"{step['attack_ms']} ms, " + ("release Auto" if auto else
+                                f"release {step['release_s'] * 1000:.0f} ms") + ", knee 6 dB"
+                                + "".join(f", {x}" for x in extra if x != "release Auto"), [pi]))
         elif d == "Utility":
             st = Stage(b, "Hypnomix Utility", step["why"])
             pi = b.add(UTILITY)
@@ -533,9 +616,30 @@ def _build_stages(b, plan):
                 parts.append(f"gain {step['gain_db']:+.1f} dB")
             rows.append(st.done(", ".join(parts) or "neutral", [pi]))
         elif d == "Saturator":
-            b.notes.append(f"Saturator (drive {step['drive_db']} dB, {step['dry_wet_pct']}% wet): HypnoMix Studio has no "
-                           "saturator yet, so the warmth stage is left out")
-            rows.append(("(left out)", f"Saturator drive {step['drive_db']} dB", step["why"]))
+            curve = str(step.get("curve") or "Analog Clip")             # the plan's offline warmth is tanh: Analog Clip
+            drive, mix = float(step["drive_db"]), float(step.get("dry_wet_pct", 100))
+            out_db = float(step.get("output_db", -drive * 0.6))          # the same output trim the Live chain sets
+            said = f"Saturator {curve}, drive {drive:g} dB, output {out_db:+.1f} dB, {mix:g}% wet"
+            if curve.lower() not in CURVES:
+                b.notes.append(f"{said}: Hypnomix Saturator has no {curve} curve (it has Soft Sine, Analog Clip and Hard "
+                               "Clip), so the warmth stage is left out")
+                rows.append(("(left out)", said, step["why"]))
+                continue
+            st = Stage(b, SATURATOR[2], step["why"])
+            pi = b.add(SATURATOR)
+            if pi is None and not b.dry:
+                if b.notes and b.notes[-1].startswith(f"{SATURATOR[2]}: could not be added"):
+                    b.notes.pop()                 # said once, below, in this stage's own words
+                b.notes.append(f"{said}: this HypnoMix Studio has no Hypnomix Saturator (an older build), so the warmth "
+                               "stage is left out")
+                rows.append(("(left out)", said, step["why"]))
+                continue
+            b.set(pi, "Drive", drive)
+            b.set(pi, "Curve", CURVES[curve.lower()])
+            b.set(pi, "Output", out_db)
+            b.set(pi, "Mix", mix)
+            rows.append(st.done(f"{CURVE_NAMES[CURVES[curve.lower()]]}, drive {drive:g} dB, output {out_db:+.1f} dB, "
+                                f"mix {mix:g}%", [pi]))
         elif d == "Limiter":
             st = Stage(b, "Hypnomix Limiter", step["why"])
             pi = b.add(LIMITER)
