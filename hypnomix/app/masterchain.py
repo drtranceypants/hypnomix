@@ -7,18 +7,18 @@
 
 In Live, HypnomixMain (on Main) has a Mastering chain column:
 
-  Build chain    puts an Audio Effect Rack called "Hypnomix Master" just before HypnomixMain, holding the chosen
+  Build chain    puts an Audio Effect Rack called "HypnoMix Master" just before HypnomixMain, holding the chosen
                  template's devices. They are Live's own devices: open the rack and change anything (move, swap,
                  add, remove, switch off). Pressing Build again asks before it replaces the rack.
   Match target   plays (or keeps playing) and listens to Main after the chain, then turns the Limiter's Gain until the
                  loudness lands on the song card's Target LUFS (three or four rounds, about 8 s each). Play the
                  loudest part of the song. Works with any chain before HypnomixMain that has a Limiter in it.
-  Save           keeps whatever is before HypnomixMain (your edited Hypnomix Master, or a rack of your own) as a
+  Save           keeps whatever is before HypnomixMain (your edited HypnoMix Master, or a rack of your own) as a
                  template under the name you type. Live's own devices and racks are kept with every setting;
                  plug-ins and Max for Live devices cannot be rebuilt by Live's API and are listed as left out.
                  Saved templates live in ~/.hypnomix/master-chains/ (one .json each; the app must be running).
 
-While the chain is the one HypnoMix built (the rack is called "Hypnomix Master"), it follows the song card: the
+While the chain is the one HypnoMix built (the rack is called "HypnoMix Master"), it follows the song card: the
 Ceiling sets the Limiter's ceiling and the Limiter character (clean, punch, loud) sets its lookahead and release and
 the Glue Compressor's attack. A rack of your own is never changed except by Match target (the Limiter's Gain).
 
@@ -39,8 +39,8 @@ and you add only what the song needs):
 import json, re, sys
 from pathlib import Path
 
-RACK = "Hypnomix Master"
-STOCK_NAME = "hypnomix stock"
+RACK = "HypnoMix Master"                 # older sets hold "Hypnomix Master": every lookup ignores case
+STOCK_NAME = "HypnoMix stock"             # older devices and callers send "hypnomix stock": matched ignoring case
 
 # One stage per device. "set": [names Live may use for the parameter, value, how]: "raw" sets Live's own value
 # (switches, menu positions), "disp" sets it so Live displays that number (Hz, dB, ms, %), "item" picks the menu item
@@ -122,14 +122,18 @@ def _slug(name):
     return s or "my chain"
 
 
+def is_stock(name):
+    return str(name).strip().lower() == STOCK_NAME.lower()
+
+
 def names():
     d = home()
     saved = sorted(p.stem for p in d.glob("*.json")) if d.is_dir() else []
-    return [STOCK_NAME] + [n for n in saved if n != STOCK_NAME]
+    return [STOCK_NAME] + [n for n in saved if not is_stock(n)]
 
 
 def load(name):
-    if name == STOCK_NAME:
+    if is_stock(name):
         return STOCK
     f = home() / f"{_slug(name)}.json"
     if not f.exists():
@@ -139,7 +143,7 @@ def load(name):
 
 def save(name, chain):
     name = _slug(name)
-    if name == STOCK_NAME:
+    if is_stock(name):
         raise ValueError("that name belongs to the stock template: choose another")
     if not isinstance(chain, dict) or not isinstance(chain.get("devices"), list) or not chain["devices"]:
         raise ValueError("nothing to save: put the chain just before HypnomixMain on Main")
@@ -156,7 +160,7 @@ def save(name, chain):
 
 def delete(name):
     f = home() / f"{_slug(name)}.json"
-    if name == STOCK_NAME or not f.exists():
+    if is_stock(name) or not f.exists():
         return False
     f.unlink()
     return True
@@ -217,6 +221,7 @@ inlets = 1;
 outlets = 2;            // 0: status text   1: the template menu
 var BASE = "http://127.0.0.1:__APP__";
 var RACK = __RACK__;
+function same(a, b) { return str(a).toLowerCase() == str(b).toLowerCase(); }   // names saved by older versions keep their old capitals
 var STOCK = __STOCK__;
 var CHARACTER = __CHARACTER__;
 var INSERT_NAMES = __INSERT__;
@@ -292,7 +297,7 @@ function myIndex(t) {
 function ours(t, idx) {                    // the rack HypnoMix built, just before HypnomixMain
     if (idx < 1) return null;
     var d = new LiveAPI(t.unquotedpath + " devices " + (idx - 1));
-    return (str(d.get("name")) == RACK && parseInt(d.get("can_have_chains"))) ? d : null;
+    return (same(d.get("name"), RACK) && parseInt(d.get("can_have_chains"))) ? d : null;
 }
 function params(d) {
     var n = d.getcount("parameters"), out = [];
@@ -389,12 +394,12 @@ function build() {
     var t = track(), idx = myIndex(t), old = ours(t, idx);
     if (old && now() - st.confirmAt > 5000) {
         st.confirmAt = now();
-        say("A Hypnomix Master rack is already here. Press Build again within 5 s to replace it (your edits go).");
+        say("A HypnoMix Master rack is already here. Press Build again within 5 s to replace it (your edits go).");
         return;
     }
     st.confirmAt = 0;
     var nm = st.list[st.pick] || STOCK.name;
-    if (nm == STOCK.name) return buildWith(STOCK);
+    if (same(nm, STOCK.name)) return buildWith(STOCK);
     say("Loading " + nm + " from the HypnoMix app…");
     get("/api/master/chain?name=" + encodeURIComponent(nm), function (d) {
         if (!d || d.error) { say("Could not load " + nm + (d && d.error ? ": " + d.error : ": is the HypnoMix app running?")); return; }
@@ -484,14 +489,14 @@ function snap(d, skipped) {
             for (var k = 0; k < nd; k++) { var x = snap(new LiveAPI(ch.unquotedpath + " devices " + k), skipped); if (x) devs.push(x); }
             o.chains.push({name: str(ch.get("name")), devices: devs});
         }
-        if (o.name != RACK) skipped.push(o.name + ": macro mappings (Live's API cannot rebuild them)");
+        if (!same(o.name, RACK)) skipped.push(o.name + ": macro mappings (Live's API cannot rebuild them)");
     }
     return o;
 }
 function capture() {
     var t = track(), idx = myIndex(t), devs = [], skipped = [];
     for (var i = 0; i < idx; i++) { var x = snap(new LiveAPI(t.unquotedpath + " devices " + i), skipped); if (x) devs.push(x); }
-    if (devs.length == 1 && devs[0].name == RACK && devs[0].chains && devs[0].chains.length == 1)
+    if (devs.length == 1 && same(devs[0].name, RACK) && devs[0].chains && devs[0].chains.length == 1)
         devs = devs[0].chains[0].devices;     // our own rack: keep what is inside it
     return {devices: devs, skipped: skipped};
 }
@@ -666,7 +671,7 @@ def add_to_patch(P, thisdev, route_vals, blk_out, card_pres):
     x = X0
     box("live.comment", [1200, 20, 120, 18], [x, 4, WIDTH, 14], numinlets=1, numoutlets=0, text="Mastering chain")
     menu = box("umenu", [1200, 100, 160, 22], [x, 22, WIDTH, 18], numinlets=1, numoutlets=3,
-               outlettype=["int", "", ""], parameter_enable=0, items=["hypnomix stock"], fontsize=10.0)
+               outlettype=["int", "", ""], parameter_enable=0, items=["HypnoMix stock"], fontsize=10.0)
     P.wire(js, 1, menu, 0)
     pk = P.add("prepend pick", 1, 1, [""], x=1200, y=130)
     P.wire(menu, 0, pk, 0)
@@ -708,7 +713,7 @@ def main(argv):
     a = ap.parse_args(argv)
     if a.action == "list":
         for n in names():
-            print(n + ("   (built in)" if n == STOCK_NAME else ""))
+            print(n + ("   (built in)" if is_stock(n) else ""))
         print(f"\nsaved templates: {home()}")
     elif a.action == "show":
         try:

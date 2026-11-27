@@ -1,6 +1,6 @@
 desc:HypnoMix Probe
 //tags: analysis meter hypnomix
-//author: hypnomix
+//author: HypnoMix
 // Put it LAST on a track: it hears the track after all its plug-ins. Ten times a second it measures the 20 values
 // the hypnomix app reads (the same as its Live probe): K-weighted RMS, sample peak and RMS per channel, mid, side and
 // L*R, the same below 120 Hz, and 8 bands of the mid signal. The hypnomix bridge (`hypnomix reaper start`) reads them

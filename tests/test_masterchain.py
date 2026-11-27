@@ -115,6 +115,19 @@ class Script(unittest.TestCase):
         _jscheck.need_runner(self)
         self.js = MC.script()
 
+    def test_a_rack_saved_with_the_old_spelling_is_still_ours(self):
+        out = run(self.js, """
+bang(); build();
+MAIN.devices[0].name = "Hypnomix Master";                       // as an older version saved it
+st.list = ["hypnomix stock"]; st.pick = 0;
+build();                                                         // asks first: it knows the rack is its own
+print_(said());
+st.confirmAt = new Date().getTime(); build();
+print_(MAIN.devices.map(flat).map(function (d) { return d.name; }));
+""")
+        self.assertIn("already here", out[0])
+        self.assertEqual(out[1], ["HypnoMix Master", "HypnomixMain"])
+
     def test_builds_the_stock_chain_in_a_rack_before_the_device(self):
         out = run(self.js, """
 bang(); param("hm_ceiling", -1.0); param("hm_mode", 1);
@@ -122,7 +135,7 @@ build();
 print_(MAIN.devices.map(flat)); print_(said());
 """)
         devs, msg = out
-        self.assertEqual([d["name"] for d in devs], ["Hypnomix Master", "HypnomixMain"])
+        self.assertEqual([d["name"] for d in devs], ["HypnoMix Master", "HypnomixMain"])
         inner = devs[0]["chains"][0]["devices"]
         self.assertEqual([d["name"] for d in inner], ["Tone", "Glue", "Tame", "Warmth", "Width", "Limiter"])
         eq, glue, tame, warm, util, lim = (d["p"] for d in inner)
@@ -152,7 +165,7 @@ var lim = MAIN.devices[0].chains[0].devices[5]; lim.params[1].value = 5.5;      
 MAIN.devices[0].chains[0].devices[3].params[0].value = 1;                       // Warmth switched on
 tplname("my", "master"); HTTP.reply = '{"name": "my master", "devices": 6, "skipped": []}'; save();
 var sent = JSON.parse(HTTP.posted.body); print_(sent.name); print_(sent.chain.devices.length);
-HTTP.reply = JSON.stringify(sent.chain); st.list = ["hypnomix stock", "my master"]; pick(1);
+HTTP.reply = JSON.stringify(sent.chain); st.list = ["HypnoMix stock", "my master"]; pick(1);
 st.confirmAt = new Date().getTime(); build();
 print_(MAIN.devices.map(flat)[0].chains[0].devices.map(function (d) { return [d.name, d.p["Device On"], d.p["Input Gain"] || ""]; }));
 """)
@@ -205,9 +218,25 @@ print_(g.value); print_(said()); print_(SONG.is_playing);
 
 
 class Templates(unittest.TestCase):
+    def test_new_names_and_old_spelling(self):
+        self.assertEqual(MC.RACK, "HypnoMix Master")
+        self.assertEqual(MC.STOCK_NAME, "HypnoMix stock")
+        self.assertIs(MC.load("hypnomix stock"), MC.STOCK)
+        self.assertIs(MC.load("HypnoMix Stock"), MC.STOCK)
+        self.assertTrue(MC.is_stock("hypnomix stock"))
+        with self.assertRaises(ValueError):
+            MC.save("hypnomix stock", {"devices": [{"cls": "Limiter"}]})
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(MC, "home", lambda: Path(d)):
+            self.assertFalse(MC.delete("hypnomix stock"))
+
+    def test_js_matches_rack_ignoring_case(self):
+        self.assertIn("same(d.get(\"name\"), RACK)", MC.JS)
+        self.assertIn("same(nm, STOCK.name)", MC.JS)
+        self.assertNotIn("== RACK", MC.JS)
+
     def test_save_list_show_delete(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(MC, "home", lambda: Path(d)):
-            self.assertEqual(MC.names(), ["hypnomix stock"])
+            self.assertEqual(MC.names(), ["HypnoMix stock"])
             with self.assertRaises(ValueError):
                 MC.save("hypnomix stock", {"devices": [{"cls": "Limiter"}]})
             with self.assertRaises(ValueError):
@@ -215,11 +244,11 @@ class Templates(unittest.TestCase):
             r = MC.save("My/Master!", {"devices": [{"cls": "Limiter", "name": "Lim", "params": [{"n": "Device On", "v": 0}]}],
                                        "skipped": ["Envelope Follower (Mx)"]})
             self.assertEqual(r["name"], "MyMaster")
-            self.assertEqual(MC.names(), ["hypnomix stock", "MyMaster"])
+            self.assertEqual(MC.names(), ["HypnoMix stock", "MyMaster"])
             text = MC.describe(MC.load("MyMaster"))
             self.assertIn("Lim (Limiter) [off]", text)
             self.assertIn("left out: Envelope Follower", text)
-            self.assertEqual(MC.handle_get("/api/master/chains", {})[1]["chains"], ["hypnomix stock", "MyMaster"])
+            self.assertEqual(MC.handle_get("/api/master/chains", {})[1]["chains"], ["HypnoMix stock", "MyMaster"])
             self.assertTrue(MC.delete("MyMaster"))
             self.assertEqual(MC.handle_get("/api/master/chain", {"name": "MyMaster"})[0], 404)
 

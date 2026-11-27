@@ -251,13 +251,13 @@ local function build_named(name)
   for k = #have, 1, -1 do reaper.TrackFX_Delete(tr, have[k]) end
   m = main_index(tr)
   local miss, n = {}, 0
-  if name == "hypnomix stock" then n = build_stock(tr, m, miss) else n = build_template(tr, m, name) end
+  if name:lower() == "hypnomix stock" then n = build_stock(tr, m, miss) else n = build_template(tr, m, name) end
   reaper.PreventUIRefresh(-1)
   reaper.Undo_EndBlock("hypnomix: build mastering chain (" .. name .. ")", -1)
   M.last_missing = miss
   if #miss > 0 then reaper.ShowConsoleMsg("HypnoMix chain: not set: " .. table.concat(miss, "; ") .. "\n") end
   card_seen = card()
-  say(name == "hypnomix stock" and S.BUILT or S.LOADED, n, #miss)
+  say(name:lower() == "hypnomix stock" and S.BUILT or S.LOADED, n, #miss)
   return n, miss
 end
 
@@ -265,7 +265,7 @@ function M.build(name)
   if not main_index(master()) then say(S.NO_MAIN); return end
   if name then return build_named(name) end
   local list = templates()
-  if #list == 0 then return build_named("hypnomix stock") end
+  if #list == 0 then return build_named("HypnoMix stock") end
   local opened = false
   if gfx.getchar() < 0 then                  -- no window of ours is open (the review panel would do)
     local x, y = reaper.GetMousePosition()
@@ -280,7 +280,7 @@ local function menu_poll()
   m.passes = m.passes + 1
   if m.passes < 3 then return end
   menu = nil
-  local items = { "hypnomix stock" }
+  local items = { "HypnoMix stock" }
   for _, n in ipairs(m.list) do items[#items + 1] = n end
   if m.opened then gfx.x, gfx.y = 0, 0 else gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y end
   local k = gfx.showmenu(table.concat(items, "|"))
@@ -412,7 +412,7 @@ M.templates, M.card, M.limiter, M.gated = templates, card, limiter, gated
 function M.commands(C)
   function C.chain_build(a)
     M.yes = a.yes == "1"
-    local n, miss = M.build(a.name or "hypnomix stock")
+    local n, miss = M.build(a.name or "HypnoMix stock")
     M.yes = false
     if not n then return nil, "not built (state " .. reaper.gmem_read(GM_STATE) .. ")" end
     return { added = n, missing = miss, state = reaper.gmem_read(GM_STATE) }

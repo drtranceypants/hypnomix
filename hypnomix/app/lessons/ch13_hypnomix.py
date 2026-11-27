@@ -145,7 +145,7 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="HypnoMix in y
             "yours included, as a template.",
             "Offline, `hypnomix master mix.wav --plan` turns each stage into a finding to approve, with test AAC and MP3 "
             "copies to keep the true peak safe."],
-       how={"live": ["HypnomixMain → Mastering chain → Build chain (needs Live 12.3+): an Audio Effect Rack called Hypnomix Master, editable."],
+       how={"live": ["HypnomixMain → Mastering chain → Build chain (needs Live 12.3+): an Audio Effect Rack called HypnoMix Master, editable."],
             "reaper": ["HypnoMix Main's window → Build chain / Match target / Save chain (needs the bridge), or `hypnomix reaper chain build`."],
             "ardour": ["Export the mix and run `hypnomix master mix.wav --plan` (Tools tab → master)."]},
        action={d: dict(kind="chain") for d in LR}),

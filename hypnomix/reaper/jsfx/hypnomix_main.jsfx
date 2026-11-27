@@ -1,6 +1,6 @@
 desc:HypnoMix Main
 //tags: analysis meter hypnomix
-//author: hypnomix
+//author: HypnoMix
 // Put it LAST on the master track. The song card: genre, key, scale, the loudness target, true-peak ceiling, limiter
 // character and amount. Match target, the mastering chain and the app's review of a recorded pass use the target and
 // ceiling; scan, fix and tuning on a REAPER project do not read the card yet (give the key with --key). It also

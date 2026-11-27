@@ -544,7 +544,7 @@ def _run_reaper(step, kind, a):
         return dict(done=f"Added {fx['device']} to {track}.", by_hand=[f"Set by hand: {x}" for x in by_hand])
     if kind == "chain":
         try:
-            r.call("chain_build", name="hypnomix stock", yes=1)
+            r.call("chain_build", name="HypnoMix stock", yes=1)
             return dict(done="Built the mastering chain before HypnoMix Main on the master.")
         except ReaperError:
             added, by_hand = [], []

@@ -19,7 +19,7 @@ chords (typed; kept by the app), loudness target, true-peak ceiling, limiter cha
 Live parameters, so they are saved in the set, and `scan` reads them from the .als; the app also sees them live.
 
 Mastering chain (HypnomixMain). Build chain puts Live's own devices (EQ Eight, Glue Compressor, Multiband Dynamics,
-Saturator, Utility, Limiter) in a "Hypnomix Master" rack just before HypnomixMain; edit it like any rack. Match target
+Saturator, Utility, Limiter) in a "HypnoMix Master" rack just before HypnomixMain; edit it like any rack. Match target
 turns the Limiter's Gain until Main lands on the card's Target LUFS; Save keeps your edited chain (or a rack of your
 own) as a template. See hypnomix/app/masterchain.py.
 

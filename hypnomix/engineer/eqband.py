@@ -7,7 +7,7 @@ part that should give way gets a bell cut at the fight's frequency.
     (one that is switched off, or a bell or shelf sitting at 0 dB); that band becomes the cut. Nothing else in it
     changes, and a band that is automated is never taken.
   - otherwise a new EQ Eight (Live's own default preset) goes at the END of the chain with just that one band
-    set, named "Masking cut (hypnomix)" so it can be found and removed.
+    set, named "Masking cut (HypnoMix)" so it can be found and removed.
   - a cut that is already there (an enabled bell near that frequency, at least three quarters as deep) is left alone
     and reported, so running the same fix twice changes nothing.
 
@@ -19,7 +19,7 @@ import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-DEVICE_NAME = "Masking cut (hypnomix)"
+DEVICE_NAME = "Masking cut (HypnoMix)"
 BELL = 3                                         # EQ Eight band modes: 0 low cut 48, 1 low cut 12, 2 low shelf, 3 bell,
 FLAT_OK = (2, 3, 5)                              # 4 notch, 5 high shelf, 6 high cut 12, 7 high cut 48
 PRESET = "Core Library/Defaults/Audio Effects/EQ Eight.adv"

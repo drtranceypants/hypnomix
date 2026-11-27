@@ -129,7 +129,7 @@ def chain(r, args, as_json=False):
     """The mastering chain on HypnoMix Main, from a terminal (no dialogs: Build replaces without asking)."""
     what = args[0] if args else "state"
     if what == "build":
-        out = r.call("chain_build", name=" ".join(args[1:]) or "hypnomix stock", yes=1)
+        out = r.call("chain_build", name=" ".join(args[1:]) or "HypnoMix stock", yes=1)
     elif what == "save":
         if len(args) < 2:
             sys.exit("hypnomix reaper chain save NAME")
@@ -151,7 +151,7 @@ def chain(r, args, as_json=False):
     elif what == "state":
         for f in out["fx"]:
             print(f"  {f['renamed'] or f['name']}" + ("" if f["on"] else "  (off)"))
-        print("templates: " + ", ".join(["hypnomix stock"] + out.get("templates", [])))
+        print("templates: " + ", ".join(["HypnoMix stock"] + out.get("templates", [])))
 
 
 if __name__ == "__main__":

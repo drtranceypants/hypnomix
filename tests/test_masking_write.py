@@ -79,6 +79,7 @@ class LiveCut(unittest.TestCase):
         t, devs = devices_of(root, "Keys")
         self.assertEqual([d.tag for d in devs], ["Saturator", "Eq8"])           # at the END of the chain
         eq = devs[-1]
+        self.assertEqual(eqband.DEVICE_NAME, "Masking cut (HypnoMix)")
         self.assertEqual(eq.find("./UserName").get("Value"), eqband.DEVICE_NAME)
         b = eqband.band_info(eqband.band_a(eq, 1))
         self.assertEqual((b["on"], b["mode"], b["freq"], b["gain"], b["q"]), (True, 3, 250.0, -3.0, 1.4))
@@ -88,6 +89,10 @@ class LiveCut(unittest.TestCase):
         errs, _, _ = C.check(out, src)
         self.assertEqual(errs, [], errs)                                         # ids unique, below NextPointeeId
         self.assertEqual(load(src).find(".//NextPointeeId").get("Value"), "1000")  # the original is as it was
+
+    def test_the_reaper_band_is_named_with_the_capital_m(self):
+        from hypnomix.project import rpp_edit
+        self.assertEqual(rpp_edit.REAEQ_NAME_IN_PROJECT, "Masking cut (HypnoMix)")
 
     def test_the_amount_scales_the_cut(self):
         src = write_set(self.td / "Song.als", [track_xml(1, "Keys", "", 100)])

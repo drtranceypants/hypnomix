@@ -113,7 +113,7 @@ track) and to confirm the rest.
 ## 5. The mastering chain on HypnomixMain
 
 HypnomixMain has a **Mastering chain** column. It builds the chain out of Live's own devices, in an Audio Effect
-Rack called **Hypnomix Master** just before HypnomixMain on Main, so the meters and Record and review hear the
+Rack called **HypnoMix Master** just before HypnomixMain on Main, so the meters and Record and review hear the
 mastered sound. Open the rack and change anything: move, swap, add, remove or switch off devices.
 
 | Stage | Device | Starts as |
@@ -131,7 +131,7 @@ mastered sound. Open the rack and change anything: move, swap, add, remove or sw
   lands on the card's Target LUFS (up to four rounds of about 8 s). It works with any chain before HypnomixMain
   that has a Limiter, yours included.
 - **Save**: type a name and press Save. Whatever is before HypnomixMain is kept as a template, your edited
-  Hypnomix Master or a rack of your own, with every setting of Live's own devices and racks. Plug-ins, Max for
+  HypnoMix Master or a rack of your own, with every setting of Live's own devices and racks. Plug-ins, Max for
   Live devices and macro mappings cannot be rebuilt through Live's API, so they are listed as left out. Templates
   are files in `~/.hypnomix/master-chains/` (the app must be running); `hypnomix probe chains` lists and shows them.
 - While the rack is the one HypnoMix built, it follows the song card: Ceiling sets the Limiter's ceiling, and the
