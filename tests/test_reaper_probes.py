@@ -167,8 +167,6 @@ class HypnoMixWindows(unittest.TestCase):
             self.assertFalse(MX._own_internal(name, "Target LUFS"), name)
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class InstallMessage(unittest.TestCase):
@@ -189,3 +187,7 @@ class InstallMessage(unittest.TestCase):
             out = buf.getvalue()
             self.assertIn("press F5 to rescan", out)
             self.assertTrue((Path(td) / "Effects" / "hypnomix" / "hypnomix_main.jsfx").is_file())
+
+
+if __name__ == "__main__":
+    unittest.main()
