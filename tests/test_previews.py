@@ -361,7 +361,7 @@ class AbTempSets(unittest.TestCase):
             self.assertNotEqual(p.resolve().parent, song_dir.resolve())
             self.assertIn(scan_dir.resolve(), p.resolve().parents)
         self.assertEqual(list((scan_dir / "ab").rglob("*.als")), [])
-        self.assertEqual(list((scan_dir / "ab").glob("ab-tmp-*")), [])
+        self.assertEqual(list((scan_dir / "ab").glob("hypnomix-ab-tmp-*")), [])
 
         manifest = json.loads((scan_dir / "ab" / "ab.json").read_text(encoding="utf-8"))
         for fid in ("smooth-1", "devices-1"):
@@ -389,7 +389,7 @@ class AbTempSets(unittest.TestCase):
         sm_json = scan_dir / "smooth.json"
         import subprocess
         r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "smooth", str(orig), "--json", str(sm_json)],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         issues = json.loads(sm_json.read_text(encoding="utf-8"))["findings"]
         self.assertTrue(issues, "expected smooth to detect the synthetic click")
@@ -412,7 +412,7 @@ class AbTempSets(unittest.TestCase):
         # Direct user CLI call to smooth --apply outside orig.parent still refuses
         outside = scan_dir / "moved.als"
         r2 = subprocess.run([sys.executable, "-m", "hypnomix.cli", "smooth", str(orig), "--apply", str(outside),
-                             "--ids", f["id"]], capture_output=True, text=True)
+                             "--ids", f["id"]], capture_output=True, text=True, encoding="utf-8")
         self.assertNotEqual(r2.returncode, 0)
         self.assertFalse(outside.exists())
 
@@ -444,7 +444,7 @@ def cli(*args, allow=False):
     env = {k: v for k, v in os.environ.items() if k != "HYPNOMIX_ALLOW_TMP_SET"}
     if allow:
         env["HYPNOMIX_ALLOW_TMP_SET"] = "1"
-    return subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env)
+    return subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8", env=env)
 
 
 class AbTimingSidechainTempSets(unittest.TestCase):
@@ -457,7 +457,7 @@ class AbTimingSidechainTempSets(unittest.TestCase):
 
     def check_pair(self, song_dir, scan_dir, before_tree, fid):
         self.assertEqual(sorted(str(p.relative_to(song_dir)) for p in song_dir.rglob("*")), before_tree)
-        self.assertEqual(list((scan_dir / "ab").glob("ab-tmp-*")), [])
+        self.assertEqual(list((scan_dir / "ab").glob("hypnomix-ab-tmp-*")), [])
         self.assertEqual(list((scan_dir / "ab").rglob("*.als")), [])
         row = json.loads((scan_dir / "ab" / "ab.json").read_text(encoding="utf-8"))[fid]
         self.assertNotIn("preview failed", row.get("note", ""), row)

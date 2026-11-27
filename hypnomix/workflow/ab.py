@@ -215,7 +215,7 @@ def preview_timing(tm, orig, scan, sd, pre, post, manifest, sr):
         return
     od = od_of(sd)
     od.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=od, prefix="ab-tmp-") as td:
+    with tempfile.TemporaryDirectory(dir=od, prefix="hypnomix-ab-tmp-") as td:
         tmp = Path(td) / f"{orig.stem} (ab preview timing).als"
         code, txt = hx(*timing_args(sd, orig, tmp, [f["id"] for f in todo], any(f.get("unroll") for f in todo)))
         if code != 0 or not tmp.exists():
@@ -316,7 +316,7 @@ def main():
     # ---- clip fixes: one temporary set with every smooth fix, rendered once
     sm = [f for f in findings if f["tool"] == "smooth" and f.get("applies") == "set"]
     if sm and orig and orig.exists():
-        with tempfile.TemporaryDirectory(dir=od, prefix="ab-tmp-") as td:
+        with tempfile.TemporaryDirectory(dir=od, prefix="hypnomix-ab-tmp-") as td:
             tmp = Path(td) / f"{orig.stem} (ab preview).als"
             ids = sorted({i for f in sm for i in (f.get("ids") or [f["id"]])})
             code, txt = hx("smooth", orig, "--apply", tmp, "--ids", ",".join(ids))

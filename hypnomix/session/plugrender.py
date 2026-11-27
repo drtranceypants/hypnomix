@@ -782,7 +782,7 @@ def device_preview(f, orig, scan, sd, sr, hx, before_cache, plugins=False):
         return dict(note=f"no preview: '{track}' is {kind}")
     tmp_root = Path(sd) / "ab"
     tmp_root.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=tmp_root, prefix="ab-tmp-") as td:
+    with tempfile.TemporaryDirectory(dir=tmp_root, prefix="hypnomix-ab-tmp-") as td:
         tmp = Path(td) / f"{orig.stem} (ab preview {re.sub(r'[^A-Za-z0-9-]', '', f['id'])}).als"
         if f["tool"] == "sidechain":
             args = ["sidechain", orig, "--host", f["host"], "--apply", tmp] + (["--glue-to-compressor"] if f.get("glue") else [])

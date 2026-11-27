@@ -402,7 +402,7 @@ class ProxyRoundThree(unittest.TestCase):
         from hypnomix.engineer import automation_rules as AR
         up = self.ride([(10, 0), (12, 3), (16, 3), (18, 0)])
         self.assertEqual(self.refusal(up), "")                              # the first +3 dB: allowed, the original kept
-        kept = json.loads((Path(self.td.name) / AO.FILE).read_text())
+        kept = json.loads((Path(self.td.name) / AO.FILE).read_text(encoding="utf-8"))
         self.assertEqual(kept["lines"]["2|gain"], {"value": 0.0})
         self.points, self.state = AR.s_points([(10, 0), (12, 3), (16, 3), (18, 0)]), "play"   # as the engine wrote it
         again = self.ride([(12, 3), (13.2, 6), (15, 6), (16, 3)])
@@ -413,7 +413,7 @@ class ProxyRoundThree(unittest.TestCase):
         self.current = 3.0
         self.assertEqual(self.refusal({}, tool="automation_clear"), "")       # a whole-lane clear: allowed
         self.assertIn("from the original line", self.refusal(self.ride([(10, 3), (12, 6), (16, 6), (18, 3)])))
-        self.assertEqual(json.loads((Path(self.td.name) / AO.FILE).read_text())["lines"]["2|gain"], {"value": 0.0})
+        self.assertEqual(json.loads((Path(self.td.name) / AO.FILE).read_text(encoding="utf-8"))["lines"]["2|gain"], {"value": 0.0})
         self.assertEqual(self.refusal(self.ride([(10, 3), (12, 1), (16, 1), (18, 3)])), "")   # within 3 dB of 0: allowed
 
     def test_one_lane_has_one_name(self):
