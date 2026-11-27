@@ -9,10 +9,10 @@ before building anything else on top of it.
 
 ## New in 0.4.1
 
-1. **HypnoMix Studio.** HypnoMix's own DAW has a name of its own. Setup now asks one question, Standalone or Studio:
+1. **HypnoMix Studio (beta).** HypnoMix's own DAW has a name of its own, and it is a beta: new, and not everything in it has been tried yet. Setup now asks one question, Standalone or Studio:
    **HypnoMix Standalone** works beside the DAW you already use (Ableton Live, REAPER or another one), and
    **HypnoMix Studio** has the DAW built in. It is still one app and one installer.
-2. **The Studio engine can be added.** On an Apple-silicon Mac, Setup adds engine 0.1.0 with one click: about 30 MB
+2. **The Studio (beta) engine can be added.** On an Apple-silicon Mac, Setup adds engine 0.1.0 with one click: about 30 MB
    to download, about 105 MB on disk, checked against its fingerprint before it is unpacked. There is no engine for
    Intel Macs or Windows yet; there the app says so and downloads nothing. Its source is public at
    https://github.com/drtranceypants/hypnomix-daw.

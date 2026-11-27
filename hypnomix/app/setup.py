@@ -180,7 +180,7 @@ def live_status():
 DAWS = [
     dict(id="live", title="Ableton Live", note="the most depth: HypnoMix reads, fixes and drives Live 11 and 12"),
     dict(id="reaper", title="REAPER", note="reads and writes projects, and drives the open REAPER through its bridge"),
-    dict(id="hypnomix", title="HypnoMix Studio", note="the DAW built in: an optional add-on (the next step says whether it can be added on this computer)"),
+    dict(id="hypnomix", title="HypnoMix Studio (beta)", note="the DAW built in: an optional add-on (the next step says whether it can be added on this computer)"),
     dict(id="other", title="Something else", note="any other DAW: export your tracks and scan the folder"),
 ]
 

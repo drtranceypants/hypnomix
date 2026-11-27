@@ -393,7 +393,7 @@ class Disclosure(unittest.TestCase):
         arts = [rel for rel, _ in FILES if rel.startswith(WIKI + "/") and rel.endswith(".html")]
         self.assertEqual([rel for rel in arts if "Ardour" in read(rel)], [WIKI + "/28-ardour.html"], "no other article names the program")
         head = read(WIKI + "/28-ardour.html").split("-->")[0]
-        self.assertRegex(head, r"(?m)^title: HypnoMix Studio$")
+        self.assertRegex(head, r"(?m)^title: HypnoMix Studio \(beta\)$")
         t = squash(read(WIKI + "/28-ardour.html"))
         self.assertEqual(t.count(HONESTY_LINE), 1, "the honesty line, once, in the article")
         self.assertIn("Ardour-format session folder", t)

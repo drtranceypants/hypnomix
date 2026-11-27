@@ -385,7 +385,7 @@ class Routes(unittest.TestCase):
         self.assertNotIn("downloads", s)
         self.assertNotIn("installed", s)
         self.assertEqual([d["id"] for d in s["daws"]], ["live", "reaper", "hypnomix", "other"])
-        self.assertEqual(next(d for d in s["daws"] if d["id"] == "hypnomix")["title"], "HypnoMix Studio")
+        self.assertEqual(next(d for d in s["daws"] if d["id"] == "hypnomix")["title"], "HypnoMix Studio (beta)")
         code, r = call(self.base, "/api/setup/daw", {"daw": "hypnomix", "edition": "full"}, tok)
         self.assertEqual((code, r), (200, {"daw": "hypnomix", "teach_level": ""}))
         self.assertNotIn("edition", SU.load())
