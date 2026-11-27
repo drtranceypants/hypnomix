@@ -654,3 +654,16 @@ button.cue-chip { border: 0; font: inherit; font-size: var(--fs-s); line-height:
   .slot.clip.playing .tri, .slot.clip.queued .tri, .slot.clip.stopping .tri { animation: none !important; }
   .slot.clip.queued .tri { opacity: .45; }
 }
+
+/* automation lanes and the tempo track (js/automation.js) */
+.tog.au.on { background: var(--acc); border-color: var(--acc); color: #121212; }
+.th.auto, .th.tempo { background: var(--bg0); grid-template-columns: 4px 1fr auto; }
+.th.auto .th-name b, .th.tempo .th-name b { font-weight: 500; color: var(--tx1); }
+.th.auto:focus-visible, .th.tempo:focus-visible { outline: 1px solid var(--acc); outline-offset: -1px; }
+.th.auto .auto-ctl { grid-column: 3; grid-row: 1; display: flex; gap: var(--s1); align-items: center; }
+.th.auto .auto-state, .th.auto .auto-hide { background: none; border: 1px solid var(--line2); border-radius: 3px; color: var(--tx2); font-size: 10px; padding: 0 5px; cursor: pointer; }
+.th.auto .auto-state[aria-pressed="true"] { color: var(--acc); border-color: var(--acc); }
+.th.auto .auto-state:hover, .th.auto .auto-hide:hover, .th.auto .auto-state:focus-visible, .th.auto .auto-hide:focus-visible { color: var(--tx0); }
+.auto-choose { display: flex; flex-direction: column; gap: var(--s2); max-height: 50vh; overflow: auto; }
+.auto-choose small { color: var(--tx2); }
+.auto-pick { display: flex; gap: var(--s2); align-items: center; }

@@ -400,6 +400,27 @@ on undo and redo, and read back with `track_get_info` a moment later. Edits, und
 after another, so an undo never overtakes the edit it undoes, and an op the engine refuses is taken out of the view's
 history (it is not in the engine's either). With the demo song the same ops apply locally.
 
+**Automation lanes and the tempo track** (`daw/js/automation.js`, with small hooks in `arrange.js` and
+`regions.js`). On an engine that lists `automation_list`, a track header's **A** button opens a chooser of the route's
+automatable controls (`automation_list`: fader, trim, pan, width, mute, sends, plug-in parameters); each ticked one is a
+lane under the track (and under its take lanes), its points read with `automation_get` (seconds, natural units). Which
+lanes show is remembered per session in this browser. Every gesture is ONE engine call and ONE engine undo step on the
+shared op path: dragging a point writes the stretch from the point before it to the point after it again
+(`automation_write`, `replace-range`; level controls with `curve: s_curve`), a double-click adds one point on the line
+as it is (nothing heard changes), ⌥-click or Delete removes a point (a level point by writing its neighbours again as
+one S-curve, any other with `automation_clear`), and Play / Off is `automation_set_state` (not an engine undo step, as
+in the editor: its undo sets the old state again). Undo and redo go through `session_undo` / `session_redo`, checked
+against the engine's step names (*write automation*, *clear automation*), and the lane is read back after each. On a
+focused lane header the keys are ← → (pick a point), ↑ ↓ (move it 0.5 dB, ⇧ 0.1 dB), A or + (add at the playhead),
+Delete (remove) and P (play / off). Level lanes keep to the smooth-automation rules while dragging (a move at most 3 dB,
+a trim 4 dB, the steepest point under 7 dB/s; the first and last points keep their value), and the app's engine
+connection checks the same rules (`engineer/automation_rules.py`) and the bus rule before the call is sent; a refusal
+puts the lane back and shows the sentence. The draggable points of a level lane are where its line turns or is flat; the
+S-curve's own points are drawn, not dragged. The **Tempo** button shows `tempo_get_map` as a row at the top: each
+tempo point, a ramp drawn as a slope to its end tempo, labelled; the bar grid still counts at the first tempo. With the
+mock session the first vocal track has a fader lane with one ride. Tested with stand-ins (`tests/test_daw_automation.py`)
+and in a browser against a development build of the engine on its silent test backend.
+
 **Takes and comping** (`daw/js/takes.js`, with small hooks in `arrange.js`, `store.js` and `regions.js`). On the
 engine a track's takes are its playlists named `<track>.take N` (`take_list`); the track plays its comp, its active
 playlist. A recording pass lands on the comp and also goes into a new take (the engine's session option

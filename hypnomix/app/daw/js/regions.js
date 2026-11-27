@@ -375,6 +375,7 @@
     const c = findC(op.key);
     if (c && !c.real) { HX.log('err', d.tool + ' skipped: mock clip'); return null; }
     const r = await HX.mcp.call(d.tool, d.args);
+    if (h.done) await h.done(op, value, r);                  // read back what the engine did (an automation lane: js/automation.js)
     if (op.param === 'regionFades' && r && r.fadeIn) {       // the engine's own fade lengths (it keeps at least 64 samples)
       const c2 = findC(op.key); if (c2) { c2.fadeIn = s2b(r.fadeIn.lengthSamples); c2.fadeOut = s2b(r.fadeOut.lengthSamples); rememberFades(c2); }
     }
@@ -417,6 +418,7 @@
     /* an older engine does not report fades: the view puts the undone (or redone) lengths back itself
        (a newer one's are read back by refreshRegions below, with region_get_info) */
     if (!bad && !engineFades) for (const o of seq) if (o.param === 'regionFades') H.regionFades.apply(o, dir === 'undo' ? o.before : o.after);
+    for (const o of seq) if (H[o.param].done) await H[o.param].done(o, dir === 'undo' ? o.before : o.after);
     if (eops.some((o) => o.param === 'regionImport')) await reloadKeepingHistory();
     else await HX.refreshRegions(opTracks(eops));
     if (bad) { HX.toast('Not ' + (dir === 'undo' ? 'undone' : 'redone') + ': ' + bad, 4200); HX.log('err', tool + ' · ' + bad); return false; }

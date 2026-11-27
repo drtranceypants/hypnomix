@@ -16,13 +16,16 @@
 
   const rows = () => {
     const out = []; let y = 0;
+    const lanes = (t) => { if (HX.auto) HX.auto.rows(t, y).forEach((r) => { out.push(r); y += r.hgt; }); };   // automation lanes (js/automation.js)
+    if (HX.auto) HX.auto.tempoRows().forEach((r) => { out.push(r); y += r.hgt; });                          // the tempo track
     S.session.tracks.forEach((t) => {
       if (HX.groups && HX.groups.hidden(t)) return;      /* folded group members: js/groups.js */
       out.push({ t, y, hgt: t.height }); y += t.height;
       if (HX.takes) HX.takes.rows(t, y).forEach((r) => { out.push(r); y += r.hgt; });   // take lanes (js/takes.js)
+      lanes(t);
     });
     y += GAP;
-    S.session.returns.forEach((t) => { out.push({ t, y, hgt: t.height }); y += t.height; });
+    S.session.returns.forEach((t) => { out.push({ t, y, hgt: t.height }); y += t.height; lanes(t); });
     out.push({ t: S.session.master, y, hgt: S.session.master.height }); y += S.session.master.height;
     out.total = y;
     return out;
@@ -43,6 +46,7 @@
       h('button.btn.ghost', { 'aria-label': 'Zoom in', 'data-info': 'Zoom in · +', onclick: () => zoomBy(1.4) }, '+'),
       h('button.btn.ghost', { 'data-info': 'Zoom to fit the song · Z', onclick: () => HX.zoomFit() }, 'Fit'),
       h('button.btn.ghost#followBtn', { 'data-info': 'Follow playhead · F', onclick: () => { A.follow = !A.follow; syncFollow(); } }, 'Follow'),
+      h('button.btn.ghost#tempoBtn', { 'aria-pressed': 'false', 'data-info': 'Show or hide the tempo track: the tempo map, ramps drawn as slopes', onclick: () => { if (HX.auto) HX.auto.toggleTempo(); syncTempo(); } }, 'Tempo'),
       h('button.btn.ghost#importBtn', { style: { marginLeft: 'auto' }, 'data-info': 'Import audio: type or paste file paths, or drop files from the Finder onto the lanes (onto a track, or below the tracks for new ones)', onclick: openImport }, 'Import…'));
     root.append(h('div.arr-top', null, topLeft, tools));
     lanesCv = h('canvas');
@@ -57,6 +61,12 @@
     renderHeaders();
     syncFollow();
   };
+  function syncTempo() {
+    const b = HX.$('#tempoBtn'); if (!b) return;
+    const on = !!(HX.auto && HX.auto.tempo.shown);
+    b.hidden = !(HX.auto && HX.auto.tempoAvailable());
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); b.style.color = on ? 'var(--acc)' : '';
+  }
   function syncFollow() { const b = HX.$('#followBtn'); if (b) b.classList.toggle('on', A.follow); b && (b.style.color = A.follow ? 'var(--acc)' : ''); }
 
   function zoomBy(f, anchorX) {
@@ -79,7 +89,7 @@
   /* the headers are drawn again on every structural change (a T or fold button, a poll, an edit): a control that had the
      focus gets it back afterwards, found by its header (data-hk: the track, or the take lane) and its kind (its class),
      never by its name, which changes with its state. A track folded away hands it to its group's header. */
-  const CTL_KINDS = ['tk', 'grp-fold', 'grp-x', 'take-comp', 'm', 's', 'r'];
+  const CTL_KINDS = ['tk', 'au', 'auto-state', 'auto-hide', 'grp-fold', 'grp-x', 'take-comp', 'm', 's', 'r'];
   function focusedHeaderKey() {
     const a = document.activeElement;
     if (!a || !headers || !headers.contains(a)) return null;
@@ -91,7 +101,7 @@
     const rows = [...headers.querySelectorAll('[data-hk]')];
     let row = rows.find((r) => r.dataset.hk === k.hk);
     if (!row) {
-      const tid = k.hk.startsWith('take:') ? k.hk.split(':')[1] : k.hk, t = HX.track(tid);
+      const tid = k.hk.startsWith('take:') || k.hk.startsWith('auto:') ? k.hk.split(':')[1] : k.hk, t = HX.track(tid);
       const g = t && HX.groups && HX.groups.ofMember(t);
       row = rows.find((r) => r.dataset.hk === (g && g.busId)) || rows.find((r) => r.dataset.hk === tid);
       k = { kind: '' };
@@ -105,14 +115,18 @@
     if (!headers) return;                               // not mounted yet
     const hadFocus = focusedHeaderKey();
     headers.innerHTML = ''; hdrRefs = {};
+    const lanes = (t) => { if (HX.auto) headers.append(...HX.auto.headers(t)); };
+    if (HX.auto) headers.append(...HX.auto.tempoHeader());
     S.session.tracks.forEach((t) => {
       if (HX.groups && HX.groups.hidden(t)) return;      /* folded group members: js/groups.js */
       headers.append(header(t)); if (HX.takes) headers.append(...HX.takes.headers(t));
+      lanes(t);
     });
     headers.append(h('div.lane-gap'));
-    S.session.returns.forEach((t) => headers.append(header(t, 'return')));
+    S.session.returns.forEach((t) => { headers.append(header(t, 'return')); lanes(t); });
     headers.append(header(S.session.master, 'master'));
     restoreHeaderFocus(hadFocus);
+    syncTempo();
     A.dirty = true;
   }
   HX.renderArrangeHeaders = renderHeaders;
@@ -133,6 +147,7 @@
       ctl.append(r.m, r.s);
       if (!t.isReturn) { r.r = h('button.tog.r', { 'data-info': 'Arm ' + t.name + ' for recording', 'aria-label': 'Record arm ' + t.name, onclick: (e) => { e.stopPropagation(); HX.edit({ trackId: t.id, param: 'arm' }, !t.arm, (t.arm ? 'Disarm ' : 'Arm ') + t.name); } }, '●'); ctl.append(r.r); }
       const tk = !t.isReturn && HX.takes && HX.takes.toggle(t); if (tk) ctl.append(tk);   // show / hide take lanes
+      const au = HX.auto && HX.auto.toggle(t); if (au) ctl.append(au);                    // choose automation lanes
     }
     const ctl2 = h('div.th-ctl2');
     r.vol = h('span.val', { 'data-info': 'Volume (dB) · drag, shift = fine, double-click = 0 dB' });
@@ -203,7 +218,7 @@
     const L = S.session.loop;
     if (L.on) { ctx.fillStyle = colors['--acc-2']; ctx.globalAlpha = 0.35; ctx.fillRect(X(L.start), 0, (L.end - L.start) * z, R.total); ctx.globalAlpha = 1; }
     // clips
-    R.forEach((r) => inView(r) && (r.lane ? HX.takes.drawLane(ctx, r, { X, w, colors, drawClip }) : r.t.clips.forEach((c) => {
+    R.forEach((r) => inView(r) && (r.autoLane ? HX.auto.drawLane(ctx, r, { X, w, colors }) : r.tempoLane ? HX.auto.drawTempo(ctx, r, { X, w, colors }) : r.lane ? HX.takes.drawLane(ctx, r, { X, w, colors, drawClip }) : r.t.clips.forEach((c) => {
       const x0 = X(c.start), x1 = X(c.start + c.len);
       if (x1 < 0 || x0 > w) return;
       drawClip(ctx, r.t, c, x0, r.y + 1, x1 - x0, r.hgt - 2);
@@ -405,6 +420,7 @@
       const hit = hitAt(x, y);
       if (!hit) return;
       if (hit.row.lane) return HX.takes.pointerDown(e, hit, { rect, B, snap, lanesWrap });   // drag across a take: comp it
+      if (hit.row.autoLane || hit.row.tempoLane) return HX.auto.pointerDown(e, hit, { rect, B, X, snap, lanesWrap });   // an automation point, or the tempo track
       const { row, c, zone } = hit;
       HX.select(row.t.id, c && c.id);
       if (!c) { HX.locate(snap(hit.beat)); return; }
@@ -464,7 +480,11 @@
       const upAll = () => { lanesWrap.removeEventListener('pointermove', mv); lanesWrap.removeEventListener('pointerup', upAll); lanesWrap.removeEventListener('pointercancel', upAll); up(); };
       lanesWrap.addEventListener('pointermove', mv); lanesWrap.addEventListener('pointerup', upAll); lanesWrap.addEventListener('pointercancel', upAll);
     });
-    lanesWrap.addEventListener('dblclick', () => { if (S.ui.clipId) { S.ui.bottom = 'clip'; HX.emit('bottom'); } });
+    lanesWrap.addEventListener('dblclick', (e) => {
+      const rect = lanesWrap.getBoundingClientRect();
+      if (HX.auto && HX.auto.dblclick(hitAt(e.clientX - rect.left, e.clientY - rect.top))) return;   // a point on the line of an automation lane
+      if (S.ui.clipId) { S.ui.bottom = 'clip'; HX.emit('bottom'); }
+    });
     const CURSOR = { move: 'default', trimL: 'w-resize', trimR: 'e-resize', fadeIn: 'col-resize', fadeOut: 'col-resize', gain: 'ns-resize' };
     const INFO = {
       move: 'drag to move (to another track too) · click = playhead · ⌘E split at the playhead · 0 mute · ⌫ delete · ⌘-drag = no snap',
@@ -478,7 +498,7 @@
       const hv = c ? c.id : null;
       if (A.hover !== hv) { A.hover = hv; A.dirty = true; }
       lanesWrap.style.cursor = c ? CURSOR[hit.zone] : '';
-      HX.info(hit && hit.row.lane ? HX.takes.info(hit) : c ? c.name + ' · ' + hit.row.t.name + ' · bar ' + (Math.floor(c.start / 4) + 1) + ', ' + (c.len / 4).toFixed(2) + ' bars · ' + INFO[hit.zone] : 'Click to place the playhead · ⌘-scroll to zoom · shift-scroll to move in time · drop audio files here to import');
+      HX.info(hit && (hit.row.autoLane || hit.row.tempoLane) ? HX.auto.info(hit) : hit && hit.row.lane ? HX.takes.info(hit) : c ? c.name + ' · ' + hit.row.t.name + ' · bar ' + (Math.floor(c.start / 4) + 1) + ', ' + (c.len / 4).toFixed(2) + ' bars · ' + INFO[hit.zone] : 'Click to place the playhead · ⌘-scroll to zoom · shift-scroll to move in time · drop audio files here to import');
     });
     lanesWrap.addEventListener('mouseleave', () => { if (A.hover) { A.hover = null; A.dirty = true; } });
     bindDrop();
@@ -488,7 +508,7 @@
     const row = rows().find((r) => y >= r.y && y < r.y + r.hgt);
     if (!row) return null;
     const beat = B(x);
-    if (row.lane) return { row, beat };
+    if (row.lane || row.autoLane || row.tempoLane) return { row, beat };
     const c = [...row.t.clips].reverse().find((c) => beat >= c.start && beat < c.start + c.len);
     if (!c) return { row, beat };
     const z = S.ui.zoom, x0 = X(c.start), x1 = X(c.start + c.len), y0 = row.y + 1, hh = row.hgt - 2;
@@ -534,7 +554,7 @@
       const rect = lanesWrap.getBoundingClientRect();
       const x = e.clientX - rect.left, y = e.clientY - rect.top;
       const row = rows().find((r) => y >= r.y && y < r.y + r.hgt);
-      const t = row && !row.lane && row.t.kind === 'audio' && !row.t.isReturn && !row.t.isMaster ? row.t : null;
+      const t = row && !row.lane && !row.autoLane && !row.tempoLane && row.t.kind === 'audio' && !row.t.isReturn && !row.t.isMaster ? row.t : null;
       return { t, row, x, beat: x > lanesWrap.clientWidth ? HX.pos() : Math.max(0, snap(B(x))) };   // on a track header: at the playhead
     };
     const files = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
