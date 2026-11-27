@@ -1849,6 +1849,8 @@ class AutoEngine(FakeEngine):
     def __init__(self):
         super().__init__()
         self.lines = {}                                  # (route, control) -> [{time, value}]
+        self.states = {}                                 # (route, control) -> a state set by automation_set_state
+        self._folder = tempfile.TemporaryDirectory()     # the session's folder (its original lines are kept there)
 
     def _call(self, n, a):
         names = {"149": "Bass", "252": "Drums", "300": "Vox", "301": "Band", "302": "Lead Vocal"}
@@ -1864,8 +1866,10 @@ class AutoEngine(FakeEngine):
                                      current=-2.0), dict(control="pan_azimuth", name="Pan", state="manual", points=0, current=0.0)])
         elif n == "automation_get":
             pts = self.lines.get((rid, a.get("control")), [])
-            sc = dict(trackId=rid, trackName=names.get(rid), control=a.get("control"), state="play" if pts else "manual",
-                      pointList=pts)
+            sc = dict(trackId=rid, trackName=names.get(rid), control=a.get("control"),
+                      state=self.states.get((rid, a.get("control"))) or ("play" if pts else "manual"), pointList=pts)
+        elif n == "session_list_snapshots":
+            sc = {"folder": self._folder.name, "dirty": False, "snapshots": []}
         elif n == "automation_write":
             self.lines[(rid, a["control"])] = [p if isinstance(p, dict) else {"time": p[0], "value": p[1]} for p in a["points"]]
             sc = {"written": len(a["points"]), "undoable": True}
@@ -1962,7 +1966,8 @@ class AutomationAndTempo(unittest.TestCase):
         self.assertIn("S-curves", more["description"])
         self.assertFalse({t["name"] for t in sent} & {"daw_" + n for n in self.AUTO + self.TEMPO})   # never in the core
         note = CH._daw_note()
-        for words in ("s_curve", "at most 3 dB", "4 dB", "7 dB/s", "never with force", "not a vocal", "daw_tempo_get_map"):
+        for words in ("s_curve", "no point more than 3 dB", "from the lane's original line", "4 dB", "7 dB/s", "never with force",
+                      "not a vocal", "never a recording state", "daw_tempo_get_map"):
             self.assertIn(words, note)
         out = CH.more_tools({"group": "automation"})
         for n in self.AUTO:
@@ -2009,6 +2014,37 @@ class AutomationAndTempo(unittest.TestCase):
         off = dict(ok, points=[{"time": 10, "value": 0.0}, {"time": 12, "value": -2.0}])
         self.assertIn("line there is -2.0 dB", DA.automation_problem(off, read))
         self.assertEqual(DA.automation_problem(dict(ok, control="pan_azimuth", curve="linear"), read), "")   # not a level
+
+    def test_no_card_for_a_switch_to_play_or_a_recording_state_the_rules_refuse(self):
+        e = AutoEngine()
+        read = _read_of(e)
+        e.lines[("302", "gain")] = [{"time": 20, "value": -8.0}, {"time": 30, "value": -8.0}]
+        e.states[("302", "gain")] = "manual"                                # an old ride, Off; the fader at -2 dB
+        self.assertIn("-8.0 dB", DA.automation_state_problem({"track_id": "302", "control": "gain", "state": "play"}, read))
+        self.assertEqual(DA.automation_state_problem({"track_id": "302", "control": "gain", "state": "manual"}, read), "")
+        for st in ("touch", "latch", "write"):
+            self.assertIn("recording mode", DA.automation_state_problem({"track_id": "302", "control": "gain", "state": st}, read))
+        ride = {"track_id": "302", "control": "gain", "curve": "s_curve",
+                "points": [{"time": 5, "value": -2.0}, {"time": 6.2, "value": -3.0}, {"time": 8, "value": -3.0}, {"time": 9.2, "value": -2.0}]}
+        self.assertIn("-8.0 dB", DA.automation_problem(ride, read))           # the write would switch it to play too
+        self.assertIn("number of seconds", DA.automation_problem(dict(ride, start="5"), read))
+        rows = DA.preview("automation_write", dict(ride, mode="replace_all"), read)
+        self.assertIn("every other point on the lane is removed (replace-all)", rows[0]["after"])
+
+    def test_a_refusal_naming_the_sessions_tracks_reaches_the_model_fenced(self):
+        e = AutoEngine()
+        sch = next(t for t in real_tools() if t["name"] == "automation_write")["inputSchema"]
+        tool = {"engine": "automation_write", "read_only": False, "input_schema": sch}
+        bad = {"track_id": "301", "control": "gain", "curve": "s_curve",
+               "points": [{"time": 10, "value": -2.0}, {"time": 11.2, "value": -3.0}]}
+        with mock.patch.object(DW, "ENGINE", e), mock.patch.dict(CH.CHAT, daw_tools={"daw_automation_write": tool}), \
+                mock.patch.object(CH, "_engine_back", lambda: True), mock.patch.object(CH, "_engine_is_ours", lambda eng: True), \
+                mock.patch.object(CH, "_engine_mark", lambda: None), mock.patch.object(DA, "missing_route", lambda inp, tracks: None):
+            CH.CHAT["engine_mark"] = None
+            out = CH.daw_tool("daw_automation_write", bad)
+        self.assertTrue(out.startswith("error (nothing was proposed): " + CH.DATA_OPEN), out)
+        self.assertIn("Band carries Drums", out)
+        self.assertTrue(out.rstrip().endswith(CH.DATA_CLOSE), out)
 
     def test_no_card_for_plug_in_automation_on_a_bus_that_carries_non_vocals(self):
         read = _read_of(AutoEngine())

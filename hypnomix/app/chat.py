@@ -729,10 +729,12 @@ def daw_tool(name, inp):
             bad = f"region {reg!r}: " + DA.plain("region not found")
         if not bad and t["engine"] in ("session_export_mix", "track_bounce"):
             bad = DA.export_problem(inp)             # a bounce never replaces a file that is there: the model picks a new name
-        if not bad and t["engine"] == "automation_write":
-            bad = DA.automation_problem(inp, _engine_read)   # the smooth-automation rules: no card for a write they refuse
-        if not bad and t["engine"] == "automation_clear":
-            bad = DA.automation_clear_problem(inp, _engine_read)   # nor for a clear that would leave a straight move
+        if not bad and t["engine"] in ("automation_write", "automation_clear", "automation_set_state"):
+            judge = {"automation_write": DA.automation_problem, "automation_clear": DA.automation_clear_problem,
+                     "automation_set_state": DA.automation_state_problem}[t["engine"]]
+            bad = judge(inp, _engine_read)           # the smooth-automation rules: no card for a write, clear or switch they refuse
+            if bad:                                  # it names the session's tracks: the engine's text, fenced as data
+                bad = engine_text(bad)
         if bad:                                      # a card that cannot work is not shown: the model is told why
             return "error (nothing was proposed): " + bad
         rows = DA.preview(t["engine"], inp, _engine_read)
@@ -1402,8 +1404,11 @@ def _automation_note():
         out += (" Automation (daw_more_tools {group: automation}): read daw_automation_list for a route's controls "
                 "and what it carries, daw_automation_get for a control's points (times in seconds, dB for the fader, "
                 "trim and sends). A level move (fader, trim, a send) is written as gentle S-curves (curve s_curve, "
-                "about 1.2 s each), a line move at most 3 dB and a trim at most 4 dB, the steepest point under 7 dB/s "
-                "(an S-curve peaks at 1.6 times its average slope), starting and ending on the line as it is (start and end at the first and last point's times; over existing "
+                "about 1.2 s each), no point more than 3 dB (a trim 4 dB) from the lane's original line (the line before "
+                "HypnoMix first wrote to it: writes one after another never add up past it), the steepest point under "
+                "7 dB/s (an S-curve peaks at 1.6 times its average slope), starting and ending on the line as it is "
+                "heard (a lane that is Off is heard at the control's value; replace-all too), never a recording state "
+                "(write, touch, latch), start and end as numbers (start and end at the first and last point's times; over existing "
                 "points pass guard false, so the edge points are yours and no guard point sits beside them), never "
                 "with force; never on a bus, a group's bus or the master that carries any track that is not a vocal "
                 "(ride the vocal tracks instead). A plug-in parameter (in its own units) is never automated on such a "

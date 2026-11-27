@@ -145,9 +145,13 @@ hypnomix vocallevel "Song/Song.ardour" --heard "solo exports/" --apply "Song (le
 
 In **HypnoMix Studio** the same moves become automation: each upper part's trims on its **trim** (at most 4 dB), the
 line evening on the vocal group's bus fader when that bus carries only vocals (else on each vocal track's fader),
-every change one S-curve of about 1.2 s, never steeper than 7 dB/s. `--engine` writes them into the session open in
+every change one S-curve of about 1.2 s, never steeper than 7 dB/s, and no point more than 3 dB (a trim 4 dB) from
+the lane's original line: the line as it was before HypnoMix first wrote to it, kept in the session's folder
+(`hypnomix-original-lines.json`), so later writes and drags measure from the same line and never add up past it.
+`--engine` writes them into the session open in
 HypnoMix Studio (a single undo step for each track and control; the session shows as unsaved until you save it); `--apply NAME.ardour`
-writes a new snapshot beside the session. A fader or trim that already plays automation is left alone and listed.
+writes a new snapshot beside the session. A fader or trim that already plays automation is left alone and listed, and
+so is one whose level is not known (a fader at -inf: 0 dB is never assumed).
 
 | check | what it flags |
 |---|---|
@@ -164,7 +168,8 @@ is over, then the stack's lines evened out on the vocal group's volume. The auto
 
 - every change is a smooth S-curve about 1.2 s long (a raised-cosine shape, a point every 0.1 s), centred in the
   gap between lines, so two close lines blend instead of stepping; the output reports the steepest move in dB/s
-- a line is moved at most 3 dB either way and an upper part lowered at most 4 dB on a line; a bigger gap is
+- a line ends up at most 3 dB either way from where it was (its original level), and an upper part at most 4 dB
+  below its original level on a line; a bigger gap is
   reported as "capped" for you to check by ear (it's usually an arrangement choice or a comp problem)
 - a group that also holds non-vocal tracks (say strings filed in a "Vocals" group) is never automated, since the
   strings would ride every vocal line; the line evening goes on each vocal track instead

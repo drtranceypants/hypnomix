@@ -132,6 +132,8 @@ def main(argv=None):
                          "and MIDI breathe)")
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args(argv)
+    if a.preview and Path(a.preview).exists():           # before anything is read or rendered
+        sys.exit(f"{Path(a.preview).name} already exists: choose a new name for --preview (nothing is ever overwritten)")
     from hypnomix.session import tempo_ardour as TA
     if TA.is_session(a.als):
         rc = TA.breathe(a, a.als)

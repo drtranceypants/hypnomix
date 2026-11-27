@@ -101,7 +101,8 @@ def write(a, p, pts, bpb, what):
     AE.save(p, where)
     errs = AE.check(p.path, where, tempo=True)
     if errs:
-        bad = where.with_name(where.stem + " (BROKEN, do not open).ardour.txt")
+        from hypnomix.project import rpp
+        bad = rpp.free_name(where.with_name(where.stem + " (BROKEN, do not open).ardour.txt"))     # never over an earlier one
         where.replace(bad)
         print(f"check FAILED: the written snapshot is not sound. Renamed to {bad.name}; keep using the original.")
         for e in errs:
@@ -203,6 +204,8 @@ def breathe(a, src):
     if a.preview:
         if not a.mix:
             sys.exit("--preview needs --mix (the bounce to bend)")
+        if Path(a.preview).exists():
+            sys.exit(f"{Path(a.preview).name} already exists: choose a new name for --preview (nothing is ever overwritten)")
         import soundfile as sf
         y, sr = B.load(a.mix)
         grid = np.arange(0, min(end, len(y) / sr * tempo / 60.0) + 1e-9, 0.5)

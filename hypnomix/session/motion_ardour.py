@@ -243,6 +243,8 @@ def main(a):
         print("  no moves to offer (no filter plug-in with a cut-off or frequency that nothing automates yet"
               + (", on a track or a bus of vocals only" if meta.get("skipped") else "") + ")")
     if a.json:
+        if Path(a.json).exists():
+            sys.exit(f"{Path(a.json).name} already exists: choose a new name for --json (nothing is ever overwritten)")
         Path(a.json).write_text(json.dumps({"tool": "motion", "set": str(src), "findings": fs, "meta": meta}, indent=1,
                                            default=str), encoding="utf-8")
     if eng is None and not a.apply:
@@ -298,7 +300,8 @@ def main(a):
     AE.save(p, out)
     errs = AE.check(p.path, out, automation=True)
     if errs:
-        bad = out.with_name(out.stem + " (BROKEN, do not open).ardour.txt")
+        from hypnomix.project import rpp
+        bad = rpp.free_name(out.with_name(out.stem + " (BROKEN, do not open).ardour.txt"))     # never over an earlier one
         out.replace(bad)
         print(f"check FAILED: the written snapshot is not sound. Renamed to {bad.name}; keep using the original.")
         for e in errs:

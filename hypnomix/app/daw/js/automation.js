@@ -12,8 +12,11 @@
                            (0.5 dB, shift 0.1 dB; other controls 2 % of their range), A or + adds a point at the
                            playhead, Delete / Backspace removes the selected point, P switches playback on or off
    Level controls (the fader, trim, sends) follow HypnoMix's smooth-automation rules: every move is a gentle S-curve
-   (curve s_curve), at most 3 dB (a trim 4 dB), its steepest point under 7 dB/s, starting and ending on the line as it
-   is. A drag stops where a rule would be broken; the first and last points of a level lane keep their value (the way
+   (curve s_curve), no point more than 3 dB (a trim 4 dB) from the lane's ORIGINAL line (the line before HypnoMix first
+   wrote to it, kept by the app in the session's folder: POST /api/daw/original), so drags one after another never add
+   up past it, its steepest point under 7 dB/s, starting and ending on the line as it is heard (a lane that is Off is
+   heard at the control's own value: a write, or Play, makes its points heard, so they are judged then as a whole). A
+   drag stops where a rule would be broken; the first and last points of a level lane keep their value (the way
    in and out of a move is an S-curve from the line). The app checks the same rules again before the call reaches the
    engine (and never automates the level or a plug-in parameter of a bus or group that carries tracks that are not
    vocals: the page asks the app what a bus carries, POST /api/daw/carries, and refuses such a write before sending it,
@@ -35,7 +38,7 @@
   const LEVEL = ['gain', 'trim', 'send'];
 
   const A = (HX.auto = {
-    data: {},              // trackId → { facts, controls: [info], lanes: { control: { points: [{ t (s), v }], state } } }
+    data: {},              // trackId → { facts, controls: [info], lanes: { control: { points: [{ t (s), v }], state } }, originals: { control: { points, value } } }
     sel: null,             // { trackId, control, i } the selected point
     drag: null,            // { trackId, control, i, t, v } while a point is dragged
     tempo: { shown: false, points: [], loaded: false },
@@ -56,12 +59,29 @@
   const cap = (control) => (kindOf(control) === 'trim' ? TRIM_DB : LINE_DB);
 
   /* ── the rules, as the drag uses them (engineer/automation_rules.py is the one the app enforces) ── */
+  const PLAYING = ['play', 'touch', 'latch'];
+  const plays = (lane) => !!(lane && PLAYING.includes(lane.state) && lane.points.length);
   const rate = (t0, t1, d) => (Math.abs(d) < 1e-9 ? 0 : t1 - t0 <= 1e-9 ? Infinity : (S_PEAK * Math.abs(d)) / (t1 - t0));
-  /* the most a level point may move from a neighbour `dt` seconds away: the cap, and under 7 dB/s at the S-curve's peak */
-  const reach = (control, dt) => Math.max(0, Math.min(cap(control), (MAX_SLOPE * Math.abs(dt)) / S_PEAK - 0.02));
-  /* [lo, hi] a point at time t may take between neighbours a and b (either may be null) */
-  function allowed(control, a, b, t) {
-    let lo = -Infinity, hi = Infinity;
+  /* the most a level point may move from a neighbour `dt` seconds away: under 7 dB/s at the S-curve's peak (how far it
+     may go from the original line is band()) */
+  const reach = (control, dt) => Math.max(0, (MAX_SLOPE * Math.abs(dt)) / S_PEAK - 0.02);
+  /* the value along points { t, v } at t: straight between them, flat outside */
+  function along(pts, t) {
+    if (!pts.length) return null;
+    if (t <= pts[0].t) return pts[0].v;
+    for (let i = 1; i < pts.length; i++) if (t <= pts[i].t) { const a = pts[i - 1], b = pts[i]; return b.t - a.t < 1e-9 ? b.v : a.v + ((b.v - a.v) * (t - a.t)) / (b.t - a.t); }
+    return pts[pts.length - 1].v;
+  }
+  /* the original line { points: [{ t, v }], value } -> its value at t (null when not known) */
+  const origAt = (orig, t) => (!orig ? null : orig.points && orig.points.length ? along(orig.points, t) : typeof orig.value === 'number' ? orig.value : null);
+  /* [lo, hi] a level value at t may take: within the cap of the original line there (none: no limit) */
+  function band(control, orig, t) {
+    const o = origAt(orig, t);
+    return o == null ? [-Infinity, Infinity] : [o - cap(control), o + cap(control)];
+  }
+  /* [lo, hi] a point at time t may take between neighbours a and b (either may be null), and the original line */
+  function allowed(control, a, b, t, orig) {
+    let [lo, hi] = band(control, orig, t);
     for (const n of [a, b]) {
       if (!n || n.v == null) continue;
       const r = reach(control, t - n.t);
@@ -69,14 +89,40 @@
     }
     return lo <= hi ? [lo, hi] : null;
   }
+  /* how far points go from the original line (S-curves between them when s, the original's own points looked at too) */
+  function farthest(pts, orig, s) {
+    if (!orig || !pts.length) return null;
+    const path = s ? sCurve(pts) : pts;
+    const ts = path.map((p) => p.t).concat((orig.points || []).map((p) => p.t).filter((t) => t > pts[0].t && t < pts[pts.length - 1].t));
+    let best = null;
+    for (const t of ts) {
+      const v = along(path, t), o = origAt(orig, t);
+      if (v == null || o == null) continue;
+      if (!best || Math.abs(v - o) > best.d) best = { t, v, o, d: Math.abs(v - o) };
+    }
+    return best;
+  }
   /* why a write's points break a rule (plain words), or '' */
-  function problem(control, pts) {
+  function problem(control, pts, orig) {
     if (!isLevel(control) || pts.length < 2) return '';
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1], b = pts[i], d = b.v - a.v;
-      if (Math.abs(d) > cap(control) + 1e-6) return 'a move is at most ' + cap(control) + ' dB';
       if (rate(a.t, b.t, d) >= MAX_SLOPE) return 'the move would be steeper than ' + MAX_SLOPE + ' dB/s';
     }
+    const f = farthest(pts, orig, true);
+    if (f && f.d > cap(control) + 1e-6) return 'a point would be ' + (Math.round(f.d * 10) / 10) + ' dB from the original line: at most ' + cap(control) + ' dB from it';
+    return '';
+  }
+  /* why a level lane that is not playing must not play its points (they become heard instead of the control's value) */
+  function playProblem(control, pts, current, orig) {
+    if (!isLevel(control) || !pts.length) return '';
+    if (typeof current !== 'number') return 'the control’s value is not known (silence, -∞): 0 dB is never assumed';
+    if (pts.some((p) => p.v == null)) return 'the lane holds silence among its points';
+    const first = pts[0], last = pts[pts.length - 1];
+    if (Math.abs(first.v - current) > ON_LINE || Math.abs(last.v - current) > ON_LINE) return 'its points would jump from the control’s value (' + HX.fmtDb(current, true) + ' dB) to theirs: they must start and end on it';
+    for (let i = 1; i < pts.length; i++) if ((Math.abs(pts[i].v - pts[i - 1].v) / Math.max(1e-9, pts[i].t - pts[i - 1].t)) >= MAX_SLOPE) return 'the lane moves steeper than ' + MAX_SLOPE + ' dB/s';
+    const f = farthest(pts, orig || { points: [], value: current }, false);
+    if (f && f.d > cap(control) + 1e-6) return 'a point is ' + (Math.round(f.d * 10) / 10) + ' dB from the original line: at most ' + cap(control) + ' dB from it';
     return '';
   }
   /* the bus rule, as the app judged the route (A.load, POST /api/daw/carries): why a level or plug-in write on it is
@@ -86,7 +132,7 @@
     if (!c) return '';
     return k === 'plugin' ? c.plugin || '' : LEVEL.includes(k) ? c.level || '' : '';
   }
-  A.rules = { allowed, problem, reach, rate, kindOf, isLevel, cap, busRefusal };
+  A.rules = { allowed, problem, playProblem, band, reach, rate, kindOf, isLevel, cap, busRefusal, plays };
 
   /* the raised-cosine S between each pair, about one point every 50 ms (8 to 64 a move), as the engine writes s_curve */
   function sCurve(pts) {
@@ -122,15 +168,24 @@
   }
   A.anchors = anchors;
 
-  /* the line's value at t (seconds): straight between points, flat outside them; the control's value with no points */
+  /* the line as heard at t (seconds): a playing lane's points, straight between them and flat outside them; the
+     control's own value when the lane has no points or is not playing (Off) */
   function lineAt(lane, info, t) {
-    const p = lane.points;
-    if (!p.length) return info && typeof info.current === 'number' ? info.current : null;
-    if (t <= p[0].t) return p[0].v;
-    for (let i = 1; i < p.length; i++) if (t <= p[i].t) { const a = p[i - 1], b = p[i]; return b.t - a.t < 1e-9 ? b.v : a.v + ((b.v - a.v) * (t - a.t)) / (b.t - a.t); }
-    return p[p.length - 1].v;
+    if (!plays(lane)) return info && typeof info.current === 'number' ? info.current : null;
+    return along(lane.points, t);
   }
   A.lineAt = lineAt;
+
+  /* a level lane's original line { points, value }: the app's (POST /api/daw/original, kept in the session's folder),
+     else the line as first seen here, kept for the session; a lane with no points takes the control's value again */
+  A.originalOf = function (t, control) {
+    const d = A.data[t.id], lane = d && d.lanes[control], info = infoOf(t, control);
+    if (!d || !lane || !isLevel(control)) return null;
+    d.originals = d.originals || {};
+    if (!lane.points.length) d.originals[control] = typeof (info && info.current) === 'number' ? { points: [], value: info.current } : null;
+    else if (!d.originals[control]) d.originals[control] = plays(lane) ? { points: lane.points.map((p) => ({ t: p.t, v: p.v })) } : (info && typeof info.current === 'number' ? { points: [], value: info.current } : null);
+    return d.originals[control];
+  };
 
   /* what a write or clear does to a lane's points (the engine's own result is read back afterwards) */
   function after(points, call) {
@@ -339,7 +394,7 @@
   A.info = function (hit) {
     if (hit.row.tempoLane) return 'Tempo map · ramps are drawn as slopes · click to place the playhead';
     const info = infoOf(hit.row.t, hit.row.control) || { name: hit.row.control };
-    return info.name + ' automation of ' + hit.row.t.name + ' · drag a point' + (isLevel(hit.row.control) ? ' (S-curves, at most ' + cap(hit.row.control) + ' dB a move, under ' + MAX_SLOPE + ' dB/s)' : '') + ' · double-click adds a point on the line · ⌥-click removes one · one undo step each';
+    return info.name + ' automation of ' + hit.row.t.name + ' · drag a point' + (isLevel(hit.row.control) ? ' (S-curves, at most ' + cap(hit.row.control) + ' dB from the original line, under ' + MAX_SLOPE + ' dB/s)' : '') + ' · double-click adds a point on the line · ⌥-click removes one · one undo step each';
   };
 
   /* ── the pointer ── */
@@ -400,6 +455,7 @@
   /* moving point i to (tt, vv): clamped between its neighbours and to the rules -> { t, v, points, call, held } */
   A.propose = function (t, control, i, tt, vv) {
     const lane = laneOf(t, control), pts = lane.points, level = isLevel(control);
+    const orig = level ? A.originalOf(t, control) : null;
     const an = anchors(control, pts), k = an.indexOf(i);
     const a = k > 0 ? pts[an[k - 1]] : null, b = k >= 0 && k + 1 < an.length ? pts[an[k + 1]] : null;
     let held = '';
@@ -408,14 +464,14 @@
     const p0 = pts[i];
     if (level && (!a || !b)) { if (nv !== p0.v) held = 'the first and last points stay on the line'; nv = p0.v; }
     if (level && a && b) {
-      const ok = allowed(control, a, b, nt);
+      const ok = allowed(control, a, b, nt, orig);
       if (!ok) { nt = p0.t; nv = p0.v; held = 'held by the rules'; }
-      else if (nv < ok[0] || nv > ok[1]) { nv = Math.round(HX.clamp(nv, ok[0], ok[1]) * 10) / 10; if (nv < ok[0]) nv += 0.1; if (nv > ok[1]) nv -= 0.1; held = 'at most ' + cap(control) + ' dB a move, under ' + MAX_SLOPE + ' dB/s'; }
+      else if (nv < ok[0] || nv > ok[1]) { nv = Math.round(HX.clamp(nv, ok[0], ok[1]) * 10) / 10; if (nv < ok[0]) nv += 0.1; if (nv > ok[1]) nv -= 0.1; held = 'at most ' + cap(control) + ' dB from the original line, under ' + MAX_SLOPE + ' dB/s'; }
     }
     if (level && (!a || !b)) {
       /* an edge point moves in time only; its move to the neighbour must still keep to the rules */
       const n = a || b;
-      if (n && problem(control, a ? [n, { t: nt, v: nv }] : [{ t: nt, v: nv }, n])) { nt = p0.t; held = 'held by the rules'; }
+      if (n && problem(control, a ? [n, { t: nt, v: nv }] : [{ t: nt, v: nv }, n], orig)) { nt = p0.t; held = 'held by the rules'; }
     }
     if (Math.abs(nt - p0.t) < 1e-6 && Math.abs((nv == null ? -999 : nv) - (p0.v == null ? -999 : p0.v)) < 1e-9) return { t: nt, v: nv, points: pts, call: null, held };
     let call;
@@ -461,7 +517,7 @@
     if (isLevel(control)) {
       const a = k > 0 ? pts[an[k - 1]] : null, b = k + 1 < an.length ? pts[an[k + 1]] : null;
       if (a && b) {
-        const why = problem(control, [a, b]);
+        const why = problem(control, [a, b], A.originalOf(t, control));
         if (why) { HX.toast('Not removed: without this point ' + why + ' (smooth-automation rules)', 4200); return null; }
         return A.write(t, control, { tool: 'automation_write', args: { track_id: t.id, control, points: [{ time: a.t, value: a.v }, { time: b.t, value: b.v }], mode: 'replace-range', curve: 's_curve', start: Math.round((a.t - EDGE) * 1e6) / 1e6, end: Math.round((b.t + EDGE) * 1e6) / 1e6, guard: false } }, label);
       }
@@ -476,11 +532,18 @@
   /* one gesture -> one op on the shared op path (store.js): one history entry, one engine undo step */
   A.write = function (t, control, call, label) {
     const lane = laneOf(t, control);
-    const why = call.tool === 'automation_write' ? busRefusal(t.id, control) : '';
-    if (why) { HX.toast(why, 5200); A.sel = null; A.refreshHeaders(); return Promise.resolve(null); }
-    const before = { points: lane.points.map((p) => Object.assign({}, p)), state: lane.state };
+    let why = call.tool === 'automation_write' ? busRefusal(t.id, control) : '';
     const pts = after(lane.points, call);
     const nextState = call.tool === 'automation_write' && call.args.state !== 'keep' ? (call.args.state || 'play') : lane.state;
+    if (!why && call.tool === 'automation_write' && isLevel(control)) {
+      /* the rules the app checks again as it is sent: the original line, and a lane that starts playing (Off -> play) */
+      const orig = A.originalOf(t, control), info = infoOf(t, control);
+      why = call.args.points && call.args.points.length > 1 ? problem(control, call.args.points.map((p) => ({ t: p.time, v: p.value })), orig) : '';
+      if (!why && !plays(lane) && PLAYING.includes(nextState)) why = playProblem(control, pts, info && info.current, orig);
+      if (why) why = 'Not written: ' + why + ' (smooth-automation rules)';
+    }
+    if (why) { HX.toast(why, 5200); A.sel = null; A.refreshHeaders(); return Promise.resolve(null); }
+    const before = { points: lane.points.map((p) => Object.assign({}, p)), state: lane.state };
     const afterV = { points: pts, state: nextState, call };
     A.sel = null;
     return HX.commit(label, [{ trackId: t.id, param: 'autoPoints', key: control, before, after: afterV }]);
@@ -489,6 +552,11 @@
   A.setState = function (t, control, state) {
     const lane = laneOf(t, control); if (!lane) return null;
     const info = infoOf(t, control);
+    if (state === 'play' && !PLAYING.includes(lane.state)) {
+      /* its points become heard instead of the control's value: the same rules as a write (the app checks it again) */
+      const why = (lane.points.length ? busRefusal(t.id, control) : '') || playProblem(control, lane.points, info && info.current, A.originalOf(t, control));
+      if (why) { HX.toast(why.indexOf('not written') === 0 ? why : 'Not switched to play: ' + why + ' (smooth-automation rules)', 5200); A.refreshHeaders(); return null; }
+    }
     return HX.commit((state === 'manual' ? 'Stop playing ' : 'Play ') + 'the ' + info.name + ' automation of ' + t.name,
       [{ trackId: t.id, param: 'autoState', key: control, before: lane.state || 'manual', after: state }]);
   };
@@ -570,7 +638,7 @@
     if (r && (r.isBus || r.isMaster || r.busOfGroup) && HX.api && HX.api.inApp) {
       try { carries = await HX.api.post('/api/daw/carries', { track_id: String(trackId) }); } catch (e) { carries = null; }
     }
-    A.data[trackId] = { facts: r, carries, controls: (r.controls || []).map((c) => Object.assign({}, c)), lanes: old ? old.lanes : {} };
+    A.data[trackId] = { facts: r, carries, controls: (r.controls || []).map((c) => Object.assign({}, c)), lanes: old ? old.lanes : {}, originals: old ? old.originals || {} : {} };
   };
   A.loadLane = async function (trackId, control) {
     if (!A.data[trackId]) await A.load(trackId);
@@ -579,6 +647,14 @@
     const r = await HX.mcp.call('automation_get', { track_id: trackId, control }, { quiet: true });
     d.lanes[control] = { points: (r.pointList || []).filter((p) => typeof p.time === 'number').map((p) => ({ t: p.time, v: p.value })), state: r.state || 'manual' };
     const c = d.controls.find((x) => x.control === control); if (c) { c.points = d.lanes[control].points.length; c.state = d.lanes[control].state; }
+    if (isLevel(control) && HX.api && HX.api.inApp) {
+      /* the original line the app keeps for this lane (the page's drags stop at 3 dB from it; the app is the guard) */
+      d.originals = d.originals || {};
+      try {
+        const o = await HX.api.post('/api/daw/original', { track_id: String(trackId), control });
+        d.originals[control] = o && Array.isArray(o.points) ? { points: o.points.map((q) => ({ t: q[0], v: q[1] })) } : o && typeof o.value === 'number' ? { points: [], value: o.value } : null;
+      } catch (e) { delete d.originals[control]; }
+    }
     HX.arrange.dirty = true;
   };
   A.reloadShown = async function () {

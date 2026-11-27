@@ -189,6 +189,73 @@ class LevelAutomation(Base):
             AA.write_file(p, vox, "gain", AA.edge_points([(2.0, 5.0, -2.0)], 0.0))
         self.assertIn("Vox carries Drums", str(e.exception))
 
+    def test_a_level_that_is_silence_or_missing_is_never_taken_for_0_db(self):
+        pts = AA.edge_points([(2.0, 5.0, 0.0), (5.6, 8.0, -2.0), (8.6, 11.0, 0.0)], 0.0)
+        for value in ('value="0"', ""):                                     # a fader at -inf; no value in the file
+            p = PJ.load(self.make(session().replace('<Controllable name="gaincontrol" value="0.5"/>',
+                                                    f'<Controllable name="gaincontrol" {value}/>', 1)))
+            with self.assertRaises(ValueError) as e:
+                AA.write_file(p, p.track("Lead Vocal"), "gain", pts)
+            self.assertIn("never assumes 0 dB", str(e.exception))
+
+    def test_vocallevel_on_the_engine_never_rides_a_fader_at_minus_infinity(self):
+        import contextlib
+        import io
+        from unittest import mock
+        from hypnomix.project import ardour_groups as AG
+        from hypnomix.workflow import vocallevel_ardour as VA
+        written = []
+
+        class Eng:
+            url = "http://127.0.0.1:1/mcp"
+
+            def __init__(self, url=None):
+                pass
+
+            def has(self, *tools):
+                return True
+
+            def call(self, tool, args=None):
+                if tool == "tracks_list":
+                    return {"tracks": [{"id": "210", "name": "Harmony"}, {"id": "200", "name": "Lead Vocal"}]}
+                if tool == "automation_list":
+                    return {"trackId": args["track_id"], "trackName": "Harmony", "isBus": False, "feeders": [],
+                            "controls": [{"control": "trim", "name": "Trim", "current": None, "points": 0, "state": "manual"}]}
+                if tool == "session_list_snapshots":
+                    return {"folder": str(d)}
+                if tool == "automation_write":
+                    written.append(args)
+                    return {"written": len(args["points"])}
+                return {}
+        d = self.make()
+        p = PJ.load(d)
+        a = SimpleNamespace(group=None, engine="", apply=None)
+        out = io.StringIO()
+        with mock.patch.object(AG, "Engine", Eng), mock.patch.object(AG, "require_open", lambda eng, path: False), \
+                contextlib.redirect_stdout(out):
+            code = VA.run(p, d / "Demo.ardour", a, {"Harmony": [(1, 3, -2.0), (3.5, 6, 0.0)]}, ["Lead Vocal", "Harmony"], "Lead Vocal")
+        self.assertEqual(written, [])                                       # nothing sent: -inf is not 0 dB
+        self.assertEqual(code, 1)
+        self.assertIn("never assumes 0 dB", out.getvalue())
+
+    def test_the_file_writer_keeps_the_lanes_original_line(self):
+        import json
+        from hypnomix.engineer import automation_original as AO
+        d = self.make()
+        p = PJ.load(d)
+        pts = AA.edge_points([(2.0, 5.0, 0.0), (5.6, 8.0, -2.0), (8.6, 11.0, 0.0)], -6.0206)
+        AA.write_file(p, p.track("Lead Vocal"), "gain", pts)
+        kept = json.loads((d / AO.FILE).read_text(encoding="utf-8"))["lines"]
+        self.assertAlmostEqual(kept["200|gain"]["value"], 20 * math.log10(0.5), places=4)
+
+    def test_a_line_that_starts_near_the_songs_start_keeps_its_s_curve_long_enough(self):
+        for start in (0.1, 0.3, 0.5):
+            pts = AA.edge_points([(start, 3.0, -3.0)], 0.0)
+            self.assertEqual(pts[0], (0.0, 0.0))
+            self.assertGreaterEqual(pts[1][0] - pts[0][0], RULES.shortest(3.0), (start, pts))
+            args = {"control": "gain", "curve": "s_curve", "points": [list(q) for q in pts], "start": pts[0][0], "end": pts[-1][0]}
+            self.assertEqual(RULES.check(args, None, RULES.flat(0.0)), [], (start, pts))
+
     def test_vocallevel_puts_trims_on_trim_and_the_evening_on_the_vocal_bus(self):
         from hypnomix.workflow import vocallevel_ardour as VA
         gains = {"Harmony": [(1, 3, -2.0), (3.5, 6, 0.0)], "__group__": [(1, 3, 0.0), (3.5, 6, 1.5)]}
@@ -258,6 +325,19 @@ class PlugInsOnBuses(Base):
         p = PJ.load(self.long(with_filters(session())))                     # a bus of vocals only: still preferred
         fs, meta = MA.propose(p, MA.targets_file(p))
         self.assertEqual((fs[0]["track"], meta["skipped"]), ("Vox", []))
+
+    def test_motion_never_writes_its_json_over_a_file(self):
+        from hypnomix.session import motion_ardour as MA
+        d = self.long(with_filters(session()))
+        old = d / "motion.json"
+        old.write_text("keep me", encoding="utf-8")
+        ns = SimpleNamespace(als=str(d), mix=None, style=str(d / "none.json"), json=str(old), engine=None, apply=None, ids=None)
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as e:
+            MA.main(ns)
+        self.assertIn("already exists", str(e.exception))
+        self.assertEqual(old.read_text(encoding="utf-8"), "keep me")
 
     def test_motion_on_the_engine_skips_a_mixed_bus_too(self):
         from hypnomix.session import motion_ardour as MA
@@ -403,6 +483,13 @@ class MotionSweeps(Base):
         self.assertEqual((al.get("state"), len(al.findtext("events").split())), ("Play", 8))
         with self.assertRaises(SystemExit):                                # nothing by default: --ids
             MA.main(SimpleNamespace(**dict(vars(ns), ids=None, apply="Demo (m2).ardour")))
+        from unittest import mock
+        earlier = d / "Demo (m3) (BROKEN, do not open).ardour.txt"         # a snapshot that failed its check before
+        earlier.write_text("the earlier one", encoding="utf-8")
+        with mock.patch.object(AE, "check", lambda *a, **k: ["a check that fails"]):
+            self.assertEqual(MA.main(SimpleNamespace(**dict(vars(ns), apply="Demo (m3).ardour"))), 1)
+        self.assertEqual(earlier.read_text(encoding="utf-8"), "the earlier one")   # never written over
+        self.assertEqual(len(list(d.glob("Demo (m3) (BROKEN, do not open)*"))), 2)       # the new one beside it
 
 
 class TempoCommands(Base):
@@ -452,6 +539,24 @@ class TempoCommands(Base):
         self.assertEqual([(x.get("bbt"), x.get("type")) for x in tempos][:3],
                          [("1|1|0", "Constant"), ("2|3|0", "Ramped"), ("3|1|0", "Constant")])
         self.assertAlmostEqual(float(tempos[2].get("npm")), 122.4)
+
+    def test_breathe_never_writes_its_preview_over_a_file(self):
+        from hypnomix.session import tempo_ardour as TA
+        d = self.make()
+        mix, old = d / "mix.wav", d / "old preview.wav"
+        sf.write(mix, np.zeros(SR, dtype=np.float32), SR, subtype="FLOAT")
+        old.write_bytes(b"keep me")
+        a = SimpleNamespace(sections="3-4:+2", mix=str(mix), amount=1.0, glide=2.0, ritard=0.0, preview=str(old),
+                            replace_tempo=False, engine=None, apply=None, grid_only=True)
+        with self.assertRaises(SystemExit) as e:
+            TA.breathe(a, d)
+        self.assertIn("already exists", str(e.exception))
+        self.assertEqual(old.read_bytes(), b"keep me")
+        from hypnomix.session import breathe as BR                       # a Live set too, before anything is read
+        with self.assertRaises(SystemExit) as e:
+            BR.main([str(d / "Song.als"), "--mix", str(mix), "--sections", "3-4:+2", "--preview", str(old)])
+        self.assertIn("already exists", str(e.exception))
+        self.assertEqual(old.read_bytes(), b"keep me")
 
 
 if __name__ == "__main__":

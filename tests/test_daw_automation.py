@@ -107,11 +107,11 @@ print(JSON.stringify({ hair: hairAn, n: s.length, mid: s[Math.floor(s.length / 2
 var far = A.propose(tr, 'gain', 1, 14, -9);
 var steep = A.propose(tr, 'gain', 1, 10.4, -2);
 var edge = A.propose(tr, 'gain', 0, 9, -4);
-var trim = A.rules.reach('trim', 100);
+var trim = A.rules.cap('trim');
 print(JSON.stringify({ far: far, steep: steep, edge: edge, trim: trim }));
 """)
         far = r["far"]
-        self.assertAlmostEqual(far["v"], -3, places=6)                # held to 3 dB from both neighbours
+        self.assertAlmostEqual(far["v"], -3, places=6)                # held to 3 dB from the original line (0 dB)
         self.assertIn("at most 3 dB", far["held"])
         a = far["call"]["args"]
         self.assertEqual((far["call"]["tool"], a["curve"], a["mode"], a["start"], a["end"], a["guard"]),
@@ -184,6 +184,48 @@ print(JSON.stringify({ sel1: sel1, sel0: sel0, down: down, add: add, st: [st.par
         self.assertEqual([p["value"] for p in r["down"]["points"]], [0, -0.5, 0])
         self.assertEqual(r["add"]["points"][0]["time"], 4)            # at the playhead (beat 8 = 4 s)
         self.assertEqual(r["st"], ["autoState", "manual"])
+
+
+class OriginalLine(unittest.TestCase):
+    """The owner's ruling: 3 dB is the distance from the ORIGINAL line, so drags one after another never add up past it;
+    and a lane that is Off is heard at the control's value (a write, or Play, makes its points heard)."""
+
+    def test_two_drags_of_3_db_never_make_6(self):
+        r = run_js(self, SETUP + r"""
+var up = A.propose(tr, 'gain', 1, 14, 3);
+d.lanes.gain = { points: [{ t: 10, v: 0 }, { t: 14, v: 3 }, { t: 20, v: 0 }], state: 'play' };
+var again = A.propose(tr, 'gain', 1, 14, 6);
+var back = A.propose(tr, 'gain', 1, 14, 0);
+var n = commits.length;
+A.write(tr, 'gain', { tool: 'automation_write', args: { track_id: 't1', control: 'gain', mode: 'replace-range', curve: 's_curve',
+  points: [{ time: 10, value: 0 }, { time: 14, value: 6 }, { time: 20, value: 0 }], start: 9.9999, end: 20.0001, guard: false } }, 'x');
+var sent = commits.length > n ? 'sent' : toasts[toasts.length - 1];
+print(JSON.stringify({ up: up.v, upCall: !!up.call, again: again.v, againCall: !!again.call, held: again.held, back: back.v, backCall: !!back.call, sent: sent }));
+""")
+        self.assertEqual((r["up"], r["upCall"]), (3, True))                  # the first +3 dB: allowed
+        self.assertEqual((r["again"], r["againCall"]), (3, False))           # a second +3 dB on top: held at +3
+        self.assertIn("at most 3 dB from the original line", r["held"])
+        self.assertEqual((r["back"], r["backCall"]), (0, True))              # +3 then back to 0: allowed
+        self.assertIn("from the original line", r["sent"])                   # a write that would go to +6: not sent
+
+    def test_an_off_lane_is_heard_at_the_controls_value(self):
+        r = run_js(self, SETUP + r"""
+d.lanes.gain = { points: [{ t: 20, v: -6 }, { t: 30, v: -6 }], state: 'manual' };
+var n = commits.length;
+A.setState(tr, 'gain', 'play');
+var play = commits.length > n ? 'sent' : toasts[toasts.length - 1];
+A.add(tr, 'gain', 12);
+var add = commits.length > n ? 'sent' : toasts[toasts.length - 1];
+var line = A.lineAt(d.lanes.gain, d.controls[0], 25);
+d.lanes.gain = { points: [{ t: 20, v: 0 }, { t: 21.2, v: -1 }, { t: 25, v: -1 }, { t: 26.2, v: 0 }], state: 'manual' };
+A.setState(tr, 'gain', 'play');
+var ok = commits.length > n ? commits[commits.length - 1].op.after : toasts[toasts.length - 1];
+print(JSON.stringify({ play: play, add: add, line: line, ok: ok }));
+""")
+        self.assertIn("Not switched to play", r["play"])                    # the old -6 dB would jump in
+        self.assertIn("Not written", r["add"])                              # a point added switches it to play
+        self.assertEqual(r["line"], 0)                                       # heard: the fader's own value
+        self.assertEqual(r["ok"], "play")                                    # points on its value: allowed
 
 
 class BusRule(unittest.TestCase):
@@ -279,6 +321,104 @@ class Proxy(unittest.TestCase):
         self.assertEqual(D.Engine.automation_refusal(reads, clear, "http://127.0.0.1:1/mcp"), "")
         unread = SimpleNamespace(_read_tool=lambda url, tool, args: None)
         self.assertIn("could not be read", D.Engine.automation_refusal(unread, body, "http://127.0.0.1:1/mcp"))
+
+
+class ProxyRoundThree(unittest.TestCase):
+    """The engine connection (every write from the page, the Assistant and a script passes it) against the round-3
+    review: replace-all, an unknown line, a lane that is Off, set_state, recording states, duplicate names, string
+    numbers, and the original line kept in the session's folder across writes and a new connection."""
+
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        self.addCleanup(self.td.cleanup)
+        self.current, self.points, self.state = 0.0, [], "manual"
+
+    def engine(self, folder=True):
+        from types import SimpleNamespace
+
+        def reads(url, tool, args):
+            if tool == "automation_list":
+                return {"trackId": "2", "trackName": "Lead Vocal", "isBus": False, "feeders": [],
+                        "controls": [{"control": "gain", "current": self.current, "state": self.state}]}
+            if tool == "automation_get":
+                return {"pointList": [{"time": t, "value": v} for t, v in self.points], "state": self.state}
+            if tool == "session_list_snapshots":
+                return {"folder": self.td.name} if folder else {}
+            return None
+        return SimpleNamespace(_read_tool=reads)
+
+    def refusal(self, args, tool="automation_write", eng=None, raw=None):
+        from hypnomix.app import daw as D
+        body = raw if raw is not None else json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+            "name": tool, "arguments": dict({"track_id": "2", "control": "gain"}, **args)}}).encode()
+        return D.Engine.automation_refusal(eng or self.engine(), body, "http://127.0.0.1:1/mcp")
+
+    def ride(self, pts, **kw):
+        return dict({"curve": "s_curve", "points": [{"time": t, "value": v} for t, v in pts],
+                     "start": pts[0][0], "end": pts[-1][0]}, **kw)
+
+    def test_replace_all_from_off_the_line_is_refused(self):
+        why = self.refusal({"mode": "replace-all", "curve": "s_curve", "points": [[0, -20], [5, -17]]})
+        self.assertIn("starts at -20.0 dB", why)
+        self.assertIn("starts at -20.0 dB", self.refusal({"mode": "replace_all", "curve": "s-curve", "points": [[0, -20], [5, -17]]}))
+
+    def test_a_fader_at_minus_infinity_refuses_level_writes(self):
+        self.current = None
+        self.assertIn("never assumes 0 dB", self.refusal(self.ride([(5, 0), (6.2, -2), (9, -2), (10.2, 0)])))
+
+    def test_an_off_lane_and_switching_it_to_play(self):
+        self.points, self.state = [(20, -6), (30, -6)], "manual"
+        self.assertIn("-6.0 dB", self.refusal(self.ride([(5, 0), (6.2, -1), (8, -1), (9.2, 0)])))
+        self.assertIn("-6.0 dB", self.refusal({"state": "play"}, tool="automation_set_state"))
+        self.assertEqual(self.refusal({"state": "manual"}, tool="automation_set_state"), "")
+        for s in ("touch", "latch", "write"):
+            self.assertIn("recording mode", self.refusal({"state": s}, tool="automation_set_state"))
+            self.assertIn("recording mode", self.refusal(self.ride([(5, 0), (6.2, -1), (8, -1), (9.2, 0)], state=s)))
+
+    def test_names_given_twice_and_numbers_as_text_are_refused(self):
+        raw = (b'{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "automation_clear", "arguments": '
+               b'{"track_id": "2", "control": "gain", "start": 5, "start": 7, "end": 8}}}')
+        self.assertIn("given twice", self.refusal({}, raw=raw))
+        self.points, self.state = [(0, 0), (5, 0), (6.2, -2.5), (9, -2.5), (10.2, 0)], "play"
+        self.assertIn("number of seconds", self.refusal({"start": "5", "end": "8"}, tool="automation_clear"))
+        self.assertIn("number of seconds", self.refusal(self.ride([(5, 0), (6.2, -1), (8, -1), (9.2, 0)], start="5")))
+        self.assertIn("both start and end", self.refusal({"start": 7}, tool="automation_clear"))
+
+    def test_the_original_line_is_kept_so_writes_never_add_up_past_3_db(self):
+        from hypnomix.engineer import automation_original as AO
+        from hypnomix.engineer import automation_rules as AR
+        up = self.ride([(10, 0), (12, 3), (16, 3), (18, 0)])
+        self.assertEqual(self.refusal(up), "")                              # the first +3 dB: allowed, the original kept
+        kept = json.loads((Path(self.td.name) / AO.FILE).read_text())
+        self.assertEqual(kept["lines"]["2|gain"], {"value": 0.0})
+        self.points, self.state = AR.s_points([(10, 0), (12, 3), (16, 3), (18, 0)]), "play"   # as the engine wrote it
+        again = self.ride([(12, 3), (13.2, 6), (15, 6), (16, 3)])
+        self.assertIn("from the original line", self.refusal(again))         # a second +3 dB on top: refused
+        self.assertIn("from the original line", self.refusal(again, eng=self.engine()))   # a new connection, same folder
+        self.assertEqual(self.refusal(self.ride([(12, 3), (13.2, 0), (15, 0), (16, 3)])), "")   # back toward it: allowed
+        self.points, self.state = [], "manual"                              # the lane cleared: its value is the original
+        self.current = 3.0
+        self.assertEqual(self.refusal(self.ride([(10, 3), (12, 6), (16, 6), (18, 3)])), "")
+        self.assertEqual(json.loads((Path(self.td.name) / AO.FILE).read_text())["lines"]["2|gain"], {"value": 3.0})
+
+    def test_without_the_sessions_folder_a_level_write_is_refused(self):
+        why = self.refusal(self.ride([(10, 0), (12, 2), (16, 2), (18, 0)]), eng=self.engine(folder=False))
+        self.assertIn("original line cannot be kept", why)
+
+    def test_the_page_reads_the_original_line(self):
+        from unittest import mock
+        from hypnomix.app import daw as D
+        from hypnomix.engineer import automation_original as AO
+        AO.keep(self.td.name, "2", "gain", {"value": -1.0})
+        self.points, self.state = [(10, -1), (12, 1), (16, 1), (18, -1)], "play"
+        eng = self.engine()
+        fake = mock.Mock()
+        fake.url.return_value = "http://127.0.0.1:1/mcp"
+        fake._read_tool = lambda url, tool, args: eng._read_tool(url, tool, args)
+        with mock.patch.object(D, "ENGINE", fake):
+            code, r = D.handle_post("/api/daw/original", {"track_id": "2", "control": "gain"})
+            self.assertEqual((code, r), (200, {"value": -1.0, "kept": True}))
+            self.assertEqual(D.handle_post("/api/daw/original", {"track_id": "2", "control": "pan_azimuth"})[0], 400)
 
 
 if __name__ == "__main__":

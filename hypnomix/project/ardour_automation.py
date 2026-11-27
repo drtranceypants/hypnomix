@@ -65,18 +65,26 @@ def edge_points(segs, base_db=0.0, ramp=RAMP_S, cap=RULES.LINE_DB):
     for _, f, t in edges:
         if abs(t - f) > cap + 1e-6:
             raise ValueError(f"a change of {abs(t - f):.1f} dB: more than the {cap:g} dB a move may make")
-    pts = []
+    halves = []
     for i, (e, f, t) in enumerate(edges):
         half = ramp / 2
         if i:
             half = min(half, (e - edges[i - 1][0]) / 2)
         if i + 1 < len(edges):
             half = min(half, (edges[i + 1][0] - e) / 2)
-        need = RULES.shortest(t - f) + 0.02
-        if 2 * half < need:
-            raise ValueError(f"two changes {2 * half:.2f} s apart at {e:.1f} s: too close for a smooth move "
-                             f"(it needs {need:.2f} s); make that one by hand")
+        halves.append(half)
+    pts = []
+    for i, (e, f, t) in enumerate(edges):
+        half = halves[i]
         a, b = max(0.0, e - half), e + half
+        if a > e - half:                    # clamped at the song's start: the S keeps its length, later (not steeper)
+            b = a + 2 * half
+            if i + 1 < len(edges):
+                b = min(b, edges[i + 1][0] - halves[i + 1])
+        need = RULES.shortest(t - f) + 0.02
+        if b - a < need:                    # judged as it will be written (after the clamp)
+            raise ValueError(f"two changes {b - a:.2f} s apart at {e:.1f} s: too close for a smooth move "
+                             f"(it needs {need:.2f} s); make that one by hand")
         for q in ((a, base_db + f), (b, base_db + t)):
             if pts and abs(pts[-1][0] - q[0]) < 1e-6:
                 continue
@@ -92,7 +100,10 @@ def _args(route_id, control, pts, level=True):
 
 def write_engine(eng, route_id, control, pts):
     """One automation_write into the open engine, after the rules (refusals raise ValueError with the reason).
+    A level write is judged against the control's value (a value the engine reports as silence, -inf, is refused:
+    0 dB is never assumed) and its original line is kept in the session's folder (engineer/automation_original.py).
     Returns the engine's reply."""
+    from hypnomix.engineer import automation_original as AO
     if not pts:
         return None
     facts = eng.call("automation_list", {"track_id": str(route_id)})
@@ -104,10 +115,26 @@ def write_engine(eng, route_id, control, pts):
                          "make these moves by hand")
     level = RULES.kind(control) in RULES.LEVEL_KINDS
     args = _args(route_id, control, pts, level)
-    line = RULES.line_from(None, c.get("current"))
-    bad = RULES.check(args, facts, line, read=lambda tool, a: eng.call(tool, a))
+    lane = {"pointList": [], "state": "manual"}
+    line = entry = folder = None
+    why = ""
+    if level:
+        try:
+            folder = AO.folder_of(eng.call("session_list_snapshots", {}))
+        except Exception:
+            folder = None
+        line, entry, why = AO.pick(folder, str(route_id), control, lane, RULES.current_of(facts, control))
+    bad = RULES.judge(args, facts, lane, read=lambda tool, a: eng.call(tool, a), original=line)
+    if level and not bad and why:
+        bad = [why]
     if bad:
         raise ValueError(RULES.sentence(bad))
+    if entry is not None:
+        try:
+            AO.keep(folder, str(route_id), control, entry)
+        except (OSError, ValueError) as e:
+            raise ValueError(f"the lane's original line could not be kept in the session's folder ({AO.FILE}): "
+                             f"{getattr(e, 'strerror', None) or e}")
     return eng.call("automation_write", args)
 
 
@@ -209,13 +236,33 @@ def write_file(p, track, control, pts, step=0.05):
     ev = al.find("events")
     if (ev is not None and (ev.text or "").strip()) or al.get("state", "Off") != "Off":
         raise ValueError(f"{track.name}: its {control} already has automation; make these moves by hand")
+    from pathlib import Path
+    from hypnomix.engineer import automation_original as AO
     level = RULES.kind(control) in RULES.LEVEL_KINDS
-    args = _args(getattr(track, "index", 0), control, pts, level)
-    base = AR.num(ctl.get("value"), 1.0) if ctl is not None else 1.0
-    cur = 20 * math.log10(base) if level and base > 0 else (None if level else base)
-    bad = RULES.check(args, facts_of(p, track), RULES.line_from(None, cur))   # a plug-in: the mixed-bus rule only
+    rid = str(rt.get("id") or getattr(track, "index", 0))
+    args = _args(rid, control, pts, level)
+    val = ctl.get("value") if ctl is not None else None
+    base = AR.num(val, None) if val is not None else None
+    if level:                                   # the control's value as the session keeps it: never assumed 0 dB
+        cur = 20 * math.log10(base) if isinstance(base, (int, float)) and base > 0 else None
+    else:
+        cur = base
+    lane = {"pointList": [], "state": "manual"}
+    line = entry = None
+    why = ""
+    if level:
+        line, entry, why = AO.pick(str(Path(p.path).parent), rid, control, lane, cur)
+    bad = RULES.judge(args, facts_of(p, track), lane, original=line, current=cur)   # a plug-in: the mixed-bus rule only
+    if level and not bad and why:
+        bad = [why]
     if bad:
         raise ValueError(RULES.sentence(bad))
+    if entry is not None:
+        try:
+            AO.keep(str(Path(p.path).parent), rid, control, entry)
+        except (OSError, ValueError) as e:
+            raise ValueError(f"the lane's original line could not be kept in the session's folder ({AO.FILE}): "
+                             f"{getattr(e, 'strerror', None) or e}")
     dense = RULES.s_points(pts, step) if level else list(pts)
     ctx = AE.Ctx(p)
     if ev is None:

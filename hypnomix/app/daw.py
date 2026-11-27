@@ -352,18 +352,33 @@ def _events(payload):
 METER_SWITCH = ("ensure_rms", "ensureRms")
 
 
+class AutoUnreadable(ValueError):
+    """A body that names an automation tool but cannot be read the way the engine reads it (a name given twice in one
+    object, which Python and the engine's parser resolve differently, or text that is not JSON): refused, never sent."""
+
+
+AUTO_TOOLS = ("automation_write", "automation_clear", "automation_set_state")
+
+
 def _auto_writes(payload, tool="automation_write"):
-    """The automation_write (or automation_clear) calls in a JSON-RPC body (bytes, dict or list): [(id, arguments)].
-    Every name the engine takes for it counts (automation_write, automation/write, automation.write); a body that
-    names no automation tool in plain text and has no escape is not parsed."""
+    """The automation_write (or automation_clear, automation_set_state) calls in a JSON-RPC body (bytes, dict or list):
+    [(id, arguments)]. Every name the engine takes for it counts (automation_write, automation/write,
+    automation.write). A body as text is read strictly (AutoUnreadable): a name given twice in one object at any depth
+    (the engine's parser keeps the first, Python the last), NaN or Infinity, or a body that is not JSON while it names
+    automation or holds an escape. A body that names no automation tool in plain text and has no escape is not
+    parsed."""
     if isinstance(payload, (bytes, bytearray, str)):
         raw = payload if isinstance(payload, (bytes, bytearray)) else payload.encode("utf-8", "replace")
         if b"automation" not in raw and b"\\u" not in raw:
             return []
         try:
-            payload = json.loads(payload)
-        except ValueError:
-            return []
+            text = raw.decode("utf-8")
+            payload = json.loads(text, object_pairs_hook=_no_repeats, parse_constant=_no_constant)
+        except _Repeated:
+            raise AutoUnreadable("a name is given twice in one object of the request (the engine and the app would "
+                                 "read it differently)")
+        except (UnicodeDecodeError, ValueError):
+            raise AutoUnreadable("the request is not JSON the engine and the app read the same way")
     out = []
     for m in (payload if isinstance(payload, list) else [payload]):
         pr = m.get("params") if isinstance(m, dict) and m.get("method") == "tools/call" else None
@@ -1046,32 +1061,62 @@ class Engine:
         return sc if isinstance(sc, dict) else None
 
     def automation_refusal(self, payload, url):
-        """Why a body's automation_write must not reach the engine (hypnomix's smooth-automation rules,
+        """Why a body's automation calls must not reach the engine (hypnomix's smooth-automation rules,
         engineer/automation_rules.py), or "". Level controls and plug-in parameters (a plug-in only to the mixed-bus
-        rule): the route's facts (is it a bus, what it carries) are read from the engine first, and for a level control
-        the line as it is now. A clear on a plug-in lane is never refused (it removes movement)."""
+        rule and the no-recording-state rule): the route's facts (is it a bus, what it carries, the control's value)
+        and the lane as it is now (its points and state) are read from the engine first, and for a level control its
+        original line (engineer/automation_original.py, kept in the session's folder: the first write to a lane keeps
+        it here, before it is sent). A write and a switch to play are judged; a clear on a plug-in lane is never
+        refused (it removes movement). Two calls on one lane in one body are refused (each is judged against the lane
+        as it is now, not as the other leaves it)."""
+        from hypnomix.engineer import automation_original as AO
         from hypnomix.engineer import automation_rules as AR
-        for _, a in _auto_writes(payload):
-            if not AR.checked(a.get("control")):
-                continue
+        try:
+            calls = [(tool, a) for tool in AUTO_TOOLS for _, a in _auto_writes(payload, tool)]
+        except AutoUnreadable as e:
+            return AR.sentence([str(e)])
+        lanes = [(str(a.get("track_id") or ""), str(a.get("control") or "")) for _, a in calls if AR.checked(a.get("control"))]
+        if len(set(lanes)) < len(lanes):
+            return AR.sentence(["two automation calls on one lane in one request: send them one at a time"])
+        read = lambda tool, args: self._read_tool(url, tool, args)
+        folder, keep = [], []
+
+        def original(rid, ctl, lane, facts):
+            if not folder:
+                folder.append(AO.folder_of(self._read_tool(url, "session_list_snapshots", {})))
+            return AO.pick(folder[0], rid, ctl, lane, AR.current_of(facts, ctl))
+        for tool, a in calls:
             rid, ctl = str(a.get("track_id") or ""), str(a.get("control") or "")
+            if tool == "automation_clear":
+                if AR.kind(ctl) not in AR.LEVEL_KINDS or (a.get("start") is None and a.get("end") is None):
+                    continue
+                now = self._read_tool(url, "automation_get", {"track_id": rid, "control": ctl})
+                problems = AR.check_clear(a, now) if now is not None else ["the lane could not be read from the engine (automation_get)"]
+                if problems:
+                    return AR.sentence(problems)
+                continue
+            if not AR.checked(ctl):
+                continue
             facts = self._read_tool(url, "automation_list", {"track_id": rid})
             if facts is None:
                 return AR.sentence([f"what route {rid} carries could not be read from the engine (automation_list)"])
-            cur = next((c.get("current") for c in facts.get("controls") or [] if c.get("control") == ctl), None)
-            line = None
-            if AR.kind(ctl) in AR.LEVEL_KINDS and str(a.get("mode") or "replace-range") != "replace-all":
-                line = AR.line_from(self._read_tool(url, "automation_get", {"track_id": rid, "control": ctl}), cur)
-            problems = AR.check(a, facts, line, read=lambda tool, args: self._read_tool(url, tool, args))
+            lane = self._read_tool(url, "automation_get", {"track_id": rid, "control": ctl})
+            if lane is None:
+                return AR.sentence(["the lane could not be read from the engine (automation_get)"])
+            heard = tool == "automation_write" or AR.starts_playing(a, facts, lane)
+            line, entry, why = original(rid, ctl, lane, facts) if AR.kind(ctl) in AR.LEVEL_KINDS and heard else (None, None, "")
+            judge = AR.judge if tool == "automation_write" else AR.judge_state
+            problems = judge(a, facts, lane, read, line) or ([why] if why else [])
             if problems:
                 return AR.sentence(problems)
-        for _, a in _auto_writes(payload, "automation_clear"):
-            if AR.kind(a.get("control")) not in AR.LEVEL_KINDS or (a.get("start") is None and a.get("end") is None):
-                continue
-            now = self._read_tool(url, "automation_get", {"track_id": str(a.get("track_id") or ""), "control": str(a.get("control") or "")})
-            problems = AR.check_clear(a, now) if now is not None else ["the lane could not be read from the engine (automation_get)"]
-            if problems:
-                return AR.sentence(problems)
+            if entry is not None:
+                keep.append((rid, ctl, entry))
+        for rid, ctl, entry in keep:
+            try:
+                AO.keep(folder[0], rid, ctl, entry)
+            except (OSError, ValueError) as e:
+                return AR.sentence([f"the lane's original line could not be kept in the session's folder ({AO.FILE}: "
+                                    f"{getattr(e, 'strerror', None) or e})"])
         return ""
 
     def call(self, method, params=None, timeout=RPC_TIMEOUT):
@@ -1238,6 +1283,31 @@ def carries(track_id):
     return 200, {"trackName": facts.get("trackName"), "others": others, "level": say("gain"), "plugin": say("plugin")}
 
 
+def original_line(track_id, control):
+    """POST /api/daw/original {track_id, control}: the level lane's original line (engineer/automation_original.py:
+    the line before HypnoMix's first write to it, kept in the session's folder; the line as heard now when none is kept
+    yet), so the page's drags stop where the engine connection would refuse: {points: [[t, dB], ...]} or {value: dB},
+    and kept (true when it was kept). Only reads: the engine connection keeps it as the first write is sent."""
+    from hypnomix.engineer import automation_original as AO
+    from hypnomix.engineer import automation_rules as AR
+    url = ENGINE.url()
+    if not url:
+        return 503, {"error": "the engine is not running"}
+    if AR.kind(control) not in AR.LEVEL_KINDS:
+        return 400, {"error": "only a fader, trim or send lane has an original line"}
+    facts = ENGINE._read_tool(url, "automation_list", {"track_id": str(track_id)})
+    lane = ENGINE._read_tool(url, "automation_get", {"track_id": str(track_id), "control": str(control)})
+    if facts is None or lane is None:
+        return 404, {"error": f"route {track_id}'s {control} lane could not be read from the engine"}
+    folder = AO.folder_of(ENGINE._read_tool(url, "session_list_snapshots", {}))
+    line, entry, why = AO.pick(folder, str(track_id), str(control), lane, AR.current_of(facts, str(control)))
+    if why:
+        return 200, {"unknown": why}
+    body = {"points": [[t, v] for t, v in line.points]} if line.points else {"value": line(0.0)}
+    body["kept"] = entry is None
+    return 200, body
+
+
 def handle_post(path, body):
     """The POST routes (the server has checked the page's token); each field is checked before the engine is touched."""
     if path == "/api/daw/start":
@@ -1262,6 +1332,8 @@ def handle_post(path, body):
                                  allow_outside=body.get("allow_outside") is True)
     if path == "/api/daw/carries":                    # what a route carries that is not a vocal: the page's lanes refuse early
         return carries(_text(body, "track_id"))
+    if path == "/api/daw/original":                   # a level lane's original line: the page's drags stop at 3 dB from it
+        return original_line(_text(body, "track_id"), _text(body, "control"))
     if path == "/api/daw/meta":                       # time signature + track colours from the saved session file
         from hypnomix.app import daw_meta
         s = ENGINE.session or (str(Path(ENGINE.new[0]) / ENGINE.new[1]) if ENGINE.new else None)

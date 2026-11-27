@@ -438,7 +438,9 @@ def _auto_rows(tool, a, read):
     what = f"{facts.get('trackName') or 'route ' + rid} · {c.get('name') or ctl} automation"
     if tool == "automation_set_state":
         return [dict(what=what, before=str(c.get("state") or "?"), after=str(a.get("state")))]
-    rng = {k: a[k] for k in ("start", "end") if isinstance(a.get(k), (int, float))}
+    a = AR.normal(a)                                   # replace_all and s-curve as the engine reads them
+    every = tool == "automation_write" and a.get("mode") == "replace-all"
+    rng = {} if every else {k: a[k] for k in ("start", "end") if isinstance(a.get(k), (int, float)) and not isinstance(a.get(k), bool)}
     now = read("automation_get", dict(track_id=rid, control=ctl, **rng)) or {}
     have = now.get("pointList") or []
     before = (f"{len(have)} point{'s' if len(have) != 1 else ''}" + (f", {_secs(have[0].get('time'))} to {_secs(have[-1].get('time'))}" if have else "")
@@ -453,6 +455,8 @@ def _auto_rows(tool, a, read):
         big = max(abs(d) for _, _, d in moves)
         words += f", largest move {big:.1f} dB, steepest {AR.steepest(pts, a.get('curve')):.1f} dB/s"
     words += f", {a.get('curve') or 'linear'}" + (f", {a['state']}" if a.get("state") else ", play")
+    if every:
+        words += "; every other point on the lane is removed (replace-all)"
     return [dict(what=what, before=before, after=words)]
 
 
@@ -744,7 +748,7 @@ def digest(tool, args):
 
 def automation_clear_problem(args, read):
     """Why an automation_clear must not be proposed (a ranged clear inside a level lane that would leave a straight
-    move), or ''."""
+    move, a range of one edge only, or a start or end that is not a number), or ''."""
     from hypnomix.engineer import automation_rules as AR
     a = args or {}
     if AR.kind(a.get("control")) not in AR.LEVEL_KINDS or (a.get("start") is None and a.get("end") is None):
@@ -753,23 +757,57 @@ def automation_clear_problem(args, read):
     return AR.sentence(problems) if problems else ""
 
 
+def _auto_context(a, read):
+    """(facts, lane, original line, why) for an automation call on a level or plug-in control, read through
+    read(tool, args); why is '' when everything needed could be read (a route or lane that cannot be read: why is the
+    whole answer; an original line that cannot be known: the rules are judged first, then why)."""
+    from hypnomix.engineer import automation_original as AO
+    from hypnomix.engineer import automation_rules as AR
+    rid, ctl = str(a.get("track_id") or ""), str(a.get("control") or "")
+    facts = read("automation_list", {"track_id": rid})
+    if facts is None:
+        return None, None, None, f"route {rid}: what it carries could not be read (automation_list); read it first"
+    lane = read("automation_get", {"track_id": rid, "control": ctl})
+    if lane is None:
+        return facts, None, None, f"route {rid}'s {ctl} lane could not be read (automation_get); read it first"
+    if AR.kind(ctl) not in AR.LEVEL_KINDS:
+        return facts, lane, None, ""
+    line, _, why = AO.pick(AO.folder_of(read("session_list_snapshots", {})), rid, ctl, lane, AR.current_of(facts, ctl))
+    return facts, lane, line, why
+
+
 def automation_problem(args, read):
     """Why an automation_write must not be proposed (hypnomix's smooth-automation rules, read against the route's facts
-    and, for a level control, its line as it is now through read(tool, args)), or ''. A plug-in parameter is held to
-    the mixed-bus rule only. The app checks the same again as it is sent."""
+    and, for a level control, the lane as it is now and its original line, through read(tool, args)), or ''. A plug-in
+    parameter is held to the mixed-bus rule (and the no-recording-state rule) only. The app checks the same again as
+    it is sent."""
     from hypnomix.engineer import automation_rules as AR
     a = args or {}
     if not AR.checked(a.get("control")):
         return ""
-    rid, ctl = str(a.get("track_id") or ""), str(a.get("control") or "")
-    facts = read("automation_list", {"track_id": rid})
-    if facts is None:
-        return f"route {rid}: what it carries could not be read (automation_list); read it first"
-    cur = next((c.get("current") for c in facts.get("controls") or [] if c.get("control") == ctl), None)
-    line = None
-    if AR.kind(ctl) in AR.LEVEL_KINDS and a.get("mode") != "replace-all":
-        line = AR.line_from(read("automation_get", {"track_id": rid, "control": ctl}), cur)
-    problems = AR.check(a, facts, line, read=read)
+    facts, lane, line, why = _auto_context(a, read)
+    if lane is None:
+        return why
+    problems = AR.judge(a, facts, lane, read, line) or ([why] if why else [])
+    return AR.sentence(problems) if problems else ""
+
+
+def automation_state_problem(args, read):
+    """Why an automation_set_state must not be proposed: a recording state (write, touch, latch) on a level or plug-in
+    lane, or a switch to play that would make a lane's points heard against the rules (automation_rules.judge_state),
+    or ''. The app checks the same again as it is sent."""
+    from hypnomix.engineer import automation_rules as AR
+    a = args or {}
+    if not AR.checked(a.get("control")):
+        return ""
+    if AR.recording(a.get("state"), AR.kind(a.get("control"))):
+        return AR.sentence(AR.judge_state(a))
+    if a.get("state") != "play":
+        return ""
+    facts, lane, line, why = _auto_context(a, read)
+    if lane is None:
+        return why
+    problems = AR.judge_state(a, facts, lane, read, line) or ([why] if why and AR.starts_playing(a, facts, lane) else [])
     return AR.sentence(problems) if problems else ""
 
 

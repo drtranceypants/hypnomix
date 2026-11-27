@@ -42,8 +42,8 @@ writes the moves as volume envelope points in a new project, structure-checked a
   hypnomix vocallevel SONG.rpp [--heard DIR | --renders DIR] [same options] [--apply NEW.rpp [--group FOLDER]]
 
 A HypnoMix Studio session (.ardour, or its folder) is measured the same way; the moves are written as automation, under
-HypnoMix's smooth-automation rules: the upper trims (at most 4 dB) on each upper part's trim, the line evening (at most
-3 dB) on the vocal group's bus fader when that bus carries only vocals, else on each vocal track's fader, every change
+HypnoMix's smooth-automation rules: the upper trims (at most 4 dB from the original line) on each upper part's trim,
+the line evening (at most 3 dB from the original line) on the vocal group's bus fader when that bus carries only vocals, else on each vocal track's fader, every change
 one gentle S-curve about 1.2 s long (shorter only where two lines are close, never steeper than 7 dB/s). --engine
 writes them into the open session in the HypnoMix engine (one undo step a track and control); --apply NEW.ardour
 writes a new snapshot in the session's folder. A fader or trim that already plays automation is left alone and

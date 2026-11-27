@@ -5,7 +5,7 @@ measures and plans; workflow/vocallevel_project.py reads the session).
   line evening  (at most 3 dB) on the vocal group's bus FADER when that bus carries only vocals and every vocal
                 track is in it; else on each vocal track's FADER
 Every change is one gentle S-curve (project/ardour_automation.py edge_points), checked against HypnoMix's
-smooth-automation rules before it is written (engineer/automation_rules.py: S-curves, a move at most 3 dB (a trim
+smooth-automation rules before it is written (engineer/automation_rules.py: S-curves, at most 3 dB from the original line (a trim
 4), the steepest point under 7 dB/s, on the line at both ends, never a bus that carries a track that is not a vocal).
 
   --engine [URL]      into the open HypnoMix engine (automation_write: one engine undo step a track and control).
@@ -13,7 +13,9 @@ smooth-automation rules before it is written (engineer/automation_rules.py: S-cu
   --apply NEW.ardour  a new snapshot in the session's folder (the original is never written); the open engine's
                       session is not changed
 
-A control that already plays automation is left alone and listed (make those moves by hand). Checked by unit tests
+A control that already plays automation is left alone and listed (make those moves by hand), and so is one whose level
+is not known (a fader at -inf: 0 dB is never assumed). Every point stays within 3 dB (a trim 4) of the lane's original
+line, kept in the session's folder (engineer/automation_original.py). Checked by unit tests
 and against the engine on the Dummy backend (tests/test_ardour_automation_live.py); not judged by ear.
 """
 import sys
@@ -88,6 +90,8 @@ def run(p, src, a, gains, vocals, melody):
                 if name not in ids:
                     raise ValueError("no such track in the engine's session")
                 cur = _current(eng, ids[name], control)
+                if cur is None:
+                    raise ValueError(_unknown(control))
                 pts = [(t, round(v + cur, 4)) for t, v in pts]
                 r = AA.write_engine(eng, ids[name], control, pts)
                 done.append(f"{what}: {_lines(segs)} line(s), {len(pts)} points, steepest "
@@ -115,11 +119,9 @@ def run(p, src, a, gains, vocals, melody):
             if t is None:
                 raise ValueError("no such track")
             al, ctl = AA._list_of(t.native, control)
-            base = 0.0
-            if ctl is not None:
-                import math
-                g = float(ctl.get("value") or 1.0)
-                base = 20 * math.log10(g) if g > 0 else 0.0
+            base = _stored_db(ctl)
+            if base is None:
+                raise ValueError(_unknown(control))
             pts = [(tt, round(v + base, 4)) for tt, v in AA.edge_points(segs, 0.0, cap=RULES.cap(RULES.kind(control)))]
             if not pts:
                 continue
@@ -136,7 +138,8 @@ def run(p, src, a, gains, vocals, melody):
     AE.save(p, out)
     errs = AE.check(src if Path(src).is_file() else p.path, out, automation=True)
     if errs:
-        bad = out.with_name(out.stem + " (BROKEN, do not open).ardour.txt")
+        from hypnomix.project import rpp
+        bad = rpp.free_name(out.with_name(out.stem + " (BROKEN, do not open).ardour.txt"))     # never over an earlier one
         out.replace(bad)
         print(f"check FAILED: the written snapshot is not sound. Renamed to {bad.name}; keep using the original.")
         for e in errs:
@@ -152,7 +155,23 @@ def _lines(segs):
 
 
 def _current(eng, rid, control):
-    facts = eng.call("automation_list", {"track_id": str(rid)})
-    c = next((x for x in facts.get("controls") or [] if x.get("control") == control), {})
-    v = c.get("current")
-    return float(v) if isinstance(v, (int, float)) else 0.0
+    """The control's value in dB as the engine reports it; None when it is not known (silence, -inf, reads as null):
+    never 0 dB in its place."""
+    return RULES.current_of(eng.call("automation_list", {"track_id": str(rid)}), control)
+
+
+def _stored_db(ctl):
+    """The control's value in dB as the session file keeps it (a gain factor); None when it is not there, is not a
+    number, or is silence."""
+    import math
+    try:
+        g = float(ctl.get("value")) if ctl is not None and ctl.get("value") is not None else None
+    except (TypeError, ValueError):
+        return None
+    return 20 * math.log10(g) if g is not None and math.isfinite(g) and g > 0 else None
+
+
+def _unknown(control):
+    what = "trim" if control == "trim" else "fader"
+    return (f"its {what} level is not known (it reads as silence, -inf, or is not in the session), so nothing is "
+            f"written: HypnoMix never assumes 0 dB; set the {what} to where it should sit, then run this again")
