@@ -2,7 +2,8 @@
 
 The lessons live in the package hypnomix/app/lessons (one module per chapter); this module is the engine: which steps a
 course and a DAW get, the progress file, the hands-on actions, the routes, the glossary and the wiki articles.
-Ableton Live gets the most depth, REAPER a little less, HypnoMix DAW the short version (the least tested).
+Ableton Live and REAPER get the same depth (Live alone has its Session View; REAPER alone has the HypnoMix plug-ins'
+built-in guide), and HypnoMix DAW the short version (the least tested).
 
 A step can carry a hands-on action ("Set the tempo", "Add a drum beat"). Every action that changes the person's
 set or project shows exactly what it will do and waits for their click: the browser asks, and the server refuses
@@ -197,6 +198,12 @@ def describe(daw, step, kind):
     if kind == "fx":
         fx = _fx_of(daw, step)
         on = fx.get("track")
+        if fx.get("bus"):                          # REAPER: a track of its own for a shared effect; the send is made by hand
+            dev, bus = fx["device"].replace(" (Cockos)", ""), fx["bus"]
+            return dict(kind=kind, label=f"Add a {bus} track with {dev}", fields=[],
+                        will=(f"Add a track called {bus} with {dev} on it, set with the starting settings above (only the effect, "
+                              f"none of the dry sound); if {bus} already has {dev}, set that one instead. The bridge can't make sends, "
+                              f"so you then send each track to {bus} yourself (the steps above say how)."), changes=True)
         return dict(kind=kind, label=f"Add {fx['device'].replace(' (Cockos)', '')}",
                     fields=[] if on else [dict(id="track", label="On the track", value="Vocal")],
                     will=(f"Add {fx['device'].replace(' (Cockos)', '')} to " + (f"return track {on}" if on else "the track {track}") +
@@ -207,12 +214,12 @@ def describe(daw, step, kind):
                         will="Write HypnomixProbe, HypnomixMain and the Hypnomix review device into your Live User Library (Presets → Audio Effects → Max Audio Effect → Hypnomix). Your sets aren't touched; an older copy of a device is replaced.",
                         changes=True)
         return dict(kind=kind, label="Install the JSFX", fields=[],
-                    will="Copy Hypnomix Probe and Hypnomix Main into REAPER's Effects/hypnomix folder. Your projects aren't touched; an older copy is replaced.",
+                    will="Copy HypnoMix Probe and HypnoMix Main into REAPER's Effects/hypnomix folder. Your projects aren't touched; an older copy is replaced.",
                     changes=True)
     if kind == "chain":
         return dict(kind=kind, label="Build the mastering chain", fields=[],
                     will=("Add EQ Eight, Glue Compressor, Utility (bass mono below 120 Hz) and Limiter to the end of the Master track, every gain at 0 dB. Nothing already there is removed."
-                          if daw == "live" else "Build the mastering chain on REAPER's master (Hypnomix Main's Build chain when Main is there; otherwise ReaEQ, ReaComp and ReaLimit). Nothing already there is removed."),
+                          if daw == "live" else "Build the mastering chain on REAPER's master (HypnoMix Main's Build chain when Main is there; otherwise ReaEQ, ReaComp and ReaLimit). Nothing already there is removed."),
                     changes=True)
     raise ValueError(f"no such action {kind!r}")
 
@@ -296,18 +303,30 @@ def _fx_live(lv, fx, track):
     return done, by_hand
 
 
-def _fx_reaper(r, fx, track):
-    idx = r.add_fx(track, fx["device"])["fx"]
+def _fx_reaper(r, fx, track, idx=None):
+    """Add fx["device"] to the track (or set the one at `idx`). Each of fx["set"] is [how, param, value] or
+    [how, param, value, as shown]: how is "named" (a named config parameter), "norm" (0 to 1) or "shown" (the value
+    the plug-in shows); param may be a list of names to try in turn (plug-ins name their controls differently
+    across versions). -> (what was set, what to set by hand)."""
+    if idx is None:
+        idx = r.add_fx(track, fx["device"])["fx"]
     done, by_hand = [], []
-    for how, p, value in fx["set"]:
-        try:
-            if how == "named":
-                r.named(track, idx, p, value)
-            else:
-                r.set_shown(track, idx, p, value)
-            done.append(f"{p} {value}")
-        except Exception:
-            by_hand.append(f"{p}: {value}")
+    for how, p, value, *seen in fx["set"]:
+        names = p if isinstance(p, list) else [p]
+        for name in names:
+            try:
+                if how == "named":
+                    r.named(track, idx, name, value)
+                elif how == "norm":
+                    r.set_norm(track, idx, name, value)
+                else:
+                    r.set_shown(track, idx, name, value)
+            except Exception:
+                continue
+            done.append(f"{name} {seen[0] if seen else value}")
+            break
+        else:
+            by_hand.append(f"{names[0]}: {seen[0] if seen else value}")
     return done, by_hand
 
 
@@ -367,7 +386,7 @@ def make_devices(daw):
         return dict(done="Made HypnomixProbe, HypnomixMain and Hypnomix: in Live's Browser under User Library → Presets → Audio Effects → Max Audio Effect → Hypnomix.")
     if daw == "reaper":
         _cli("reaper", "probes", "install")
-        return dict(done="Installed Hypnomix Probe and Hypnomix Main: in REAPER, Add FX → JS → hypnomix. (Restart REAPER's FX browser if they don't show yet.)")
+        return dict(done="Installed HypnoMix Probe and HypnoMix Main: in REAPER, Add FX → JS → hypnomix. (Restart REAPER's FX browser if they don't show yet.)")
     raise ValueError("HypnoMix DAW has no HypnoMix devices yet")
 
 
@@ -515,6 +534,8 @@ def _run_reaper(step, kind, a):
         return dict(done="Stopped.")
     if kind == "fx":
         fx = _fx_of("reaper", step)
+        if fx.get("bus"):
+            return _bus_reaper(r, fx)
         track = str(a.get("track") or "")
         if not track:
             raise ValueError("which track?")
@@ -523,7 +544,7 @@ def _run_reaper(step, kind, a):
     if kind == "chain":
         try:
             r.call("chain_build", name="hypnomix stock", yes=1)
-            return dict(done="Built the mastering chain before Hypnomix Main on the master.")
+            return dict(done="Built the mastering chain before HypnoMix Main on the master.")
         except ReaperError:
             added, by_hand = [], []
             for dev, sets in (("ReaEQ (Cockos)", [["named", "BANDTYPE0", "4"], ["shown", 0, 25]]),
@@ -532,9 +553,27 @@ def _run_reaper(step, kind, a):
                 d, h = _fx_reaper(r, dict(device=dev, set=sets), "master")
                 added.append(dev.replace(" (Cockos)", ""))
                 by_hand += h
-            return dict(done=f"Added {', '.join(added)} to the master (for bass mono and Match target, put Hypnomix Main on the master and press Build chain).",
+            return dict(done=f"Added {', '.join(added)} to the master (for bass mono and Match target, put HypnoMix Main on the master and press Build chain).",
                         by_hand=[f"Set by hand: {x}" for x in by_hand])
     raise ValueError(f"no such action {kind!r}")
+
+
+def _bus_reaper(r, fx):
+    """A shared effect on a track of its own (the reverb): make the track unless one of that name is there, add the
+    effect unless that track already has it, set it. The bridge has no command for sends, so the send stays by hand."""
+    bus, dev = fx["bus"], fx["device"]
+    short = dev.replace(" (Cockos)", "")
+    have = next((t for t in (r.tracks() or []) if t.get("name") == bus), None)
+    if have is None:
+        r.add_track(name=bus)
+    at = next((i for i, f in enumerate((have or {}).get("fx") or []) if short.lower() in str(f.get("name", "")).lower()), None)
+    done, by_hand = _fx_reaper(r, fx, bus, at)
+    made = "Made a track called " + bus + " with " + short if have is None else (
+        ("Set " + short + " on the " + bus + " track") if at is not None else ("Added " + short + " to the " + bus + " track"))
+    return dict(done=made + (f": {', '.join(done)}." if done else "."),
+                by_hand=[f"Set by hand: {x}" for x in by_hand] + [
+                    f"Send a track to it: drag from the track's route button onto the {bus} track (or click the route button, "
+                    f"then Add new send → {bus}), and set the send to about -15 dB. Raise it until you just hear the room, then back off a little."])
 
 
 # ---------------------------------------------------------------- state

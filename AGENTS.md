@@ -21,9 +21,13 @@ A command-line mixing and mastering toolkit (`hypnomix <command>`; `hypnomix` al
   original (`workflow/fix_ardour.py`, edits in `project/ardour_edit.py`: region fades and gain, gain-envelope dips, fader, pan,
   mute; names, order, stacks, timing, sidechain, tuning stay by hand; written and re-read by HypnoMix, NOT YET OPENED in a released DAW). The same model also reads `.als` sets; new tools that should work in both DAWs
   belong there (`project.load(path)`), not on raw XML.
-- **REAPER tools:** `hypnomix reaper start|status|tracks|fx|params` talk to the open REAPER through
+- **REAPER tools:** `hypnomix reaper start|status|tracks|fx|params|snapshot|loop|diagnose` talk to the open REAPER through
   `hypnomix/reaper/bridge.lua` (request files in `~/.hypnomix/reaper-bridge`, a fixed list of commands, never code;
-  each change is one REAPER undo step). `chain … --reaper` builds chains from stock plug-ins (`engineer/chain_reaper.py`).
+  each change is one REAPER undo step). `reaper snapshot` (and `snapshot restore` / `diff`), `reaper loop` and `reaper
+  diagnose` are the REAPER side of `live snapshot`, `loop` and `diagnose` (`reaper/mixer.py`, `mixer.lua`). `scan` on an
+  `.rpp` also runs the `devices` group (each ReaComp judged on its own track; `fix` writes threshold, ratio, attack and
+  release; ReaGate and ReaLimit listed, not judged) and the `structure` group (the file reads back exactly, folders
+  close, sends come from real tracks, faders; listed only). `chain … --reaper` builds chains from stock plug-ins (`engineer/chain_reaper.py`).
   Starting the bridge installs nothing, but it does run a script in the person's REAPER: say so before starting it.
 - **Live tools:** drive the open Live set through AbletonOSC (`hypnomix live`, `loop`, `diagnose`, `chain`).
   The last resort, not the first: they need Live running, a remote script, and a person at the screen.
@@ -241,7 +245,7 @@ which spots to compare between the old and new set. When the review is finished,
 | Preferences, sound profile, the person's own standards | `prefs`, `profile`, `taste` (levels, pans, sends, chains from their finished songs), `voices --learn`, `motion --learn` | `~/.hypnomix/` only |
 | Find problems in a set | `scan`, `smooth`, `edges`, `timing`, `distortion`, `sidechain`, `audit`, `refs`, `mine`, `automation list` | nothing |
 | Check files before the work, practise | `preflight` (sample rates, lengths, duplicates, fake stereo, missing files; `--plan` for the review), `demo` (a practice song with labelled problems) | nothing; `demo` writes a new folder or project |
-| A REAPER project (see `docs/REAPER.md`) | `project SONG.rpp`, `scan SONG.rpp`, `fix DIR --approved --out NEW.rpp`, `reaper start` (and `status`, `tracks`, `fx`, `params`), `chain master MIX.wav --reaper --verify` | a new `.rpp`; plug-ins on the open REAPER's master (undo steps) |
+| A REAPER project (see `docs/REAPER.md`) | `project SONG.rpp`, `scan SONG.rpp`, `fix DIR --approved --out NEW.rpp`, `reaper start` (and `status`, `tracks`, `fx`, `params`), `reaper snapshot OUT.json` / `snapshot restore` / `snapshot diff`, `reaper loop --bars A-B [--ab CHANGE --revert]`, `reaper diagnose`, `vocallevel SONG.rpp --apply NEW.rpp`, `chain master MIX.wav --reaper --verify` | a new `.rpp`; plug-ins on the open REAPER's master (undo steps) |
 | Find problems in recordings | `scan FOLDER`, `stems`, `masking`, `clicks`, `takes`, `align`, `measure`, `spectrogram` | nothing (reports) |
 | Judge a mix | `sections` (give `--bpm`), `match MIX REF`, `translate`, `qc`, `reference`, `punch`, `pitchcheck`, `key` (the song's key, and a section-by-section map with a confidence) | nothing (reports) |
 | Listen by ear (an extra; sends a reduced mono copy to a cloud model, so ask first every time) | `critique MIX` (the Listener: a cloud model's notes by ear; `--estimate` says what would be sent first) | nothing (notes only; the numbers stay measurements) |
@@ -264,7 +268,7 @@ which spots to compare between the old and new set. When the review is finished,
 | Real plug-ins offline (see `docs/PLUGINS.md`) | `plugins` (what is installed; `--check` loads each safely, `--save` into the preferences), `plugrender SET --list / --check / --tracks`, `ab DIR --plugins` | new audio files; `plugins --save` writes the preferences only |
 | Check what was written | `check NEW.als --against OLD.als`, `diff OLD.als NEW.als` | nothing |
 | Vocals | `tune` (and `key` for the song's key), `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |
-| Vocal level, line to line (run in the first scan and before every final export) | `vocallevel SET --heard DIR` (or `--renders DIR`); `--apply NEW.als` writes volume automation | nothing, or a new `.als` |
+| Vocal level, line to line (run in the first scan and before every final export) | `vocallevel SET --heard DIR` (or `--renders DIR`); `--apply NEW.als` writes volume automation. `vocallevel SONG.rpp` measures from the project itself; `--apply NEW.rpp` writes volume envelope points | nothing, or a new `.als` / `.rpp` |
 | Vocal alignment in a set | `alignset` (timing as warp markers on the parts' own clips; pitch/formant as files from bar 1), the `aligndevice` for Live; see docs/ALIGN.md. Pitch matching is off unless the person asks | a new set |
 | Device settings and tidy-up in a set | `devices` (stock compressors, gates, limiters, EQ low cut judged on the signal they get), `tidy` (retire switched-off tracks after an archive copy; consolidate), `unroll` (a looped clip into one copy per pass) | a new `.als` |
 | Vocals inside a set (options from the vocals scan) | `duck` (vocal reverb / delay ducking: tune or add), `cliplevel` (lower-harmony clips far under their track) | a new `.als` |
@@ -308,7 +312,17 @@ re-read by HypnoMix and has NOT been opened in a released DAW). On 2026-11-26 th
 REAPER 7.86 and read back through its API: the demo project (`demo --kind reaper`), a project written by `fix` (an item
 fade and a volume-envelope dip), masking cuts as ReaEQ bands (frequency, gain and bandwidth read back exactly; REAPER's
 own renders with the effect on and bypassed show the cut), the handoff project's marker (position and name) and the
-A/B project (`abset`): all opened with no offline media and matched what HypnoMix wrote. Still unchecked, and to be
+A/B project (`abset`): all opened with no offline media and matched what HypnoMix wrote. The same day, in a private
+REAPER 7.86 instance on one Mac, on a two-track test project (never a real song, nothing judged by ear): the HypnoMix
+Probe, HypnoMix Main, Review and Align windows opened and their guides were captured by screenshot (not clicked through
+by hand), and HypnoMix Main left an amount of 73 untouched; `ui.lua` and `mixer.lua` loaded with no error; `reaper
+snapshot` / `diff` / `restore` were exact; `reaper loop --ab "nudge Bass -3"` measured B at -1.4 LU and `--revert` put
+the mix back; `reaper diagnose` put every solo back (no project with folders was tried); a ReaComp written by `fix`
+read back at -17 dB, 4:1, 15 ms, 250 ms; the `vocallevel --apply` envelopes opened again (106 points, all within +-3
+dB; written before the 2026-11-27 change that leaves untouched points as they are and refuses hot envelopes, which is unit-tested only); and the Teacher's reverb (Wet 0 dB, Dry -inf) and saturation (Amount 20%) actions read back. On 2026-11-27, after the second review's changes, the same private instance again: both JSFX compiled and drew their new texts and labels, the bridge, `ui.lua` and `mixer.lua` loaded, the Review window (titled "HypnoMix Review") and the Align panel drew, `snapshot` (no "guide seen" values in it), `diff`, `restore`, the refusal of an existing OUT.json and `snapshot -h` behaved as described, `loop --ab "nudge 1 -3"` on a track named "1" measured B at -1.4 LU and `--revert` put it back, and `diagnose` wrote the bridge's `busy` file during its renders (the bridge stayed "running") and removed it after. Still not tried: the space and Esc keys in the panels, and clicking through the guides by hand. Not checked in
+REAPER: clicking the windows by hand, Windows, a real song, listening, ReaGate and ReaLimit settings, and `diagnose`
+with folders. `scan` on an `.rpp` does not read the probe menus, Protect or the song card (only the app's review of
+what was heard, Record and review and the mastering chain use them). Still unchecked, and to be
 said: the new Live sets (handoff locators, the EQ Eight band, colour chains) have not been opened in Live, the HypnoMix DAW
 snapshots have not been opened in a released DAW, none of the new tools has been run on real songs, and nothing new has been
 judged by ear. Tell the person to keep their original and listen.

@@ -1,5 +1,5 @@
 """Align in REAPER: alignset on a .rpp (stretch markers on the parts' own items, pitch / formant as new takes, a NEW
-project that passes the structure check), and the Hypnomix Align panel's requests."""
+project that passes the structure check), and the HypnoMix Align panel's requests."""
 import json
 import shutil
 import subprocess

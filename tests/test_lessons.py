@@ -70,7 +70,11 @@ class Structure(unittest.TestCase):
             self.assertTrue(set(s.get("daws", T.ALL)) <= set(T.DAWS), s["id"])
             for d in (s.get("how") or {}):
                 self.assertIn(d, s.get("daws", T.ALL), f"{s['id']}: how for {d}, which the step doesn't teach")
-            for row in s.get("settings") or []:
+            st = s.get("settings") or []
+            if isinstance(st, dict):                                   # per DAW, when the controls differ
+                self.assertTrue(set(st) <= set(s.get("daws", T.ALL)), s["id"])
+                st = [row for rows in st.values() for row in rows]
+            for row in st:
                 self.assertEqual(len(row), 3, s["id"])
             for row in s.get("terms") or []:
                 self.assertEqual(len(row), 2, s["id"])

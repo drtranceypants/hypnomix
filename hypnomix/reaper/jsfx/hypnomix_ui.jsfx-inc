@@ -1,0 +1,250 @@
+// HypnoMix UI: the look shared by HypnoMix Probe and HypnoMix Main (drawing only; no audio here).
+// Imported next to hypnomix_meter.jsfx-inc: two imported files may each have an @init (measured in REAPER 7.86: both
+// run, and the functions of both are callable from the effect's @gfx). Coordinates passed to these functions are in
+// window points; ui_s turns them into pixels on a Retina screen (gfx_ext_retina).
+// JSFX names are case-insensitive: every name here starts with ui_ so none can collide with the meter's.
+
+@init
+gfx_ext_retina = 1;                       // ask for full-resolution drawing; REAPER sets it to 2 on a Retina screen
+// @init runs again whenever playback starts: reset the UI state only once per load/compile (unset JSFX variables
+// start at 0 and keep their value across @init re-runs), so starting playback never closes an open guide.
+!ui_inited ? (
+  ui_inited = 1;
+  ui_s = 1;
+  ui_was = 0; ui_armed = 0; ui_hot = 0;
+  ui_tour_on = 0; ui_tour_i = 0; ui_tour_n = 0;
+);
+
+// ---- colours (warm dark, amber accent: the HypnoMix app's palette)
+function ui_rgb(r, g, b, a) ( gfx_set(r / 255, g / 255, b / 255, a); );
+function ui_c_bg()     ( ui_rgb(24, 22, 27, 1); );
+function ui_c_card()   ( ui_rgb(36, 33, 40, 1); );
+function ui_c_edge()   ( ui_rgb(58, 54, 64, 1); );
+function ui_c_text()   ( ui_rgb(238, 232, 222, 1); );
+function ui_c_muted()  ( ui_rgb(160, 152, 144, 1); );
+function ui_c_amber()  ( ui_rgb(242, 168, 58, 1); );
+function ui_c_teal()   ( ui_rgb(96, 201, 168, 1); );
+function ui_c_red()    ( ui_rgb(217, 85, 94, 1); );
+
+// ---- fonts: 1 body, 2 bold, 3 small, 4 big number, 5 title
+function ui_font(k) (
+  k == 1 ? gfx_setfont(1, "Arial", 13 * ui_s) :
+  k == 2 ? gfx_setfont(2, "Arial", 13 * ui_s, 'b') :
+  k == 3 ? gfx_setfont(3, "Arial", 11 * ui_s) :
+  k == 4 ? gfx_setfont(4, "Arial", 26 * ui_s, 'b') :
+           gfx_setfont(5, "Arial", 15 * ui_s, 'b');
+);
+
+// ---- shapes (points in, pixels out)
+function ui_rect(x, y, w, h) ( gfx_rect(x * ui_s, y * ui_s, w * ui_s, h * ui_s); );
+function ui_rrect(x, y, w, h, r) local(rad) (
+  rad = min(r, min(w, h) / 2) * ui_s;
+  x *= ui_s; y *= ui_s; w *= ui_s; h *= ui_s;
+  rad < 1 ? gfx_rect(x, y, w, h) : (
+    gfx_rect(x + rad, y, w - 2 * rad, h);
+    gfx_rect(x, y + rad, rad, h - 2 * rad); gfx_rect(x + w - rad, y + rad, rad, h - 2 * rad);
+    gfx_circle(x + rad, y + rad, rad, 1, 1); gfx_circle(x + w - rad - 1, y + rad, rad, 1, 1);
+    gfx_circle(x + rad, y + h - rad - 1, rad, 1, 1); gfx_circle(x + w - rad - 1, y + h - rad - 1, rad, 1, 1);
+  );
+);
+function ui_outline(x, y, w, h, r) ( gfx_roundrect(x * ui_s, y * ui_s, w * ui_s, h * ui_s, r * ui_s, 1); );
+function ui_dot(x, y, r) ( gfx_circle(x * ui_s, y * ui_s, r * ui_s, 1, 1); );
+function ui_line(x0, y0, x1, y1) ( gfx_line(x0 * ui_s, y0 * ui_s, x1 * ui_s, y1 * ui_s, 1); );
+
+// ---- text
+function ui_text(x, y, s) ( gfx_x = x * ui_s; gfx_y = y * ui_s; gfx_drawstr(s); );
+function ui_textw(s) local(w, h) ( gfx_measurestr(s, w, h); w / ui_s; );
+function ui_textc(x, y, w, h, s) local(tw, th) (
+  gfx_measurestr(s, tw, th);
+  gfx_x = x * ui_s + (w * ui_s - tw) / 2; gfx_y = y * ui_s + (h * ui_s - th) / 2; gfx_drawstr(s);
+);
+function ui_textr(x, y, s) local(tw, th) ( gfx_measurestr(s, tw, th); gfx_x = x * ui_s - tw; gfx_y = y * ui_s; gfx_drawstr(s); );
+function ui_num(x, y, v, d) ( gfx_x = x * ui_s; gfx_y = y * ui_s; v <= -99 ? gfx_drawstr("-inf") : gfx_drawnumber(v, d); );
+
+// Word-wrapped text in a box w points wide, lines lh apart. Returns the height used (points); with ui_measure = 1 it
+// only measures.
+function ui_wrap(s, x, y, w, lh) local(n, i, c, start, sp, tw, th, ly) (
+  n = strlen(s); start = 0; sp = -1; i = 0; ly = y;
+  while (i <= n) (
+    c = i < n ? str_getchar(s, i) : 32;
+    c == 32 ? (
+      strcpy_substr(#ui_tmp, s, start, i - start);
+      gfx_measurestr(#ui_tmp, tw, th);
+      tw > w * ui_s && sp > start ? (
+        strcpy_substr(#ui_tmp, s, start, sp - start);
+        !ui_measure ? ui_text(x, ly, #ui_tmp); ly += lh; start = sp + 1;
+      );
+      sp = i;
+    );
+    i += 1;
+  );
+  start < n ? ( strcpy_substr(#ui_tmp, s, start, n - start); !ui_measure ? ui_text(x, ly, #ui_tmp); ly += lh; );
+  ly - y;
+);
+
+// ---- the frame: background, mouse in points, clicks on release
+function ui_begin() (
+  ui_s = gfx_ext_retina > 1 ? gfx_ext_retina : 1;
+  ui_w = gfx_w / ui_s; ui_h = gfx_h / ui_s;
+  ui_mx = mouse_x / ui_s; ui_my = mouse_y / ui_s;
+  ui_down = mouse_cap & 1;
+  ui_press = ui_down && !ui_was;
+  ui_release = !ui_down && ui_was;
+  gfx_gradrect(0, 0, gfx_w, gfx_h, 28 / 255, 25 / 255, 31 / 255, 1, 0, 0, 0, 0, -6 / 255 / gfx_h, -5 / 255 / gfx_h, -5 / 255 / gfx_h, 0);
+  ui_hot = 0;
+);
+// The wheel is cleared once per frame, after every widget has read it, so turns made elsewhere never pile up.
+function ui_end() ( ui_release ? ui_armed = 0; ui_was = ui_down; mouse_wheel = 0; );
+function ui_in(x, y, w, h) ( ui_mx >= x && ui_mx < x + w && ui_my >= y && ui_my < y + h; );
+
+// A button: id is any number unique in the effect. Returns 1 on the frame it is clicked (pressed and released over it:
+// REAPER does not start playing while the mouse is held in an FX window, so a press counts on release).
+// style 0 plain, 1 amber (main action), 2 red (record), 3 teal (on)
+function ui_button(id, x, y, w, h, s, style) local(over, hit) (
+  over = ui_in(x, y, w, h) && !ui_tour_on;
+  ui_press && over ? ui_armed = id;
+  hit = ui_release && ui_armed == id && over;
+  style == 1 ? ui_rgb(242, 168, 58, 1) : style == 2 ? ui_rgb(196, 72, 82, 1) : style == 3 ? ui_rgb(70, 168, 138, 1)
+             : ui_rgb(54, 50, 60, 1);
+  ui_rrect(x, y, w, h, 7);
+  over ? ( gfx_set(1, 1, 1, ui_down && ui_armed == id ? 0.06 : 0.1); ui_rrect(x, y, w, h, 7); );
+  style == 1 ? ui_rgb(30, 22, 12, 1) : ui_c_text();
+  ui_font(2); ui_textc(x, y, w, h, s);
+  hit;
+);
+
+// A small pill (label, value): clickable when id > 0. Returns 1 when clicked.
+function ui_chip(id, x, y, w, s, on) local(over, hit) (
+  over = id > 0 && ui_in(x, y, w, 22) && !ui_tour_on;
+  ui_press && over ? ui_armed = id;
+  hit = ui_release && ui_armed == id && over;
+  on ? ui_rgb(66, 54, 34, 1) : ui_rgb(44, 41, 49, 1);
+  ui_rrect(x, y, w, 22, 11);
+  over ? ( gfx_set(1, 1, 1, 0.08); ui_rrect(x, y, w, 22, 11); );
+  on ? ui_c_amber() : ui_c_text();
+  ui_font(3); ui_textc(x, y, w, 22, s);
+  hit;
+);
+
+// A number with - and + (and the mouse wheel over it). Returns the new value, kept in lo..hi on a `step` grid.
+function ui_stepper(id, x, y, w, v, lo, hi, step, label) local(over, nv) (
+  nv = v;
+  ui_rgb(44, 41, 49, 1); ui_rrect(x, y, w, 22, 11);
+  over = ui_in(x, y, w, 22) && !ui_tour_on;
+  ui_press && ui_in(x, y, 22, 22) && !ui_tour_on ? ui_armed = id;
+  ui_press && ui_in(x + w - 22, y, 22, 22) && !ui_tour_on ? ui_armed = id + 0.5;
+  ui_release && ui_armed == id && ui_in(x, y, 22, 22) ? nv -= step;
+  ui_release && ui_armed == id + 0.5 && ui_in(x + w - 22, y, 22, 22) ? nv += step;
+  over && mouse_wheel != 0 ? ( nv += step * sign(mouse_wheel); mouse_wheel = 0; );
+  // snap and clamp only a value the user changed: an untouched value comes back as given (off-grid values stay)
+  nv != v ? nv = max(lo, min(hi, floor(nv / step + 0.5) * step));
+  over ? ( gfx_set(1, 1, 1, 0.06); ui_rrect(x, y, w, 22, 11); );
+  ui_c_muted(); ui_font(2); ui_textc(x, y, 22, 22, "-"); ui_textc(x + w - 22, y, 22, 22, "+");
+  ui_c_amber(); ui_font(3); ui_textc(x + 20, y, w - 40, 22, label);
+  nv;
+);
+
+// The "?" in the top-right corner: starts the guide. Returns 1 when clicked.
+function ui_help(x, y) local(over, hit) (
+  over = ui_in(x - 11, y - 11, 22, 22);
+  ui_press && over ? ui_armed = 9999;
+  hit = ui_release && ui_armed == 9999 && over;
+  over ? ui_c_amber() : ui_rgb(70, 64, 76, 1);
+  ui_dot(x, y, 10);
+  over ? ui_rgb(30, 22, 12, 1) : ui_c_text();
+  ui_font(2); ui_textc(x - 10, y - 10, 20, 20, "?");
+  hit;
+);
+
+// A level bar: a rounded track, the value from lo to hi (dB) as a filled part; colour by zone (over `warn` amber,
+// over `bad` red). Returns the x of value v on the bar (for markers).
+function ui_bar(x, y, w, h, v, lo, hi, warn, bad) local(f) (
+  ui_rgb(48, 45, 54, 1); ui_rrect(x, y, w, h, h / 2);
+  f = max(0, min(1, (v - lo) / (hi - lo)));
+  v >= bad ? ui_c_red() : v >= warn ? ui_c_amber() : ui_c_teal();
+  f > 0 ? ui_rrect(x, y, max(h, w * f), h, h / 2);
+  x + w * f;
+);
+function ui_marker(x, y, h) ( ui_c_text(); ui_rect(x - 1, y - 3, 2, h + 6); );
+
+// A card behind a group of controls
+function ui_card(x, y, w, h) ( ui_c_card(); ui_rrect(x, y, w, h, 10); );
+
+// The header bar: the amber lens, the name, and the connection pill. `bridge` and `app` are 0/1.
+function ui_header(title, bridge, app) local(px) (
+  ui_rgb(20, 18, 23, 1); ui_rect(0, 0, ui_w, 36);
+  ui_c_amber(); ui_dot(18, 18, 6);
+  ui_rgb(20, 18, 23, 1); ui_dot(18, 18, 2.5);
+  ui_c_text(); ui_font(5); ui_text(32, 10, title);
+  px = ui_w - 190;
+  ui_rgb(40, 37, 45, 1); ui_rrect(px, 8, 150, 20, 10);
+  bridge ? ui_c_teal() : ui_c_red(); ui_dot(px + 12, 18, 3.5);
+  app ? ui_c_teal() : ui_rgb(110, 102, 96, 1); ui_dot(px + 78, 18, 3.5);
+  ui_c_muted(); ui_font(3); ui_text(px + 20, 12, bridge ? "bridge on" : "no bridge"); ui_text(px + 86, 12, app ? "app on" : "no app");
+);
+
+// Bridge and app: the bridge counts its passes in gmem[2] and copies that count into gmem[3] whenever the app asks it
+// for probe blocks, so a count that moved recently means the bridge runs, and a small gap means the app is there.
+function ui_links() local(now, c) (
+  now = time_precise(); c = gmem[2];
+  c != ui_lastc ? ( ui_lastc = c; ui_seen = now; );
+  ui_bridge = ui_seen > 0 && now - ui_seen < 2;
+  ui_app = ui_bridge && gmem[3] > 0 && c >= gmem[3] && c - gmem[3] < 120;   // c < gmem[3]: left over from an earlier bridge run
+);
+
+// ---- the guide (step-by-step walkthrough). The effect fills tour_x/y/w/h (what to point at), #tour_t (title) and
+// #tour_b (text) for step ui_tour_i before calling ui_tour(), and keeps ui_tour_n = the number of steps.
+function ui_tour_start() ( ui_tour_on = 1; ui_tour_i = 0; );
+function ui_tour() local(cx, cy, cw, ch, h, done, bw, room_r, room_l, sw, sh, top, bot, ov_t, ov_b) (
+  done = 0;
+  ui_tour_on ? (
+    // dim everything but the spot, then ring it
+    gfx_set(0, 0, 0, 0.62);
+    ui_rect(0, 0, ui_w, tour_y - 4); ui_rect(0, tour_y + tour_h + 4, ui_w, ui_h - tour_y - tour_h - 4);
+    ui_rect(0, tour_y - 4, tour_x - 4, tour_h + 8); ui_rect(tour_x + tour_w + 4, tour_y - 4, ui_w - tour_x - tour_w - 4, tour_h + 8);
+    ui_c_amber(); ui_outline(tour_x - 4, tour_y - 4, tour_w + 8, tour_h + 8, 8); ui_outline(tour_x - 5, tour_y - 5, tour_w + 10, tour_h + 10, 9);
+    // the card: below the spot if it fits, else above; when neither fits, beside the spot on the side with more room
+    // (if the card's buttons still fit there: 240 points), else at the top or bottom edge that covers less of the spot
+    cw = min(380, ui_w - 24);
+    ui_font(1); ui_measure = 1; h = ui_wrap(#tour_b, 0, 0, cw - 28, 15); ui_measure = 0;
+    ch = 43 + h + 40;
+    cx = max(12, min(ui_w - cw - 12, tour_x + tour_w / 2 - cw / 2));
+    tour_y + tour_h + 14 + ch <= ui_h - 6 ? ( cy = tour_y + tour_h + 14; )
+    : tour_y - ch - 14 >= 6 ? ( cy = tour_y - ch - 14; )
+    : (
+      room_r = ui_w - (tour_x + tour_w + 14) - 6; room_l = tour_x - 14 - 6;
+      sw = min(380, max(room_r, room_l));
+      sh = 0;
+      sw >= 240 ? ( ui_font(1); ui_measure = 1; sh = 43 + ui_wrap(#tour_b, 0, 0, sw - 28, 15) + 40; ui_measure = 0; );
+      sw >= 240 && sh <= ui_h - 12 ? (
+        cw = sw; ch = sh;
+        cx = room_r >= room_l ? tour_x + tour_w + 14 : tour_x - 14 - sw;
+        cy = max(6, min(ui_h - ch - 6, tour_y + tour_h / 2 - ch / 2));
+      ) : (
+        top = 6; bot = max(6, ui_h - ch - 6);
+        ov_t = max(0, min(top + ch, tour_y + tour_h) - max(top, tour_y));
+        ov_b = max(0, min(bot + ch, tour_y + tour_h) - max(bot, tour_y));
+        cy = ov_b < ov_t ? bot : top;
+      );
+    );
+    ui_rgb(14, 12, 16, 0.5); ui_rrect(cx + 2, cy + 3, cw, ch, 12);
+    ui_rgb(250, 246, 238, 1); ui_rrect(cx, cy, cw, ch, 12);
+    ui_rgb(176, 112, 20, 1); ui_font(3); ui_text(cx + 14, cy + 10, sprintf(#ui_step, "STEP %d OF %d", ui_tour_i + 1, ui_tour_n));
+    ui_rgb(28, 24, 30, 1); ui_font(2); ui_text(cx + 14, cy + 25, #tour_t);
+    ui_rgb(64, 58, 66, 1); ui_font(1); ui_wrap(#tour_b, cx + 14, cy + 43, cw - 28, 15);
+    // buttons: Back, Next / Done, and Skip
+    bw = 64;
+    ui_tour_on = 0;                                       // the guide's own buttons must answer
+    ui_tour_i > 0 && ui_button(9001, cx + cw - 2 * bw - 22, cy + ch - 30, bw, 22, "Back", 0) ? ui_tour_i -= 1;
+    ui_button(9002, cx + cw - bw - 14, cy + ch - 30, bw, 22, ui_tour_i == ui_tour_n - 1 ? "Done" : "Next", 1) ? (
+      ui_tour_i < ui_tour_n - 1 ? ui_tour_i += 1 : done = 1;
+    );
+    ui_rgb(140, 128, 120, 1); ui_font(3);
+    ui_in(cx + 14, cy + ch - 26, 60, 16) ? ui_rgb(176, 112, 20, 1);
+    ui_text(cx + 14, cy + ch - 24, "Skip guide");
+    ui_press && ui_in(cx + 14, cy + ch - 26, 60, 16) ? ui_armed = 9003;
+    ui_release && ui_armed == 9003 && ui_in(cx + 14, cy + ch - 26, 60, 16) ? done = 1;
+    ui_tour_on = !done;
+  );
+  done;
+);

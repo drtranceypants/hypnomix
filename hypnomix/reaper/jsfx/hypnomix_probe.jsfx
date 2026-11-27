@@ -1,21 +1,117 @@
-desc:Hypnomix Probe (measures this track for the HypnoMix app; audio passes through)
+desc:HypnoMix Probe
 //tags: analysis meter hypnomix
 //author: hypnomix
 // Put it LAST on a track: it hears the track after all its plug-ins. Ten times a second it measures the 20 values
 // the hypnomix app reads (the same as its Live probe): K-weighted RMS, sample peak and RMS per channel, mid, side and
 // L*R, the same below 120 Hz, and 8 bands of the mid signal. The hypnomix bridge (`hypnomix reaper start`) reads them
-// from shared memory and passes them to the app. Tell it what the track is with the menus.
-options:gmem=hypnomix
+// from shared memory and passes them to the app. Tell it what the track is with the chips in its window (the sliders
+// are hidden from REAPER's generic view, but stay parameters: automatable, and read from the .rpp by `probes.menus`).
+// The bridge and the app find it by its name, in any case ("Hypnomix Probe" in older copies).
+options:gmem=hypnomix no_meter
 
-slider1:role=0<0,19,1{auto,lead vocal,harmony,double,backing vocals,kick,snare,drums,percussion,bass,guitar,acoustic guitar,piano,keys,synth,strings,pad,brass,fx,other}>What it is
-slider2:priority=0<0,2,1{normal,focus: others give way,background: gives way}>Priority
-slider3:protect=0<0,1,1{off,on: ask before any change}>Protect
+slider1:role=0<0,19,1{auto,lead vocal,harmony,double,backing vocals,kick,snare,drums,percussion,bass,guitar,acoustic guitar,piano,keys,synth,strings,pad,brass,fx,other}>-What it is
+slider2:priority=0<0,2,1{normal,focus: others give way,background: gives way}>-Priority
+slider3:protect=0<0,1,1{off,on: ask before any change}>-Protect
 slider4:slot=-1<-1,4095,1>-slot (set by hypnomix)
+slider5:guide=0<0,1,1>-guide seen (the walkthrough in this window)
 
 import hypnomix_meter.jsfx-inc
+import hypnomix_ui.jsfx-inc
 
 in_pin:left input
 in_pin:right input
 out_pin:left output
 out_pin:right output
 
+
+@gfx 520 236
+// The probe's window: what it hears (loudness, peaks, 8 bands, width), what the track is, and a guide (the "?").
+ui_begin(); ui_links();
+ui_header("HypnoMix Probe", ui_bridge, ui_app);
+help_hit = ui_help(ui_w - 22, 18);
+
+// what it is / priority / protect: click a chip for its menu (the same as the menus above)
+gx = 14; gy = 46;
+ui_c_muted(); ui_font(3); ui_text(gx, gy, "WHAT IT IS"); ui_text(gx + 150, gy, "PRIORITY"); ui_text(gx + 300, gy, "PROTECT");
+strcpy(#pr_role, role == 0 ? "auto (by sound)" : role == 1 ? "lead vocal" : role == 2 ? "harmony" : role == 3 ? "double" :
+  role == 4 ? "backing vocals" : role == 5 ? "kick" : role == 6 ? "snare" : role == 7 ? "drums" : role == 8 ? "percussion" :
+  role == 9 ? "bass" : role == 10 ? "guitar" : role == 11 ? "acoustic guitar" : role == 12 ? "piano" : role == 13 ? "keys" :
+  role == 14 ? "synth" : role == 15 ? "strings" : role == 16 ? "pad" : role == 17 ? "brass" : role == 18 ? "fx" : "other");
+ui_chip(1, gx, gy + 14, 136, #pr_role, role > 0) ? (
+  gfx_x = gx * ui_s; gfx_y = (gy + 36) * ui_s;
+  pr_m = gfx_showmenu("auto (by sound)|lead vocal|harmony|double|backing vocals|kick|snare|drums|percussion|bass|guitar|acoustic guitar|piano|keys|synth|strings|pad|brass|fx|other");
+  pr_m > 0 ? ( role = pr_m - 1; slider_automate(role); );
+);
+ui_chip(2, gx + 150, gy + 14, 136, priority == 0 ? "normal" : priority == 1 ? "focus" : "background", priority > 0) ? (
+  gfx_x = (gx + 150) * ui_s; gfx_y = (gy + 36) * ui_s;
+  pr_m = gfx_showmenu("normal|focus: others give way|background: gives way");
+  pr_m > 0 ? ( priority = pr_m - 1; slider_automate(priority); );
+);
+ui_chip(3, gx + 300, gy + 14, 96, protect ? "on" : "off", protect) ? ( protect = !protect; slider_automate(protect); );
+
+// loudness and peaks
+cy = 92;
+ui_card(10, cy, 200, 134);
+ui_c_muted(); ui_font(3); ui_text(22, cy + 10, "LOUDNESS  (LUFS, momentary)");
+ui_c_text(); ui_font(4); ui_num(22, cy + 26, d_mom, 1);
+ui_c_muted(); ui_font(3); ui_text(22, cy + 60, "short-term"); ui_c_text(); ui_font(2); ui_num(90, cy + 58, d_st, 1);
+ui_c_muted(); ui_font(3); ui_text(22, cy + 82, "PEAK  L / R  (dBFS)");
+ui_bar(22, cy + 98, 120, 6, d_pk0, -48, 0, -6, -1); ui_bar(22, cy + 110, 120, 6, d_pk1, -48, 0, -6, -1);
+d_ph0 > -0.1 || d_ph1 > -0.1 ? ui_c_red() : ui_c_text(); ui_font(3);
+ui_num(150, cy + 95, d_ph0, 1); ui_num(150, cy + 107, d_ph1, 1);
+
+// 8 bands
+bx = 220; ui_card(bx, cy, 158, 134);
+ui_c_muted(); ui_font(3); ui_text(bx + 12, cy + 10, "TONE  (8 bands)");
+bk = 0;
+loop(8,
+  bv = max(0, min(1, (d_band[bk] + 66) / 60));
+  ui_rgb(48, 45, 54, 1); ui_rrect(bx + 12 + bk * 17.5, cy + 30, 12, 80, 4);
+  bv > 0 ? ( ui_rgb(242 - bk * 18, 168 + bk * 4, 58 + bk * 14, 1); ui_rrect(bx + 12 + bk * 17.5, cy + 30 + 80 * (1 - bv), 12, max(4, 80 * bv), 4); );
+  bk += 1;
+);
+ui_c_muted(); ui_font(3); ui_text(bx + 10, cy + 116, "sub"); ui_text(bx + 64, cy + 116, "mid"); ui_textr(bx + 150, cy + 116, "air");
+
+// width and the low end
+wx = 388; ui_card(wx, cy, ui_w - wx - 10, 134);
+ww = ui_w - wx - 34;
+ui_c_muted(); ui_font(3); ui_text(wx + 12, cy + 10, "WIDTH  (L/R)");
+ui_rgb(48, 45, 54, 1); ui_rrect(wx + 12, cy + 30, ww, 6, 3);
+ui_marker(wx + 12 + ww * (1 - d_corr) / 2, cy + 30, 6);
+ui_c_muted(); ui_text(wx + 12, cy + 40, "mono"); ui_textr(wx + 12 + ww, cy + 40, "wide");
+ui_c_muted(); ui_text(wx + 12, cy + 66, "LOW END  (<120 Hz)");
+d_lcorr > 0.9 ? ui_c_teal() : d_lcorr > 0.5 ? ui_c_amber() : ui_c_red(); ui_dot(wx + 18, cy + 90, 4);
+ui_c_text(); ui_font(2); ui_text(wx + 28, cy + 83, d_lcorr > 0.9 ? "mono: good" : d_lcorr > 0.5 ? "a little wide" : "wide: check");
+ui_c_muted(); ui_font(3); ui_text(wx + 12, cy + 108, ui_app && slot >= 0 ? "app hears this track" : slot >= 0 ? "slot set: open the app" : "start the bridge");
+
+// the guide: shown once (also once per REAPER session for every probe: gmem[5]), and with the "?"
+!ui_tour_on && !guide && !gmem[5] && !pr_auto ? ( pr_auto = 1; ui_tour_start(); );
+help_hit ? ui_tour_start();
+ui_tour_n = 8;
+ui_tour_i == 0 ? (
+  tour_x = 6; tour_y = 6; tour_w = 180; tour_h = 26; strcpy(#tour_t, "HypnoMix Probe: the track's ears");
+  strcpy(#tour_b, "Put it LAST on a track: it hears the track after all its plug-ins and passes the sound through untouched. The HypnoMix app reads it ten times a second while you play: its meters and the review of a recorded pass use it. A scan of the saved project renders the tracks instead.");
+) : ui_tour_i == 1 ? (
+  tour_x = gx; tour_y = gy + 12; tour_w = 140; tour_h = 26; strcpy(#tour_t, "What it is");
+  strcpy(#tour_b, "Click to choose the part (lead vocal, bass, kick...). The review of a recorded pass uses it; leave it on auto and the app works it out by sound. A scan of the .rpp does not read this menu yet: it works the part out from the track name and the sound.");
+) : ui_tour_i == 2 ? (
+  tour_x = gx + 148; tour_y = gy + 12; tour_w = 140; tour_h = 26; strcpy(#tour_t, "Priority");
+  strcpy(#tour_b, "Focus: other parts give way to this one in a frequency fight. Background: this part gives way. Normal lets the measurements decide.");
+) : ui_tour_i == 3 ? (
+  tour_x = gx + 298; tour_y = gy + 12; tour_w = 100; tour_h = 26; strcpy(#tour_t, "Protect");
+  strcpy(#tour_b, "On: the app's review of what it heard lists this track as protected. Scan and fix on a REAPER project do not read it yet: set protect.tracks in Preferences.");
+) : ui_tour_i == 4 ? (
+  tour_x = 10; tour_y = cy; tour_w = 200; tour_h = 80; strcpy(#tour_t, "Loudness");
+  strcpy(#tour_b, "Momentary is the last 0.4 s, short-term the last 3 s, both K-weighted like a streaming service measures. Compare parts by these, not by peaks.");
+) : ui_tour_i == 5 ? (
+  tour_x = 10; tour_y = cy + 80; tour_w = 200; tour_h = 54; strcpy(#tour_t, "Peaks");
+  strcpy(#tour_b, "Left and right sample peaks. Amber past -6 dBFS, red past -1: a track running over 0 dBFS into the next plug-in shows red numbers.");
+) : ui_tour_i == 6 ? (
+  tour_x = bx; tour_y = cy; tour_w = 158; tour_h = 134; strcpy(#tour_t, "Tone");
+  strcpy(#tour_b, "Eight bands from sub to air. Two parts that fill the same bands while they play together fight: the review names the band and who should give way.");
+) : (
+  tour_x = wx; tour_y = cy; tour_w = ui_w - wx - 10; tour_h = 134; strcpy(#tour_t, "Width and low end");
+  strcpy(#tour_b, "The marker moves right as the track gets wider. The low end should stay mono (green). Done? Press Record and review on HypnoMix Main: REAPER plays from the edit cursor while every probe listens, and the review is made from what was heard.");
+);
+ui_tour() ? ( guide = 1; slider_automate(guide); gmem[5] = 1; );
+ui_end();

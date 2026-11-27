@@ -456,9 +456,9 @@ hypnomix reaper start && hypnomix chain master "Song mix.wav" --reaper --verify
 
 `fix` writes fades, volume rides, word-edge fixes, track names and order into one new `.rpp`, an approved
 frequency-fight cut as one ReaEQ band on the part that gives way, and tuned vocals as new takes on the person's own items. Vocal stacks: where harmony parts swap tracks, each item moves to the track for its pitch (same level in the
-mix). Timing: out-of-time hits are nudged with stretch markers on the items. Sidechained ReaComps are measured and retuned in the new .rpp.
+mix). Timing: out-of-time hits are nudged with stretch markers on the items. Sidechained ReaComps are measured and retuned in the new .rpp, and so is every other ReaComp (the `devices` group: its suggested threshold, ratio, attack and release; a fixed ReaComp read back in REAPER 7.86 at -17 dB, 4:1, 15 ms, 250 ms on a two-track test project; ReaGate and ReaLimit are listed, not judged). The `structure` group checks the file itself (it reads back exactly, folders close, sends come from real tracks) and the faders.
 `handoff` writes a new `Song (handoff).rpp` with a marker at each by-hand spot. The ReaEQ band, the handoff project and
-`hypnomix demo --kind reaper` were opened in REAPER 7.86 on 2026-11-26 and read back as written (not judged by ear). Details: `docs/guides/08-inside-reaper.md`.
+`hypnomix demo --kind reaper` were opened in REAPER 7.86 on 2026-11-26 and read back as written (not judged by ear), and so were the `vocallevel --apply` envelopes (106 points, on a two-track test project; written before the 2026-11-27 change that leaves untouched points as they are and refuses hot envelopes, which is unit-tested only). `scan` does not read the probe menus, Protect or the song card of a REAPER project: set protected tracks in Preferences (`protect.tracks`) and the key with `--key`. Details: `docs/guides/08-inside-reaper.md`.
 
 ## HypnoMix DAW
 
@@ -469,7 +469,7 @@ hypnomix scan "Song.ardour"          # or the session folder
 hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).ardour"
 ```
 
-The scan runs the same groups as for a REAPER project. `fix` writes the approved region fades (with their curve), region
+The scan runs the same groups as for a REAPER project, except `devices` (the plug-ins' settings are not read from a HypnoMix DAW session yet) and a `structure` group that checks only for nearly silent faders. `fix` writes the approved region fades (with their curve), region
 gain, gain dips over spikes and the eased level at a comp cut into **one new `.ardour` snapshot**, saved next to the
 original inside the same session folder (where the DAW keeps its snapshots and finds the session's audio; nothing is
 copied or moved). The original is never touched. Track names and order, vocal stacks, timing, sidechain and tuning

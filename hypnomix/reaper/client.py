@@ -25,6 +25,13 @@ class ReaperError(RuntimeError):
     pass
 
 
+# How long one command may hold REAPER (and so the bridge) at most: a render runs inside the call. The same limits
+# are the answer timeouts in Reaper.call, and a `busy` file older than its command's limit (plus a minute) is taken to
+# be left over from a REAPER that closed in the middle of a command.
+LONG = {"render_master": 600.0, "mixer_solo_render": 600.0, "mixer_snapshot": 120.0, "mixer_restore": 120.0}
+BUSY_GRACE = 60.0
+
+
 def bridge_dir():
     d = Path(os.environ.get("HYPNOMIX_REAPER_DIR") or Path.home() / ".hypnomix" / "reaper-bridge")
     d.mkdir(parents=True, exist_ok=True)
@@ -48,15 +55,136 @@ def reaper_executable():
     return next((c for c in cands if c and Path(c).exists()), None)
 
 
+def reaper_running():
+    """True when a REAPER process is running, False when none is, None when this computer cannot tell (no pgrep or
+    tasklist, or one that failed). Used so a `busy` file left by a REAPER that crashed in the middle of a render is not
+    taken for a bridge that is still working."""
+    try:
+        if platform.system() == "Windows":
+            r = subprocess.run(["tasklist", "/FI", "IMAGENAME eq reaper.exe", "/NH"], capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=5)
+            if r.returncode != 0:
+                return None
+            return "reaper.exe" in r.stdout.lower()
+        seen_none = False
+        for name in ("REAPER", "reaper"):
+            r = subprocess.run(["pgrep", "-x", name], capture_output=True, timeout=5)
+            if r.returncode == 0:
+                return True
+            if r.returncode != 1:                           # 2, 3: pgrep itself failed (a sandbox, no process service)
+                return None
+            seen_none = True
+        return False if seen_none else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def pid_running(pid):
+    """True when process `pid` is running (and, where this can be read, is a REAPER), False when it is not, None when
+    this computer cannot tell."""
+    if not pid or pid <= 0:
+        return None
+    try:
+        if platform.system() == "Windows":
+            r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=5)
+            if r.returncode != 0:
+                return None
+            return "reaper" in r.stdout.lower()
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            pass                                            # it exists, owned by someone else
+        r = subprocess.run(["ps", "-p", str(pid), "-o", "comm="], capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            return "reaper" in r.stdout.lower()             # the id was reused by another program: not our REAPER
+        if r.returncode == 1:
+            return False                                    # it ended between the two checks
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 class Reaper:
     def __init__(self, timeout=15.0, folder=None):
         self.dir = Path(folder) if folder else bridge_dir()
         self.timeout = timeout
 
     # ------------------------------------------------------------ lifecycle
+    def busy(self):
+        """(request id, command) the bridge is running now, or None. The bridge writes `busy` before each command and
+        removes it after, so a long command (a render) does not look like a bridge that stopped."""
+        f = self.dir / "busy"
+        try:
+            age = time.time() - f.stat().st_mtime
+            lines = f.read_bytes().decode("utf-8", errors="replace").splitlines()
+        except OSError:
+            return None
+        rid = lines[0].strip() if lines else ""
+        cmd = lines[1].strip() if len(lines) > 1 else ""
+        token = lines[2].strip() if len(lines) > 2 else ""
+        pid = int(lines[3]) if len(lines) > 3 and lines[3].strip().isdigit() else 0
+        if age >= LONG.get(cmd, BUSY_GRACE) + BUSY_GRACE:
+            return None                                     # left over: REAPER closed during that command
+        a_token, _ = self._alive_stamp()
+        if token and a_token and token != a_token:
+            return None                                     # written by an earlier bridge, not the one beating now
+        if pid_running(pid) is False:
+            return None                                     # the REAPER that wrote it is gone (crashed or quit)
+        return rid, cmd
+
+    def _alive_stamp(self):
+        """(token, REAPER process id) from the `alive` file; ("", 0) for an old bridge or no file."""
+        try:
+            lines = (self.dir / "alive").read_bytes().decode("utf-8", errors="replace").splitlines()
+        except OSError:
+            return "", 0
+        token = lines[1].strip() if len(lines) > 1 else ""
+        pid = int(lines[2]) if len(lines) > 2 and lines[2].strip().isdigit() else 0
+        return token, pid
+
+    def fresh(self, within=4.0):
+        """The bridge wrote `alive` within the last few seconds: certainly running."""
+        try:
+            return time.time() - (self.dir / "alive").stat().st_mtime < within
+        except OSError:
+            return False
+
+    def last_error(self, since):
+        """The bridge's own last error (last-error.txt), if it was written after `since`; else None."""
+        f = self.dir / "last-error.txt"
+        try:
+            if f.stat().st_mtime < since:
+                return None
+            lines = f.read_bytes().decode("utf-8", errors="replace").splitlines()
+        except OSError:
+            return None
+        return " ".join(x.strip() for x in lines[1:] if x.strip()) or None
+
     def alive(self, within=4.0):
         f = self.dir / "alive"
-        return f.exists() and time.time() - f.stat().st_mtime < within
+        try:
+            if time.time() - f.stat().st_mtime < within:
+                return True
+        except OSError:
+            return False                                    # no alive file: the bridge ended (or never started)
+        b_pid = self._busy_pid()
+        if self.busy() is None:
+            return False
+        if b_pid:                                           # its REAPER is known and still running (busy() checked)
+            return True
+        return reaper_running() is not False                # an older bridge, or Windows: any REAPER at all
+                                                            # (unless REAPER itself is gone: it crashed mid-command)
+
+    def _busy_pid(self):
+        try:
+            lines = (self.dir / "busy").read_bytes().decode("utf-8", errors="replace").splitlines()
+        except OSError:
+            return 0
+        return int(lines[3]) if len(lines) > 3 and lines[3].strip().isdigit() else 0
 
     def start(self, wait=30.0):
         """Run the bridge inside REAPER (starting REAPER if it is closed). Nothing is installed."""
@@ -73,9 +201,10 @@ class Reaper:
         boot.write_bytes(f'HYPNOMIX_DIR = "{lua_dir}"\ndofile("{lua_bridge}")\n'.encode("utf-8", "surrogateescape"))      # UTF-8 bytes, plain \n, on every system; a folder name this computer could not decode keeps its own bytes
         subprocess.Popen([exe, "-nosplash", str(boot)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True)
+        (self.dir / "busy").unlink(missing_ok=True)        # whatever it was, no REAPER is working on it now
         t0 = time.time()
         while time.time() - t0 < wait:
-            if self.alive():
+            if self.alive():                                # `busy` is gone, so only a fresh beat counts: the new bridge
                 return True
             time.sleep(0.25)
         raise ReaperError("the bridge did not start: is a dialog open in REAPER? (answer it, then try again)")
@@ -97,11 +226,25 @@ class Reaper:
         tmp.rename(req)
         res = self.dir / f"res-{rid}.json"
         t0 = time.time()
-        timeout = max(self.timeout, 600.0) if cmd == "render_master" else self.timeout
+        timeout = max(self.timeout, LONG.get(cmd, 0.0))
+        deadline, n = t0 + timeout, 0
         while not res.exists():
-            if time.time() - t0 > timeout:
+            n += 1
+            if n % 25 == 0:                                 # twice a second: another caller's command still running?
+                b = self.busy()
+                if b and b[0] != rid and pid_running(self._busy_pid()) is not False:   # not one whose REAPER is gone
+                    try:
+                        b_start = (self.dir / "busy").stat().st_mtime
+                    except OSError:
+                        b_start = time.time()
+                    # ours waits its turn, its own time still to come; never past the other command's own limit
+                    cap = b_start + LONG.get(b[1], BUSY_GRACE) + timeout
+                    deadline = max(deadline, min(time.time() + timeout, cap))
+            if time.time() > deadline:
                 req.unlink(missing_ok=True)
-                raise ReaperError(f"REAPER did not answer {cmd} within {timeout:.0f} s (a dialog open?)")
+                why = self.last_error(t0)
+                raise ReaperError(f"REAPER did not answer {cmd} within {time.time() - t0:.0f} s "
+                                  + (f"(the bridge says: {why})" if why else "(a dialog open?)"))
             time.sleep(0.02)
         d = json.loads(res.read_bytes().decode("utf-8", errors="replace"))
         res.unlink()
@@ -167,6 +310,7 @@ class Reaper:
     def render_master(self, start, end, path):
         path = Path(path).resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
+        path.unlink(missing_ok=True)                     # so exists() below means this render wrote it
         r = self.call("render_master", start=float(start), end=float(end), path=str(path).replace("\\", "/"))
         if not path.exists():
             raise ReaperError("REAPER did not write the render")

@@ -45,12 +45,19 @@ class FakeReaper:
         self.calls.append((cmd, a))
         if cmd == "chain_build" and not self.chain_ok:
             from hypnomix.reaper.client import ReaperError
-            raise ReaperError("chain_build: no Hypnomix Main on the master")
+            raise ReaperError("chain_build: no HypnoMix Main on the master")
         return {"teach_tempo": {"bpm": a.get("bpm")}, "teach_click": {"on": True}, "teach_drums": {"fx": 0, "notes": 3}}.get(cmd, {})
     def transport(self, go=None, at=None): self.calls.append(("transport", go))
     def add_fx(self, track, name): self.calls.append(("add_fx", track, name)); return {"fx": 0}
     def named(self, track, fx, key, value=None): self.calls.append(("named", key, value))
-    def set_shown(self, track, fx, p, v): self.calls.append(("shown", p, v))
+    def set_shown(self, track, fx, p, v):
+        if p == "Amount (%)":                              # a plug-in that names its control differently: the next name is tried
+            from hypnomix.reaper.client import ReaperError
+            raise ReaperError("set_param: no parameter " + p)
+        self.calls.append(("shown", track, fx, p, v))
+    def set_norm(self, track, fx, p, v): self.calls.append(("norm", track, fx, p, v))
+    def tracks(self): return getattr(self, "tracks_", [])
+    def add_track(self, name=None, file=None, pos=0.0): self.calls.append(("add_track", name)); return {"index": 0}
 
 
 class Courses(unittest.TestCase):
@@ -85,11 +92,24 @@ class Courses(unittest.TestCase):
         with mock.patch("hypnomix.app.setup.load", return_value={"daw": "live", "teach_level": "from-the-future"}):
             self.assertEqual(T.choice()[1], "101")
 
-    def test_live_deepest_ardour_shortest(self):
+    def test_live_and_reaper_deepest_ardour_shortest(self):
         for lv in T.LEVELS:
             self.assertGreater(T.count("live", lv), T.count("ardour", lv))
-            self.assertGreaterEqual(T.count("reaper", lv), T.count("ardour", lv))
-        self.assertGreater(T.count("live", "101"), T.count("reaper", "101"))
+            self.assertGreater(T.count("reaper", lv), T.count("ardour", lv))
+            # REAPER has Live's depth: every step but the ones only Live has (its Session View)
+            self.assertGreaterEqual(T.count("reaper", lv), T.count("live", lv) - 1, lv)
+        live = {s["id"] for c in T.steps("live", "az") for s in c["steps"]}
+        reaper = {s["id"] for c in T.steps("reaper", "az") for s in c["steps"]}
+        twins = {"screen-live", "hm-connect-live", "hm-devices-live"}          # REAPER has its own step for each
+        self.assertEqual(live - reaper - twins, {"session-sketch"})
+
+    def test_reaper_has_lives_hands_on_actions(self):
+        def acts(d):
+            return {s["id"] for c in T.steps(d, "az") for s in c["steps"] if s.get("action")}
+        self.assertEqual(acts("live") - acts("reaper"), {"hm-connect-live"})   # REAPER's twin is hm-connect-reaper
+        self.assertIn("hm-connect-reaper", acts("reaper"))
+        for sid in ("reverb", "saturation"):
+            self.assertIn(sid, acts("reaper"))
 
     def test_101_covers_what_was_asked(self):
         ids = {s["id"] for c in T.steps("live", "101") for s in c["steps"]}
@@ -126,7 +146,7 @@ class Courses(unittest.TestCase):
     def test_wiki_articles(self):
         a = T.wiki_article("reaper", "tour")
         self.assertEqual((a["id"], a["group"]), ("tour-reaper", "DAW: REAPER"))
-        self.assertIn("Hypnomix Main", a["text"])
+        self.assertIn("HypnoMix Main", a["text"])
         b = T.wiki_article("live", "az")                               # the contents page; the chapters are articles of their own
         self.assertEqual(b["id"], "learn-live")
         self.assertIn("Mixing", b["text"])
@@ -223,6 +243,39 @@ class Actions(unittest.TestCase):
         self.assertIn(("transport", "record"), r.calls)
         self.assertIn(("transport", "stop"), r.calls)
         self.assertIn(("add_fx", "Vox", "ReaComp (Cockos)"), r.calls)
+
+    def test_reaper_reverb_on_a_track_of_its_own(self):
+        r = FakeReaper()
+        with mock.patch.object(T, "_reaper", return_value=r):
+            out = T.run("reaper", "reverb", "fx", {})
+        self.assertIn(("add_track", "Reverb"), r.calls)
+        self.assertIn(("add_fx", "Reverb", "ReaVerbate (Cockos)"), r.calls)
+        self.assertIn(("shown", "Reverb", 0, "Wet", 0), r.calls)
+        self.assertIn(("norm", "Reverb", 0, "Dry", 0), r.calls)
+        self.assertIn("Wet 0 dB", out["done"])
+        self.assertTrue(any("Add new send" in x for x in out["by_hand"]))      # the bridge can't make sends
+        a = next(s for c in T.steps("reaper", "101") for s in c["steps"] if s["id"] == "reverb")["action"]
+        self.assertEqual(a["fields"], [])
+        self.assertIn("Reverb", a["will"])
+
+    def test_reaper_reverb_reuses_the_track_and_the_effect(self):
+        r = FakeReaper()
+        r.tracks_ = [{"name": "Reverb", "fx": [{"name": "ReaEQ (Cockos)"}, {"name": "VST: ReaVerbate (Cockos)"}]}]
+        with mock.patch.object(T, "_reaper", return_value=r):
+            out = T.run("reaper", "reverb", "fx", {})
+        self.assertFalse([x for x in r.calls if x[0] in ("add_track", "add_fx")])
+        self.assertIn(("shown", "Reverb", 1, "Wet", 0), r.calls)
+        self.assertTrue(out["done"].startswith("Set ReaVerbate"))
+
+    def test_reaper_saturation(self):
+        r = FakeReaper()
+        with mock.patch.object(T, "_reaper", return_value=r):
+            out = T.run("reaper", "saturation", "fx", {"track": "Bass"})
+            with self.assertRaises(ValueError):
+                T.run("reaper", "saturation", "fx", {})                           # which track?
+        self.assertIn(("add_fx", "Bass", "JS: Saturation"), r.calls)
+        self.assertIn(("shown", "Bass", 0, "Amount", 20), r.calls)               # "Amount (%)" refused, "Amount" taken
+        self.assertEqual((out["done"], out["by_hand"]), ("Added JS: Saturation to Bass.", []))
 
     def test_reaper_chain_without_main(self):
         r = FakeReaper(chain_ok=False)

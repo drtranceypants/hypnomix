@@ -35,6 +35,12 @@ Volume automation acts after a track's devices, so the fixes below change the he
                write them (it lists an approved one under "Not applied"); --apply writes all of them at once.
   --keep-ending  the song's last N lines are never raised (an ending that dies away is usually on purpose).
 
+A REAPER project works the same (`workflow/vocallevel_project.py`): with neither --heard nor --renders each vocal
+track is rendered from the project and its fader and volume envelopes (and its folders') applied; --apply NEW.rpp
+writes the moves as volume envelope points in a new project, structure-checked and measured again.
+
+  hypnomix vocallevel SONG.rpp [--heard DIR | --renders DIR] [same options] [--apply NEW.rpp [--group FOLDER]]
+
 Track names default to every file in the folder. The pitch order (which parts are above the melody) comes from
 --order (a list low to high, or scan's order.json), else it is measured from the audio (median pitch: rough).
 """
@@ -42,6 +48,7 @@ import argparse
 import gzip
 from hypnomix.core.gz import read_gz
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -423,12 +430,95 @@ def group_of(x, name):
     return g.group(1) if g else None
 
 
+def pitch_order(spec, sig, sr):
+    """The vocal parts low to high: from --order (a list, or scan's order.json), else measured (median pitch)."""
+    order = None
+    if spec and Path(spec).exists():
+        for f in json.loads(Path(spec).read_text(encoding="utf-8", errors="replace")).get("findings", []):
+            if f.get("kind") == "vocal-stack":
+                order = [t.strip() for t in f["track"].split(",")]
+    elif spec:
+        order = [t.strip() for t in spec.split(",")]
+    if not order:
+        pitch = {t: median_pitch(v, sr) for t, v in sig.items()}
+        order = [t for t, _ in sorted(((t, p) for t, p in pitch.items() if np.isfinite(p)), key=lambda q: q[1])]
+    return [t for t in order if t in sig]
+
+
+def spread(rows, key="group"):
+    """(median, 10th, 90th percentile) of the stack's level per line, LUFS; None with no measured line."""
+    g = np.array([r[key] for r in rows if np.isfinite(r[key])])
+    if not len(g):
+        return None
+    return float(np.median(g)), float(np.percentile(g, 10)), float(np.percentile(g, 90))
+
+
+def report(name, tracks, rows, findings, how, order, melody):
+    print(f"{name}: {len(tracks)} vocal track(s), {len(rows)} lines, {how}")
+    print(f"  pitch order, low to high: {', '.join(order)}; melody: {melody or '?'}")
+    sp = spread(rows)
+    if sp:
+        print(f"  vocal level per line: median {sp[0]:.1f} LUFS, spread (10-90%) {sp[1]:.1f} to {sp[2]:.1f}")
+    for f in findings:
+        print(f"  {f['id']:<14} {f['kind']:<17} {f['where']:<17} {f['problem']}")
+        print(f"  {'':<14} → {f['fix']}")
+    if not findings:
+        print("  even: no line jumps, no upper part over the melody")
+
+
+def check_paths(a):
+    """Before any measuring: the project must be there, and --apply and --json must be NEW files in folders that
+    exist (never the original, under any spelling of its name, and never the same file twice). One plain sentence
+    and exit otherwise: nothing existing is ever overwritten."""
+    from hypnomix import project
+    from hypnomix.project import rpp
+    src = Path(a.als)
+    if src.is_dir() and project.ardour_session(src) is None:     # an Ardour session folder is fine; any other folder is not
+        kind = src.suffix.lower() if src.suffix.lower() in (".rpp", ".als", ".ardour") else "project"
+        sys.exit(f"{src} is a folder, not a project file; give the {kind} file itself.")
+    if not (src.is_file() or src.is_dir()):
+        sys.exit(f"no such file: {src}; check the name and the folder, then try again.")
+    outs = [(opt, Path(v)) for opt, v in (("--apply", a.apply), ("--json", a.json)) if v]
+    if len(outs) == 2 and rpp.same_file(outs[0][1], outs[1][1]):
+        sys.exit("--apply and --json name the same file: give each its own new name")
+    for opt, out in outs:
+        if rpp.same_file(out, src):
+            sys.exit(f"{opt}: refusing to overwrite the original: give a new file name")
+        try:
+            rpp.check_new(out)
+        except SystemExit as e:
+            sys.exit(f"{opt}: {e}")
+
+
+def write_new_text(path, text):
+    """Write text to a file that must not exist yet (opened exclusively, so nothing is written over)."""
+    try:
+        f = open(path, "x", encoding="utf-8")
+    except FileExistsError:
+        sys.exit(f"{Path(path).name} already exists: choose a new name (nothing is ever overwritten)")
+    _write_or_remove(f, path, text)
+
+
+def _write_or_remove(f, path, data):
+    """Write `data` to `f`, a file this command just created; if the write fails (a full disk, Ctrl-C), the partial
+    file is closed and removed so it neither looks like a finished file nor blocks its own name, then the error goes on."""
+    try:
+        with f:
+            f.write(data)
+    except BaseException:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        raise
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="hypnomix vocallevel", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
-    ap.add_argument("als")
-    src = ap.add_mutually_exclusive_group(required=True)
+    ap.add_argument("als", help="the Live set (.als) or REAPER project (.rpp)")
+    src = ap.add_mutually_exclusive_group()
     src.add_argument("--renders", help="`hypnomix render` output: fader and volume automation are applied")
     src.add_argument("--heard", help="files already as heard (solo exports): used as they are")
     ap.add_argument("--tracks", nargs="*")
@@ -441,9 +531,15 @@ def main(argv=None):
     ap.add_argument("--upper-under", type=A.number(0, 24), default=1.5)
     ap.add_argument("--keep-ending", type=int, default=2)
     ap.add_argument("--json")
-    ap.add_argument("--apply", help="write the fixes to this NEW set")
+    ap.add_argument("--apply", help="write the fixes to this NEW set / project")
     ap.add_argument("--group", help="the vocal group track for line evening (default: the melody's group)")
     a = ap.parse_args(argv)
+    check_paths(a)
+    if Path(a.als).suffix.lower() != ".als":
+        from hypnomix.workflow import vocallevel_project as VP
+        return VP.run(a)
+    if not (a.renders or a.heard):
+        ap.error("a Live set needs --renders DIR or --heard DIR")
     folder = Path(a.renders or a.heard)
     tracks = a.tracks or sorted(p.stem for p in folder.glob("*.wav"))
     tracks = [t for t in tracks if (folder / f"{t}.wav").exists()]
@@ -462,43 +558,24 @@ def main(argv=None):
             if c is not None:
                 y = y * c
         sig[t] = y
-    order = None
-    if a.order and Path(a.order).exists():
-        for f in json.loads(Path(a.order).read_text(encoding="utf-8", errors="replace")).get("findings", []):
-            if f.get("kind") == "vocal-stack":
-                order = [t.strip() for t in f["track"].split(",")]
-    elif a.order:
-        order = [t.strip() for t in a.order.split(",")]
-    if not order:
-        pitch = {t: median_pitch(v, sr) for t, v in sig.items()}
-        order = [t for t, _ in sorted(((t, p) for t, p in pitch.items() if np.isfinite(p)), key=lambda q: q[1])]
-    order = [t for t in order if t in sig]
+    order = pitch_order(a.order, sig, sr)
     rows, findings, gains = plan(sig, sr, melody, order, a.jump, a.upper_under, a.keep_ending, a.lines_from)
     how = "as heard (solo exports)" if a.heard else "renders x fader x volume automation (compressors not modelled)"
-    g = np.array([r["group"] for r in rows if np.isfinite(r["group"])])
-    print(f"{Path(a.als).name}: {len(tracks)} vocal track(s), {len(rows)} lines, {how}")
-    print(f"  pitch order, low to high: {', '.join(order)}; melody: {melody or '?'}")
-    if len(g):
-        print(f"  vocal level per line: median {np.median(g):.1f} LUFS, spread (10-90%) {np.percentile(g, 10):.1f} "
-              f"to {np.percentile(g, 90):.1f}")
-    for f in findings:
-        print(f"  {f['id']:<14} {f['kind']:<17} {f['where']:<17} {f['problem']}")
-        print(f"  {'':<14} → {f['fix']}")
-    if not findings:
-        print("  even: no line jumps, no upper part over the melody")
+    report(Path(a.als).name, tracks, rows, findings, how, order, melody)
     if a.json:
-        Path(a.json).write_text(json.dumps(dict(tool="vocallevel", set=str(a.als), measured=how, order=order,
-                                                melody=melody, lines=rows, findings=findings, gains=gains),
-                                           default=float, indent=1), encoding="utf-8")
+        write_new_text(a.json, json.dumps(dict(tool="vocallevel", set=str(a.als), measured=how, order=order,
+                                               melody=melody, lines=rows, findings=findings, gains=gains),
+                                          default=float, indent=1))
     if a.apply:
-        if Path(a.apply).resolve() == Path(a.als).resolve():
-            sys.exit("refusing to overwrite the source set: give a new file name")
         grp_name = a.group or group_of(x, melody)
         x, done, worst = apply_gains(x, gains, grp_name, tracks)
         from hypnomix.session import liveversion as LV
         LV.guard_write_text(x)                # refuses a set saved by a Live newer than the newest tested
-        with gzip.open(a.apply, "wb") as f:
-            f.write(x.encode())
+        try:
+            f = gzip.open(a.apply, "xb")      # exclusive: a file that appeared meanwhile is not written over
+        except FileExistsError:
+            sys.exit(f"{Path(a.apply).name} already exists: choose a new name (nothing is ever overwritten)")
+        _write_or_remove(f, a.apply, x.encode())
         print(f"wrote {a.apply}: " + ("; ".join(done) if done else "nothing to change"))
         if done:
             print(f"  smooth S-curves ({RAMP_S:g} s, a point every {STEP_S:g} s); steepest move {worst:.1f} dB/s")

@@ -1,6 +1,6 @@
-"""Review from inside REAPER: the HypnoMix panel, A / B / Blind on an A/B project. The REAPER side of the Live device.
+"""Review from inside REAPER: the HypnoMix Review panel, A / B / Blind on an A/B project. The REAPER side of the Live device.
 
-  hypnomix reaper review          open the HypnoMix panel in REAPER and keep it in step with the app's review
+  hypnomix reaper review          open the HypnoMix Review panel in REAPER and keep it in step with the app's review
 
 Needs the HypnoMix app running with a review open (`hypnomix app`; for an app on another port give --port N, or
 set HYPNOMIX_PORT). The panel shows the finding you are on, and:
@@ -12,7 +12,7 @@ In an A/B project (`hypnomix abset SCAN_DIR` on a REAPER scan, opened in REAPER 
 
   A · now / B · fix   switch the finding's plug-ins or tracks, instantly, with every plug-in playing
   Blind               X and Y in random order; "I like X / Y" records your choice (blind.json), then tells you
-  Match on / off      with Hypnomix Main on the master and the probes relaying (`hypnomix reaper start`), B is
+  Match on / off      with HypnoMix Main on the master and the probes relaying (`hypnomix reaper start`), B is
                       turned up or down to A's loudness while it plays
 
 Moving to another finding puts the last one back to A. Stop with Ctrl-C or by closing the panel.
@@ -108,10 +108,11 @@ class Panel:
         c = self.cur or {}
         if not c.get("id"):
             st = dict(status="", head=c.get("text", "Open a review in the HypnoMix app."), problem="", fix="", ab="0",
-                      decision="")
+                      decision="", sev="", track="", where="")
         else:
             st = dict(status=f"{c['n']} of {c['of']}  ·  {c.get('left', 0)} open  ·  {c.get('song', '')}",
                       head=f"[{c.get('severity')}] {c.get('track')}  {c.get('where') or ''}",
+                      sev=c.get("severity") or "", track=c.get("track") or "", where=c.get("where") or "",
                       problem=c.get("problem", ""), fix="fix: " + (c.get("fix") or ""), decision=c.get("decision", ""),
                       ab="1" if c.get("ab") else "0", state=self.ab["state"] if self.ab["id"] == c["id"] else "A",
                       blind="1" if self.ab["blind"] else "0", heard=self.ab["heard"], match="1" if c.get("match") else "0")
@@ -140,12 +141,12 @@ class Panel:
                        + (f"  (B {d['b']} of {d['n']} times)" if d.get("n", 0) > 1 else ""))
         elif ev == "match" and c.get("id"):
             app("/api/ab/state", {"id": c["id"], "state": self.ab["state"], "match": not c.get("match")})
-            self.flash("Loudness match " + ("off" if c.get("match") else "on (needs Hypnomix Main and the probes relaying)"))
+            self.flash("Loudness match " + ("off" if c.get("match") else "on (needs HypnoMix Main and the probes relaying)"))
 
     def match_gain(self):
-        """The gain the app asks of Main while matching A and B, onto Hypnomix Main's hidden setting."""
+        """The gain the app asks of Main while matching A and B, onto HypnoMix Main's hidden setting."""
         if self.main_fx is None:
-            self.main_fx = next((k for k, f in enumerate(self.r.fx_list("master")) if "Hypnomix Main" in f["name"]), -1)
+            self.main_fx = next((k for k, f in enumerate(self.r.fx_list("master")) if "hypnomix main" in f["name"].lower()), -1)
         if self.main_fx < 0:
             return
         try:
@@ -173,7 +174,7 @@ def main(argv=None):
     p.tempo = float(r.ping().get("tempo") or 120.0)
     r.call("panel_open")
     seq, last_gain = -1, 0.0
-    print("The HypnoMix panel is open in REAPER. Ctrl-C (or close the panel) to stop.")
+    print("The HypnoMix Review panel is open in REAPER. Ctrl-C (or close the panel) to stop.")
     try:
         while True:
             d = app(f"/api/live/poll?since={seq}")

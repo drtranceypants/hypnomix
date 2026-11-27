@@ -1,4 +1,4 @@
-"""Hypnomix Probe and Hypnomix Main for REAPER (JSFX), the same as the Live devices for the HypnoMix app.
+"""HypnoMix Probe and HypnoMix Main for REAPER (JSFX), the same as the Live devices for the HypnoMix app.
 
   hypnomix reaper probes install            copy the two effects into REAPER's Effects folder (Effects/hypnomix)
   hypnomix reaper probes insert SONG.rpp     a NEW project with a probe last on every track and Main on the master
@@ -6,12 +6,15 @@
 
 The probe (last on a track) measures what the track plays after all its plug-ins: the 20 values the app reads from
 the Live probe, ten times a second, with the song position. Its menus say what the track is, its priority and
-whether it is protected. Hypnomix Main on the master is the song card (genre, key, scale, limiter, loudness target,
+whether it is protected. HypnoMix Main on the master is the song card (genre, key, scale, limiter, loudness target,
 ceiling, amount) and measures the mix.
 
 The effects write into REAPER's shared memory; the HypnoMix bridge (`hypnomix reaper start`) gives each its slot and
 keeps the blocks, and the app (or `hypnomix probe listen`) fetches them: the Live tab's meters, Record, the review
-and `probe report` work the same as with Live. `scan SONG.rpp` reads the menus from the saved project.
+and `probe report` work the same as with Live: that review uses each probe's What it is, Priority and Protect, and
+Main's target and ceiling. `probes cards SONG.rpp` reads the menus and the card back from the saved project, but
+`scan` and `fix` on an .rpp do not use them yet (give the key with --key, and keep `fix` off a track with protect.tracks
+in Preferences).
 """
 import json
 import os
@@ -25,7 +28,8 @@ import uuid
 from pathlib import Path
 
 JSFX = Path(__file__).with_name("jsfx")
-FILES = ("hypnomix_probe.jsfx", "hypnomix_main.jsfx", "hypnomix_meter.jsfx-inc")
+FILES = ("hypnomix_probe.jsfx", "hypnomix_main.jsfx", "hypnomix_meter.jsfx-inc", "hypnomix_ui.jsfx-inc")
+INTERNAL = {"slot", "abgain", "guide"}               # set by hypnomix or by the window, not part of the card
 PROBE_PATH, MAIN_PATH = "hypnomix/hypnomix_probe.jsfx", "hypnomix/hypnomix_main.jsfx"
 TRACK_KEYS = ["role", "priority", "protect"]
 MAIN_KEYS = ["genre", "key", "scale", "mode", "target", "ceiling", "amount"]
@@ -61,7 +65,8 @@ def menus():
         rows = []
         for line in (JSFX / f).read_text(encoding="utf-8").splitlines():
             m = re.match(r"slider\d+:(\w+)=[^<]*<[^{>]*(\{([^}]*)\})?>(-?)", line)
-            if m and not m.group(4):                          # "-" = hidden (the slot)
+            # every slider is hidden from REAPER's generic view (the effect draws its own); these are not the card
+            if m and m.group(1) not in INTERNAL:
                 rows.append((m.group(1), m.group(3).split(",") if m.group(3) else None))
         out[f] = rows
     return out
@@ -137,11 +142,11 @@ def _add_fx(chain, path, values):
 
 
 def insert(path, out=None):
-    """A NEW project with a Hypnomix Probe last on every track (one already there is kept) and Hypnomix Main on the
+    """A NEW project with a HypnoMix Probe last on every track (one already there is kept) and HypnoMix Main on the
     master. Every probe starts at "auto"; the card at "not set". Returns the new file."""
     from hypnomix.project import rpp
     path = Path(path)
-    out = Path(out) if out else path.with_name(f"{path.stem} (probes).rpp")
+    out = Path(out) if out else rpp.free_name(path.with_name(f"{path.stem} (probes).rpp"))   # a rerun: " 2", " 3" ...
     root = rpp.load(path)
     added = 0
 
@@ -264,7 +269,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.cmd == "install":
         d = install()
-        print(f"installed in {d}\nIn REAPER: Add FX → JS → Hypnomix Probe (last on each track), Hypnomix Main (on the "
+        print(f"installed in {d}\nIn REAPER: Add FX → JS → HypnoMix Probe (last on each track), HypnoMix Main (on the "
               "master). Or `hypnomix reaper probes insert SONG.rpp` puts them on every track.")
         return
     if not a.project:

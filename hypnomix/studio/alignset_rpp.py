@@ -316,7 +316,8 @@ def _run(a, defaults=None):
         E.save(p, out)
         errs = E.check(src, out)
         if errs:
-            bad = out.with_name(out.stem + " (FAILED check).rpp")
+            from hypnomix.project import rpp
+            bad = rpp.free_name(out.with_name(out.stem + " (FAILED check).rpp"))     # never over an earlier one
             out.replace(bad)
             md += ["", f"The new project failed the structure check and was renamed `{bad.name}` (do not open it):",
                    *[f"- {e}" for e in errs]]

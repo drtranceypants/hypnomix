@@ -181,6 +181,42 @@ def count_items(name, role, t, wav, tempo):
     return len(items), notes
 
 
+def judge_compressor(x, act, c, role, tempo, f0):
+    """A compressor's settings `c` judged on the signal `x` it gets (`act`: where the part plays): (gain reduction
+    per sample, measured now, suggested settings, measured with them, problems, (target low, high) dB). Shared by
+    the Live check and the REAPER one (ReaComp, `workflow/devices_project.py`)."""
+    gr, m = measure_comp(x, act, c)
+    lo, hi = TARGET[role]
+    problems = []
+    if m["median"] < 0.5 * lo:
+        problems.append(f"it barely works ({m['median']:.1f} dB while the part plays; threshold above the signal)")
+    elif m["median"] > 1.5 * hi:
+        problems.append(f"it squashes the part ({m['median']:.1f} dB while it plays, {m['loud']:.0f} dB on loud moments)")
+    if f0 and c["release"] < 2 * 1000.0 / f0:
+        problems.append(f"its release ({c['release']:.0f} ms) is faster than two cycles of the lowest note "
+                        f"({2000 / f0:.0f} ms): it bends the waveform (distortion on the low end)")
+    if role == "drums" and c["attack"] < 3 and m["median"] > 1:
+        problems.append(f"its attack ({c['attack']:g} ms) clamps every transient")
+    new = dict(c)
+    att, rel = times_for(role, tempo, f0)
+    (alo, ahi), (rlo, rhi) = RANGES[role]
+    if not (alo <= new["attack"] <= ahi):
+        problems.append(f"its attack ({new['attack']:g} ms) is outside the usual {alo}-{ahi} ms for this kind of part")
+        new["attack"] = att
+    if c.get("auto_release"):
+        pass
+    elif not (rlo <= new["release"] <= rhi):
+        problems.append(f"its release ({new['release']:.0f} ms) is outside the usual {rlo}-{rhi} ms for this kind of part")
+        new["release"] = rel
+    if f0 and new["release"] < 2 * 1000.0 / f0:
+        new["release"] = max(rel, 2 * 1000.0 / f0)
+    if new["ratio"] > 8 and role not in ("main",):
+        new["ratio"] = 4.0
+    new = fit_threshold(x, act, new, (lo + hi) / 2)
+    _, m2 = measure_comp(x, act, new)
+    return gr, m, new, m2, problems, (lo, hi)
+
+
 def review_track(name, role, t, x, tempo, root_tag="AudioTrack", probe=None):
     """Walk the track's devices in order on its signal; return (findings, notes)."""
     from hypnomix.core import dsp
@@ -218,39 +254,12 @@ def review_track(name, role, t, x, tempo, root_tag="AudioTrack", probe=None):
                 out.append(dict(kind="unknown", device=label, el=d, problem=f"after a plug-in: the level reaching "
                                 f"'{label}' is unknown, so it isn't judged"))
                 continue
-            gr, m = measure_comp(x, act, c)
             if probe is not None and probe.get("light"):     # counting on the real audio: its path through the chain, no judging
+                gr, _ = measure_comp(x, act, c)
                 out.append(dict(kind="compressor"))
                 x = x * dsp.undb(gr) * dsp.undb(outgain)
                 continue
-            lo, hi = TARGET[role]
-            problems = []
-            if m["median"] < 0.5 * lo:
-                problems.append(f"it barely works ({m['median']:.1f} dB while the part plays; threshold above the signal)")
-            elif m["median"] > 1.5 * hi:
-                problems.append(f"it squashes the part ({m['median']:.1f} dB while it plays, {m['loud']:.0f} dB on loud moments)")
-            if f0 and c["release"] < 2 * 1000.0 / f0:
-                problems.append(f"its release ({c['release']:.0f} ms) is faster than two cycles of the lowest note "
-                                f"({2000 / f0:.0f} ms): it bends the waveform (distortion on the low end)")
-            if role == "drums" and c["attack"] < 3 and m["median"] > 1:
-                problems.append(f"its attack ({c['attack']:g} ms) clamps every transient")
-            new = dict(c)
-            att, rel = times_for(role, tempo, f0)
-            (alo, ahi), (rlo, rhi) = RANGES[role]
-            if not (alo <= new["attack"] <= ahi):
-                problems.append(f"its attack ({new['attack']:g} ms) is outside the usual {alo}-{ahi} ms for this kind of part")
-                new["attack"] = att
-            if c.get("auto_release"):
-                pass
-            elif not (rlo <= new["release"] <= rhi):
-                problems.append(f"its release ({new['release']:.0f} ms) is outside the usual {rlo}-{rhi} ms for this kind of part")
-                new["release"] = rel
-            if f0 and new["release"] < 2 * 1000.0 / f0:
-                new["release"] = max(rel, 2 * 1000.0 / f0)
-            if new["ratio"] > 8 and role not in ("main",):
-                new["ratio"] = 4.0
-            new = fit_threshold(x, act, new, (lo + hi) / 2)
-            _, m2 = measure_comp(x, act, new)
+            gr, m, new, m2, problems, (lo, hi) = judge_compressor(x, act, c, role, tempo, f0)
             out.append(dict(kind="compressor", device=label, el=d, cur=c, new=new, m=m, m2=m2, problems=problems,
                             target=(lo, hi)))
             x = x * dsp.undb(gr) * dsp.undb(outgain)

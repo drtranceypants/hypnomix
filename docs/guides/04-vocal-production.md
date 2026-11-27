@@ -163,6 +163,36 @@ is over, then the stack's lines evened out on the vocal group's volume. The auto
 - existing automation is kept and offset, and the song's last two lines are never raised (`--keep-ending`),
   because an ending that dies away is usually on purpose
 
+### In REAPER
+
+The same checks, report and `--apply` on a REAPER project:
+
+```bash
+hypnomix vocallevel "Song.rpp"                                       # measured from the project itself
+hypnomix vocallevel "Song.rpp" --heard "solo renders/"               # each vocal track rendered solo, as heard
+hypnomix vocallevel "Song.rpp" --apply "Song (levels).rpp"
+```
+
+With neither `--heard` nor `--renders`, HypnoMix renders each vocal track from the project (items, takes and
+fades, no plug-ins) and applies what REAPER does to its level after that: the track's fader and volume envelopes
+(followed the way REAPER plays a fader-scaled envelope) and those of every folder above it. The vocal tracks are
+the ones whose names say vocal (Lead Vocal, Harmony, Backing, Vox ...), or `--tracks`. Plug-ins are not
+modelled, so treat that as a first look and measure `--heard` solo renders before the final render.
+
+`--apply` writes the same gentle moves as points on the tracks' volume envelopes in a **new** project (the
+original is never written): the upper trims on each upper part, the line evening on the melody's folder when
+that folder holds only vocals (else on each vocal track). A track with no volume envelope gets one that starts
+at 0 dB, so its fader is left alone; an envelope you drew is kept and scaled, never replaced, and its points far
+from every change are left exactly as they are. A track whose envelope is, or would go, above +6 dB where it
+changes is refused and listed: make that change by hand. `--apply` and `--json` never write over a file: an
+existing name, the original under any spelling of its name, or a folder that does not exist is refused in one
+sentence. The new project
+then gets the same structure check as `fix` and is measured again. The scan of a REAPER project runs this check
+too when the project has two or more vocal tracks (with one vocal track, run `vocallevel` yourself). It is checked
+by unit tests on synthetic projects, and on 2026-11-26 the envelopes it wrote were opened in REAPER 7.86 on a
+two-track test project and read back (106 points, all within +-3 dB; written before the 2026-11-27 change that leaves untouched points as they are and refuses hot envelopes, which is unit-tested only). It has not been run on a real song and has
+not been judged by ear, so open the new project and listen before you rely on it.
+
 ## Polish: deess and breaths
 
 ```bash

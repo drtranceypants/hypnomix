@@ -60,7 +60,12 @@ The ten changes you will notice most, in plain words:
 - Everything newest passes unit tests and HypnoMix's own structure checks on synthetic data. On 2026-11-26 the REAPER
   files the newest code writes (the demo project, a project written by `fix`, masking cuts as ReaEQ bands, the
   hand-off marker and the A/B project) were opened in REAPER 7.86 and read back through its API: no offline media, and
-  everything matched what HypnoMix wrote. The new Live sets (hand-off locators, the EQ Eight band, colour chains) have
+  everything matched what HypnoMix wrote. On 2026-11-26 the newest REAPER parts were also tried in REAPER 7.86 on a two-track test project, never a real song and not judged by ear:
+  the HypnoMix Probe, HypnoMix Main, Review and Align windows opened and their guides were captured by screenshot (not
+  clicked through by hand); `reaper snapshot`, `diff` and `restore` were exact; `reaper loop --ab` measured its change
+  and `--revert` put the mix back; `reaper diagnose` put every solo back (no project with folders was tried); a ReaComp
+  written by `fix` and the `vocallevel --apply` envelopes read back as written. Not checked: clicking the windows by
+  hand, Windows, ReaGate and ReaLimit settings, and `diagnose` with folders. The new Live sets (hand-off locators, the EQ Eight band, colour chains) have
   not been opened in Live, the `.ardour` snapshots have not been opened in a released DAW, the new tools have not been run on
   real songs, and nothing new has been judged by ear.
 - DAW mode (the HypnoMix engine, the DAW view and the Assistant on it), the Store, `als2ardour`, `import` and
@@ -100,8 +105,8 @@ One line per area. Each command's own help (`hypnomix <command> -h`) and its wik
   `plugrender` and `plugins` bring your own VST3 and Audio Unit plug-ins in.
 - **Inside Live:** `live`, `loop`, `diagnose`, `probe` and the Max for Live devices (HypnomixProbe, HypnomixMain,
   the review device, Hypnomix Align).
-- **REAPER:** `project`, `scan` and `fix` on an `.rpp` (a new project), `reaper` (the bridge, Hypnomix Probe and
-  Main, the A/B review panel, the Align panel), `chain --reaper`.
+- **REAPER:** `project`, `scan` and `fix` on an `.rpp` (a new project), `reaper` (the bridge, HypnoMix Probe and
+  HypnoMix Main, the A/B review panel, the Align panel, `snapshot`, `loop`, `diagnose`), `chain --reaper`.
 - **HypnoMix DAW:** `project` and `scan` on a session (`.ardour`), and `fix` writes approved fades, gain, dips and
   fader, pan and mute moves into a new `.ardour` snapshot.
 - **The app and teacher mode:** `app` (the first pass by clicking), the Assistant and the optional Listener, and the

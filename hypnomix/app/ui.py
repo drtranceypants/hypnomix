@@ -423,7 +423,7 @@ document.addEventListener('click', async e => {
       await post('/api/scan', S.form); await startJob();
     }
     else if (ds.open) await openReview(ds.open);
-    else if (ds.jump) { const r = await post('/api/live/jump', {dir: S.review.dir, id: ds.jump}); if (!r.device) showMsg(S.review.kind === 'rpp' ? 'Sent, but the HypnoMix panel is not open in REAPER. Open the project, then run "hypnomix reaper review".'
+    else if (ds.jump) { const r = await post('/api/live/jump', {dir: S.review.dir, id: ds.jump}); if (!r.device) showMsg(S.review.kind === 'rpp' ? 'Sent, but the HypnoMix Review panel is not open in REAPER. Open the project, then run "hypnomix reaper review".'
       : 'Sent, but the HypnoMix device is not connected. Load it on any track in your Live set (run "hypnomix device" to make it).'); }
     else if (b.id === 'apply') {
       const body = {dir: S.review.dir, out: $('#out') ? $('#out').value : '', key: $('#fkey') ? $('#fkey').value : '', allow_protected: $('#prot') ? $('#prot').checked : false};

@@ -43,9 +43,11 @@ CHAPTER = dict(id="words", levels=("101", "az"), title="The words and the screen
               ["Master", "the master track: everything ends up here. View → Master track shows it if it's hidden."],
               ["Actions", "every command in REAPER is an action, findable with ? (Actions → Show action list)."]],
        how={"reaper": ["Make a new project: File → New project.",
-                       "Options → Preferences → Audio → Device: choose your audio interface.",
+                       "Options → Preferences → Audio → Device: choose your audio interface for both input and output.",
                        "Ctrl+T (Cmd+T on a Mac) adds a track; double-click its name to rename it.",
-                       "Ctrl+M / Cmd+M shows the mixer."]}),
+                       "Click a track's **FX** button to open its FX chain: the effects run top to bottom, in the order the sound flows through them.",
+                       "Ctrl+M / Cmd+M shows the mixer; View → Master track shows the master if it is hidden. Space plays and stops; Ctrl+R / Cmd+R records.",
+                       "Press **?** (or Actions → Show action list) and type a few words to find any command by name."]}),
   dict(id="screen-ardour", title="A tour of HypnoMix DAW's screen", daws=("ardour",),
        say=["HypnoMix DAW has two main windows: the **Editor** (the timeline, with tracks top to bottom) and the **Mixer** "
             "(Alt+M switches between them). A song is a *session*: a folder with the session file and every recording."],

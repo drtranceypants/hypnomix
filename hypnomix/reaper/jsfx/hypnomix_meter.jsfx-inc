@@ -60,6 +60,14 @@ clear();
 
 match_g = 1;                              // A/B loudness match (Main's hidden slider9 `abgain`; 1 on probes)
 
+// what the effect's own window shows (hypnomix_ui.jsfx-inc draws it): kept per 100 ms block in local memory
+d_ring = 2000; d_n = 0;                   // the last 30 blocks' K-weighted mean square (momentary = 4, short-term = 30)
+d_band = 2100;                            // the 8 bands in dB, falling slowly
+d_mom = d_st = d_pk0 = d_pk1 = d_ph0 = d_ph1 = -150; d_corr = d_lcorr = 1; d_width = -60;
+memset(d_ring, 0, 30); memset(d_band, -150, 8);
+function d_db(x) ( x > 0.0000000001 ? 20 * log10(x) : -150; );
+function d_band_set(bi, ms) local(bv) ( bv = 10 * log10(ms + 0.000000000000000001); d_band[bi] = max(bv, d_band[bi] - 1.5); );
+
 @slider
 match_g = 10 ^ (abgain / 20);            // `abgain` is only defined on Main (0 elsewhere). Not `match`: a built-in
 
@@ -99,6 +107,18 @@ fill >= blocklen ? (
     gmem[sb + 1] = srate;
     gmem[sb] = cnt + 1;                 // written last: the bridge reads a record only after this moves
   );
+  d_ring[d_n] = (sk0 + sk1) / fill; d_n = (d_n + 1) % 30;
+  d_i = 0; d_sum = 0; loop(4, d_sum += d_ring[(d_n + 29 - d_i) % 30]; d_i += 1;);
+  d_mom = d_sum > 0 ? -0.691 + 10 * log10(d_sum / 4) : -150;
+  d_i = 0; d_sum = 0; loop(30, d_sum += d_ring[d_i]; d_i += 1;);
+  d_st = d_sum > 0 ? -0.691 + 10 * log10(d_sum / 30) : -150;
+  d_pk0 = max(d_db(pk0), d_pk0 - 2); d_pk1 = max(d_db(pk1), d_pk1 - 2);           // bars fall 20 dB a second
+  d_ph0 = max(d_db(pk0), d_ph0 - 0.2); d_ph1 = max(d_db(pk1), d_ph1 - 0.2);       // the numbers hold, then fall slowly
+  s0 * s1 > 0.0000000001 ? d_corr = 0.7 * d_corr + 0.3 * slr / sqrt(s0 * s1);
+  sl0 * sl1 > 0.0000000001 ? d_lcorr = 0.7 * d_lcorr + 0.3 * sllr / sqrt(sl0 * sl1);
+  smid > 0.0000000001 ? d_width = 0.7 * d_width + 0.3 * 10 * log10((sside + 0.000000000001) / smid);
+  d_band_set(0, b0 / fill); d_band_set(1, b1 / fill); d_band_set(2, b2 / fill); d_band_set(3, b3 / fill);
+  d_band_set(4, b4 / fill); d_band_set(5, b5 / fill); d_band_set(6, b6 / fill); d_band_set(7, b7 / fill);
   fill = 0; clear();
 );
 spl0 *= match_g; spl1 *= match_g;        // after measuring: Main reports the level before matching

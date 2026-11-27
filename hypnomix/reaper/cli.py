@@ -8,19 +8,31 @@
   hypnomix reaper fx [FILTER]     plug-ins REAPER has installed (e.g. `fx Rea`, `fx JS:`)
   hypnomix reaper params TRACK FX every parameter of one plug-in as the plug-in shows it (TRACK: name, number or
                                   master; FX: name or number)
-  hypnomix reaper record          Record and review before export (the same as the button on Hypnomix Main): plays
+  hypnomix reaper record          Record and review before export (the same as the button on HypnoMix Main): plays
                                   from the edit cursor while the probes listen; run it again or stop REAPER, and the
                                   HypnoMix app renders exactly what played and reviews it
   hypnomix reaper chain build [NAME] | match | save NAME | state
-                                  the mastering chain (the same as the buttons on Hypnomix Main): build the stock
+                                  the mastering chain (the same as the buttons on HypnoMix Main): build the stock
                                   chain of REAPER's own plug-ins (or a saved template) before Main, turn ReaLimit
                                   until the master hits the song card's target while REAPER plays, keep the chain
                                   as FXChains/hypnomix/NAME.RfxChain
-  hypnomix reaper review          the HypnoMix panel in REAPER: step through the app's review, A / B / Blind
+  hypnomix reaper review          the HypnoMix Review panel in REAPER: step through the app's review, A / B / Blind
   hypnomix reaper align           the HypnoMix Align panel in REAPER: align a vocal stack (guide, parts, presets,
                                   protect, sync, pitch with the chord check, formant) into a NEW aligned project
+  hypnomix reaper snapshot [OUT.json] | snapshot restore FILE | snapshot diff A B
+                                  every track's fader, pan, mute, solo, sends and each plug-in's on/off state and
+                                  parameters as JSON; put one back (one undo step); what changed, in plain words.
+                                  An existing OUT.json is refused: nothing is ever overwritten
+  hypnomix reaper loop --bars 33-40 [--ab "db Lead -2"] [--revert]
+                                  render that stretch of the master, measure it, compare it with the previous take;
+                                  --ab: one change, rendered before and after, B also at A's loudness;
+                                  --revert (only with --ab) puts the mix back; a fader or send level must be
+                                  within -150 to +12 dB
+  hypnomix reaper diagnose [--bars 8]
+                                  the loudest stretch with each top-level folder (or track) soloed: who owns the
+                                  sub, the bass and the vocal band
   hypnomix reaper probes install|insert SONG.rpp|cards SONG.rpp
-                                  Hypnomix Probe and Hypnomix Main for REAPER (JSFX): see `hypnomix reaper probes -h`
+                                  HypnoMix Probe and HypnoMix Main for REAPER (JSFX): see `hypnomix reaper probes -h`
 
 Every change the bridge makes is one undo step in REAPER, named "hypnomix: ...". See also `hypnomix chain`.
 """
@@ -44,8 +56,14 @@ def main():
     if len(_sys.argv) > 1 and _sys.argv[1] == "align":
         from hypnomix.reaper import align
         return align.main(_sys.argv[2:])
+    if len(_sys.argv) > 1 and _sys.argv[1] in ("snapshot", "loop", "diagnose"):
+        from hypnomix.reaper import mixer
+        try:
+            return getattr(mixer, "main_" + _sys.argv[1])(_sys.argv[2:])
+        except ReaperError as e:
+            sys.exit(str(e))
     ap.add_argument("cmd", choices=["start", "stop", "status", "tracks", "fx", "params", "probes", "review", "record", "chain",
-                                    "align"])
+                                    "align", "snapshot", "loop", "diagnose"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
@@ -100,15 +118,15 @@ def main():
         sys.exit(str(e))
 
 
-STATES = {0: "idle", 1: "built", 2: "matching", 3: "matched", 4: "saved", 5: "no ReaLimit before Hypnomix Main",
+STATES = {0: "idle", 1: "built", 2: "matching", 3: "matched", 4: "saved", 5: "no ReaLimit before HypnoMix Main",
           6: "matching stopped: REAPER stopped", 7: "cancelled", 8: "the master is silent", 9: "error (ReaScript console)",
-          10: "matched as close as the limiter allows", 11: "no Hypnomix Main on the master",
-          12: "nothing before Hypnomix Main to save", 13: "built from a template",
+          10: "matched as close as the limiter allows", 11: "no HypnoMix Main on the master",
+          12: "nothing before HypnoMix Main to save", 13: "built from a template",
           14: "waiting for an answer in REAPER (a menu or a dialog)"}
 
 
 def chain(r, args, as_json=False):
-    """The mastering chain on Hypnomix Main, from a terminal (no dialogs: Build replaces without asking)."""
+    """The mastering chain on HypnoMix Main, from a terminal (no dialogs: Build replaces without asking)."""
     what = args[0] if args else "state"
     if what == "build":
         out = r.call("chain_build", name=" ".join(args[1:]) or "hypnomix stock", yes=1)
@@ -127,7 +145,7 @@ def chain(r, args, as_json=False):
         return
     print(STATES.get(int(out.get("state", 0)), out.get("state")))
     if what == "build":
-        print(f"{out['added']} plug-ins before Hypnomix Main" + (f"; not set: {'; '.join(out['missing'])}" if out.get("missing") else ""))
+        print(f"{out['added']} plug-ins before HypnoMix Main" + (f"; not set: {'; '.join(out['missing'])}" if out.get("missing") else ""))
     elif what == "save":
         print(f"{int(out['plugins'])} plug-ins → {out['dir']}")
     elif what == "state":

@@ -78,7 +78,7 @@ function playersHTML(f) {
 function labelOf(x, dflt) { return dflt && x === 'approve' ? 'On by default' : dflt && x === 'skip' ? 'Turn off' : x[0].toUpperCase() + x.slice(1); }
 function actHTML(f) {
   const e = entryOf(f.id), dflt = isDflt(f), d = dOf(f);
-  const jump = f.jump ? `<button type="button" data-jump="${esc(f.id)}" title="${esc(S.review.kind === 'rpp' ? 'Needs the HypnoMix panel open in REAPER (hypnomix reaper review)' : 'Needs the HypnoMix device in your Live set')}">Show in ${esc(dawOf(S.review))}</button>` : '';
+  const jump = f.jump ? `<button type="button" data-jump="${esc(f.id)}" title="${esc(S.review.kind === 'rpp' ? 'Needs the HypnoMix Review panel open in REAPER (hypnomix reaper review)' : 'Needs the HypnoMix device in your Live set')}">Show in ${esc(dawOf(S.review))}</button>` : '';
   if (f.applies === 'answer') {                                        // a question: the answer is sent with Apply (fix --answer), not decided here
     const nt = (f.notes || []).filter(x => x), v = (S.rv.answers || {})[f.id] || '';
     return `<div class="act"><label for="ans-${esc(f.id)}">Your answer</label><input type="text" id="ans-${esc(f.id)}" data-answer="${esc(f.id)}" list="ansl-${esc(f.id)}" value="${esc(v)}" placeholder="${esc('for example ' + (nt[1] || nt[0] || 'F#') + ', or both')}">
@@ -344,7 +344,7 @@ function damageHTML(R) {
 function abLiveCard(R) {
   if (!R.is_set) return '';
   const daw = dawOf(R), noun = R.kind === 'rpp' ? 'project' : 'set';
-  const how = R.kind === 'rpp' ? `open this project, then run <code>hypnomix reaper review</code> to open the HypnoMix panel in REAPER, then use <b>A · now</b>, <b>B · fix</b> and <b>Blind</b> on each finding`
+  const how = R.kind === 'rpp' ? `open this project, then run <code>hypnomix reaper review</code> to open the HypnoMix Review panel in REAPER, then use <b>A · now</b>, <b>B · fix</b> and <b>Blind</b> on each finding`
     : `open this set, put the HypnoMix device on any track, then use <b>A · now</b>, <b>B · fix</b> and <b>Blind</b> on each finding`;
   const ready = R.ab_live ? `<p style="margin-top:0"><b>Ready:</b> ${esc(R.ab_live.set.split(/[\\/]/).pop())}. Close the original in ${daw}, ${how}. Every plug-in plays; nothing is rendered.</p>` : '';
   return `<div class="card">${ready || `<p style="margin-top:0">Hear every fix inside ${daw}, with all your plug-ins, by switching A and B instantly.</p>`}

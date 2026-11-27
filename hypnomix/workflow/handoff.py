@@ -390,7 +390,8 @@ def write_als(src, rows, names, tempo):
     aa.save(tree, src, out)
     errs, _, _ = C.check(out, src)
     if errs:
-        bad = out.with_name(out.stem + " (BROKEN, do not open).als")
+        from hypnomix.project import rpp
+        bad = rpp.free_name(out.with_name(out.stem + " (BROKEN, do not open).als"))     # never over an earlier one
         out.rename(bad)
         raise SystemExit("the set with locators failed the structure check, so it was kept as "
                          f"{bad.name}: {'; '.join(errs)}")
@@ -420,7 +421,7 @@ def write_rpp(src, rows, names):
     rpp.save(root, out)
     errs = E.check(src, out)
     if errs:
-        bad = out.with_name(out.stem + " (BROKEN, do not open).rpp")
+        bad = rpp.free_name(out.with_name(out.stem + " (BROKEN, do not open).rpp"))     # never over an earlier one
         out.rename(bad)
         raise SystemExit(f"the project with markers failed its check, so it was kept as {bad.name}: {'; '.join(errs)}")
     return out

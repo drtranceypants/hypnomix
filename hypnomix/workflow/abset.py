@@ -396,7 +396,7 @@ def main():
         for fid, it in spec["items"].items():
             if it.get("note"):
                 print(f"  {fid}: {it['note']}")
-        print("Open the A/B project in REAPER, then `hypnomix reaper review`: the HypnoMix panel switches A / B / Blind.")
+        print("Open the A/B project in REAPER, then `hypnomix reaper review`: the HypnoMix Review panel switches A / B / Blind.")
         return
     from hypnomix.session import check as C
     err, warn, _ = C.check(str(out), against=spec["original"],

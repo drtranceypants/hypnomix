@@ -1,4 +1,4 @@
-"""Hypnomix Probe / Main for REAPER: the JSFX, putting them into a project, and reading the menus back."""
+"""HypnoMix Probe / Main for REAPER: the JSFX, putting them into a project, and reading the menus back."""
 import collections
 import re
 import tempfile
@@ -93,6 +93,47 @@ class ReaperProbes(unittest.TestCase):
         out, _ = P.insert(src)
         c = read_cards(out, self.dir / "cards.json")
         self.assertEqual(c["tracks"]["Bass"]["role"], "auto")
+
+
+class HypnoMixWindows(unittest.TestCase):
+    """The JSFX windows and the bridge's panels share one look and a built-in guide."""
+
+    def setUp(self):
+        self.root = Path(P.__file__).resolve().parent
+
+    def test_the_look_ships_and_loads(self):
+        self.assertIn("hypnomix_ui.jsfx-inc", P.FILES)                       # `probes install` copies it
+        for f in ("hypnomix_probe.jsfx", "hypnomix_main.jsfx"):
+            src = (P.JSFX / f).read_text(encoding="utf-8")
+            self.assertIn("import hypnomix_ui.jsfx-inc", src)
+            self.assertIn("no_meter", src)
+            self.assertIn("ui_help(", src)                                    # the "?"
+        lua = (self.root / "bridge.lua").read_text(encoding="utf-8")
+        self.assertIn('dofile, UI_HERE .. "ui.lua"', lua)
+        self.assertTrue((self.root / "ui.lua").exists())
+
+    def test_every_guide_step_exists(self):
+        """ui_tour_n matches the steps written out (one `ui_tour_i == k` per step but the last, which is the else)."""
+        for f in ("hypnomix_probe.jsfx", "hypnomix_main.jsfx"):
+            src = (P.JSFX / f).read_text(encoding="utf-8")
+            n = int(re.search(r"ui_tour_n = (\d+);", src).group(1))
+            ks = sorted(int(k) for k in re.findall(r"ui_tour_i == (\d+) \?", src))
+            self.assertEqual(ks, list(range(n - 1)), f)
+
+    def test_settings_are_hidden_but_still_the_card(self):
+        """REAPER's slider rows are hidden (the window sets them), and the card is still read by name."""
+        for f in ("hypnomix_probe.jsfx", "hypnomix_main.jsfx"):
+            for line in (P.JSFX / f).read_text(encoding="utf-8").splitlines():
+                if line.startswith("slider"):
+                    self.assertRegex(line, r">-", line)
+        m = P.menus()
+        self.assertEqual([k for k, _ in m["hypnomix_probe.jsfx"]], ["role", "priority", "protect"])
+        self.assertNotIn("guide", [k for k, _ in m["hypnomix_main.jsfx"]])
+
+    def test_names_are_found_in_any_case(self):
+        lua = (self.root / "bridge.lua").read_text(encoding="utf-8") + (self.root / "masterchain.lua").read_text(encoding="utf-8")
+        self.assertNotIn('find("HypnoMix Main"', lua)
+        self.assertIn('find("hypnomix main", 1, true)', lua)
 
 
 if __name__ == "__main__":

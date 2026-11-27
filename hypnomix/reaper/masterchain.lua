@@ -1,13 +1,13 @@
--- hypnomix mastering chain for REAPER: the buttons on Hypnomix Main (Build chain, Match target, Save chain).
+-- hypnomix mastering chain for REAPER: the buttons on HypnoMix Main (Build chain, Match target, Save chain).
 -- Loaded by bridge.lua (dofile), which passes its helpers and calls M.poll() on every pass of its loop.
 --
--- Build chain   REAPER's own plug-ins just before Hypnomix Main on the master, each renamed "Hypnomix · ...":
+-- Build chain   REAPER's own plug-ins just before HypnoMix Main on the master, each renamed "HypnoMix · ...":
 --               Tone (ReaEQ), Glue (ReaComp), Tame (ReaXcomp, bypassed), Warmth (JS: Saturation, bypassed),
 --               Width (bass mono: JS Mid/Side Encoder, ReaEQ side high-pass, ReaEQ mid all-pass, JS Mid/Side Decoder)
 --               and Limiter (ReaLimit). Every gain starts at 0 dB. Or a template you saved (a menu asks which).
 -- Match target  plays (or keeps playing) and listens to Main after the chain, then turns ReaLimit's threshold (its
 --               gain) until the master lands on the song card's Target LUFS, the master fader included.
--- Save chain    whatever is before Hypnomix Main on the master, as a REAPER FX chain file in
+-- Save chain    whatever is before HypnoMix Main on the master, as a REAPER FX chain file in
 --               FXChains/hypnomix/NAME.RfxChain: every plug-in with every setting, third-party ones included. REAPER's
 --               own "Add FX chain" opens these files too.
 -- While the chain is the one hypnomix built, it follows the song card: Ceiling sets ReaLimit's ceiling (the gain
@@ -20,7 +20,7 @@ local GM_BUILD, GM_MATCH, GM_SAVE, GM_STATE, GM_A, GM_B = 11, 12, 13, 14, 15, 16
 local S = { IDLE = 0, BUILT = 1, MATCHING = 2, MATCHED = 3, SAVED = 4, NO_LIMITER = 5, STOPPED = 6, CANCELLED = 7,
             SILENT = 8, ERROR = 9, HARD = 10, NO_MAIN = 11, NOTHING = 12, LOADED = 13, ASKING = 14 }
 M.S = S
-local TAG = "Hypnomix · "
+local TAG = "HypnoMix · "   -- chains built before 2026-11-26 say "Hypnomix · ": ours() matches either
 local REAEQ, REACOMP, REAXCOMP, REALIMIT = "ReaEQ (Cockos)", "ReaComp (Cockos)", "ReaXcomp (Cockos)", "ReaLimit (Cockos)"
 local MS_ENC, MS_DEC, SAT = "JS: Mid/Side Encoder", "JS: Mid/Side Decoder", "JS: Saturation"
 local CHARACTER = { clean = { release = 120, glue_attack = 30 }, punch = { release = 60, glue_attack = 30 },
@@ -41,11 +41,11 @@ local function renamed(tr, i)
 end
 local function main_index(tr)
   for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
-    if fx_name(tr, i):find("Hypnomix Main", 1, true) then return i end
+    if fx_name(tr, i):lower():find("hypnomix main", 1, true) then return i end      -- any spelling of the name
   end
   return nil
 end
-local function ours(tr, i) return renamed(tr, i):sub(1, #TAG) == TAG end
+local function ours(tr, i) return renamed(tr, i):sub(1, #TAG):lower() == TAG:lower() end   -- old "Hypnomix · " too
 local function chain_dir() return reaper.GetResourcePath() .. "/FXChains/hypnomix" end
 
 -- the song card, from Main's own controls (the same labels the probes relay reads)
@@ -209,7 +209,7 @@ local function build_template(tr, at, name)
   local _, chunk = reaper.GetTrackStateChunk(tr, "", false)
   local entries, s, e = fx_entries(chunk)
   if not entries then return 0 end
-  -- where plug-in number `at` (Hypnomix Main) starts: the new plug-ins go just before it
+  -- where plug-in number `at` (HypnoMix Main) starts: the new plug-ins go just before it
   local rest, offset, where = chunk:sub(e + 1), 0, nil
   for k, ent in ipairs(entries) do
     local block = table.concat(ent, "\n") .. "\n"

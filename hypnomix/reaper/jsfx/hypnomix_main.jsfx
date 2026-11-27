@@ -1,133 +1,197 @@
-desc:Hypnomix Main (the song card, and the mix measured for the HypnoMix app; audio passes through)
+desc:HypnoMix Main
 //tags: analysis meter hypnomix
 //author: hypnomix
-// Put it LAST on the master track. The song card: genre, key and scale (tuning and harmony use them instead of
-// guessing), the loudness target, true-peak ceiling, limiter character and amount (the loudness checks and the
-// mastering proposals use them). It also measures the mix like a Hypnomix Probe.
-options:gmem=hypnomix
+// Put it LAST on the master track. The song card: genre, key, scale, the loudness target, true-peak ceiling, limiter
+// character and amount. Match target, the mastering chain and the app's review of a recorded pass use the target and
+// ceiling; scan, fix and tuning on a REAPER project do not read the card yet (give the key with --key). It also
+// measures the mix like a HypnoMix Probe.
+options:gmem=hypnomix no_meter
 
-slider1:genre=0<0,18,1{not set,pop,rock,indie,folk,country,singer-songwriter,r&b / soul,hip-hop,electronic,dance,ambient,jazz,blues,metal,orchestral,world,psychedelic,other}>Genre
-slider2:key=0<0,12,1{not set,C,C#,D,Eb,E,F,F#,G,Ab,A,Bb,B}>Key
-slider3:scale=0<0,6,1{major,minor,dorian,phrygian,lydian,mixolydian,locrian}>Scale
-slider4:mode=0<0,2,1{clean,punch,loud}>Limiter
-slider5:target=-14<-24,-6,0.5>Target LUFS
-slider6:ceiling=-1<-3,0,0.1>Ceiling dBTP
-slider7:amount=100<0,100,1>Amount %
+slider1:genre=0<0,18,1{not set,pop,rock,indie,folk,country,singer-songwriter,r&b / soul,hip-hop,electronic,dance,ambient,jazz,blues,metal,orchestral,world,psychedelic,other}>-Genre
+slider2:key=0<0,12,1{not set,C,C#,D,Eb,E,F,F#,G,Ab,A,Bb,B}>-Key
+slider3:scale=0<0,6,1{major,minor,dorian,phrygian,lydian,mixolydian,locrian}>-Scale
+slider4:mode=0<0,2,1{clean,punch,loud}>-Limiter
+slider5:target=-14<-24,-6,0.5>-Target LUFS
+slider6:ceiling=-1<-3,0,0.1>-Ceiling dBTP
+slider7:amount=100<0,100,1>-Amount %
 slider8:slot=-1<-1,4095,1>-slot (set by hypnomix)
 slider9:abgain=0<-12,12,0.01>-match gain dB (set by hypnomix during A/B)
+slider10:guide=0<0,1,1>-guide seen (the walkthrough in this window)
 
 // The meter, and the A/B match gain (slider9, applied after measuring), are in the include: an effect's own
 // @init / @sample would REPLACE the imported ones (measured in REAPER 7.86), so Main has only @gfx of its own.
 import hypnomix_meter.jsfx-inc
+import hypnomix_ui.jsfx-inc
 
 in_pin:left input
 in_pin:right input
 out_pin:left output
 out_pin:right output
 
-@gfx 460 132
-// Record and review before export: a press goes to the hypnomix bridge (gmem[8] counts presses); the bridge plays
-// the project from the edit cursor and keeps what played, the app renders that stretch of the master and reviews it.
-// gmem[9] is the state the bridge reports (0 idle, 1 recording, 2 rendering, 3 no app, 4 reviewing, 5 too short,
-// 6 the review failed), gmem[10] seconds.
-rr_state = gmem[9];
-rr_x = 8; rr_y = 8; rr_w = 250; rr_h = 26;
-gfx_set(0.12, 0.10, 0.09, 1); gfx_rect(0, 0, gfx_w, gfx_h);
-rr_state == 1 ? gfx_set(0.75, 0.2, 0.25, 1) : gfx_set(0.56, 0.25, 0.25, 1);
-gfx_rect(rr_x, rr_y, rr_w, rr_h);
-gfx_set(1, 1, 1, 1);
-gfx_x = rr_x + 10; gfx_y = rr_y + 7;
-gfx_drawstr(rr_state == 1 ? "Stop and review" : "Record and review before export");
-gfx_set(0.85, 0.8, 0.72, 1);
-gfx_x = rr_x; gfx_y = rr_y + rr_h + 9;
-rr_pressed > 0 && rr_state != rr_from ? (rr_pressed = 0);
-rr_pressed > 0 && time_precise() - rr_pressed > 1.5 ? (
-  gfx_drawstr("No answer: start the bridge (hypnomix reaper start) and the HypnoMix app");
-) : rr_state == 1 ? (
-  gfx_drawstr("Recording the master: "); gfx_drawnumber(gmem[10], 1); gfx_drawstr(" s. Stop here or stop REAPER.");
-) : rr_state == 2 ? (
-  gfx_drawstr("Rendering what played; the review then opens in the HypnoMix app");
-) : rr_state == 3 ? (
-  gfx_drawstr("The HypnoMix app did not answer: open it (hypnomix app), then try again");
-) : rr_state == 4 ? (
-  gfx_drawstr("Reviewing in the HypnoMix app");
-) : rr_state == 5 ? (
-  gfx_drawstr("Under a second played: nothing to review. Press again to record");
-) : rr_state == 6 ? (
-  gfx_drawstr("The review could not run: the HypnoMix app says why");
-) : (
-  gfx_drawstr("Plays from the edit cursor while every probe listens");
+@gfx 600 368
+// HypnoMix Main's window: the mix against the song card, Record and review before export, the mastering chain, and a
+// guide (the "?"). Presses go to the bridge through shared memory:
+//   Record and review: gmem[8] counts presses; the bridge reports gmem[9] (0 idle, 1 recording, 2 rendering, 3 no app,
+//     4 reviewing, 5 under a second played: nothing sent, 6 the review failed) and gmem[10] the seconds recorded. The
+//     bridge plays from the edit cursor and keeps what played; the app renders that stretch and reviews it.
+//   The mastering chain (masterchain.lua): presses in gmem[11] Build, gmem[12] Match target, gmem[13] Save; the bridge
+//     reports gmem[14] (state) with gmem[15] and gmem[16] (two numbers for it).
+// A press counts on RELEASE over the button: REAPER does not start playing while the mouse is still held down in an
+// FX window (measured in 7.86), so acting on mouse-down left a held click with no playback.
+ui_begin(); ui_links();
+ui_header("HypnoMix Main", ui_bridge, ui_app);
+help_hit = ui_help(ui_w - 22, 18);
+
+// ---- the mix against the card
+ly = 46;
+ui_card(10, ly, 300, 162);
+ui_c_muted(); ui_font(3); ui_text(22, ly + 10, "MIX LOUDNESS  (LUFS)");
+ui_c_text(); ui_font(4); ui_num(22, ly + 26, d_st, 1);
+ui_c_muted(); ui_font(3); ui_text(112, ly + 30, "short-term");
+ui_text(112, ly + 44, "momentary"); ui_c_text(); ui_font(2); ui_num(180, ly + 28, d_st, 1); ui_num(180, ly + 42, d_mom, 1);
+mx_t = ui_bar(22, ly + 76, 276, 8, d_st, -36, -4, target - 1, target + 1.5);
+ui_marker(22 + 276 * (target + 36) / 32, ly + 76, 8);
+ui_c_muted(); ui_font(3); ui_text(22, ly + 90, sprintf(#mn_t, "target %.1f", target));
+ui_textr(298, ly + 90, d_st > target + 1 ? "over the target" : d_st > target - 1 ? "on target" : d_st > -80 ? "under the target" : "silent");
+ui_bar(22, ly + 118, 200, 6, d_pk0, -24, 0, ceiling - 3, ceiling); ui_bar(22, ly + 128, 200, 6, d_pk1, -24, 0, ceiling - 3, ceiling);
+ui_marker(22 + 200 * (ceiling + 24) / 24, ly + 117, 18);
+max(d_ph0, d_ph1) > ceiling ? ui_c_red() : ui_c_text(); ui_font(3);
+ui_text(232, ly + 115, sprintf(#mn_p, "peak %.1f", max(d_ph0, d_ph1)));
+ui_c_muted(); ui_text(232, ly + 127, sprintf(#mn_c, "ceiling %.1f", ceiling));
+
+// ---- the song card: click a chip for its menu; - and + (or the mouse wheel) for the numbers
+sx = 320; ui_card(sx, ly, ui_w - sx - 10, 162);
+ui_c_muted(); ui_font(3); ui_text(sx + 12, ly + 10, "SONG CARD");
+genre == 0 || key == 0 ? ( ui_c_amber(); ui_textr(ui_w - 22, ly + 10, "genre and key: not set yet"); );
+c1 = sx + 12; c2 = sx + 138; cw1 = 118; cw2 = ui_w - 22 - c2;
+ui_c_muted(); ui_font(3);
+ui_text(c1, ly + 28, "genre"); ui_text(c2, ly + 28, "limiter");
+ui_text(c1, ly + 64, "key"); ui_text(c1 + 60, ly + 64, "scale"); ui_text(c2, ly + 64, "target LUFS");
+ui_text(c1, ly + 100, "ceiling dBTP"); ui_text(c2, ly + 100, "amount");
+strcpy(#mn_g, genre == 0 ? "not set" : genre == 1 ? "pop" : genre == 2 ? "rock" : genre == 3 ? "indie" : genre == 4 ? "folk" :
+  genre == 5 ? "country" : genre == 6 ? "singer-songwriter" : genre == 7 ? "r&b / soul" : genre == 8 ? "hip-hop" :
+  genre == 9 ? "electronic" : genre == 10 ? "dance" : genre == 11 ? "ambient" : genre == 12 ? "jazz" : genre == 13 ? "blues" :
+  genre == 14 ? "metal" : genre == 15 ? "orchestral" : genre == 16 ? "world" : genre == 17 ? "psychedelic" : "other");
+ui_chip(21, c1, ly + 40, cw1, #mn_g, genre > 0) ? (
+  gfx_x = c1 * ui_s; gfx_y = (ly + 62) * ui_s;
+  mn_m = gfx_showmenu("not set|pop|rock|indie|folk|country|singer-songwriter|r&&b / soul|hip-hop|electronic|dance|ambient|jazz|blues|metal|orchestral|world|psychedelic|other");
+  mn_m > 0 ? ( genre = mn_m - 1; slider_automate(genre); );
 );
-rr_down = mouse_cap & 1;
-rr_in = mouse_x >= rr_x && mouse_x < rr_x + rr_w && mouse_y >= rr_y && mouse_y < rr_y + rr_h;
-rr_down && !rr_was ? rr_armed = rr_in;
-// a press counts on RELEASE over the button (like any button): REAPER does not start playing while the mouse is
-// still held down in an FX window (measured in 7.86), so acting on mouse-down left a held click with no playback
-!rr_down && rr_was && rr_armed && rr_in ? (
+ui_chip(22, c2, ly + 40, cw2, mode == 0 ? "clean" : mode == 1 ? "punch" : "loud", 1) ? (
+  gfx_x = c2 * ui_s; gfx_y = (ly + 62) * ui_s;
+  mn_m = gfx_showmenu("clean|punch|loud");
+  mn_m > 0 ? ( mode = mn_m - 1; slider_automate(mode); );
+);
+ui_chip(23, c1, ly + 76, 54, key == 0 ? "key?" : key == 1 ? "C" : key == 2 ? "C#" : key == 3 ? "D" : key == 4 ? "Eb" : key == 5 ? "E" :
+  key == 6 ? "F" : key == 7 ? "F#" : key == 8 ? "G" : key == 9 ? "Ab" : key == 10 ? "A" : key == 11 ? "Bb" : "B", key > 0) ? (
+  gfx_x = c1 * ui_s; gfx_y = (ly + 98) * ui_s;
+  mn_m = gfx_showmenu("not set|C|C#|D|Eb|E|F|F#|G|Ab|A|Bb|B");
+  mn_m > 0 ? ( key = mn_m - 1; slider_automate(key); );
+);
+ui_chip(24, c1 + 60, ly + 76, cw1 - 60, scale == 0 ? "major" : scale == 1 ? "minor" : scale == 2 ? "dorian" : scale == 3 ? "phrygian" :
+  scale == 4 ? "lydian" : scale == 5 ? "mixolydian" : "locrian", key > 0) ? (
+  gfx_x = (c1 + 60) * ui_s; gfx_y = (ly + 98) * ui_s;
+  mn_m = gfx_showmenu("major|minor|dorian|phrygian|lydian|mixolydian|locrian");
+  mn_m > 0 ? ( scale = mn_m - 1; slider_automate(scale); );
+);
+mn_v = ui_stepper(25, c2, ly + 76, cw2, target, -24, -6, 0.5, sprintf(#mn_s1, "%.1f", target));
+mn_v != target ? ( target = mn_v; slider_automate(target); );
+mn_v = ui_stepper(26, c1, ly + 112, cw1, ceiling, -3, 0, 0.1, sprintf(#mn_s2, "%.1f", ceiling));
+mn_v != ceiling ? ( ceiling = mn_v; slider_automate(ceiling); );
+mn_v = ui_stepper(27, c2, ly + 112, cw2, amount, 0, 100, 5, sprintf(#mn_s3, "%d %%", amount));
+mn_v != amount ? ( amount = mn_v; slider_automate(amount); );
+ui_c_muted(); ui_font(3); ui_text(c1, ly + 142, "Match target and the review of a pass use it");
+
+// ---- Record and review before export
+ry = 218;
+rr_state = gmem[9];
+ui_button(1, 10, ry, 250, 34, rr_state == 1 ? "Stop and review" : "Record and review", 2) ? (
   gmem[8] += 1; rr_pressed = time_precise(); rr_from = rr_state;
 );
-!rr_down ? rr_armed = 0;
-rr_was = rr_down;
+rr_state == 1 ? ( ui_rgb(255, 255, 255, 0.9); ui_dot(28, ry + 17, 4 + 1.5 * sin(time_precise() * 6)); );
+rr_pressed > 0 && rr_state != rr_from ? (rr_pressed = 0);
+ui_font(3); ui_c_muted();
+rr_pressed > 0 && time_precise() - rr_pressed > 1.5 ? (
+  ui_c_amber(); strcpy(#mn_r, "No answer: start the bridge (hypnomix reaper start) and the HypnoMix app");
+) : rr_state == 1 ? ( sprintf(#mn_r, "Recording the master: %.1f s. Stop here or stop REAPER.", gmem[10]);
+) : rr_state == 2 ? ( strcpy(#mn_r, "Rendering what played; the review then opens in the HypnoMix app");
+) : rr_state == 3 ? ( ui_c_amber(); strcpy(#mn_r, "The HypnoMix app did not answer: open it, then try again");
+) : rr_state == 4 ? ( ui_c_teal(); strcpy(#mn_r, "Reviewing in the HypnoMix app");
+) : rr_state == 5 ? ( strcpy(#mn_r, "Under a second played: nothing to review. Press again to record");
+) : rr_state == 6 ? ( ui_c_red(); strcpy(#mn_r, "The review could not run: the HypnoMix app says why");
+) : strcpy(#mn_r, "Plays from the edit cursor while every probe listens, then reviews it before you export");
+ui_wrap(#mn_r, 272, ry + 3, ui_w - 284, 14);
 
-// The mastering chain (masterchain.lua in the bridge): presses counted in gmem[11] Build, gmem[12] Match target,
-// gmem[13] Save; the bridge reports gmem[14] (state) with gmem[15] and gmem[16] (two numbers for it).
-mc_y = 70; mc_h = 24; mc_w = 108;
+// ---- the mastering chain (REAPER's own plug-ins, before this one)
+cy = 266;
+ui_card(10, cy, ui_w - 20, 90);
+ui_c_muted(); ui_font(3); ui_text(22, cy + 10, "MASTERING CHAIN  (REAPER's own plug-ins, before this one)");
 mc_state = gmem[14]; mc_a = gmem[15]; mc_b = gmem[16];
-gfx_set(0.85, 0.8, 0.72, 1); gfx_x = 8; gfx_y = mc_y - 14; gfx_drawstr("Mastering chain (REAPER's own plug-ins, before this one)");
-mc_down = mouse_cap & 1;
+mc_w = (ui_w - 20 - 24 - 16) / 3;
 mc_i = 0;
 loop(3,
-  gfx_set(mc_state == 2 && mc_i == 1 ? 0.45 : 0.32, 0.30, 0.26, 1);
-  gfx_rect(8 + mc_i * (mc_w + 8), mc_y, mc_w, mc_h);
-  gfx_set(0.95, 0.93, 0.89, 1); gfx_x = 18 + mc_i * (mc_w + 8); gfx_y = mc_y + 6;
-  gfx_drawstr(mc_i == 0 ? "Build chain" : mc_i == 1 ? (mc_state == 2 ? "Stop matching" : "Match target") : "Save chain");
-  // like Record: armed on press, counted on RELEASE over the same button (REAPER does not start playing while the
-  // mouse is held in an FX window, and Match target starts playback)
-  mc_in = mouse_x >= 8 + mc_i * (mc_w + 8) && mouse_x < 8 + mc_i * (mc_w + 8) + mc_w && mouse_y >= mc_y && mouse_y < mc_y + mc_h;
-  mc_down && !mc_was && mc_in ? mc_armed = mc_i + 1;
-  !mc_down && mc_was && mc_armed == mc_i + 1 ? (
-    mc_in ? (gmem[11 + mc_i] += 1; mc_pressed = time_precise(); mc_from = mc_state;);
-    mc_armed = 0;
+  ui_button(11 + mc_i, 22 + mc_i * (mc_w + 8), cy + 26, mc_w, 28,
+    mc_i == 0 ? "Build chain" : mc_i == 1 ? (mc_state == 2 ? "Stop matching" : "Match target") : "Save chain",
+    mc_i == 1 && mc_state == 2 ? 3 : mc_i == 0 ? 1 : 0) ? (
+    gmem[11 + mc_i] += 1; mc_pressed = time_precise(); mc_from = mc_state;
   );
   mc_i += 1;
 );
-!mc_down && mc_was ? mc_armed = 0;
-mc_was = mc_down;
-gfx_set(0.85, 0.8, 0.72, 1); gfx_x = 8; gfx_y = mc_y + mc_h + 9;
 mc_pressed > 0 && mc_state != mc_from ? (mc_pressed = 0);
+ui_c_muted(); ui_font(3);
 mc_pressed > 0 && time_precise() - mc_pressed > 1.5 && mc_state == mc_from && mc_state != 2 ? (
-  gfx_drawstr("No answer: start the bridge (hypnomix reaper start)");
+  ui_c_amber(); strcpy(#mn_m, "No answer: start the bridge (hypnomix reaper start)");
 ) : mc_state == 1 ? (
-  gfx_drawstr("Built: "); gfx_drawnumber(mc_a, 0); gfx_drawstr(" plug-ins, gains at 0 dB. Open the FX chain to edit.");
-  mc_b > 0 ? (gfx_x = 8; gfx_y += 14; gfx_drawnumber(mc_b, 0); gfx_drawstr(" settings not found: see the ReaScript console"));
-) : mc_state == 13 ? (
-  gfx_drawstr("Built from your template: "); gfx_drawnumber(mc_a, 0); gfx_drawstr(" plug-ins");
+  sprintf(#mn_m, "Built: %d plug-ins, gains at 0 dB. Open the FX chain to edit.", mc_a);
+  mc_b > 0 ? sprintf(#mn_m, "Built: %d plug-ins; %d settings not found (see the ReaScript console)", mc_a, mc_b);
+) : mc_state == 13 ? ( sprintf(#mn_m, "Built from your template: %d plug-ins", mc_a);
 ) : mc_state == 2 ? (
-  mc_b == 1 ? gfx_drawstr("Matching: play the loudest part (round 1, 8 s)") : (
-    gfx_drawstr("Measured "); gfx_drawnumber(mc_a, 1); gfx_drawstr(" LUFS; round "); gfx_drawnumber(mc_b, 0););
-) : mc_state == 3 ? (
-  gfx_drawstr("Master "); gfx_drawnumber(mc_a, 1); gfx_drawstr(" LUFS: on target. ReaLimit gain "); gfx_drawnumber(mc_b, 1); gfx_drawstr(" dB");
-) : mc_state == 10 ? (
-  gfx_drawstr("Master "); gfx_drawnumber(mc_a, 1); gfx_drawstr(" LUFS, ReaLimit gain "); gfx_drawnumber(mc_b, 1);
-  gfx_drawstr(" dB:"); gfx_x = 8; gfx_y += 14; gfx_drawstr("the limiter is working hard. Lower the target, or less dynamics first");
-) : mc_state == 4 ? (
-  gfx_drawstr("Saved "); gfx_drawnumber(mc_a, 0); gfx_drawstr(" plug-ins as a template (FXChains/hypnomix)");
-) : mc_state == 5 ? (
-  gfx_drawstr("No ReaLimit before this effect: build the chain, or add ReaLimit");
-) : mc_state == 6 ? (
-  gfx_drawstr("Matching stopped: REAPER stopped playing");
-) : mc_state == 7 ? (
-  gfx_drawstr("Cancelled");
-) : mc_state == 8 ? (
-  gfx_drawstr("The master is silent: play the song, then Match target");
-) : mc_state == 9 ? (
-  gfx_drawstr("Something went wrong: see the ReaScript console");
-) : mc_state == 11 ? (
-  gfx_drawstr("Put Hypnomix Main on the master first");
-) : mc_state == 12 ? (
-  gfx_drawstr("Nothing to save: no plug-ins before this effect");
-) : mc_state == 14 ? (
-  gfx_drawstr("Waiting for your answer in REAPER (a menu or a dialog)");
+  mc_b == 1 ? strcpy(#mn_m, "Matching: play the loudest part (round 1, 8 s)") : sprintf(#mn_m, "Measured %.1f LUFS; round %d", mc_a, mc_b);
+) : mc_state == 3 ? ( ui_c_teal(); sprintf(#mn_m, "Master %.1f LUFS: on target. ReaLimit gain %.1f dB", mc_a, mc_b);
+) : mc_state == 10 ? ( ui_c_amber(); sprintf(#mn_m, "Master %.1f LUFS, ReaLimit gain %.1f dB: the limiter is working hard. Lower the target, or less dynamics first", mc_a, mc_b);
+) : mc_state == 4 ? ( ui_c_teal(); sprintf(#mn_m, "Saved %d plug-ins as a template (FXChains/hypnomix)", mc_a);
+) : mc_state == 5 ? ( ui_c_amber(); strcpy(#mn_m, "No ReaLimit before this effect: build the chain, or add ReaLimit");
+) : mc_state == 6 ? ( strcpy(#mn_m, "Matching stopped: REAPER stopped playing");
+) : mc_state == 7 ? ( strcpy(#mn_m, "Cancelled");
+) : mc_state == 8 ? ( ui_c_amber(); strcpy(#mn_m, "The master is silent: play the song, then Match target");
+) : mc_state == 9 ? ( ui_c_red(); strcpy(#mn_m, "Something went wrong: see the ReaScript console");
+) : mc_state == 11 ? ( ui_c_amber(); strcpy(#mn_m, "Put HypnoMix Main on the master first");
+) : mc_state == 12 ? ( strcpy(#mn_m, "Nothing to save: no plug-ins before this effect");
+) : mc_state == 14 ? ( ui_c_amber(); strcpy(#mn_m, "Waiting for your answer in REAPER (a menu or a dialog)");
+) : strcpy(#mn_m, "Build adds a neutral chain; Match target sets the limiter; Save keeps yours as a template");
+ui_wrap(#mn_m, 22, cy + 62, ui_w - 44, 14);
+
+// ---- the guide: shown once (also once per REAPER session: gmem[6]), and with the "?"
+!ui_tour_on && !guide && !gmem[6] && !mn_auto ? ( mn_auto = 1; ui_tour_start(); );
+help_hit ? ui_tour_start();
+ui_tour_n = 9;
+ui_tour_i == 0 ? (
+  tour_x = 6; tour_y = 6; tour_w = 170; tour_h = 26; strcpy(#tour_t, "HypnoMix Main: the mix and the song card");
+  strcpy(#tour_b, "Put it LAST on the master track. It measures the whole mix, holds the song card, records a pass for review and builds a mastering chain from REAPER's own plug-ins. Audio passes through unchanged, except while Match is on in an A/B review (it sets B to A's loudness).");
+) : ui_tour_i == 1 ? (
+  tour_x = ui_w - 196; tour_y = 6; tour_w = 158; tour_h = 26; strcpy(#tour_t, "Bridge and app");
+  strcpy(#tour_b, "Green dots mean the bridge runs inside REAPER and the HypnoMix app is listening. Start both with: hypnomix reaper start, then hypnomix app (or Setup in the app).");
+) : ui_tour_i == 2 ? (
+  tour_x = sx; tour_y = ly; tour_w = ui_w - sx - 10; tour_h = 162; strcpy(#tour_t, "The song card");
+  strcpy(#tour_b, "Click a chip to choose genre, key, scale and limiter; use - and + (or the mouse wheel) for target, ceiling and amount. Match target, the mastering chain and the review of a recorded pass use your target and ceiling. Scan and tuning on a REAPER project do not read the key yet: give it on the Songs tab or with --key.");
+) : ui_tour_i == 3 ? (
+  tour_x = 10; tour_y = ly; tour_w = 300; tour_h = 102; strcpy(#tour_t, "Loudness against the target");
+  strcpy(#tour_b, "Short-term (3 s) is the big number. The white tick is your target: teal under it, amber close, red well over. Judge the loudest chorus, not the intro.");
+) : ui_tour_i == 4 ? (
+  tour_x = 10; tour_y = ly + 106; tour_w = 300; tour_h = 40; strcpy(#tour_t, "Peaks and the ceiling");
+  strcpy(#tour_b, "Sample peaks per side; the tick is your true-peak ceiling. A peak over it turns red. Leave about 1 dB of room: encoders add peaks.");
+) : ui_tour_i == 5 ? (
+  tour_x = 10; tour_y = ry; tour_w = 250; tour_h = 34; strcpy(#tour_t, "Record and review before export");
+  strcpy(#tour_b, "Put the edit cursor where to start and press it: REAPER plays while every probe listens. Press again (or stop REAPER): the app renders that stretch and reviews it, with findings by bar.");
+) : ui_tour_i == 6 ? (
+  tour_x = 22; tour_y = cy + 26; tour_w = mc_w; tour_h = 28; strcpy(#tour_t, "Build chain");
+  strcpy(#tour_b, "Adds a neutral mastering chain of REAPER's own plug-ins before this one (EQ, compression, low-end mono, limiter), or a template you saved. Edit it freely in the FX chain.");
+) : ui_tour_i == 7 ? (
+  tour_x = 30 + mc_w; tour_y = cy + 26; tour_w = mc_w; tour_h = 28; strcpy(#tour_t, "Match target");
+  strcpy(#tour_b, "Play the loudest part: it listens after the chain and moves ReaLimit until the master sits at your target. If the limiter works too hard it tells you.");
 ) : (
-  gfx_drawstr("Build adds a neutral chain; Save keeps yours as a template");
+  tour_x = 38 + 2 * mc_w; tour_y = cy + 26; tour_w = mc_w; tour_h = 28; strcpy(#tour_t, "Save chain");
+  strcpy(#tour_b, "Keeps everything before this effect as a template (FXChains/hypnomix) for Build next time. Next: a HypnoMix Probe on every track (hypnomix reaper probes insert), then the review panel.");
 );
+ui_tour() ? ( guide = 1; slider_automate(guide); gmem[6] = 1; );
+ui_end();

@@ -30,7 +30,8 @@ STEPS = [
       how={"live": ["Press **A** to turn automation mode on in the Arrangement; in the track's lane choosers pick the **Mixer** device and the **Track Volume** control.",
                     "Press **B** for draw mode and draw a gentle line, or click to add points and drag them. Press B again to go back to normal editing."],
            "reaper": ["Click the track's **Env** button and choose (tick) **Volume** to show the volume envelope.",
-                      "Click on the envelope to add points and drag them; keep each move to a few dB."],
+                      "Click on the envelope to add points and drag them; keep each move to a few dB.",
+                      "To ride it by hand instead, set the track's automation mode to **Latch**, play and move the fader, then set the mode back to **Read** so the moves play back."],
            "ardour": ["Click the track's **A** button (automation) and choose **Fader**. Set the automation mode, then add points on the line with the mouse."]},
       listen="Play a section with the rides on, then off, at the same overall loudness. The rides should be hard to hear as moves, but "
              "the quiet lines should be easier to follow and the loud ones less pushy.",
@@ -71,7 +72,8 @@ STEPS = [
                     "Set ratio 2:1 and a threshold that shows 1-2 dB on the meter on the loudest moments; set makeup to match the bypassed level.",
                     "Do not add a Limiter yet."],
            "reaper": ["Show the master track (View menu → Master track), click its **FX** button and add **ReaComp**.",
-                      "Ratio 2:1, threshold until the loudest moments show 1-2 dB of reduction; no ReaLimit on it yet."],
+                      "Ratio 2:1, threshold until the loudest moments show 1-2 dB of reduction on the meter on ReaComp's right.",
+                      "Match the level with its output so the mix is as loud on and bypassed (the tick box beside its name in the FX chain list); no ReaLimit on it yet."],
            "ardour": ["In the Mixer (Alt+M), find the **Master** strip's plug-in box and add **ACE Compressor**; ratio 2:1, threshold for 1-2 dB of reduction."]},
       listen="Switch the bus compressor in and out with the makeup gain set so the loudness is the same. It should feel a bit more "
              "together, not louder or squashed. If you can't hear a difference, leave it out.",

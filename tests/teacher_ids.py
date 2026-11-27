@@ -1,7 +1,11 @@
-"""The step ids of the "101" and "tour" courses as they were published (5c26ca3). Progress files and the Assistant key on
-them, so they must never change: new lessons go in the "az" course or get new ids, in the same order."""
+"""The step ids of the "101" and "tour" courses. Progress files and the Assistant key on them.
 
-PINNED = {'101/ardour': [('words', ('daw', 'screen-ardour', 'signal')),
+PUBLISHED is the courses exactly as they were published (5c26ca3): those ids must never change, be renamed or be
+reordered. A new lesson gets a new id, goes in the "az" course, or is added to a published course and listed in
+ADDED_SINCE (course -> chapter -> new ids); the published ids keep their order around it. PINNED is today's courses:
+PUBLISHED with ADDED_SINCE put in, so a change that is not listed in ADDED_SINCE fails the tests."""
+
+PUBLISHED = {'101/ardour': [('words', ('daw', 'screen-ardour', 'signal')),
                 ('record', ('tempo', 'click', 'drums', 'track', 'gain', 'take', 'takes-hypnomix')),
                 ('mix', ('balance', 'eq', 'comp', 'reverb', 'mix-check')),
                 ('master', ('what', 'prepare', 'chain', 'loud', 'deliver')),
@@ -32,4 +36,44 @@ PINNED = {'101/ardour': [('words', ('daw', 'screen-ardour', 'signal')),
                  'hm-mixing', 'hm-master', 'hm-export', 'hm-ai'))],
  'tour/reaper': [('hypnomix',
                   ('hm-loop', 'hm-connect-reaper', 'hm-devices-reaper', 'hm-scan', 'hm-ab', 'hm-apply', 'hm-tracking',
+                   'hm-mixing', 'hm-master', 'hm-export', 'hm-ai'))]}
+
+# Added since 5c26ca3 (new ids only), when REAPER got Live's depth: REAPER's saturation lesson and hm-guide-reaper
+# (the HypnoMix plug-ins' built-in guide).
+ADDED_SINCE = {'101/reaper': {'mix': ('saturation',), 'hypnomix': ('hm-guide-reaper',)},
+               'tour/reaper': {'hypnomix': ('hm-guide-reaper',)}}
+
+PINNED = {'101/ardour': [('words', ('daw', 'screen-ardour', 'signal')),
+                ('record', ('tempo', 'click', 'drums', 'track', 'gain', 'take', 'takes-hypnomix')),
+                ('mix', ('balance', 'eq', 'comp', 'reverb', 'mix-check')),
+                ('master', ('what', 'prepare', 'chain', 'loud', 'deliver')),
+                ('hypnomix',
+                 ('hm-loop', 'hm-connect-ardour', 'hm-scan', 'hm-apply', 'hm-tracking', 'hm-mixing', 'hm-master',
+                  'hm-export', 'hm-ai'))],
+ '101/live': [('words', ('daw', 'screen-live', 'signal')),
+              ('record', ('tempo', 'click', 'drums', 'track', 'gain', 'take', 'session-sketch', 'takes-hypnomix')),
+              ('mix',
+               ('balance', 'eq', 'comp', 'deess', 'reverb', 'delay', 'saturation', 'groups', 'automation',
+                'mix-check')),
+              ('master', ('what', 'prepare', 'chain', 'loud', 'deliver')),
+              ('hypnomix',
+               ('hm-loop', 'hm-connect-live', 'hm-devices-live', 'hm-scan', 'hm-ab', 'hm-apply', 'hm-tracking',
+                'hm-mixing', 'hm-master', 'hm-export', 'hm-ai'))],
+ '101/reaper': [('words', ('daw', 'screen-reaper', 'signal')),
+                ('record', ('tempo', 'click', 'drums', 'track', 'gain', 'take', 'takes-hypnomix')),
+                ('mix',
+                 ('balance', 'eq', 'comp', 'deess', 'reverb', 'delay', 'saturation', 'groups', 'automation',
+                  'mix-check')),
+                ('master', ('what', 'prepare', 'chain', 'loud', 'deliver')),
+                ('hypnomix',
+                 ('hm-loop', 'hm-connect-reaper', 'hm-devices-reaper', 'hm-guide-reaper', 'hm-scan', 'hm-ab', 'hm-apply', 'hm-tracking',
+                  'hm-mixing', 'hm-master', 'hm-export', 'hm-ai'))],
+ 'tour/ardour': [('hypnomix',
+                  ('hm-loop', 'hm-connect-ardour', 'hm-scan', 'hm-apply', 'hm-tracking', 'hm-mixing', 'hm-master',
+                   'hm-export', 'hm-ai'))],
+ 'tour/live': [('hypnomix',
+                ('hm-loop', 'hm-connect-live', 'hm-devices-live', 'hm-scan', 'hm-ab', 'hm-apply', 'hm-tracking',
+                 'hm-mixing', 'hm-master', 'hm-export', 'hm-ai'))],
+ 'tour/reaper': [('hypnomix',
+                  ('hm-loop', 'hm-connect-reaper', 'hm-devices-reaper', 'hm-guide-reaper', 'hm-scan', 'hm-ab', 'hm-apply', 'hm-tracking',
                    'hm-mixing', 'hm-master', 'hm-export', 'hm-ai'))]}

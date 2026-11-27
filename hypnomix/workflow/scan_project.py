@@ -8,16 +8,29 @@ The DAW can stay open (nothing is written next to the project; everything goes t
 track that is heard is rendered once from the project (item and take volume, fades, loops, sections, playrate; no
 FX, no faders) into raw/renders/, and the groups work from those renders and the model:
 
+  names       default-named tracks ("Track 3") named by how they sound; the tracks put in working order; vocal
+              stacks (each part on the track for its pitch)
   files       items whose audio file is missing
   clips       clicks at item edges with no fade; level jumps where one item meets the next (comps)
-  vocals      pitch of every vocal track (tune --report-only), doubles vs the lead in time, harmony balance question
-  effects     plug-ins switched off or offline, whole FX chains off, several limiters on one track
+  timing      instrument hits out of time with the band (REAPER: nudges written as stretch markers)
+  vocals      pitch of every vocal track (tune --report-only), doubles vs the lead in time, harmony balance question,
+              vocal level line to line and upper parts under the melody (vocallevel)
+  effects     plug-ins switched off or offline, whole FX chains off, several limiters on one track; sidechained
+              ReaComps simulated hit by hit
+  devices     REAPER only: every ReaComp judged on its track's own audio (the Live Compressor check: too little,
+              too much, release bending the bass, drum transients clamped) with suggested settings `fix` writes into
+              it; a low cut suggested where a ReaEQ has none and the part rumbles under 80 Hz; ReaGate and ReaLimit
+              listed, not judged (their saved settings are not read); a ReaComp with Wet at 0 or a parallel
+              dry/wet mix is not judged; the master track's plug-ins are not read. See `devices_project.py`
   recordings  every source file the project plays: clipping, levels, noise floor, DC, sibilance, breaths, clicks
   noise       items boosted a lot: the boost lifts the take's own noise floor
   intent      "is this deliberate?": automation, hard pans, muted tracks with items, big item gains, polarity flips,
               stretch markers
   mix         with --mix: loudness, true peak, release checks, translation, sections
   stems       with --deep: frequency fights and mic phase between tracks
+  structure   from the project file alone: does it read back byte for byte (else do not apply fixes), folders that
+              do not close, sends from tracks that are not there, faders at the top or almost silent (REAPER; a
+              HypnoMix DAW session gets only the nearly-silent fader check)
 
 Without --ref, the key and tuning are measured from a rough mix of the project's renders (faders and pans, no FX).
 Findings that `hypnomix fix` can write into a new project say `set` (a new .rpp; for a HypnoMix DAW session only item
@@ -59,7 +72,8 @@ WORDS = {
 }
 W = dict(WORDS["reaper"])
 
-GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "recordings", "noise", "intent", "mix", "stems", "mpe"]
+GROUPS = ["names", "files", "clips", "timing", "vocals", "effects", "devices", "recordings", "noise", "intent", "structure",
+          "mix", "stems", "mpe"]
 SR = 44100
 LIMITER_WORDS = ("limit", "maximi", "loudmax", "clipper")
 
@@ -456,7 +470,7 @@ def g_clips(p, R, od, a, vocals=()):
         from hypnomix.project.rpp_edit import locator
     from hypnomix.session.smooth import HIT_DB, PLOSIVE_HZ, PLOSIVE_MAX_DIP, PLOSIVE_SHARE, SPIKES_PER_MIN
     out, n, notes, regular, onsets = [], 0, [], [], 0
-    short_fade = 0.002        # shorter than this counts as no fade; Ardour's own default fade (64 samples) is enough of one
+    short_fade = 0.002        # shorter than this counts as no fade; HypnoMix DAW's own default fade (64 samples) is enough of one
     if p.daw == "ardour":
         short_fade = min(short_fade, 64.0 / (p.sample_rate or 44100) - 1e-9)
     for t in p.audio_tracks():
@@ -690,6 +704,28 @@ def g_vocals(p, R, od, a, role):
         except Exception as e:
             notes.append(f"harmony balance check: failed ({SC.plain_reason(str(e) or e.__class__.__name__)}), so no "
                          "harmony balance question is asked")
+    if len(files) > 1:     # vocal level line to line, and upper parts under the melody (as for a Live set)
+        j = od / "raw" / "vocallevel.json"
+        j.unlink(missing_ok=True)              # a failed check must not be read from an earlier scan's file
+        args = ["vocallevel", p.path, "--renders", R.dir, "--json", j, "--tracks", *files.keys()]
+        if lead in files:
+            args += ["--melody", lead]
+        code, out = SC.hx(*args)
+        SC.save(od / "raw" / "vocallevel.txt", SC.strip_warnings(out))
+        if j.exists():
+            vf = json.loads(j.read_text(encoding="utf-8", errors="replace"))["findings"]
+            for f in vf:                       # `fix` does not write these: vocallevel --apply does (REAPER)
+                f["applies"] = "manual"
+                if p.daw == "reaper" and f.get("change_db"):
+                    f["fix"] += f" (`hypnomix vocallevel` with --apply NEW.rpp writes every such move at once)"
+            findings += vf
+            notes.append("vocal levels: measured from renders x faders x volume envelopes (FX not modelled)"
+                         + (f"; write the fixes with `hypnomix vocallevel \"{Path(p.path).name}\" --apply NEW.rpp`"
+                            if p.daw == "reaper" else "")
+                         + "; before the final render re-run `hypnomix vocallevel` with --heard DIR on solo renders")
+        else:
+            notes.append(SC.check_failed(od, "vocal levels", out, "so the vocal level line to line was not checked",
+                                         "vocallevel-error.txt"))
     notes.append(f"vocals: {len(files)} vocal track(s); lead '{lead}'"
                  + ("" if a.lead_track else " (by name or sound; --lead-track to change)"))
     return findings, notes
@@ -856,8 +892,84 @@ def g_stems(p, R, od, a):
     return f, notes
 
 
+def g_devices(p, R, od, a, role):
+    """ReaComp, ReaEQ low cut, ReaGate / ReaLimit listed: `devices_project.py` (Live's `devices` on the model)."""
+    from hypnomix.workflow import devices_project as DP
+    return DP.g_devices(p, R, od, a, role)
+
+
+FADER_TOP_DB = 11.9      # REAPER's fader goes to +12 dB by default (a preference in REAPER)
+FADER_LOW_DB = -40.0
+
+
+def g_structure(p, R, od, a):
+    """From the project file alone (Live's `structure`): the file reads back byte for byte, folders close, sends come
+    from tracks that exist, faders are not at the top or nearly silent with items on the track."""
+    out, n = [], 0
+
+    def add(kind, sev, track, problem, fix, applies="manual"):
+        nonlocal n
+        n += 1
+        out.append(_f("structure", n, tool="structure", kind=kind, severity=sev, track=track, problem=problem,
+                      fix=fix, applies=applies))
+    notes = []
+    if p.daw == "reaper":
+        from hypnomix.project import rpp
+        try:
+            same = rpp.dumps(rpp.load(p.path)).encode("utf-8", errors="surrogateescape") == Path(p.path).read_bytes()
+        except Exception as e:
+            same, why = False, SC.plain_reason(str(e) or e.__class__.__name__)
+        else:
+            why = "a load and save would change it"
+        if not same:
+            add("set-error", "high", "", f"the project's structure: it does not read back byte for byte ({why})",
+                "do not apply fixes to this project; open it in REAPER, save it again, and re-scan")
+        depth, ntr = 0, len(p.tracks)
+        for t in p.tracks:
+            bus = t.native.line("ISBUS") if t.native is not None else None
+            tk = bus.tokens if bus is not None else []
+            if len(tk) > 2 and tk[1] == "1":
+                depth += 1
+            elif len(tk) > 2:
+                try:
+                    k = max(0, -int(float(tk[2])))
+                except ValueError:
+                    k = 0
+                if k > depth:
+                    add("set-warning", "info", t.name, f"the project's structure: '{t.name}' closes {k} folder(s) "
+                        f"but only {depth} is open", "", applies="info")
+                depth = max(0, depth - k)
+            for ln in (t.native.lines("AUXRECV") if t.native is not None else []):
+                src = ln.tokens[1] if len(ln.tokens) > 1 else ""
+                if not src.lstrip("-").isdigit() or not 0 <= int(src) < ntr or int(src) == t.index:
+                    add("send-missing", "medium", t.name, f"a send into '{t.name}' comes from track {src}, which is "
+                        + ("this track itself" if src.isdigit() and int(src) == t.index else "not in the project"),
+                        "check the track's routing in REAPER (the routing button) and remove the stray send")
+        if depth > 0:
+            add("set-warning", "info", "", f"the project's structure: {depth} folder(s) never close (the last "
+                "track is still inside a folder)", "", applies="info")
+    else:
+        notes.append("structure: HypnoMix DAW session: only the nearly-silent fader check (the file's own structure is checked "
+                     "when `fix` writes a new snapshot)")
+    for t in p.tracks:
+        if not t.on:
+            continue
+        db = 20 * math.log10(t.volume) if t.volume > 0 else -150.0
+        if p.daw == "reaper" and db >= FADER_TOP_DB:
+            add("fader-max", "low", t.name, f"fader at {db:+.1f} dB, the top of its range: no room to turn it up, and "
+                "the level going into the next stage is hot", "bring the fader (or the items) down and the folder or "
+                "master up if needed; check by ear")
+        elif db < FADER_LOW_DB and any(c.kind == "audio" and not c.muted for c in t.clips):
+            add("fader-low", "info", t.name, f"fader at {db:.0f} dB with {W['item']}s on the track: barely heard", "",
+                applies="info")
+    notes.append(f"structure: {sum(1 for f in out if f['kind'] == 'set-error')} error(s), "
+                 f"{sum(1 for f in out if f['kind'] != 'set-error')} other finding(s) in the project's structure; "
+                 f"{sum(len(t.clips) for t in p.tracks)} {W['item']}s, {len(p.tracks)} tracks")
+    return out, notes
+
+
 # ---------------------------------------------------------------- run
-STALE_ERRORS = {"clips": ("edges-error.txt",), "vocals": ("key-error.txt", "tune-*-error.txt"),
+STALE_ERRORS = {"clips": ("edges-error.txt",), "vocals": ("key-error.txt", "tune-*-error.txt", "vocallevel-error.txt"),
                 "effects": ("sidechain-error.txt",)}
 
 
@@ -870,7 +982,7 @@ def run(a, path, od, groups):
     for old in ("renders-error.txt", "roles-error.txt"):
         (od / "raw" / old).unlink(missing_ok=True)
     early = []                                 # a step before the groups that failed: told once, in the first group's notes
-    if {"names", "clips", "timing", "vocals", "stems"} & set(groups):
+    if {"names", "clips", "timing", "vocals", "devices", "stems"} & set(groups):
         try:
             R.build(a.jobs)
             print(f"  rendered {len(R.files)} tracks → {R.dir}")
@@ -879,14 +991,15 @@ def run(a, path, od, groups):
                                          "the audio of the tracks have little or nothing to work on",
                                          "renders-error.txt"))
     role = {}
-    if {"vocals", "clips", "timing"} & set(groups):
+    if {"vocals", "clips", "timing", "devices"} & set(groups):
         try:
             role = roles(p, R)
         except Exception:
             early.append(SC.check_failed(od, "track roles", traceback.format_exc(), "so vocals and instruments were "
                                          "not told apart", "roles-error.txt"))
     vocal_names = [t for t, r in role.items() if r in ("lead_vocal", "backing_vocal")]
-    fns = {"timing": lambda p, R, od, a: g_timing(p, R, od, a, role), "names": g_names, "files": g_files, "clips": lambda p, R, od, a: g_clips(p, R, od, a, vocal_names), "effects": g_effects, "recordings": g_recordings, "noise": g_noise,
+    fns = {"timing": lambda p, R, od, a: g_timing(p, R, od, a, role), "names": g_names, "files": g_files, "clips": lambda p, R, od, a: g_clips(p, R, od, a, vocal_names), "effects": g_effects,
+           "devices": lambda p, R, od, a: g_devices(p, R, od, a, role), "structure": g_structure, "recordings": g_recordings, "noise": g_noise,
            "intent": g_intent, "mix": g_mix, "stems": g_stems, "mpe": g_mpe,
            "vocals": lambda p, R, od, a: g_vocals(p, R, od, a, role)}
     warn = list(getattr(p, "warnings", [])) + sorted(set(R.warn))

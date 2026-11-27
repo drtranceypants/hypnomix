@@ -7,10 +7,11 @@ token does not contain). Some chunks (plug-in state) hold raw base64 lines: thos
     root = rpp.load("Song.rpp")
     for tr in root.chunks("TRACK"):
         print(tr.get("NAME"))
-    rpp.save(root, "Song (fixed).rpp")      # refuses to overwrite the file it was read from
+    rpp.save(root, "Song (fixed).rpp")      # a new file: refuses the original and any existing file
 
 Unchanged lines are written back from their original text, so a load + save of an untouched project is identical.
 """
+import os
 from pathlib import Path
 
 QUOTES = "\"'`"
@@ -207,10 +208,79 @@ def dumps(root):
     return nl.join(root.text_lines()) + (nl if getattr(root, "trailing", True) else "")
 
 
-def save(root, out):
+def same_file(a, b):
+    """True when the two paths name one file, also under another spelling of the name on a disk that ignores case
+    (macOS and Windows by default: Song.rpp and SONG.rpp are one file)."""
+    a, b = Path(a), Path(b)
+    if a.exists() and b.exists():
+        try:
+            return os.path.samefile(a, b)
+        except OSError:
+            pass
+    ra, rb = a.resolve(), b.resolve()
+    if ra == rb:
+        return True
+    if os.path.normcase(str(ra)) == os.path.normcase(str(rb)):     # Windows: case and slashes
+        return True
+    return str(ra).casefold() == str(rb).casefold() and _ignores_case(rb.parent)
+
+
+def _ignores_case(folder):
+    """Whether the disk holding `folder` treats names that differ only in case as one file (an existing folder is
+    looked up under its name in another case; a folder that does not exist counts as case-sensitive)."""
+    folder = Path(folder)
+    while not folder.exists() and folder != folder.parent:
+        folder = folder.parent
+    flipped = Path(str(folder).swapcase())
+    if str(flipped) == str(folder):
+        return False
+    try:
+        return flipped.exists() and os.path.samefile(flipped, folder)
+    except OSError:
+        return False
+
+
+def check_new(out, src=None):
+    """Refuse (SystemExit, one sentence) an output that is the original, already exists, or has no folder.
+    Nothing existing is ever overwritten."""
     out = Path(out)
-    src = getattr(root, "path", None)
-    if src is not None and out.resolve() == Path(src).resolve():
+    if src is not None and same_file(out, src):
         raise SystemExit("refusing to overwrite the original project: give a new file name")
-    out.write_bytes(dumps(root).encode("utf-8", errors="surrogateescape"))
+    if out.exists() or out.is_symlink():
+        raise SystemExit(f"{out.name} already exists: choose a new name (nothing is ever overwritten)")
+    if not out.parent.is_dir():
+        raise SystemExit(f"no such folder: {out.parent}; check the name and the folder, then try again.")
+    return out
+
+
+def free_name(path):
+    """`path` if nothing is there, else the same name with " 2", " 3" ... before the suffix: for a file that must
+    not replace another one (such as a project renamed "(BROKEN, do not open)")."""
+    path = Path(path)
+    k = 2
+    out = path
+    while out.exists() or out.is_symlink():
+        out = path.with_name(f"{path.stem} {k}{path.suffix}")
+        k += 1
+    return out
+
+
+def save(root, out):
+    """Write the project to a NEW file. Refuses the file it was read from (under any spelling), an existing file and
+    a missing folder; the file is created exclusively, so nothing that appears meanwhile is written over either."""
+    out = check_new(out, getattr(root, "path", None))
+    data = dumps(root).encode("utf-8", errors="surrogateescape")
+    try:
+        f = open(out, "xb")
+    except FileExistsError:
+        raise SystemExit(f"{out.name} already exists: choose a new name (nothing is ever overwritten)") from None
+    try:                                  # a failed write (a full disk, Ctrl-C) leaves no partial project blocking its own name
+        with f:
+            f.write(data)
+    except BaseException:
+        try:
+            os.unlink(out)
+        except OSError:
+            pass
+        raise
     return out

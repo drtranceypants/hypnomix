@@ -615,7 +615,7 @@ def signature(names):
 def read_cards(set_path, cards_file=None):
     """What the person told HypnoMix in Live, read from the saved set: per track (role, priority, protect) and the
     song card on Main (genre, key, scale, limiter, target, ceiling, amount), plus chords kept by the app."""
-    if str(set_path).lower().endswith(".rpp"):    # REAPER: the Hypnomix Probe / Main JSFX menus in the project
+    if str(set_path).lower().endswith(".rpp"):    # REAPER: the HypnoMix Probe / Main JSFX menus in the project
         from hypnomix.reaper.probes import read_cards as rpp_cards
         cf = Path(cards_file) if cards_file else Path(os.environ.get("HYPNOMIX_APP_HOME", "~/Documents/Hypnomix")).expanduser() / "cards.json"
         return rpp_cards(set_path, cf)

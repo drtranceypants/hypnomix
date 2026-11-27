@@ -49,7 +49,11 @@ class MainStates(unittest.TestCase):
         lua = (root / "bridge.lua").read_text(encoding="utf-8")
         for k in range(1, 7):
             self.assertIn(f"rr_state == {k} ?", main)
-        self.assertIn("!rr_down && rr_was && rr_armed && rr_in ?", main)      # a press counts on release
+        ui = (root / "jsfx" / "hypnomix_ui.jsfx-inc").read_text(encoding="utf-8")
+        self.assertIn("ui_button(1, ", main)                                   # Record is a HypnoMix button, and
+        self.assertIn("hit = ui_release && ui_armed == id && over;", ui)      # a press counts on release
+        for k in (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14):              # every mastering-chain state has words
+            self.assertIn(f"mc_state == {k} ?", main)
         self.assertIn("or reaper.time_precise() - rec.began > 3 then", lua)  # playback gets time to start
         self.assertIn("if rec.last - rec.start < 1.0 then reaper.gmem_write(GM_STATE, 5); return false end", lua)
 

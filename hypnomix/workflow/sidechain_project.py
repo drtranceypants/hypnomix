@@ -161,6 +161,15 @@ def analyse(p, style="auto"):
         if any(tr is s["track"] for tr, _, _ in s["sources"]):
             out.append((s, None, "the compressor listens to its own track: ordinary compression, not ducking"))
             continue
+        from hypnomix.workflow.devices_project import mix, _db     # the devices check's Dry / Wet reading (lazy: it imports this)
+        how, dry, wet = mix(s["state"].vals)
+        if how == "dry":
+            out.append((s, None, f"its Wet is at {_db(wet)} dB, so no ducking is heard: not judged"))
+            continue
+        if how == "parallel":
+            out.append((s, None, f"it mixes dry ({_db(dry)} dB) and wet ({_db(wet)} dB), parallel compression: not judged "
+                                 "(the ducking model assumes a fully wet compressor)"))
+            continue
         trig = trigger_audio(p, s["sources"], L)
         if trig is None or not np.any(trig):
             out.append((s, None, "the sending track has no audio to trigger it (a MIDI or empty track)"))

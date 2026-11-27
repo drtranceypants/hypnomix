@@ -372,7 +372,7 @@ function C.close_tab()
   return { closed = true }
 end
 
--- ------------------------------------------------------------------ Hypnomix Probe / Main (JSFX) relay
+-- ------------------------------------------------------------------ HypnoMix Probe / Main (JSFX) relay
 -- The probes write their 20 values per 100 ms block into shared memory (gmem "hypnomix", see hypnomix_meter.jsfx-inc);
 -- each is given a slot here, and every new block is kept in a ring for the app to fetch (`probe_blocks since=N`).
 local GM_BASE, GM_NV, GM_RING = 64, 20, 8
@@ -390,7 +390,8 @@ local function probe_scan()
   local function look(tr, is_main)
     for k = 0, reaper.TrackFX_GetCount(tr) - 1 do
       local _, n = reaper.TrackFX_GetFXName(tr, k, "")
-      local kind = n:find("Hypnomix Main", 1, true) and "main" or (n:find("Hypnomix Probe", 1, true) and "probe" or nil)
+      local ln = n:lower()                              -- "HypnoMix Main" now, "Hypnomix Main" in older copies
+      local kind = ln:find("hypnomix main", 1, true) and "main" or (ln:find("hypnomix probe", 1, true) and "probe" or nil)
       if kind then
         local key = is_main and "master" or reaper.GetTrackGUID(tr)
         if not probes.slots[key] then probes.slots[key] = probes.next_slot; probes.next_slot = probes.next_slot + 1 end
@@ -452,7 +453,7 @@ end
 
 function C.probe_debug(a)       -- what the relay sees: probes found, their slots, and the shared memory at each
   if not attached then reaper.gmem_attach("hypnomix"); attached = true end
-  local out = { err = probes.err, seq = probes.seq, buffered = #probes.buf, version = reaper.gmem_read(0), probes = {} }
+  local out = { err = probes.err or probes.last_err, seq = probes.seq, buffered = #probes.buf, version = reaper.gmem_read(0), probes = {} }
   for _, f in ipairs(probes.found) do
     local base = GM_BASE + f.slot * GM_BLK
     out.probes[#out.probes + 1] = { name = probe_name(f), slot = f.slot, sp = f.sp, count = reaper.gmem_read(base),
@@ -470,7 +471,7 @@ end
 
 
 -- ------------------------------------------------------------------ Record and review before export
--- Hypnomix Main's button counts presses in gmem[8]; the state Main shows is gmem[9] (0 idle, 1 recording,
+-- HypnoMix Main's button counts presses in gmem[8]; the state Main shows is gmem[9] (0 idle, 1 recording,
 -- 2 rendering, 3 no app, 4 reviewing in the app, 5 under a second played: nothing sent, 6 the review failed) and gmem[10] the seconds recorded. While recording, the probes
 -- listen as usual; on stop the app renders the master for exactly the stretch that played (`render_master`) and
 -- reviews it. The events go to the app's relay with `probe_blocks rec=1` (one reader: the app that owns the probes).
@@ -534,6 +535,7 @@ end
 
 function C.probe_blocks(a)
   if a.rec == "1" then rec.fed = reaper.time_precise() end   -- a relay that reviews recordings
+  reaper.gmem_write(3, reaper.gmem_read(2))                  -- the probes' windows show "app on" while this is asked
   local since = tonumber(a.since or "0") or 0
   local out = {}
   for _, b in ipairs(probes.buf) do if b.seq > since then out[#out + 1] = b end end
@@ -558,20 +560,29 @@ function C.probe_blocks(a)
   return { seq = probes.seq, blocks = out, meta = meta, names = names, rec = evs }
 end
 
--- ------------------------------------------------------------------ the Hypnomix panel (review and A/B)
+-- ------------------------------------------------------------------ the HypnoMix Review panel (review and A/B)
 -- A window drawn here with REAPER's own gfx; `hypnomix reaper review` keeps it in step with the app (Lua cannot
 -- make web requests): it sets what to show (`panel_set`) and collects the clicks (`panel_events`).
 local panel = { open = false, st = {}, events = {}, buttons = {}, was_down = false, flash = "", flash_until = 0,
                 mode = "review", sliders = {}, drag = nil, hold = {} }
-local PW, PH = 520, 236
-local AW, AH = 640, 380                 -- the Align panel
+local PW, PH = 600, 300
+local AW, AH = 680, 470                 -- the Align panel
 
-function C.panel_open(a)                -- mode=align: the Hypnomix Align panel (`hypnomix reaper align`) in the same window
+-- the look and the guide, shared by both panels (ui.lua next to this script)
+local UI_HERE = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "")
+local ui_ok, U = pcall(dofile, UI_HERE .. "ui.lua")
+if not ui_ok then probes.err = "ui.lua: " .. tostring(U); U = nil end   -- soft: the panels fail, the rest still works
+
+function C.panel_open(a)                -- mode=align: the HypnoMix Align panel (`hypnomix reaper align`) in the same window
+  if not U then return { open = false, err = probes.err or probes.last_err } end
   local mode = (a and a.mode) or "review"
   if panel.open and panel.mode ~= mode then gfx.quit(); panel.open = false end
   if not panel.open then
-    if mode == "align" then gfx.init("HypnoMix Align", AW, AH) else gfx.init("HypnoMix", PW, PH) end
+    gfx.ext_retina = 1                  -- full resolution on a Retina screen (REAPER sets it to 2 there)
+    if mode == "align" then gfx.init("HypnoMix Align", AW, AH) else gfx.init("HypnoMix Review", PW, PH) end
     panel.open, panel.mode, panel.st, panel.events = true, mode, {}, {}
+    U.tour_on = false; panel.drag = nil
+    if a and a.guide == "1" or not U.seen(mode) then U.tour_start() end      -- the guide, the first time
   end
   return { open = true, mode = panel.mode }
 end
@@ -596,8 +607,15 @@ function C.panel_events()
   return { open = panel.open, events = ev }
 end
 
+function C.panel_guide()                -- start the open panel's guide again (the same as its "?")
+  if not U then return { open = false, err = probes.err or probes.last_err } end
+  if panel.open then panel.drag = nil; U.tour_start() end     -- a drag under way is dropped, not sent when the guide closes
+  return { open = panel.open }
+end
+
 function C.jump(a)       -- select the finding's track, put the cursor and the time selection around the spot
-  local tr = track_of(a.track)
+  -- a finding with no track (none sent, or "") leaves the track selection alone: track_of would give the master
+  local tr = (a.track and a.track ~= "") and track_of(a.track) or nil
   if tr then reaper.SetOnlyTrackSelected(tr); reaper.Main_OnCommand(40913, 0) end   -- and scroll it into view
   if a.start then
     local s, e = tonumber(a.start), tonumber(a["end"] or a.start)
@@ -607,79 +625,105 @@ function C.jump(a)       -- select the finding's track, put the cursor and the t
   return { track = tr ~= nil }
 end
 
-local function wrap(text, width, max_lines)
-  local lines, line = {}, ""
-  for word in tostring(text or ""):gmatch("%S+") do
-    local try = line == "" and word or (line .. " " .. word)
-    if gfx.measurestr(try) > width and line ~= "" then
-      lines[#lines + 1] = line; line = word
-      if #lines >= max_lines then return lines end
-    else line = try end
-  end
-  if line ~= "" and #lines < max_lines then lines[#lines + 1] = line end
-  return lines
-end
-
-local function button(label, x, y, on, action, w)
-  w = w or (gfx.measurestr(label) + 16)
-  gfx.set(on and 0.56 or 0.24, on and 0.78 or 0.24, on and 0.64 or 0.25, 1)
-  gfx.rect(x, y, w, 22, 1)
-  gfx.set(on and 0.1 or 0.93, on and 0.1 or 0.91, on and 0.1 or 0.87, 1)
-  gfx.x, gfx.y = x + 8, y + 5
-  gfx.drawstr(label)
-  panel.buttons[#panel.buttons + 1] = { x = x, y = y, w = w, h = 22, action = action }
+-- a button that sends `action` to `hypnomix reaper review` / `align` when clicked; returns the x after it
+local function button(label, x, y, style, action, w, h)
+  w = w or U.bw(label, 56)
+  if U.button(action, x, y, w, h or 26, label, style) then panel.events[#panel.events + 1] = action end
   return x + w + 6
 end
 
-local function panel_draw()
-  if gfx.getchar() < 0 then panel.open = false; panel.events[#panel.events + 1] = "closed"; return end
-  local st = panel.st
-  panel.buttons = {}
-  gfx.set(0.13, 0.125, 0.11, 1); gfx.rect(0, 0, gfx.w, gfx.h, 1)
-  gfx.setfont(1, "Arial", 14, string.byte("b"))
-  gfx.set(0.93, 0.91, 0.87, 1); gfx.x, gfx.y = 10, 8; gfx.drawstr("HYPNOMIX")
-  gfx.setfont(1, "Arial", 13)
-  gfx.set(0.63, 0.6, 0.56, 1); gfx.x, gfx.y = 90, 9
-  gfx.drawstr(st.status or "")
-  gfx.set(0.93, 0.91, 0.87, 1); gfx.x, gfx.y = 10, 30
-  gfx.drawstr(st.head or "")
-  local y = 50
-  gfx.set(0.85, 0.82, 0.77, 1)
-  for _, l in ipairs(wrap(st.problem, gfx.w - 20, 3)) do gfx.x, gfx.y = 10, y; gfx.drawstr(l); y = y + 16 end
-  gfx.set(0.56, 0.78, 0.64, 1)
-  for _, l in ipairs(wrap(st.fix, gfx.w - 20, 2)) do gfx.x, gfx.y = 10, y; gfx.drawstr(l); y = y + 16 end
-  y = math.max(y + 6, 136)
-  local x = 10
-  x = button("Prev", x, y, false, "prev"); x = button("Next", x, y, false, "next"); x = button("Next open", x, y, false, "next_open")
-  x = button("Approve", x + 10, y, st.decision == "approve", "approve"); x = button("Skip", x, y, st.decision == "skip", "skip")
-  if st.ab == "1" then
-    y = y + 30; x = 10
-    if st.blind == "1" then
-      x = button("X", x, y, st.heard == "X", "X"); x = button("Y", x, y, st.heard == "Y", "Y")
-      x = button("I like X", x + 10, y, false, "like_X"); x = button("I like Y", x, y, false, "like_Y")
-    else
-      x = button("A · now", x, y, st.state == "A", "A"); x = button("B · fix", x, y, st.state == "B", "B")
-      x = button("Blind", x + 10, y, false, "blind")
-    end
-    x = button(st.match == "1" and "Match on" or "Match off", x + 10, y, st.match == "1", "match")
-  end
+local function flash_line()
   if reaper.time_precise() < panel.flash_until then
-    gfx.set(0.98, 0.8, 0.45, 1); gfx.x, gfx.y = 10, gfx.h - 20; gfx.drawstr(panel.flash)
+    U.col(U.C.amber); U.font(3); U.wrap(panel.flash, 14, U.h - 20, U.w - 28, 13, 1)
   end
-  local down = gfx.mouse_cap & 1 == 1
-  if panel.was_down and not down then                    -- a click: on release, where the button is
-    for _, b in ipairs(panel.buttons) do
-      if gfx.mouse_x >= b.x and gfx.mouse_x <= b.x + b.w and gfx.mouse_y >= b.y and gfx.mouse_y <= b.y + b.h then
-        panel.events[#panel.events + 1] = b.action
-      end
+end
+
+local SEV = U and { high = U.C.red, medium = U.C.amber, low = U.C.teal } or {}
+
+-- The keys typed while a panel has the focus (returns false when the window was closed, by its close box or Esc).
+-- Space runs Transport: Play/stop (40044). A script window cannot hand a key back to REAPER's main window. The panels take the keys while they are in front: space plays and stops (once per press: a held space repeats, and
+-- each repeat would flip play and stop), Esc closes the guide or the panel. Other keys do nothing here; click
+-- REAPER's own window first for its shortcuts.
+local space_held = false
+local function panel_keys()
+  local space = false
+  for _ = 1, 32 do                                   -- every key waiting since the last pass
+    local ch = gfx.getchar()
+    if ch < 0 then return false end                  -- the window was closed
+    if ch == 0 then break end
+    if ch == 32 then space = true
+    elseif ch == 27 then
+      if U.tour_on then U.tour_esc = true else gfx.quit(); return false end
     end
   end
-  panel.was_down = down
+  if space and not space_held then reaper.Main_OnCommand(40044, 0) end   -- play / stop, once
+  space_held = space or gfx.getchar(32) > 0          -- still down (auto-repeat): wait for its release
+  return true
+end
+
+local function panel_draw()
+  if not panel_keys() then panel.open = false; panel.events[#panel.events + 1] = "closed"; return end
+  local st = panel.st
+  U.begin()
+  local help = U.header("HypnoMix Review", st.status or "")
+  if help then U.tour_start() end
+  -- the finding
+  U.card(10, 46, U.w - 20, 140)
+  local sev = ((st.sev or "") ~= "" and st.sev or (st.head or ""):match("^%[(%w+)%]") or ""):lower()
+  local x = 22
+  if sev ~= "" then
+    U.col(SEV[sev] or U.C.muted); U.font(3)
+    local sw = U.textw(sev:upper()) + 18
+    U.rrect(x, 58, sw, 18, 9); U.col(U.C.dark); U.textc(x, 58, sw, 18, sev:upper()); x = x + sw + 10
+  end
+  U.col(U.C.text); U.font(2)
+  local head = (st.track or "") ~= "" and (st.track .. (((st.where or "") ~= "") and ("  ·  " .. st.where) or ""))
+               or (st.head or ""):gsub("^%[%w+%]%s*", "")
+  U.wrap(head, x, 60, U.w - x - 22, 15, 1)
+  U.col(U.C.text); U.font(1)
+  local _, ph = U.wrap(st.problem, 22, 86, U.w - 44, 16, 3)
+  U.col(U.C.teal); U.font(1)
+  U.wrap(st.fix, 22, 92 + ph, U.w - 44, 16, 2)
+  -- step through and decide
+  local y = 198
+  x = button("Prev", 10, y, "plain", "prev"); x = button("Next", x, y, "plain", "next")
+  x = button("Next open", x, y, "plain", "next_open")
+  x = button("Approve", x + 12, y, st.decision == "approve" and "teal" or "amber", "approve")
+  x = button("Skip", x, y, st.decision == "skip" and "teal" or "plain", "skip")
+  -- A / B / Blind (an A/B project)
+  local aby = 234
+  if st.ab == "1" then
+    U.card(10, aby - 4, U.w - 20, 36)
+    x = 18
+    if st.blind == "1" then
+      x = button("X", x, aby, st.heard == "X" and "teal" or "plain", "X", 44); x = button("Y", x, aby, st.heard == "Y" and "teal" or "plain", "Y", 44)
+      x = button("I like X", x + 12, aby, "amber", "like_X"); x = button("I like Y", x, aby, "amber", "like_Y")
+    else
+      x = button("A · now", x, aby, st.state == "A" and "teal" or "plain", "A"); x = button("B · fix", x, aby, st.state == "B" and "teal" or "plain", "B")
+      x = button("Blind", x + 12, aby, "plain", "blind")
+    end
+    button(st.match == "1" and "Match on" or "Match off", x + 12, aby, st.match == "1" and "teal" or "plain", "match")
+  else
+    U.col(U.C.muted); U.font(3)
+    U.wrap("A / B / Blind appear here in an A/B project (hypnomix abset, then hypnomix reaper review)", 14, aby + 8, U.w - 28, 13, 1)
+  end
+  flash_line()
+  -- the guide
+  local r = U.tour({
+    { 6, 6, U.w - 50, 26, "HypnoMix Review in REAPER", "This panel follows the review in the HypnoMix app: every finding of the scan, one at a time. When you move to a finding (Prev, Next and Next open here, or Show in REAPER in the app), REAPER's cursor and time selection go to the spot and its track is selected, so you hear it where it is. Your project's content is not changed, and nothing is saved until you save. In an A/B project, A, B and Blind switch which plug-ins and tracks play (see that step)." },
+    { 10, 46, U.w - 20, 140, "The finding", "How serious it is (red high, amber medium, teal low), the track and where, what is wrong, and in teal the fix HypnoMix proposes. Press space to play the selection (and again to stop)." },
+    { 10, 198, 200, 26, "Prev, Next, Next open", "Step through the findings. Next open skips the ones you already decided." },
+    { 220, 198, 160, 26, "Approve or Skip", "Approve marks the fix to be written; Skip leaves it. Nothing is applied yet: hypnomix fix writes only what you approved into ONE new project, next to yours." },
+    { 10, aby - 4, U.w - 20, 36, "A, B and Blind", "In an A/B project (hypnomix abset) A is your mix and B the fix, switched instantly with every plug-in playing. Match turns B to A's loudness (needs HypnoMix Main and the bridge). Blind hides which is which until you pick." },
+    { U.w - 34, 6, 24, 24, "Help any time", "The ? starts this guide again. The same guide is in HypnoMix Probe, HypnoMix Main and the Align panel. In this panel space plays and stops REAPER, and Esc closes the guide, or the panel when the guide is off." },
+  })
+  if r == "done" then U.mark_seen("review") end
+  U.finish()
   gfx.update()
 end
 
 
--- ------------------------------------------------------------------ the Hypnomix Align panel
+-- ------------------------------------------------------------------ the HypnoMix Align panel
 -- `hypnomix reaper align` drives it like the review panel: it sets what to show and collects the clicks. The
 -- sliders are moved here (dragged left / right) and reported as "set:<name>=<value>" when let go.
 function C.align_where()       -- what the panel picks from: selected tracks, the time selection, the edit cursor
@@ -699,120 +743,119 @@ local SLIDERS = { { "tight", "Tight", 0, 1, "%.0f%%", 100 }, { "pitch", "Pitch",
 local function slider(def, x, y, w)
   local key, label, lo, hi, f, k = table.unpack(def)
   local v = tonumber(panel.st[key] or lo) or lo
-  gfx.set(0.63, 0.6, 0.56, 1); gfx.x, gfx.y = x, y; gfx.drawstr(label)
-  local bx, by, bw = x + 58, y + 2, w - 58
-  gfx.set(0.24, 0.24, 0.25, 1); gfx.rect(bx, by, bw, 12, 1)
-  local z = (lo < 0) and (bx + bw * (0 - lo) / (hi - lo)) or bx
-  local px = bx + bw * (v - lo) / (hi - lo)
-  gfx.set(0.98, 0.72, 0.3, (v == 0 and lo >= 0) and 0.35 or 1)
-  gfx.rect(math.min(z, px), by, math.max(2, math.abs(px - z)), 12, 1)
-  gfx.set(0.93, 0.91, 0.87, 1); gfx.x, gfx.y = bx + bw + 6, y
-  gfx.drawstr(string.format(f, v * k))
-  panel.sliders[#panel.sliders + 1] = { key = key, x = bx, y = by - 3, w = bw, h = 18, lo = lo, hi = hi }
+  local area = U.slider(x, y, w, v, lo, hi, label, string.format(f, v * k))
+  area.key = key
+  panel.sliders[#panel.sliders + 1] = area
 end
 
 local function lane(name, before, after, x, y, w, h)
-  gfx.set(0.18, 0.17, 0.16, 1); gfx.rect(x, y, w, h, 1)
-  local function draw(list, r, g_, b, alpha)
+  U.col(U.C.card); U.rrect(x, y, w, h, 6)
+  local s = U.s
+  local function draw(list, c, alpha)
     local pts = {}
     for v in tostring(list or ""):gmatch("[^,]+") do pts[#pts + 1] = tonumber(v) or -60 end
     if #pts < 2 then return end
-    gfx.set(r, g_, b, alpha)
+    U.col(c, alpha)
     for i = 2, #pts do
       local x0, x1 = x + w * (i - 2) / (#pts - 1), x + w * (i - 1) / (#pts - 1)
       local y0, y1 = y + h - 2 - (h - 4) * (pts[i - 1] + 60) / 60, y + h - 2 - (h - 4) * (pts[i] + 60) / 60
-      gfx.line(x0, y0, x1, y1, 1)
+      gfx.line(x0 * s, y0 * s, x1 * s, y1 * s, 1)
     end
   end
-  draw(before, 0.6, 0.6, 0.6, 0.9)
-  draw(after, 0.98, 0.72, 0.3, 1)
-  gfx.set(0.93, 0.91, 0.87, 0.9); gfx.x, gfx.y = x + 4, y + 2; gfx.drawstr(name)
+  draw(before, { 150, 146, 150 }, 0.9)
+  draw(after, U.C.amber, 1)
+  U.col(U.C.text, 0.9); U.font(3); U.text(x + 8, y + 4, name)
 end
 
 local function align_draw()
-  if gfx.getchar() < 0 then panel.open = false; panel.events[#panel.events + 1] = "closed"; return end
+  if not panel_keys() then panel.open = false; panel.events[#panel.events + 1] = "closed"; return end
   local st = panel.st
-  panel.buttons, panel.sliders = {}, {}
-  gfx.set(0.13, 0.125, 0.11, 1); gfx.rect(0, 0, gfx.w, gfx.h, 1)
-  gfx.setfont(1, "Arial", 14, string.byte("b"))
-  gfx.set(0.93, 0.91, 0.87, 1); gfx.x, gfx.y = 10, 8; gfx.drawstr("HYPNOMIX ALIGN")
-  gfx.setfont(1, "Arial", 13)
-  gfx.set(0.63, 0.6, 0.56, 1); gfx.x, gfx.y = 140, 9; gfx.drawstr(st.status or "")
+  panel.sliders = {}
+  U.begin()
+  if U.header("HypnoMix Align", st.status or "") then U.tour_start() end
   local busy = st.busy == "1"
-  -- who
-  local y = 32
-  local x = button("Guide ←", 10, y, false, "guide")
-  gfx.set(0.93, 0.91, 0.87, 1); gfx.x, gfx.y = x, y + 5; gfx.drawstr(st.guide ~= "" and st.guide or "(select the guide track)")
-  y = 58
-  x = button("+ Part", 10, y, false, "part"); x = button("Clear", x, y, false, "clear")
-  gfx.set(0.93, 0.91, 0.87, 1)
-  local pl = wrap(st.parts ~= "" and st.parts or "(select a part, + Part; repeat)", gfx.w - x - 10, 1)
-  gfx.x, gfx.y = x, y + 5; gfx.drawstr(pl[1] or "")
+  -- who: the guide and the parts
+  U.card(10, 46, U.w - 20, 72)
+  U.col(U.C.muted); U.font(3); U.text(22, 54, "WHO")
+  local x = button("Guide ←", 22, 68, "plain", "guide", 88, 22)
+  U.col(st.guide ~= "" and st.guide and U.C.text or U.C.muted); U.font(2)
+  U.wrap(st.guide ~= "" and st.guide or "select the guide track, then Guide ←", x + 4, 72, U.w - x - 30, 14, 1)
+  x = button("+ Part", 22, 92, "plain", "part", 88, 22); x = button("Clear", x, 92, "plain", "clear", 60, 22)
+  U.col(st.parts ~= "" and st.parts and U.C.text or U.C.muted); U.font(1)
+  U.wrap(st.parts ~= "" and st.parts or "select a part, + Part; repeat for each", x + 4, 96, U.w - x - 30, 14, 1)
   -- where
-  y = 86
-  x = button("Range: selection", 10, y, st.range_on == "1", "range")
-  x = button("Song", x, y, st.range_on ~= "1", "song")
-  x = button("Protect", x + 10, y, false, "protect"); x = button("Sync here", x, y, false, "sync")
-  x = button("Clear marks", x, y, false, "clear_marks")
-  gfx.set(0.63, 0.6, 0.56, 1); gfx.x, gfx.y = 10, y + 28
-  gfx.drawstr(st.where or "")
+  U.card(10, 126, U.w - 20, 62)
+  U.col(U.C.muted); U.font(3); U.text(22, 134, "WHERE")
+  x = button("Selection", 22, 148, st.range_on == "1" and "teal" or "plain", "range", nil, 22)
+  x = button("Song", x, 148, st.range_on ~= "1" and "teal" or "plain", "song", nil, 22)
+  x = button("Protect", x + 12, 148, "plain", "protect", nil, 22); x = button("Sync here", x, 148, "plain", "sync", nil, 22)
+  x = button("Clear marks", x, 148, "plain", "clear_marks", nil, 22)
+  U.col(U.C.muted); U.font(3); U.wrap(st.where or "", 22, 173, U.w - 44, 12, 1)
   -- how
-  y = 136
-  local sw = math.floor((gfx.w - 30) / 2)
-  slider(SLIDERS[1], 10, y, sw - 60); slider(SLIDERS[2], 20 + sw, y, sw - 60)
-  slider(SLIDERS[3], 10, y + 22, sw - 60); slider(SLIDERS[4], 20 + sw, y + 22, sw - 60)
-  y = 186
-  x = button("Preset: " .. (st.preset ~= "" and st.preset or "none"), 10, y, st.preset ~= "", "preset")
-  x = button(st.takes == "1" and "Timing: takes" or "Timing: markers", x + 10, y, st.takes == "1", "takes")
-  x = button(st.write == "1" and "Write project: on" or "Write project: off", x, y, st.write == "1", "write")
-  x = button(busy and "Aligning…" or "Align", x + 10, y, busy, "align")
-  if st.can_open == "1" then x = button("Open project", x, y, false, "open") end
-  gfx.set(0.85, 0.82, 0.77, 1); gfx.x, gfx.y = 10, y + 28
-  gfx.drawstr((wrap(st.result or "", gfx.w - 20, 1))[1] or "")
+  U.card(10, 196, U.w - 20, 70)
+  U.col(U.C.muted); U.font(3); U.text(22, 204, "HOW")
+  local sw = math.floor((U.w - 64) / 2)
+  slider(SLIDERS[1], 22, 222, sw); slider(SLIDERS[2], 42 + sw, 222, sw)
+  slider(SLIDERS[3], 22, 244, sw); slider(SLIDERS[4], 42 + sw, 244, sw)
+  -- go
+  local y = 276
+  x = button("Preset: " .. ((st.preset or "") ~= "" and st.preset or "none"), 10, y, (st.preset or "") ~= "" and "teal" or "plain", "preset")
+  x = button(st.takes == "1" and "Timing: takes" or "Timing: markers", x + 8, y, st.takes == "1" and "teal" or "plain", "takes")
+  x = button(st.write == "1" and "Write project: on" or "Write project: off", x, y, st.write == "1" and "teal" or "plain", "write")
+  x = button(busy and "Aligning…" or "Align", x + 8, y, busy and "teal" or "amber", "align", 84)
+  if st.can_open == "1" then x = button("Open project", x, y, "plain", "open") end
+  U.col(U.C.text); U.font(1); U.wrap(st.result or "", 14, y + 34, U.w - 28, 14, 1)
   -- lanes: grey before, amber after
-  local top, n = 236, 0
+  local top, n = 330, 0
   local lanes = {}
   for l in tostring(st.lanes or ""):gmatch("[^|]+") do lanes[#lanes + 1] = l end
   if #lanes > 0 then
-    local lh = math.min(34, math.floor((gfx.h - top - 26) / #lanes) - 3)
+    local lh = math.min(34, math.floor((U.h - top - 26) / #lanes) - 4)
     for _, l in ipairs(lanes) do
       local name, before, after = l:match("^([^;]*);([^;]*);?(.*)$")
-      lane(name or "", before, after, 10, top + n * (lh + 3), gfx.w - 20, lh); n = n + 1
+      lane(name or "", before, after, 10, top + n * (lh + 4), U.w - 20, lh); n = n + 1
     end
+  else
+    U.col(U.C.muted); U.font(3)
+    U.wrap("After Align, each part shows here: grey before, amber after, against the guide.", 14, top + 6, U.w - 28, 13, 2)
   end
-  if reaper.time_precise() < panel.flash_until then
-    gfx.set(0.98, 0.8, 0.45, 1); gfx.x, gfx.y = 10, gfx.h - 20; gfx.drawstr(panel.flash)
-  end
-  -- mouse: a slider follows a drag; a button fires on release
-  local down = gfx.mouse_cap & 1 == 1
-  local mx, my = gfx.mouse_x, gfx.mouse_y
-  if down and not panel.was_down then
-    for _, s in ipairs(panel.sliders) do
-      if mx >= s.x - 4 and mx <= s.x + s.w + 4 and my >= s.y and my <= s.y + s.h then panel.drag = s end
-    end
-  end
-  if panel.drag then
-    local s = panel.drag
-    local v = s.lo + (s.hi - s.lo) * math.max(0, math.min(1, (mx - s.x) / s.w))
-    v = (s.hi - s.lo) > 2 and math.floor(v * 10 + 0.5) / 10 or math.floor(v * 100 + 0.5) / 100
-    panel.st[s.key] = tostring(v)
-    panel.hold[s.key] = reaper.time_precise() + 1.5
-    if not down then
-      panel.events[#panel.events + 1] = "set:" .. s.key .. "=" .. tostring(v)
-      panel.drag = nil
-    end
-  elseif panel.was_down and not down then
-    for _, b in ipairs(panel.buttons) do
-      if mx >= b.x and mx <= b.x + b.w and my >= b.y and my <= b.y + b.h then
-        panel.events[#panel.events + 1] = b.action
+  flash_line()
+  -- mouse: a slider follows a drag (reported when let go); buttons were handled as they were drawn
+  if not U.tour_on then
+    local mx = U.mx
+    if U.press then
+      for _, s in ipairs(panel.sliders) do
+        if U.inside(s.x - 6, s.y, s.w + 12, s.h) then panel.drag = s end
       end
     end
+    if panel.drag then
+      local s = panel.drag
+      local v = s.lo + (s.hi - s.lo) * math.max(0, math.min(1, (mx - s.x) / s.w))
+      v = (s.hi - s.lo) > 2 and math.floor(v * 10 + 0.5) / 10 or math.floor(v * 100 + 0.5) / 100
+      panel.st[s.key] = tostring(v)
+      panel.hold[s.key] = reaper.time_precise() + 1.5
+      if not U.down then
+        panel.events[#panel.events + 1] = "set:" .. s.key .. "=" .. tostring(v)
+        panel.drag = nil
+      end
+    end
+  else
+    panel.drag = nil                                 -- the guide is on: no drag carries over past it
   end
-  panel.was_down = down
+  local r = U.tour({
+    { 6, 6, U.w - 50, 26, "HypnoMix Align in REAPER", "Lines up the timing (and, if you like, pitch and formant) of vocal parts to a guide track, like the Align device in Live. It writes stretch markers or new takes into a NEW project: yours is never changed." },
+    { 10, 46, U.w - 20, 72, "Who", "Select the guide track (usually the lead) and press Guide ←. Then select each part to line up and press + Part. Clear starts over." },
+    { 10, 126, U.w - 20, 62, "Where", "Selection aligns only the time selection; Song the whole song. Protect keeps a stretch untouched; Sync here marks a point every part must meet. Clear marks removes them." },
+    { 10, 196, U.w - 20, 70, "How", "Drag the sliders. Tight: how far each part moves toward the guide (gentle is natural). Pitch and Vibrato: how much of the guide's pitch to follow. Formant: the voice's character, in semitones." },
+    { 10, 276, U.w - 20, 26, "Align", "Preset recalls saved settings. Timing by markers keeps one item; by takes writes new takes you can switch. Write project makes the new .rpp; Align runs it and Open project opens the result." },
+    { 10, 326, U.w - 20, U.h - 336, "Before and after", "Each part's level shape against time: grey before, amber after. Listen in the new project before you keep it. The ? starts this guide again; in this panel space plays and stops REAPER, and Esc closes the guide, or the panel when the guide is off." },
+  })
+  if r == "done" then U.mark_seen("align") end
+  U.finish()
   gfx.update()
 end
 
-local CHANGES = { jump = false, set_pins = true, remove_fx = true, add_track = true, add_fx = true, set_param = true, set_named = true, fx_enable = true, set_track = true,
+local CHANGES = { jump = false, panel_guide = false, set_pins = true, remove_fx = true, add_track = true, add_fx = true, set_param = true, set_named = true, fx_enable = true, set_track = true,
                   teach_tempo = true, teach_click = true, teach_track = true, teach_drums = true }
 local running = true
 function C.quit() running = false; return { bye = true } end
@@ -833,12 +876,14 @@ end
 local function answer(id, ok, body, err)
   local tmp, out = DIR .. "/res-" .. id .. ".tmp", DIR .. "/res-" .. id .. ".json"
   local f = io.open(tmp, "w")
-  f:write(json({ ok = ok, result = body, error = err }))
+  if not f then probes.err = "could not write the answer in " .. DIR; return false end   -- the caller times out
+  local wrote = f:write(json({ ok = ok, result = body, error = err }))
   f:close()
-  os.rename(tmp, out)
+  if not wrote then os.remove(tmp); probes.err = "could not write the answer in " .. DIR; return false end
+  return os.rename(tmp, out) and true or false
 end
 
--- ------------------------------------------------------------------ the mastering chain (Hypnomix Main's buttons)
+-- ------------------------------------------------------------------ the mastering chain (HypnoMix Main's buttons)
 local HERE = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "")
 local chain_ok, MC = pcall(function()
   return dofile(HERE .. "masterchain.lua")({ set_shown = set_shown, shown = shown, first_number = first_number,
@@ -846,26 +891,79 @@ local chain_ok, MC = pcall(function()
 end)
 if chain_ok then MC.commands(C) else probes.err = "masterchain: " .. tostring(MC); MC = nil end
 CHANGES.chain_build = false; CHANGES.chain_save = false; CHANGES.chain_match = false   -- they make their own undo steps
+do local ok, MX = pcall(function() return dofile(HERE .. "mixer.lua")({ track_of = track_of, shown = shown }) end); if ok then MX.commands(C, CHANGES) else probes.err = "mixer: " .. tostring(MX) end end
 
+-- The JSFX windows: gmem[2] counts the bridge's passes ("bridge on"); gmem[5] / gmem[6] are "the Probe's / Main's guide
+-- was seen", kept in REAPER's extended state so the guide shows once per computer, not once per plug-in.
+local beat_n = 0
+local function jsfx_poll()
+  if not attached then reaper.gmem_attach("hypnomix"); attached = true end
+  beat_n = beat_n + 1
+  if beat_n == 1 then reaper.gmem_write(3, 0) end   -- gmem outlives the bridge: an old "app" count must not read as on
+  reaper.gmem_write(2, beat_n)
+  if not U then return end
+  for k, key in pairs({ [5] = "probe", [6] = "main" }) do
+    local g = reaper.gmem_read(k)
+    if g == 1 and not U.seen(key) then U.mark_seen(key)
+    elseif g ~= 1 and U.seen(key) then reaper.gmem_write(k, 1) end
+  end
+end
+
+-- One bridge per REAPER: each start takes a new token (REAPER's extended state, this session only); a bridge whose token
+-- is no longer the current one ends at its next pass, so a second start replaces the first instead of doubling it.
+local TOKEN = string.format("%.6f-%d", reaper.time_precise(), math.random(1, 1000000000))
+reaper.SetExtState("hypnomix", "bridge_token", TOKEN, false)
+local replaced = false
+os.remove(DIR .. "/busy")                            -- left by a REAPER that closed in the middle of a command
+
+-- REAPER's own process id, so the Python side can tell a `busy` file left by a REAPER that crashed (or was quit) in
+-- the middle of a command from one this REAPER is working on. On macOS the shell REAPER starts reports its parent's
+-- id; on Windows there is no quick way from Lua, so it stays 0 and the Python side falls back to the file's age.
+local PID = 0
+if not reaper.GetOS():match("^Win") then
+  pcall(function()
+    local h = io.popen("echo $PPID")
+    if h then PID = tonumber((h:read("*a") or ""):match("%d+")) or 0; h:close() end
+  end)
+end
+
+-- `alive` says "running" to the Python side (client.py) when it is younger than a few seconds. A command can hold
+-- REAPER's main thread far longer (a render runs inside the call), so `busy` is written before every command and
+-- removed after it: "<request id>\n<command>\n<token>\n<REAPER's process id>\n". `alive` holds
+-- "<time>\n<token>\n<process id>\n". While `busy` is there and its REAPER is still running, the Python side waits
+-- instead of calling the bridge dead (and starting another one).
 local last_beat = 0
-local function loop()
-  local okp, errp = pcall(probe_poll)
-  if not okp then probes.err = tostring(errp) end
-  local okr, errr = pcall(rec_poll)
-  if not okr then probes.err = "record: " .. tostring(errr) end
-  if MC then
-    local okc, errc = pcall(MC.poll)
-    if not okc then probes.err = "chain: " .. tostring(errc) end
-  end
-  if panel.open then
-    local okd, errd = pcall(panel.mode == "align" and align_draw or panel_draw)
-    if not okd then panel.flash = "panel: " .. tostring(errd); panel.flash_until = reaper.time_precise() + 10 end
-  end
+local function beat(force)
   local now = reaper.time_precise()
-  if now - last_beat > 1 then
-    local f = io.open(DIR .. "/alive", "w"); if f then f:write(tostring(os.time())); f:close() end
+  if force or now - last_beat > 1 then
+    local f = io.open(DIR .. "/alive", "w"); if f then f:write(tostring(os.time()) .. "\n" .. TOKEN .. "\n" .. PID .. "\n"); f:close() end
     last_beat = now
   end
+end
+
+local function busy(id, cmd)
+  if id then
+    local f = io.open(DIR .. "/busy", "w"); if f then f:write(id .. "\n" .. tostring(cmd) .. "\n" .. TOKEN .. "\n" .. PID .. "\n"); f:close() end
+  else
+    os.remove(DIR .. "/busy")
+  end
+end
+
+local function run(id, cmd, args)
+  local fn = C[cmd]
+  if not fn then return answer(id, false, nil, "unknown command " .. tostring(cmd)) end
+  busy(id, cmd)
+  if CHANGES[cmd] then reaper.Undo_BeginBlock() end
+  local ok, body, err = pcall(fn, args)
+  if CHANGES[cmd] then reaper.Undo_EndBlock("hypnomix: " .. cmd, -1) end
+  busy(nil)
+  beat(true)                                         -- fresh again at once after a long command
+  if not ok then answer(id, false, nil, tostring(body))
+  elseif body == nil then answer(id, false, nil, err or "failed")
+  else answer(id, true, body, nil) end
+end
+
+local function requests()
   local names, i = {}, 0
   while true do                                      -- a fresh listing each pass (index 0 re-reads the folder)
     local name = reaper.EnumerateFiles(DIR, i)
@@ -880,21 +978,52 @@ local function loop()
     if path then cmd, args = read_request(path) end
     if cmd then                                      -- nil: already handled (a stale listing)
       os.remove(path)
-      local fn = C[cmd]
-      if not fn then
-        answer(id, false, nil, "unknown command " .. tostring(cmd))
-      else
-        if CHANGES[cmd] then reaper.Undo_BeginBlock() end
-        local ok, body, err = pcall(fn, args)
-        if CHANGES[cmd] then reaper.Undo_EndBlock("hypnomix: " .. cmd, -1) end
-        if not ok then answer(id, false, nil, tostring(body))
-        elseif body == nil then answer(id, false, nil, err or "failed")
-        else answer(id, true, body, nil) end
-      end
+      run(id, cmd, args)
+      if not running then break end                  -- quit: the rest wait for the next bridge
     end
   end
-  if running then reaper.defer(loop) else os.remove(DIR .. "/alive") end
 end
 
-reaper.atexit(function() os.remove(DIR .. "/alive") end)
+local last_err = nil
+local function loop()
+  if reaper.GetExtState("hypnomix", "bridge_token") ~= TOKEN then   -- a newer bridge took over: leave it its files
+    replaced = true
+    if panel.open then gfx.quit(); panel.open = false end
+    return
+  end
+  pcall(jsfx_poll)
+  local okp, errp = pcall(probe_poll)
+  if not okp then probes.err = tostring(errp) end
+  local okr, errr = pcall(rec_poll)
+  if not okr then probes.err = "record: " .. tostring(errr) end
+  if MC then
+    local okc, errc = pcall(MC.poll)
+    if not okc then probes.err = "chain: " .. tostring(errc) end
+  end
+  if panel.open and U then
+    local okd, errd = pcall(panel.mode == "align" and align_draw or panel_draw)
+    if not okd then panel.flash = "panel: " .. tostring(errd); panel.flash_until = reaper.time_precise() + 10; probes.err = panel.flash end
+  end
+  pcall(beat)
+  if probes.err then                                -- a failure inside the bridge: written where the Python side reads it
+    last_err = probes.err; probes.last_err = last_err; probes.err = nil   -- cleared, so the same failure again is written again
+    pcall(function()
+      local f = io.open(DIR .. "/last-error.txt", "w"); if f then f:write(tostring(os.time()) .. "\n" .. last_err .. "\n"); f:close() end
+    end)
+  end
+  local okq, errq = pcall(requests)                  -- one failed request (a full disk, a removed folder) never ends the bridge
+  if not okq then probes.err = "requests: " .. tostring(errq); pcall(busy, nil) end
+  if running then reaper.defer(loop)
+  else
+    os.remove(DIR .. "/alive"); os.remove(DIR .. "/busy")
+    reaper.DeleteExtState("hypnomix", "bridge_token", false)
+  end
+end
+
+reaper.atexit(function()
+  if replaced then return end                        -- the newer bridge's alive file and app count are its own
+  os.remove(DIR .. "/alive"); os.remove(DIR .. "/busy")
+  if attached then reaper.gmem_write(3, 0) end      -- the JSFX windows stop showing "app on"
+  if reaper.GetExtState("hypnomix", "bridge_token") == TOKEN then reaper.DeleteExtState("hypnomix", "bridge_token", false) end
+end)
 loop()

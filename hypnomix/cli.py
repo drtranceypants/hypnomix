@@ -65,7 +65,7 @@ GROUPS = [
         ("diagnose", "hypnomix.session.doctor", "solo every group in the loudest section: who owns the sub, bass, vocal band"),
     ]),
     ("Projects: REAPER (.rpp), HypnoMix DAW (.ardour) and Live (.als)", [
-        ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, probes, the A/B review panel, the Align panel"),
+        ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, mixer snapshots, loop takes and one-change A/Bs, diagnose, probes, the A/B review panel, the Align panel"),
         ("preflight", "hypnomix.session.preflight", "sanity of the files before any work: mixed sample rates or bit depths, stems of different length, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel; report first"),
         ("project", "hypnomix.project.show", "look inside a REAPER, HypnoMix DAW or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
         ("import", "hypnomix.project.import_project", "import a project from another DAW into a NEW HypnoMix DAW session: .als, .logicx, .dawproject, .rpp, or .ptx and .aaf (with the HypnoMix DAW add-on, not available yet); audio copied in, the project only read, what was left out listed"),
@@ -83,7 +83,7 @@ GROUPS = [
         ("borrow", "hypnomix.session.borrow", "offer unused loops from the song's original project as switched-off layers (MIDI nudged to the song's downbeat; writes a new set)"),
         ("motion", "hypnomix.session.motion", "keep repetitive sections alive: filter sweeps, reverb/delay throws, stutters, gate chops, drop-outs, as options learned from your own automation (writes a new set)"),
         ("unroll", "hypnomix.session.unroll", "turn looped Arrangement clips into one copy per pass, so each pass can be edited on its own (writes a new set)"),
-        ("vocallevel", "hypnomix.session.vocallevel", "vocal level line to line, and upper harmonies under the melody: as heard (solo exports) or from renders; --apply writes per-line volume fixes (writes a new set). Run before every final export"),
+        ("vocallevel", "hypnomix.session.vocallevel", "vocal level line to line, and upper harmonies under the melody: as heard (solo exports) or from renders; --apply writes per-line volume fixes (writes a new set or .rpp). Run before every final export"),
         ("edges", "hypnomix.session.edges", "clip edges and fades that cut into a word (a long fade-in ducking the first consonant, a comp edit that loses a sound)"),
         ("tidy", "hypnomix.session.tidy", "retire switched-off tracks (after an archive copy) and put one instrument's clips on one track (writes a new set)"),
         ("order", "hypnomix.session.order", "put tracks in working order (drums, bass, keys/guitar/synth, vocals, other; low to high) and vocal-stack clips on the track for their pitch (writes a new set)"),
@@ -246,13 +246,25 @@ def _audio_read_message(e):
         if folder:
             return f"{fn} is a folder, not a Live set (.als file); give the .als file itself."
         return f"no such file: {fn}; check the name and the folder, then try again."
+    if isinstance(e, (FileNotFoundError, IsADirectoryError)) and _project_suffix(e.filename):   # a REAPER / HypnoMix DAW project: a typo or a folder
+        fn = str(e.filename)
+        if isinstance(e, IsADirectoryError):
+            return f"{fn} is a folder, not a project file; give the {_project_suffix(fn)} file itself."
+        return f"no such file: {fn}; check the name and the folder, then try again."
     if isinstance(e, OSError) and (isinstance(e, PermissionError) or e.errno in (errno.ENOSPC, errno.EROFS, errno.EDQUOT)):
         fn = str(e.filename) if e.filename else "that place"      # whatever a command writes late: one sentence, not a traceback
         why = (e.strerror or "permission denied").lower()
         if os.path.exists(fn) and not os.access(fn, os.R_OK):
             return f"can't read '{fn}': {why}; check that the file is yours to open"
-        return f"can't write to '{fn}': {why}; choose another place with --out"
+        return f"can't write to '{fn}': {why}; choose another place"
     return None
+
+
+def _project_suffix(filename):
+    """".rpp", ".rpp-bak" or ".ardour" when `filename` names a project file of that kind, else "" (a missing file
+    inside HypnoMix itself stays a bug report)."""
+    low = str(filename or "").lower()
+    return next((s for s in (".rpp-bak", ".rpp", ".ardour") if low.endswith(s)), "")
 
 
 def _main(argv=None):

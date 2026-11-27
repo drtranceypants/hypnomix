@@ -25,7 +25,8 @@ STEPS = [
                     "Click band 1's filter-type button and choose a low cut (EQ Eight offers a 12 dB and a 48 dB one; start with 12 dB).",
                     "Drag band 1's dot sideways to the frequency, or type it into the Freq field below the display."],
            "reaper": ["Click the track's **FX** button → Cockos → **ReaEQ**.",
-                      "Set band 1's type to **High pass** and drag its dot (or type the Frequency) to the cutoff."],
+                      "Set band 1's type to **High pass** and drag its dot (or type the Frequency) to the cutoff.",
+                      "Compare with the effect off: the tick box beside ReaEQ's name in the FX chain list switches it on and off."],
            "ardour": ["Double-click in the strip's plug-in box → **ACE High/Low Pass Filter**; switch the high-pass on and set its frequency."]},
       listen="Switch the filter on and off with the whole mix playing. The track may sound thinner alone, but the bass and kick "
              "should sound clearer and the mix tighter.",
@@ -183,8 +184,9 @@ STEPS = [
       how={"live": ["Put Audio Effects → **EQ Eight** on the track. Click an unused band's dot or number to switch it on.",
                     "For the sweep, drag the dot up about 6 dB, make it narrow with Alt+drag (Option+drag), then drag sideways slowly.",
                     "When you find the ugly spot, drag the dot down into a cut. EQ Eight's display shows the spectrum, so you can see where the energy is."],
-           "reaper": ["Click the track's **FX** button → Cockos → **ReaEQ**. Add a band and drag its dot up, narrow it with the scroll wheel, and sweep sideways.",
-                      "When you find the ugly spot, drag the dot down into a cut."],
+           "reaper": ["Click the track's **FX** button → Cockos → **ReaEQ**, and click a band's tab to work on it.",
+                      "For the sweep, drag the band's dot up about 6 dB, narrow it with the scroll wheel, then drag it sideways slowly while the part plays.",
+                      "When you find the ugly spot, drag the dot down into a cut. Switch ReaEQ off and on with the tick box beside its name in the FX chain list to hear the difference."],
            "ardour": ["Double-click in the plug-in box → **ACE EQ**. Use a band's frequency, gain and bandwidth controls to sweep, then set a cut.",
                       "For a spectrum display, add an analyser plug-in after it if your install has one."]},
       listen="Switch the EQ on and off at the same loudness. After a cut, the part you wanted to hear should come forward on its own, "
@@ -256,7 +258,8 @@ STEPS = [
                 ["Order of fixes", "arrangement, pan, EQ carve, level", "the cheapest fix for the sound comes first"]],
       how={"live": ["Put **EQ Eight** on the part that gives way. Set a band to a bell, drag its dot to the clash frequency and down 2-4 dB.",
                     "To see the clash, use the EQ's spectrum display on both parts."],
-           "reaper": ["Click **FX** on the part that gives way → **ReaEQ**, add a band and drag its dot to the clash frequency and down 2-4 dB."],
+           "reaper": ["Click **FX** on the part that gives way → **ReaEQ**, set a band to a bell, drag its dot to the clash frequency and down 2-4 dB.",
+                      "To see the clash, open a ReaEQ on each part: ReaEQ draws the spectrum of the part it sits on behind its curve, so you can compare the two while they play."],
            "ardour": ["Use **ACE EQ** on the part that gives way: set a band to the clash frequency and cut 2-4 dB."]},
       listen="Switch the carve on and off at the same loudness. The part you made room for should come forward, and the part you cut "
              "should still sound natural.",

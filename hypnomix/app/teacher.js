@@ -53,7 +53,7 @@ async function teachView() {
   const lv = `<div class="daws">${[['tour', 'Tour: ' + (T.daw === 'ardour' ? st.daws.ardour : 'HypnoMix in ' + (st.daws[T.daw] || 'your DAW')), 'for people who already record and mix'], ['101', '101 crash course', 'for people new to audio: the basics first, then the tour'], ['az', 'The complete course, A to Z', 'everything from what sound is to releasing a song: gear, recording, editing, mixing, mastering, cheat sheets']].map(([k, v, d]) => `<button data-tlevel="${k}" class="${k === T.level && !T.view ? 'sel' : ''}" title="${d}">${esc(v)}</button>`).join('')}<button data-tgloss="1" class="${T.view === 'glossary' ? 'sel' : ''}" title="Every word the lessons teach, A to Z">Glossary</button></div>`;
   if (!T.daw) return `<h1>Teacher</h1><p class="sub">A step-by-step course for people who have never used a DAW: from an empty song to a mastered one.</p>
     <div class="card"><p style="margin-top:0">Which DAW will you use? The lessons, and the Wiki, follow your choice.</p>${pick}
-    <p class="note">Ableton Live has the most depth, REAPER a little less, and HypnoMix DAW the short version (it's the least tested with HypnoMix).</p></div>${dawTour}`;
+    <p class="note">Ableton Live and REAPER get the same depth, and HypnoMix DAW the short version (it's the least tested with HypnoMix).</p></div>${dawTour}`;
   if (T.view === 'glossary') return glossaryView(pick, lv);
   const all = tsteps(), i = Math.max(0, all.findIndex(s => s.id === T.at)), s = all[i];
   const nav = st.chapters.map((c, ci) => `<h4>${ci + 1} · ${esc(c.title)}</h4>` + c.steps.map(x =>

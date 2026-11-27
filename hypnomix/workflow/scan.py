@@ -471,6 +471,7 @@ def g_vocals(als, od, a, role):
                                       "so harmony clips sitting too low were not checked", "cliplevel-error.txt"))
     if len(files) > 1:     # vocal level line to line, and upper parts under the melody (re-run before final exports)
         j = od / "raw" / "vocallevel.json"
+        j.unlink(missing_ok=True)              # vocallevel never overwrites, and a failed check must not be read
         args = ["vocallevel", als, "--renders", rd, "--json", j, "--tracks", *files.keys()]
         if lead in files:
             args += ["--melody", lead]

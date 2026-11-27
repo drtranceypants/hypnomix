@@ -6,6 +6,8 @@ Called by `fix` when the scan was of an .rpp. In one pass, on the parsed project
   cuts    short fades either side of the cut, and a volume ease on the track that takes part of the jump away and
           returns to normal (note `method=item` sets the item's volume instead; `amount=0.3`, `ease-ms=500`)
   spikes  a quick dip in the track's volume envelope over the burst (note `amount=` scales it)
+  devices a ReaComp's suggested threshold, ratio, attack and release written as its own floats (the rest of its
+          state byte for byte); an approval at an amount moves each setting that share of the way
   tune    each take file the track plays is pitch-corrected into <project>/Tuned/ (a new file, never over one) and
           added to its items as a NEW TAKE, made active. Your comp stays exactly as it was (positions, edges, fades,
           volumes); the original take is still on every item: switch takes to A/B.
@@ -44,13 +46,22 @@ def apply_edits(p, items, dec, log, failed, skipped):
             if f["id"] in ok:
                 log.append(f"- {f['id']}: {f['track']} @ {f['where']}: nudged {ed['move'] * 1000:+.0f} ms (stretch markers)")
         items = [f for f in items if (f.get("edit") or {}).get("op") != "timing"]
-    rank = {"sidechain": 0, "edges": 0, "fade": 0, "cut": 1, "dip": 1, "stack": 2, "order": 3, "rename": 4}
+    rank = {"sidechain": 0, "reacomp": 0, "edges": 0, "fade": 0, "cut": 1, "dip": 1, "stack": 2, "order": 3, "rename": 4}
     for f in sorted(items, key=lambda f: (rank.get(f.get("edit", {}).get("op"), 1), f["id"])):
         ed = f.get("edit")
         if not ed:
             skipped.append((f, "no project edit recorded for this finding (manual)"))
             continue
         kv = _kv(dec, f)
+        if ed["op"] == "reacomp":            # a ReaComp on its own track (devices): four floats, the amount scales them
+            from hypnomix.workflow import devices_project as DP
+            from hypnomix.workflow import oversight as O
+            try:
+                log.append(DP.apply(p, f, ed, O.amount_of(dec.get(f["id"])) / 100.0))
+                done.append(f["id"])
+            except ValueError as e:
+                skipped.append((f, str(e)))
+            continue
         if ed["op"] == "sidechain":
             from hypnomix.workflow import sidechain_project as SCP
             try:
@@ -233,7 +244,8 @@ def run(sd, scan, src, out, set_items, tune_items, dec, key, verify=True):
     errs = E.check(src, out, trims=any(f.get("tool") == "edges" and f["id"] in done for f in set_items),
                    moved=getattr(p, "moved", set()))
     if errs:
-        bad = out.with_name(out.stem + " (BROKEN, do not open).rpp")
+        from hypnomix.project import rpp
+        bad = rpp.free_name(out.with_name(out.stem + " (BROKEN, do not open).rpp"))     # never over an earlier one
         out.rename(bad)
         failed += [f"structure check: {e}" for e in errs]
         log += ["### structure check: FAILED", ""] + [f"- {e}" for e in errs] + [""]

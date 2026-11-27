@@ -110,8 +110,9 @@ def run_cmd(live, cmd):
 
 
 def take(live, a, folder, label):
+    from hypnomix.reaper.mixer import file_label                 # no folders, nothing Windows refuses
     n = max([int(f.name[:2]) for f in folder.glob("[0-9][0-9]-*.wav")] or [0]) + 1
-    wav = folder / f"{n:02d}-{label}.wav"
+    wav = folder / f"{n:02d}-{file_label(label)}.wav"           # the .json keeps the label as typed
     if a.no_play:
         secs = a.secs
         rec = record(secs, wav, a.device, a.channels)

@@ -300,7 +300,8 @@ def write_project(src, out, items, scale=1.0):
         E.save(p, out)
         errs = E.check(src, out)
         if errs:
-            bad = Path(out).with_name(Path(out).stem + " (BROKEN, do not open).rpp")
+            from hypnomix.project import rpp
+            bad = rpp.free_name(Path(out).with_name(Path(out).stem + " (BROKEN, do not open).rpp"))
             Path(out).rename(bad)
             sys.exit("the written project failed its structure check (renamed " + bad.name + "): " + "; ".join(errs))
     return lines, skipped, done

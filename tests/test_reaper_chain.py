@@ -1,4 +1,4 @@
-"""The mastering chain on REAPER's Hypnomix Main: the buttons, the bridge hook and the chain script agree.
+"""The mastering chain on REAPER's HypnoMix Main: the buttons, the bridge hook and the chain script agree.
 (The chain itself is verified in REAPER: Lua cannot run here.)"""
 import re
 import unittest
@@ -35,7 +35,7 @@ class Chain(unittest.TestCase):
     def test_only_reapers_own_plugins_in_the_stock_chain(self):
         for name in re.findall(r'"((?:Rea\w+ \(Cockos\))|(?:JS: [^"]+))"', CHAIN):
             self.assertTrue(name.endswith("(Cockos)") or name.startswith("JS: "), name)
-        self.assertIn('TAG = "Hypnomix · "', CHAIN)
+        self.assertIn('TAG = "HypnoMix · "', CHAIN)
 
     def test_template_menu_opens_from_a_real_window_a_few_passes_later(self):
         """On macOS a menu from a 0x0 window opened in the same pass closed by itself, so Build (with templates) could

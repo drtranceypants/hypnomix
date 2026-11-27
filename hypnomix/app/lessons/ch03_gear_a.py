@@ -31,7 +31,9 @@ STEPS = [
                 ["Phantom power", "a switch for +48 V (see the pickup patterns lesson)", "most condenser microphones need it"],
                 ["Headphone output", "its own volume knob; start with it low", "headphones can be much louder than speakers"]],
       how={"live": ["Open the **Audio** tab of Live's Settings (called Preferences in Live 11): it is in the **Live** menu on a Mac and the **Options** menu on Windows. Choose your interface as the audio input and output device. On Windows, pick the interface's ASIO driver as the Driver Type first, then the interface as the Audio Device."],
-           "reaper": ["Open **Options → Preferences → Audio → Device**. Choose your audio system (on a Mac, Core Audio; on Windows, ASIO if your interface offers it), then your interface."],
+           "reaper": ["Open **Options → Preferences → Audio → Device**. Choose your audio system (on a Mac, Core Audio; on Windows, ASIO if your interface offers it), then your interface.",
+                      "Choose it for both input and output, click Apply, then OK.",
+                      "Add a track (Ctrl+T / Cmd+T), arm it with its record button, and right-click the record button to choose which interface input it records from. Speak or play: its meter should move."],
            "ardour": ["Open **Window → Audio/MIDI Setup**. Choose the audio system, your interface as the device for input and output, then start the engine."]},
       listen="Play a song through the interface's headphone output, then through the computer's own headphone socket. The interface is usually cleaner, "
              "louder without distortion, and has a steadier bottom end.",

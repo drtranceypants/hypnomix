@@ -281,7 +281,7 @@ class UnwritableOut(Base):
     def test_a_late_permission_error_is_still_one_sentence(self):
         msg = cli._audio_read_message(PermissionError(13, "Permission denied", str(self.ro / "late.md")))
         self.assertIn("can't write to", msg)
-        self.assertIn("--out", msg)
+        self.assertIn("choose another place", msg)              # no option named: not every command has --out
         unreadable = self.td / "locked.wav"
         unreadable.write_bytes(b"x")
         os.chmod(unreadable, 0)
