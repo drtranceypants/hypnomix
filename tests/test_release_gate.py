@@ -264,7 +264,7 @@ class AppRoutes(unittest.TestCase):
         cls.S = S
         cls.d = Path(cls.td.name) / "scan" / "Song"
         (cls.d / "ab").mkdir(parents=True)
-        (cls.d / "findings.json").write_text(json.dumps(dict(set="/nowhere/Song.als", findings=[], notes=[])))
+        (cls.d / "findings.json").write_text(json.dumps(dict(set="/nowhere/Song.als", findings=[], notes=[])), encoding="utf-8")
         sf.write(str(cls.d / "ab" / "own.wav"), np.zeros(4410, dtype=np.float32), 44100)
         cls.outside = Path(cls.td.name) / "outside"
         cls.outside.mkdir()
@@ -318,6 +318,14 @@ class AppRoutes(unittest.TestCase):
         e.winerror = 206
         self.assertTrue(self.S.name_too_long(e))
         self.assertFalse(self.S.name_too_long(OSError(errno.ENOENT, "No such file")))
+
+    def test_a_name_over_255_characters_is_named_before_the_system_is_asked(self):
+        """Windows answers a stat of such a name with "not found", so the sentence cannot depend on the system's own error."""
+        for bad in ("a" * 300, "/x/" + "b" * 256 + "/y.wav", "C:\\x\\" + "c" * 256):
+            with self.assertRaises(ValueError) as cm:
+                self.S.long_name("fine", bad)
+            self.assertIn("longer than", str(cm.exception))
+        self.S.long_name("a" * 255, "/x/" + "b" * 255 + "/y.wav", None, 5, "")            # as long as a name may be: nothing said
 
     # ---- (6) the token on the routes the app's own page calls
     def test_the_probe_start_and_stop_the_page_calls_need_its_token(self):
@@ -436,16 +444,22 @@ class ChatStateBetweenModules(unittest.TestCase):
 
 
 # ================================================================ PACKAGING
+NO_BASH = "SKIPPED: no bash here (Windows' own System32 bash.exe is the WSL launcher, not a shell), so this test was NOT run"
+BASH = _isolate.find_bash()
+
+
 class Packaging(unittest.TestCase):
     def pyproject_version(self):
         return re.search(r'^version = "([^"]+)"', read("pyproject.toml"), re.M).group(1)
 
     def test_the_hand_built_mac_app_takes_its_version_from_pyproject(self):
+        if not BASH:
+            self.skipTest(NO_BASH)
         sh = read("macapp/build.sh")
         self.assertNotIn("0.1.0", sh)
         self.assertIn("<key>CFBundleShortVersionString</key><string>$version</string>", sh)
         line = next(l for l in sh.splitlines() if l.startswith("version="))
-        got = subprocess.run(["bash", "-c", f'repo="{ROOT}"\n{line}\nprintf %s "$version"'], capture_output=True, text=True)
+        got = subprocess.run([BASH, "-c", f'repo="{ROOT.as_posix()}"\n{line}\nprintf %s "$version"'], capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(got.stdout, self.pyproject_version())
 
     def test_the_daw_pages_client_version_is_the_apps_own(self):
@@ -460,16 +474,18 @@ class Packaging(unittest.TestCase):
 
     def stable_names(self, files):
         """Run the workflow's own 'Stable names' loops in a folder holding these files; -> the names that exist after."""
+        if not BASH:
+            self.skipTest(NO_BASH)
         yml = read(".github/workflows/installers.yml")
         step = yml[yml.index("- name: Stable names"):yml.index("- name: Build provenance")]
         loops = [l.strip() for l in step.splitlines() if l.strip().startswith("for f in")]
         self.assertEqual(len(loops), 3)
         with tempfile.TemporaryDirectory() as td:
             for name, content in files.items():
-                (Path(td) / name).write_text(content)
-            r = subprocess.run(["bash", "-c", "shopt -s nullglob\n" + "\n".join(loops)], cwd=td, capture_output=True, text=True)
+                (Path(td) / name).write_text(content, encoding="utf-8")
+            r = subprocess.run([BASH, "-c", "shopt -s nullglob\n" + "\n".join(loops)], cwd=td, capture_output=True, text=True, encoding="utf-8")
             self.assertEqual(r.returncode, 0, r.stderr)
-            return {p.name: p.read_text() for p in Path(td).iterdir()}
+            return {p.name: p.read_text(encoding="utf-8") for p in Path(td).iterdir()}
 
     def test_the_stable_names_point_at_the_one_installer_of_each_platform(self):
         after = self.stable_names({

@@ -21,7 +21,7 @@ JS = sorted((ROOT / "js").glob("*.js"))
 
 
 def read(rel):
-    return (ROOT / rel).read_text()
+    return (ROOT / rel).read_text(encoding="utf-8")
 
 
 class Parses(unittest.TestCase):
@@ -45,7 +45,7 @@ class Page(unittest.TestCase):
         self.assertNotIn("__TOKEN__", served)
         self.assertEqual(served.count('<script nonce="N">'), len(inline))
         for f in JS:                                          # nothing in the scripts writes an inline handler attribute
-            self.assertIsNone(re.search(r"""setAttribute\(\s*['"]on""", f.read_text()), f.name)
+            self.assertIsNone(re.search(r"""setAttribute\(\s*['"]on""", f.read_text(encoding="utf-8")), f.name)
 
     def test_the_page_has_a_save_control_and_the_no_engine_screen(self):
         html = read("index.html")
@@ -57,7 +57,7 @@ class Page(unittest.TestCase):
         # fingerprints, as in test_repo_rules: the names themselves are never spelled out in a file
         from tests.test_repo_rules import names_in
         for f in list((ROOT / "js").glob("*.js")) + [ROOT / "index.html"] + list((ROOT / "css").glob("*.css")):
-            self.assertEqual(names_in(f.read_text()), set(), f"{f.name} names a paid product, a maker or a song")
+            self.assertEqual(names_in(f.read_text(encoding="utf-8")), set(), f"{f.name} names a paid product, a maker or a song")
 
 
 def _expr_end(text, i, stops):
@@ -168,7 +168,7 @@ class Escaping(unittest.TestCase):
     def test_html_sinks_are_escaped(self):
         bad = []
         for f in JS:
-            bad += self.bad_in(f.name, f.read_text())
+            bad += self.bad_in(f.name, f.read_text(encoding="utf-8"))
         self.assertEqual(bad, [], "an HTML sink without HX.esc:\n" + "\n".join(bad))
 
     def test_the_scan_catches_the_unsafe_patterns(self):
@@ -205,10 +205,10 @@ class Escaping(unittest.TestCase):
 
 class Wiring(unittest.TestCase):
     def test_setup_dax_choices_do_not_open_the_daw_page(self):
-        ui = (Path(DW.__file__).parent / "ui.py").read_text()
+        ui = (Path(DW.__file__).parent / "ui.py").read_text(encoding="utf-8")
         self.assertIn("button.tab[data-daw]", ui)             # the nav tab only
         self.assertNotIn("closest('button[data-daw]')", ui)
-        setup = (Path(DW.__file__).parent / "setup.js").read_text()
+        setup = (Path(DW.__file__).parent / "setup.js").read_text(encoding="utf-8")
         self.assertRegex(setup, r'<button class="mode[^"]*" data-daw=')   # Setup's choices are .mode buttons, not .tab
 
     def test_the_daw_tab_is_hidden_until_there_is_an_engine(self):
@@ -261,7 +261,7 @@ class Wiring(unittest.TestCase):
         for f in JS:
             if f.name == "assistant.js":
                 continue                                             # the Assistant group's file
-            txt = f.read_text()
+            txt = f.read_text(encoding="utf-8")
             for m in re.finditer(r"document\.addEventListener\('keydown', \(e\) => \{\n", txt):   # the page's own multi-line handlers
                 body = txt[m.end():m.end() + 900]
                 self.assertIn("HX.modalOpen()", body, f"{f.name}: a keydown handler that does not check for a dialog")

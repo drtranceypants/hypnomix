@@ -44,7 +44,7 @@ class ReaperProbes(unittest.TestCase):
     def test_jsfx_names_never_collide_by_case(self):
         """JSFX variable names are case-insensitive: N and n are one variable (that bug made every sample a block)."""
         for f in P.JSFX.iterdir():
-            src = re.sub(r"//[^\n]*", "", f.read_text())
+            src = re.sub(r"//[^\n]*", "", f.read_text(encoding="utf-8"))
             src = re.sub(r'"[^"\n]*"', '""', src)                  # text in quotes is not a variable
             src = "\n".join(l for l in src.splitlines() if not l.startswith(("slider", "desc:", "in_pin", "out_pin")))
             names = collections.defaultdict(set)

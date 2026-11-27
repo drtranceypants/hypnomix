@@ -45,8 +45,8 @@ class MainStates(unittest.TestCase):
         """Each state the bridge can report has its own line on Main (a failed review is not 'no app')."""
         from pathlib import Path
         root = Path(__file__).resolve().parents[1] / "hypnomix" / "reaper"
-        main = (root / "jsfx" / "hypnomix_main.jsfx").read_text()
-        lua = (root / "bridge.lua").read_text()
+        main = (root / "jsfx" / "hypnomix_main.jsfx").read_text(encoding="utf-8")
+        lua = (root / "bridge.lua").read_text(encoding="utf-8")
         for k in range(1, 7):
             self.assertIn(f"rr_state == {k} ?", main)
         self.assertIn("!rr_down && rr_was && rr_armed && rr_in ?", main)      # a press counts on release

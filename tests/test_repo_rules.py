@@ -529,7 +529,7 @@ class Documented(unittest.TestCase):
         import sys
         for cmd in ("store", "als2ardour", "chain", "app"):
             r = subprocess.run([sys.executable, "-m", "hypnomix.cli", cmd, "-h"], cwd=str(REPO), capture_output=True,
-                               text=True, timeout=120)
+                               text=True, timeout=120, encoding="utf-8")
             self.assertEqual(r.returncode, 0, r.stderr)
             opts = set(re.findall(r"(?<![\w-])--[a-z][a-z0-9-]+", r.stdout)) - {"--help"}
             self.assertTrue(opts, cmd)
@@ -589,7 +589,7 @@ class Environment(unittest.TestCase):
             env = {k: v for k, v in os.environ.items() if not k.startswith("HYPNOMIX_")}
             env.update(HOME=t, USERPROFILE=t)
             r = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-p", "test_daw_meta.py"],
-                               cwd=str(REPO), env=env, capture_output=True, text=True, timeout=300)
+                               cwd=str(REPO), env=env, capture_output=True, text=True, timeout=300, encoding="utf-8")
             self.assertEqual(r.returncode, 0, r.stderr[-800:])
             self.assertEqual(sorted(os.listdir(t)), [], "the run wrote into the home folder it was given")
 

@@ -10,7 +10,7 @@ SR = 22050
 
 
 def hx(*args):
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -220,7 +220,7 @@ class Variations(unittest.TestCase):
             code, out = hx("variations", s, "--out", td / "v", "--apply", td / "Song (variations).als")
             self.assertEqual(code, 0, out)
             self.assertIn("structure OK", out)
-            j = json.loads((td / "v" / "variations.json").read_text())
+            j = json.loads((td / "v" / "variations.json").read_text(encoding="utf-8"))
             self.assertEqual(len(j["findings"]), 2)          # every 4th of 8 repeats
             self.assertTrue(list((td / "v").glob("* B (unused take).wav")))
             r = root_of(td / "Song (variations).als")

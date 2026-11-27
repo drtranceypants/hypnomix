@@ -88,6 +88,14 @@ def name_too_long(e):
     return getattr(e, "errno", None) == errno.ENAMETOOLONG or getattr(e, "winerror", None) == 206
 
 
+def long_name(*values):
+    """A name in the request that no file system holds (a part of a path over 255 characters): the same plain sentence on every
+    system, before the system's own answer (Windows reports such a name as "not found", not as too long)."""
+    for v in values:
+        if isinstance(v, str) and any(len(part) > 255 for part in re.split(r"[\\/]", v)):
+            raise ValueError(NAME_TOO_LONG)
+
+
 WRONG_KIND = "one of the fields in this request is the wrong kind (for example a list or a number where text belongs); nothing was changed"
 
 
@@ -1695,6 +1703,7 @@ def start_scan(body, title="First pass", folder=None):
     """Scan a Live set, REAPER project, HypnoMix DAW session or folder. The same path always goes back to its own scan folder
     (that is a re-scan); a different path never shares one, even with the same name."""
     body = dict(body, **{k: bare_path(body[k]) for k in ("source", "mix", "ref", "like", "backing") if isinstance(body.get(k), str)})
+    long_name(*(body.get(k) for k in ("source", "mix", "ref", "like", "backing")))
     src = Path(need(body, "source")).expanduser()
     if not src.exists():
         raise ValueError(f"not found: {src}")
@@ -2130,6 +2139,7 @@ def make_handler(port):
                 if u.path == "/api/probe/song":            # what the devices say right now (song card + track roles)
                     return self.send(200, PROBE["hub"].song_card() if PROBE["hub"] else {})
                 if u.path == "/audio":
+                    long_name(q.get("f"))
                     d = scan_dir(need(q, "dir"))
                     f = d / "ab" / Path(unquote(need(q, "f"))).name
                     if not (f.is_file() and f.suffix == ".wav"):
@@ -2430,6 +2440,7 @@ def make_handler(port):
                 if u.path == "/api/stop":
                     return self.send(200, {"stopped": stop_job()})       # the command and everything it started
                 if u.path == "/api/reveal":
+                    long_name(body.get("path"))
                     ok, why = reveal(need(body, "path"))
                     return self.send(200, {"shown": ok, "message": why})
                 if u.path == "/api/live/jump":

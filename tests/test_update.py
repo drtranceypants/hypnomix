@@ -152,7 +152,7 @@ class OneInstaller(unittest.TestCase):
                 self.assertEqual(UP.asset_name(), "Hypnomix-mac-arm64.dmg")
                 kit = app / "Contents" / "Resources" / "engine" / "bin" / "hypnomix-engine"     # an old test build that carried the engine
                 kit.parent.mkdir(parents=True)
-                kit.write_text("#!/bin/sh\n")
+                kit.write_text("#!/bin/sh\n", encoding="utf-8")
                 kit.chmod(0o755)
                 self.assertEqual(UP.asset_name(), "Hypnomix-mac-arm64.dmg")                    # it updates to the ordinary app
                 with mock.patch.object(UP.platform, "machine", lambda: "x86_64"):
@@ -163,7 +163,7 @@ class OneInstaller(unittest.TestCase):
         self.assertFalse(hasattr(UP, "edition"))
         self.assertNotIn("edition", UP.view())
         self.assertNotIn("no_full_download", UP.view())
-        src = (Path(__file__).resolve().parents[1] / "hypnomix" / "app" / "update.py").read_text()
+        src = (Path(__file__).resolve().parents[1] / "hypnomix" / "app" / "update.py").read_text(encoding="utf-8")
         self.assertNotRegex(src, r"full-|app_edition")
 
 
@@ -335,7 +335,7 @@ class Modes(Base):
         d = self.r / ".hypnomix"
         d.mkdir()
         d.chmod(0o755)
-        UP.STATE.write_text("{}")
+        UP.STATE.write_text("{}", encoding="utf-8")
         UP.STATE.chmod(0o644)
         UP.save({"auto": True})
         self.assertEqual(stat.S_IMODE(d.stat().st_mode), 0o700)
@@ -432,11 +432,11 @@ class Review(Base):
         for state in ([], "x", 5, {"assets": []}, {"assets": {NAME: "x"}}, {"assets": {NAME: ["y"]}, "latest": "9.9.9"},
                       {"assets": {NAME: {"url": 1, "size": "big"}}, "latest": "9.9.9", "notes": None, "error": 7}):
             UP.STATE.parent.mkdir(parents=True, exist_ok=True)
-            UP.STATE.write_text(json.dumps(state))
+            UP.STATE.write_text(json.dumps(state), encoding="utf-8")
             v = UP.view()
             self.assertIsInstance(v["size"], int)
             self.assertFalse(v["one_click"] and not isinstance(state, dict))
-        UP.STATE.write_text(json.dumps({"latest": "9.9.9", "assets": {NAME: {"url": 1, "size": "big"}}}))
+        UP.STATE.write_text(json.dumps({"latest": "9.9.9", "assets": {NAME: {"url": 1, "size": "big"}}}), encoding="utf-8")
         UP.JOB.update(status="downloading")
         UP._download()                                                         # a plain error, not an exception
         self.assertEqual(UP.JOB["status"], "error")
@@ -457,7 +457,7 @@ class Review(Base):
             self.skipTest("no bash")
         line = next(l for l in UP.MAC_HELPER.splitlines() if l.startswith("norm()"))
         def norm(v):
-            return subprocess.run([bash, "-c", f'{line}\nnorm "$1"', "x", v], capture_output=True, text=True).stdout.strip()
+            return subprocess.run([bash, "-c", f'{line}\nnorm "$1"', "x", v], capture_output=True, text=True, encoding="utf-8").stdout.strip()
         self.assertEqual(norm("v1.2.0"), norm("1.2"))
         self.assertEqual(norm("0.1.5"), "0.1.5")
         self.assertNotEqual(norm("0.1.1"), norm("9.9.9"))
@@ -559,7 +559,7 @@ class OneNamePerPlatform(Base):
             self.assertEqual(UP.JOB["status"], "error")
             self.assertEqual(list(UP.DIR.glob("*.dmg")) + list(UP.DIR.glob("*.part")), [])
             UP.JOB.update(status="idle", error="")
-        js = (Path(__file__).resolve().parents[1] / "hypnomix" / "app" / "update.js").read_text()
+        js = (Path(__file__).resolve().parents[1] / "hypnomix" / "app" / "update.js").read_text(encoding="utf-8")
         self.assertIn("U.no_download", js)
         self.assertIn("has no installer for this computer yet", js)
 
@@ -586,7 +586,7 @@ class OneNamePerPlatform(Base):
             py = app / "Contents" / "Resources" / "python" / "bin" / "python3"
             kit = app / "Contents" / "Resources" / "engine" / "bin" / "hypnomix-engine"
             kit.parent.mkdir(parents=True)
-            kit.write_text("#!/bin/sh\n")
+            kit.write_text("#!/bin/sh\n", encoding="utf-8")
             kit.chmod(0o755)
             with mock.patch.object(UP.sys, "executable", str(py)), mock.patch.object(UP.sys, "platform", "darwin"), \
                     mock.patch.object(daw.sys, "executable", str(py)), mock.patch.dict(os.environ, {"HYPNOMIX_ENGINE": ""}), \
@@ -672,7 +672,7 @@ class HelperWaitsForTheEngine(unittest.TestCase):
         out = subprocess.run([sys.executable, "-c",
                               "import subprocess,sys;p=subprocess.Popen([sys.executable,'-c',sys.argv[1]],start_new_session=True,"
                               "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,stdin=subprocess.DEVNULL);print(p.pid)", code],
-                             capture_output=True, text=True).stdout.strip()
+                             capture_output=True, text=True, encoding="utf-8").stdout.strip()
         pid = int(out)
         self.addCleanup(self.kill, pid)
         return pid
@@ -698,7 +698,7 @@ class HelperWaitsForTheEngine(unittest.TestCase):
             self.skipTest("no bash")
         t = time.time()
         r = subprocess.run([bash, "-c", self.block()], capture_output=True, text=True, timeout=60,
-                           env=dict(os.environ, APP_PID=str(app), SERVER_PID=str(server), ENGINE_PID=str(engine), HYPNOMIX_UPDATE_GRACE=str(grace)))
+                           env=dict(os.environ, APP_PID=str(app), SERVER_PID=str(server), ENGINE_PID=str(engine), HYPNOMIX_UPDATE_GRACE=str(grace)), encoding="utf-8")
         return time.time() - t, r.stdout
 
     SLOW_QUIT = "import signal,time\nsignal.signal(signal.SIGTERM,lambda *a:(time.sleep(2.5),exit(0)))\ntime.sleep(60)"

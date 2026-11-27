@@ -19,7 +19,7 @@ It cannot prove Live will open the set: only Live can. It catches the ways a scr
 It reads Live sets (.als) only. Given a REAPER project or a HypnoMix DAW session it says so in one sentence: `fix` reads
 those back itself after writing them and lists any problem in fix-log.md.
 """
-import argparse, gzip, json, math, sys
+import argparse, gzip, json, math, os, sys
 from hypnomix.core.gz import read_gz
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -37,6 +37,8 @@ def load_root(path):
     except IsADirectoryError:
         return None, f"{path} is a folder, not a Live set (.als file)"
     except OSError as e:
+        if os.path.isdir(path):                   # Windows opens a folder with "permission denied", not IsADirectoryError
+            return None, f"{path} is a folder, not a Live set (.als file)"
         return None, f"not a gzip file ({e})"
     except ValueError as e:                       # unpacks past the size cap
         return None, str(e)

@@ -239,9 +239,10 @@ def _audio_read_message(e):
     if name == "BadGzipFile":                   # a Live-set command was given a file that is not a gzipped Live set
         return ("can't read that file as a Live set (.als): it is not a gzip file. This command reads Live sets only; "
                 "for a REAPER project or a HypnoMix DAW session use `hypnomix scan` on it.")
-    if isinstance(e, (FileNotFoundError, IsADirectoryError)) and _raised_in_gzip(e):    # a Live-set command, a typo or a folder
+    folder = isinstance(e, IsADirectoryError) or (isinstance(e, PermissionError) and os.path.isdir(str(e.filename or "")))   # Windows opens a folder with "permission denied"
+    if (folder or isinstance(e, FileNotFoundError)) and _raised_in_gzip(e):    # a Live-set command, a typo or a folder
         fn = str(e.filename or "that path")
-        if isinstance(e, IsADirectoryError):
+        if folder:
             return f"{fn} is a folder, not a Live set (.als file); give the .als file itself."
         return f"no such file: {fn}; check the name and the folder, then try again."
     if isinstance(e, OSError) and (isinstance(e, PermissionError) or e.errno in (errno.ENOSPC, errno.EROFS, errno.EDQUOT)):

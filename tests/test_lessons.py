@@ -255,7 +255,7 @@ class NoNumpy(unittest.TestCase):
                 "assert not wiki.COURSE_ERROR, wiki.COURSE_ERROR\n"
                 "assert 'glossary' in ids and 'learn-live-mix' in ids and 'tour-reaper' in ids, len(ids)\n"
                 "print(len(ids))\n")
-        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stderr[-800:])
         self.assertGreater(int(r.stdout.strip() or 0), 100)
 

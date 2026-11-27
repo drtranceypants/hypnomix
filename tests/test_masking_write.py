@@ -161,9 +161,9 @@ class LiveCut(unittest.TestCase):
         src = write_set(self.td / "Song.als", [track_xml(1, "Keys", "", 100)])
         fj = self.td / "findings.json"
         fj.write_text(json.dumps(dict(findings=[dict(id="mask-1", tool="masking", track="Keys",
-                                                     eq=dict(freq=250.0, gain_db=-2.0, q=1.0, keep="Pad"))])))
+                                                     eq=dict(freq=250.0, gain_db=-2.0, q=1.0, keep="Pad"))])), encoding="utf-8")
         r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "masking", str(src), "--apply", str(src), "--findings", str(fj),
-                            "--ids", "mask-1"], capture_output=True, text=True)
+                            "--ids", "mask-1"], capture_output=True, text=True, encoding="utf-8")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("overwrite", r.stdout + r.stderr)
 
@@ -201,7 +201,7 @@ class ReaperCut(unittest.TestCase):
 
     def project(self, tracks, name="Song.rpp"):
         p = self.td / name
-        p.write_text(rpp_text(tracks))
+        p.write_text(rpp_text(tracks), encoding="utf-8")
         return PJ.load(p), p
 
     def reaeqs(self, project_path, track):
@@ -236,7 +236,7 @@ class ReaperCut(unittest.TestCase):
         self.assertAlmostEqual(eqs[0].gain_db(b[0]), -3.0, places=6)
         self.assertAlmostEqual(b[0]["bw"], 2 / math.log(2) * math.asinh(1 / 2.8), places=2)    # Q 1.4 as octaves
         self.assertEqual(self.reaeqs(out, "Pad")[1], [])
-        text = out.read_text()
+        text = out.read_text(encoding="utf-8")
         self.assertLess(text.index("<FXCHAIN"), text.index("<ITEM"))          # before the items, like REAPER writes it
         self.assertEqual(sum(1 for l in text.splitlines() if l.strip().startswith("<")),
                          sum(1 for l in text.splitlines() if l.strip() == ">"))
@@ -292,14 +292,14 @@ class ReaperCut(unittest.TestCase):
         p, path = self.project([rtrack("{A1}", "Keys", item=True), rtrack("{A2}", "Pad")])
         fj = self.td / "findings.json"
         fj.write_text(json.dumps(dict(findings=[dict(id="mask-1", tool="masking", track="Keys",
-                                                     eq=dict(freq=250.0, gain_db=-3.0, q=1.4, keep="Pad"))])))
+                                                     eq=dict(freq=250.0, gain_db=-3.0, q=1.4, keep="Pad"))])), encoding="utf-8")
         out = self.td / "Song (cut).rpp"
         args = [sys.executable, "-m", "hypnomix.cli", "masking", str(path), "--findings", str(fj), "--ids", "mask-1"]
-        r = subprocess.run(args + ["--apply", str(out), "--scale", "0.5"], capture_output=True, text=True)
+        r = subprocess.run(args + ["--apply", str(out), "--scale", "0.5"], capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         t, eqs = self.reaeqs(out, "Keys")
         self.assertAlmostEqual(eqs[0].gain_db(eqs[0].bands[0]), -1.5, places=6)
-        r = subprocess.run(args + ["--apply", str(path)], capture_output=True, text=True)
+        r = subprocess.run(args + ["--apply", str(path)], capture_output=True, text=True, encoding="utf-8")
         self.assertNotEqual(r.returncode, 0)
 
 
@@ -309,15 +309,15 @@ def scan_dir(td, src, findings, protected=False):
     sd.mkdir()
     for k, f in enumerate(findings, 1):
         f.setdefault("n", k)
-    (sd / "findings.json").write_text(json.dumps(dict(set=str(src), findings=findings)))
-    (sd / "scan.json").write_text(json.dumps(dict(mode="set", set_mtime=Path(src).stat().st_mtime)))
+    (sd / "findings.json").write_text(json.dumps(dict(set=str(src), findings=findings)), encoding="utf-8")
+    (sd / "scan.json").write_text(json.dumps(dict(mode="set", set_mtime=Path(src).stat().st_mtime)), encoding="utf-8")
     return sd
 
 
 def fix(*args, env=None):
     e = dict(os.environ)
     e.update(env or {})
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "fix", *map(str, args)], capture_output=True, text=True, env=e)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "fix", *map(str, args)], capture_output=True, text=True, env=e, encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -325,7 +325,7 @@ class ThroughFix(unittest.TestCase):
     def setUp(self):
         self.td = Path(tempfile.mkdtemp())
         self.tpl = self.td / "eq8.xml"
-        self.tpl.write_text(eq8_xml())
+        self.tpl.write_text(eq8_xml(), encoding="utf-8")
         self.env = {"HYPNOMIX_EQ8_TEMPLATE": str(self.tpl), "HYPNOMIX_HOME": str(self.td / "home")}
 
     def finding(self, **kw):
@@ -380,10 +380,10 @@ class ThroughFix(unittest.TestCase):
 
     def test_reaper_an_approved_finding_lands_as_a_reaeq_band_in_a_new_project(self):
         path = self.td / "Song.rpp"
-        path.write_text(rpp_text([rtrack("{A1}", "Keys", item=True), rtrack("{A2}", "Pad")]))
+        path.write_text(rpp_text([rtrack("{A1}", "Keys", item=True), rtrack("{A2}", "Pad")]), encoding="utf-8")
         f = self.finding(edit=dict(op="masking"))
         sd = scan_dir(self.td, path, [f])
-        (sd / "scan.json").write_text(json.dumps(dict(mode="set", set_mtime=path.stat().st_mtime)))
+        (sd / "scan.json").write_text(json.dumps(dict(mode="set", set_mtime=path.stat().st_mtime)), encoding="utf-8")
         out = self.td / "Song (fixed).rpp"
         code, txt = fix(sd, "--decide", "mask-1=approve@50", env=self.env)
         code, txt = fix(sd, "--approved", "--out", out, env=self.env)

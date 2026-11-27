@@ -29,7 +29,7 @@ def hx(base, *args, cwd=None):
     cwd = Path(cwd) if cwd else base / "cwd"
     cwd.mkdir(exist_ok=True)
     r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True,
-                       env=env_for(base), cwd=str(cwd))
+                       env=env_for(base), cwd=str(cwd), encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -117,27 +117,27 @@ class PreflightFixes(Base):
         self.assertEqual(code, 0, out)
         first = self.base / "cwd" / "hypnomix-out" / "preflight" / "stems" / "PREFLIGHT.md"
         self.assertTrue(first.exists())
-        before = first.read_text()
+        before = first.read_text(encoding="utf-8")
         e = stems_folder(self.base / "other stems", names=("a", "b", "c"))
         code, out = self.hx("preflight", e)
         self.assertEqual(code, 0, out)
-        self.assertEqual(first.read_text(), before)          # the first report is untouched
+        self.assertEqual(first.read_text(encoding="utf-8"), before)          # the first report is untouched
         self.assertTrue((self.base / "cwd" / "hypnomix-out" / "preflight" / "other stems" / "PREFLIGHT.md").exists())
         code, out = self.hx("preflight", d)                  # the same source again: a numbered folder
         self.assertEqual(code, 0, out)
-        self.assertEqual(first.read_text(), before)
+        self.assertEqual(first.read_text(encoding="utf-8"), before)
         self.assertTrue((self.base / "cwd" / "hypnomix-out" / "preflight" / "stems (2)" / "PREFLIGHT.md").exists())
 
     def test_an_out_folder_that_holds_a_report_is_refused(self):
         d = stems_folder(self.base / "stems")
         o = self.base / "o"
         self.assertEqual(self.hx("preflight", d, "--out", o)[0], 0)
-        before = (o / "PREFLIGHT.md").read_text()
+        before = (o / "PREFLIGHT.md").read_text(encoding="utf-8")
         code, out = self.hx("preflight", d, "--out", o)
         self.assertEqual(code, 2, out)
         self.assertEqual(len([l for l in out.strip().splitlines() if l.strip()]), 1, out)
         self.assertIn("nothing is overwritten", out)
-        self.assertEqual((o / "PREFLIGHT.md").read_text(), before)
+        self.assertEqual((o / "PREFLIGHT.md").read_text(encoding="utf-8"), before)
 
 
 # ---------------------------------------------------------------- scan: files that cannot be measured
@@ -156,12 +156,12 @@ class FilesThatCannotBeMeasured(Base):
         code, out = self.hx("scan", d, "--out", self.base / "s")
         self.assertEqual(code, 0, out)
         self.assertNotIn("did NOT run", out)
-        findings = json.loads((self.base / "s" / "findings.json").read_text())["findings"]
+        findings = json.loads((self.base / "s" / "findings.json").read_text(encoding="utf-8"))["findings"]
         by = {(f["track"], f["kind"]) for f in findings}
         self.assertIn(("empty.wav", "empty"), by)
         self.assertIn(("surround51.wav", "channels"), by)
         self.assertIn(("nanonly.wav", "non-finite"), by)
-        stems = json.loads((self.base / "s" / "stems.json").read_text())
+        stems = json.loads((self.base / "s" / "stems.json").read_text(encoding="utf-8"))
         self.assertTrue(any("empty.wav" in n and "left out" in n for n in stems["notes"]), stems["notes"])
         self.assertTrue(any("nanonly.wav" in n and "left out" in n for n in stems["notes"]), stems["notes"])
         high = [f for f in findings if f["kind"] == "non-finite"]
@@ -170,7 +170,7 @@ class FilesThatCannotBeMeasured(Base):
     def test_the_recordings_facts_are_valid_json(self):
         d = self.folder()
         self.assertEqual(self.hx("scan", d, "--out", self.base / "s")[0], 0)
-        text = (self.base / "s" / "raw" / "recordings.json").read_text()
+        text = (self.base / "s" / "raw" / "recordings.json").read_text(encoding="utf-8")
         self.assertNotIn("NaN", text)
         json.loads(text)                                     # strict readers refuse a bare NaN
 
@@ -191,10 +191,10 @@ class ScanInputs(Base):
 
     def test_unreadable_inputs_end_in_one_sentence_and_make_no_scan_folder(self):
         stems = stems_folder(self.base / "stems")
-        (self.base / "Bad.rpp").write_text("not xml\n")
-        (self.base / "Bad.ardour").write_text("not xml\n")
-        (self.base / "Junk.als").write_text("junk\n")
-        (self.base / "Song.ptx").write_text("x\n")
+        (self.base / "Bad.rpp").write_text("not xml\n", encoding="utf-8")
+        (self.base / "Bad.ardour").write_text("not xml\n", encoding="utf-8")
+        (self.base / "Junk.als").write_text("junk\n", encoding="utf-8")
+        (self.base / "Song.ptx").write_text("x\n", encoding="utf-8")
         shutil.copy(stems / "bass.wav", self.base / "Keys.wav")
         for name, word in (("Bad.rpp", "REAPER project"), ("Bad.ardour", "HypnoMix DAW session"), ("Junk.als", "Live set"),
                            ("Song.ptx", "not something scan can read"), ("Keys.wav", "not something scan can read")):
@@ -233,9 +233,9 @@ class ScanInputs(Base):
         code, out = self.hx("scan", d, "--mix", mix, "--key", "A minor", "--deep", "--out", self.base / "s")
         self.assertEqual(code, 0, out)
         self.assertIn("--mix, --key, --deep are not used for a folder of recordings", out)
-        review = (self.base / "s" / "REVIEW.md").read_text()
+        review = (self.base / "s" / "REVIEW.md").read_text(encoding="utf-8")
         self.assertIn("--mix, --key, --deep were given but are not used", review)
-        info = json.loads((self.base / "s" / "scan.json").read_text())
+        info = json.loads((self.base / "s" / "scan.json").read_text(encoding="utf-8"))
         self.assertIsNone(info["mix"])
         self.assertIsNone(info["key"])
 
@@ -243,7 +243,7 @@ class ScanInputs(Base):
         d = stems_folder(self.base / "stems")
         sf.write(str(d / "hot.wav"), np.clip(gated(110) * 6, -1, 1), SR)
         self.assertEqual(self.hx("scan", d, "--out", self.base / "s")[0], 0)
-        review = (self.base / "s" / "REVIEW.md").read_text()
+        review = (self.base / "s" / "REVIEW.md").read_text(encoding="utf-8")
         self.assertNotIn("Close the set in Live", review)
         self.assertNotIn("(fixed).als", review)
         self.assertIn("repaired COPY", review)
@@ -253,7 +253,7 @@ class ScanInputs(Base):
         sf.write(str(d / "hot.wav"), np.clip(gated(110) * 6, -1, 1), SR)
         s = self.base / "s"
         self.assertEqual(self.hx("scan", d, "--out", s)[0], 0)
-        findings = json.loads((s / "findings.json").read_text())["findings"]
+        findings = json.loads((s / "findings.json").read_text(encoding="utf-8"))["findings"]
         manual = [f for f in findings if f.get("applies") == "manual"]
         self.assertTrue(manual, findings)
         code, out = self.hx("fix", s, "--approve", manual[0]["id"], "--out", "Stems (fixed).als")
@@ -265,13 +265,13 @@ class ScanInputs(Base):
         b = stems_folder(self.base / "stems b", names=("one", "two", "three"))
         s = self.base / "scan"
         self.assertEqual(self.hx("scan", a, "--out", s)[0], 0)
-        before = (s / "findings.json").read_text()
+        before = (s / "findings.json").read_text(encoding="utf-8")
         code, out = self.hx("preflight", b, "--plan", s)
         self.assertEqual(code, 0, out)
-        self.assertEqual((s / "findings.json").read_text(), before)          # the earlier scan is untouched
+        self.assertEqual((s / "findings.json").read_text(encoding="utf-8"), before)          # the earlier scan is untouched
         self.assertIn("different source", out)
         self.assertTrue((self.base / "scan (2)" / "preflight.json").exists())
-        info = json.loads((s / "scan.json").read_text())
+        info = json.loads((s / "scan.json").read_text(encoding="utf-8"))
         self.assertEqual(Path(info["set"]).name, "stems a")
         # the same source again goes into the same folder, as a re-scan does
         code, out = self.hx("preflight", a, "--plan", s)
@@ -295,7 +295,7 @@ class LiveSets(Base):
         als = self.make()
         code, out = self.hx("scan", als, "--only", "recordings", "--out", self.base / "s")
         self.assertEqual(code, 0, out)
-        d = json.loads((self.base / "s" / "recordings.json").read_text())
+        d = json.loads((self.base / "s" / "recordings.json").read_text(encoding="utf-8"))
         self.assertTrue(any(f["kind"] == "noise" and f["track"] == "missing.wav" for f in d["findings"]), d)
 
     def test_an_audio_only_set_does_not_report_a_failed_key_map(self):
@@ -303,11 +303,11 @@ class LiveSets(Base):
         code, out = self.hx("scan", als, "--only", "vocals", "--key", "A minor", "--out", self.base / "s")
         self.assertEqual(code, 0, out)
         self.assertNotIn("did NOT run", out)
-        notes = json.loads((self.base / "s" / "vocals.json").read_text())["notes"]
+        notes = json.loads((self.base / "s" / "vocals.json").read_text(encoding="utf-8"))["notes"]
         self.assertFalse(any("confirm it" in n for n in notes), notes)       # the key was given
         code, out = self.hx("scan", als, "--only", "vocals", "--out", self.base / "s2")
         self.assertNotIn("did NOT run", out)
-        notes = json.loads((self.base / "s2" / "vocals.json").read_text())["notes"]
+        notes = json.loads((self.base / "s2" / "vocals.json").read_text(encoding="utf-8"))["notes"]
         self.assertTrue(any("key map: not made" in n for n in notes), notes)
 
 
@@ -358,14 +358,14 @@ class ArdourFixes(Base):
             'scale-amplitude="1" fade-in-active="0" fade-out-active="0" type="audio" source-0="12" source-1="13"/>',
             'scale-amplitude="1" fade-in-active="1" fade-out-active="1" type="audio" source-0="12" source-1="13">'
             '<FadeIn default="yes"/><FadeOut default="yes"/></Region>')
-        (d / "Song.ardour").write_text(text)
+        (d / "Song.ardour").write_text(text, encoding="utf-8")
         return d
 
     def test_ardours_own_default_fades_are_fades(self):
         d = self.session()
         code, out = self.hx("scan", d, "--only", "clips", "--out", self.base / "s")
         self.assertEqual(code, 0, out)
-        found = json.loads((self.base / "s" / "clips.json").read_text())["findings"]
+        found = json.loads((self.base / "s" / "clips.json").read_text(encoding="utf-8"))["findings"]
         self.assertFalse(any("gtr.1" in f["problem"] for f in found), found)       # default fades on both ends
         self.assertTrue(any("comp.1" in f["problem"] for f in found), found)       # a region with fades switched off still is
 
@@ -404,8 +404,8 @@ class ReviewPage(Base):
     def scan_folder(self, n):
         sd = self.base / f"scan{n}"
         sd.mkdir()
-        (sd / "findings.json").write_text(json.dumps(dict(set="/x/Song.als", notes=[], findings=self.findings(n))))
-        (sd / "scan.json").write_text(json.dumps(dict(set="/x/Song.als")))
+        (sd / "findings.json").write_text(json.dumps(dict(set="/x/Song.als", notes=[], findings=self.findings(n))), encoding="utf-8")
+        (sd / "scan.json").write_text(json.dumps(dict(set="/x/Song.als")), encoding="utf-8")
         return sd
 
     def test_the_runs_expand_to_exactly_the_like_map(self):

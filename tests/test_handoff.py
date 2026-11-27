@@ -11,7 +11,7 @@ from tests.test_workflow import make_set
 
 def hx(*args):
     r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True,
-                       env=dict(os.environ, HYPNOMIX_HOME=tempfile.gettempdir() + "/hx-none"))
+                       env=dict(os.environ, HYPNOMIX_HOME=tempfile.gettempdir() + "/hx-none"), encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -32,11 +32,11 @@ FINDINGS = [F(1, "Vocals", "9.1.00", fix="turn the vocal fader down 1 dB"),     
 def scan_folder(d, src, mode="set", tempo=None):
     sd = d / "scan"
     sd.mkdir()
-    (sd / "findings.json").write_text(json.dumps(dict(set=str(src), findings=FINDINGS)))
-    (sd / "scan.json").write_text(json.dumps(dict(set=str(src), mode=mode)))
+    (sd / "findings.json").write_text(json.dumps(dict(set=str(src), findings=FINDINGS)), encoding="utf-8")
+    (sd / "scan.json").write_text(json.dumps(dict(set=str(src), mode=mode)), encoding="utf-8")
     dec = {f"t-{i}": dict(decision="approve") for i in (1, 2, 3, 4, 5)}
     dec["t-6"] = dict(decision="skip", note="I will redo this part live")
-    (sd / "decisions.json").write_text(json.dumps(dec))
+    (sd / "decisions.json").write_text(json.dumps(dec), encoding="utf-8")
     return sd
 
 
@@ -86,14 +86,14 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(len(locs), 5)                                  # 2.3.50 → 10.8 beats ... t-1 at 32 beats
         self.assertAlmostEqual(max(locs), 32.0)                         # bar 9 at 120 bpm = 32 beats
         self.assertEqual(len(list(root.iter("Locator"))), len(set(l.get("Id") for l in root.iter("Locator"))))
-        md = (sd / "handoff" / "HANDOFF.md").read_text()
+        md = (sd / "handoff" / "HANDOFF.md").read_text(encoding="utf-8")
         self.assertLess(md.index("(finding `t-6`)"), md.index("(finding `t-2`)"))            # ordered by position
         self.assertLess(md.index("(finding `t-2`)"), md.index("(finding `t-1`)"))
         self.assertIn("EQ Eight", md)
         self.assertIn("Listen for", md)
         self.assertIn("I will redo this part live", md)                 # the person's note is kept
         self.assertTrue((sd / "handoff" / "markers.mid").read_bytes().startswith(b"MThd"))
-        rows = list(csv.reader(open(sd / "handoff" / "markers.csv")))
+        rows = list(csv.reader(open(sd / "handoff" / "markers.csv", encoding="utf-8")))
         self.assertEqual(rows[0][:3], ["name", "seconds", "bar.beat"])
         self.assertEqual(len(rows), 6)
 
@@ -108,7 +108,7 @@ class HandoffTests(unittest.TestCase):
 
     def test_reaper_project_gets_markers_and_round_trips(self):
         src = self.d / "Song.rpp"
-        src.write_text(RPP)
+        src.write_text(RPP, encoding="utf-8")
         sd = scan_folder(self.d, src)
         code, out = hx("handoff", sd, "--daw", "reaper")
         self.assertEqual(code, 0, out)
@@ -120,8 +120,8 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(rpp.dumps(rpp.parse(rpp.dumps(root))), rpp.dumps(root))     # round trip
         a, b = project.load(src), project.load(new)
         self.assertEqual([t.name for t in a.tracks], [t.name for t in b.tracks])
-        self.assertIn("ReaEQ", (sd / "handoff" / "HANDOFF.md").read_text())
-        self.assertEqual(RPP, src.read_text())                                          # original untouched
+        self.assertIn("ReaEQ", (sd / "handoff" / "HANDOFF.md").read_text(encoding="utf-8"))
+        self.assertEqual(RPP, src.read_text(encoding="utf-8"))                                          # original untouched
 
     def test_folder_scan_gives_marker_files_only(self):
         sd = scan_folder(self.d, self.d, mode="folder")
@@ -129,7 +129,7 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(sorted(p.suffix for p in (sd / "handoff").iterdir()), [".csv", ".md", ".mid"])
         self.assertEqual(list(self.d.glob("*.als")) + list(self.d.glob("*.rpp")), [])
-        self.assertIn("bar 9.1", (sd / "handoff" / "HANDOFF.md").read_text())
+        self.assertIn("bar 9.1", (sd / "handoff" / "HANDOFF.md").read_text(encoding="utf-8"))
 
 class RecordingJobTests(unittest.TestCase):
     def test_recording_problems_get_their_own_to_do_and_listen_for_in_every_daw(self):

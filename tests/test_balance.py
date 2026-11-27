@@ -17,7 +17,7 @@ def stem(path, f, amp, seconds=6.0):
 
 def hx(*args):
     r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True,
-                       env=dict(os.environ, HYPNOMIX_HOME=tempfile.gettempdir() + "/hx-none"))
+                       env=dict(os.environ, HYPNOMIX_HOME=tempfile.gettempdir() + "/hx-none"), encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -72,7 +72,7 @@ class BalanceTests(unittest.TestCase):
         code, out = hx("balance", self.stems, "--plan", sd)
         self.assertEqual(code, 0, out)
         self.assertEqual(list(self.stems.glob("*")).__len__(), 3)             # nothing next to the stems
-        data = json.loads((sd / "findings.json").read_text())
+        data = json.loads((sd / "findings.json").read_text(encoding="utf-8"))
         ids = {f["track"]: f["id"] for f in data["findings"] if f["tool"] == "balance"}
         self.assertIn("Bass", ids)
         self.assertTrue(all(f["plan"]["key"].startswith("fader:") for f in data["findings"] if f["tool"] == "balance"))

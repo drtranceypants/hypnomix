@@ -91,7 +91,7 @@ class LikeRanges(unittest.TestCase):
         fs = mixed(120, 2)
         names = td / "raw" / "names"
         names.mkdir(parents=True)
-        (names / "names.json").write_text(json.dumps({"tracks": [{"old": k, "final": f"{v or 'x'} {k}"} for k, v in ROLES.items()]}))
+        (names / "names.json").write_text(json.dumps({"tracks": [{"old": k, "final": f"{v or 'x'} {k}"} for k, v in ROLES.items()]}), encoding="utf-8")
         from hypnomix.workflow import prefs as P
         prefs = P.load()
         ov_map = RV.oversight_payload(td, fs, prefs, like="map")
@@ -147,8 +147,8 @@ class AppServer(unittest.TestCase):
         d = Path(cls.td.name) / "scan" / "Song"
         d.mkdir(parents=True)
         fs = alike(300)
-        (d / "findings.json").write_text(json.dumps(dict(set="/nowhere/Song.als", notes=[], findings=fs)))
-        (d / "scan.json").write_text(json.dumps(dict(set="/nowhere/Song.als", mode="set")))
+        (d / "findings.json").write_text(json.dumps(dict(set="/nowhere/Song.als", notes=[], findings=fs)), encoding="utf-8")
+        (d / "scan.json").write_text(json.dumps(dict(set="/nowhere/Song.als", mode="set")), encoding="utf-8")
         cls.dir = str(d)
         cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), S.make_handler(0))
         cls.port = cls.srv.server_address[1]
@@ -484,7 +484,7 @@ class WikiWork(unittest.TestCase):
             self.assertEqual(self.live.read_bytes(), state["body"])
             self.ask()
             self.assertEqual(state["seen"][3]["inm"], '"v2"')
-            self.live.write_text(self.live.read_text() + " ", encoding="utf-8")        # the copy on this computer was changed: what we remembered is not about it
+            self.live.write_text(self.live.read_text(encoding="utf-8") + " ", encoding="utf-8")        # the copy on this computer was changed: what we remembered is not about it
             self.ask()
             self.assertEqual(state["seen"][4]["inm"], None)
             self.assertEqual(self.live.read_bytes(), state["body"])

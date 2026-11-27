@@ -226,7 +226,7 @@ class ChainArdour(unittest.TestCase):
                 wav = os.path.join(td, "bounce.wav")
                 sf.write(wav, y, sr)
                 out = subprocess.run([sys.executable, "-m", "hypnomix.cli", "chain", "master", wav, "--ardour",
-                                      "--mcp-url", srv.url], capture_output=True, text=True, timeout=300)
+                                      "--mcp-url", srv.url], capture_output=True, text=True, timeout=300, encoding="utf-8")
         finally:
             srv.close()
         self.assertEqual(out.returncode, 0, out.stderr[-2000:])

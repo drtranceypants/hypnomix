@@ -328,8 +328,8 @@ def scan_folder(root, name="Song", ids=("smooth-1", "smooth-2")):
     (d / "ab").mkdir(parents=True)
     fs = [dict(id=i, n=1, tool="smooth", kind="click", severity="low", track="Vox", where="1.1.00", applies="set",
                problem="a problem", fix="a fix") for i in ids]
-    (d / "findings.json").write_text(json.dumps(dict(set="/nowhere/Song.als", notes=[], findings=fs)))
-    (d / "scan.json").write_text(json.dumps(dict(set="/nowhere/Song.als", mode="set")))
+    (d / "findings.json").write_text(json.dumps(dict(set="/nowhere/Song.als", notes=[], findings=fs)), encoding="utf-8")
+    (d / "scan.json").write_text(json.dumps(dict(set="/nowhere/Song.als", mode="set")), encoding="utf-8")
     return d
 
 
@@ -380,7 +380,7 @@ class Locks(unittest.TestCase):
             self.assertFalse((self.d / "decisions.json").exists())
         out, err = p.communicate(timeout=60)
         self.assertEqual(p.returncode, 0, err.decode()[-400:])
-        self.assertEqual(json.loads((self.d / "decisions.json").read_text())["smooth-2"]["decision"], "skip")
+        self.assertEqual(json.loads((self.d / "decisions.json").read_text(encoding="utf-8"))["smooth-2"]["decision"], "skip")
 
     def test_fix_uses_the_shared_lock(self):
         from hypnomix.core import atomic
@@ -396,13 +396,13 @@ class Locks(unittest.TestCase):
                 "review.record_like": lambda: R.record_like(self.d, "smooth-1", "approve"),
                 "server.record_many": lambda: SV.record_many(self.d, ["smooth-1", "smooth-2"], "skip"),
                 "server.record_one": lambda: SV.record_one(self.d, "smooth-1", "skip"),
-                "server.patch_heard": lambda: ((self.d / "heard.json").write_text(json.dumps({"smooth-1": {"a": "x"}})), SV.patch_heard(self.d, ["smooth-1"])),
+                "server.patch_heard": lambda: ((self.d / "heard.json").write_text(json.dumps({"smooth-1": {"a": "x"}}), encoding="utf-8"), SV.patch_heard(self.d, ["smooth-1"])),
                 "server.restore_decisions": lambda: SV.restore_decisions(self.d, fresh=True),
                 "server.set_aside_decisions": lambda: SV.set_aside_decisions(self.d),
                 "oversight.settle": lambda: O.settle(self.d, "smooth-1", "mine"),
             }
             for what, fn in cases.items():
-                (self.d / "decisions.json").write_text(json.dumps({"smooth-1": {"decision": "skip", "conflicts": [{"by": "x", "decision": "approve"}]}}))
+                (self.d / "decisions.json").write_text(json.dumps({"smooth-1": {"decision": "skip", "conflicts": [{"by": "x", "decision": "approve"}]}}), encoding="utf-8")
                 taken, p = self.entered()
                 with p:
                     try:
@@ -413,7 +413,7 @@ class Locks(unittest.TestCase):
 
     def test_a_rescan_takes_it_for_its_writes(self):
         from hypnomix.workflow import scan
-        (self.d / "decisions.json").write_text(json.dumps({"gone-1": {"decision": "approve"}}))
+        (self.d / "decisions.json").write_text(json.dumps({"gone-1": {"decision": "approve"}}), encoding="utf-8")
         old = [dict(id="gone-1", tool="smooth", kind="click", track="Vox", where="1.1.00")]
         new = [dict(id="smooth-1", tool="smooth", kind="click", track="Vox", where="9.1.00")]
         taken, p = self.entered()
@@ -423,14 +423,14 @@ class Locks(unittest.TestCase):
 
     def test_the_dawreview_clear_takes_it(self):
         from hypnomix.app import dawreview as DR, server as SV
-        (self.d / "decisions.json").write_text(json.dumps({"smooth-1": {"decision": "skip"}}))
+        (self.d / "decisions.json").write_text(json.dumps({"smooth-1": {"decision": "skip"}}), encoding="utf-8")
         taken, p = self.entered()
         with mock.patch.dict(os.environ, {"HYPNOMIX_APP_HOME": str(self.root)}), p, \
                 mock.patch.object(SV, "decisions_ok", lambda d: None):
             code, body = DR.handle_post(SV, "/api/dawreview/decide", dict(dir=str(self.d), id="smooth-1", decision="clear"))
         self.assertEqual(code, 200)
         self.assertIn(self.d, taken)
-        self.assertNotIn("smooth-1", json.loads((self.d / "decisions.json").read_text()))
+        self.assertNotIn("smooth-1", json.loads((self.d / "decisions.json").read_text(encoding="utf-8")))
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -541,7 +541,7 @@ class Helper(unittest.TestCase):
 
     def stub(self, name, body):
         f = self.bin / name
-        f.write_text("#!/bin/bash\n" + body + "\n")
+        f.write_text("#!/bin/bash\n" + body + "\n", encoding="utf-8")
         f.chmod(0o755)
 
     def run_helper(self, hdiutil_attach_ok=True, app_in_image=True, ditto_ok=True):
@@ -561,11 +561,11 @@ if [ "$1" = detach ] || [ "$2" = detach ]; then
 fi''')
         self.stub("ditto", f'echo "ditto $*" >> "{calls}"; [ "{int(ditto_ok)}" = 1 ] || exit 1; mkdir -p "$2"')
         helper = self.r / "helper.sh"
-        helper.write_text(self.UP.MAC_HELPER)
+        helper.write_text(self.UP.MAC_HELPER, encoding="utf-8")
         env = dict(os.environ, PATH=f"{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin", TMPDIR=str(self.tmp) + "/", HYPNOMIX_UPDATE_GRACE="1")
         r = subprocess.run(["/bin/bash", str(helper), str(self.app), str(self.dmg), "", "", "", str(self.log), self.sha, "-"],
-                           env=env, capture_output=True, text=True, timeout=60)
-        text = self.calls.read_text() if self.calls.exists() else ""
+                           env=env, capture_output=True, text=True, timeout=60, encoding="utf-8")
+        text = self.calls.read_text(encoding="utf-8") if self.calls.exists() else ""
         return r.returncode, text
 
     def leftovers(self):
@@ -592,7 +592,7 @@ fi''')
 
     def test_the_folder_is_made_in_tmpdir(self):
         self.run_helper(ditto_ok=False)
-        mnt = Path((self.calls.parent / "calls.txt.mnt").read_text().strip().splitlines()[0])
+        mnt = Path((self.calls.parent / "calls.txt.mnt").read_text(encoding="utf-8").strip().splitlines()[0])
         self.assertEqual(mnt.parent, self.tmp)
         self.assertTrue(mnt.name.startswith("hypnomix-update."))
 
@@ -612,7 +612,7 @@ class Paths(unittest.TestCase):
         self.addCleanup(self.td.cleanup)
         self.home = Path(self.td.name).resolve() / "someone"
         self.home.mkdir()
-        self.env = mock.patch.dict(os.environ, {"HOME": str(self.home), "HYPNOMIX_USER_HOME": str(self.home),
+        self.env = mock.patch.dict(os.environ, {"HOME": str(self.home), "USERPROFILE": str(self.home), "HYPNOMIX_USER_HOME": str(self.home),
                                                 "HYPNOMIX_APP_HOME": str(self.home / "Documents" / "Hypnomix")})
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -629,16 +629,30 @@ class Paths(unittest.TestCase):
 
     def test_list_songs_and_read_review_show_the_tilde_and_take_it_back(self):
         from hypnomix.app import chat as CH
+        def slashes(text):                  # on Windows the shown form is ~\Documents\..., and JSON text doubles each backslash
+            return text.replace("\\\\", "/").replace("\\", "/")
         listed = CH._tool("list_songs", {})
-        self.assertIn("~/Documents/Hypnomix/scan/Song", listed)
+        self.assertIn("~/Documents/Hypnomix/scan/Song", slashes(listed))
         self.assertNotIn(str(self.home), listed)
+        self.assertNotIn(json.dumps(str(self.home))[1:-1], listed)          # the folder as JSON writes it (doubled backslashes)
         review = CH._tool("read_review", {"dir": "~/Documents/Hypnomix/scan/Song"})
         self.assertNotIn(str(self.home), review)
+        self.assertNotIn(json.dumps(str(self.home))[1:-1], review)
         body = json.loads(review[len(CH.DATA_OPEN):-len(CH.DATA_CLOSE)].strip())
-        self.assertEqual(body["dir"], "~/Documents/Hypnomix/scan/Song")
+        self.assertEqual(slashes(body["dir"]), "~/Documents/Hypnomix/scan/Song")
         self.assertEqual(body["total"], 2)
         again = CH._tool("read_review", {"dir": body["dir"]})          # the form it was given comes back and works
         self.assertEqual(json.loads(again[len(CH.DATA_OPEN):-len(CH.DATA_CLOSE)].strip())["total"], 2)
+
+    def test_a_windows_home_outside_users_is_shortened_inside_json_text_too(self):
+        """JSON text doubles every backslash of a Windows path, so the home folder as it is written there never matched
+        the plain one: only a home under C:\\Users was caught, by the loose pattern, and D:\\Profiles\\someone went out whole."""
+        from hypnomix.app import daw_assist as DA
+        home = "D:\\Profiles\\someone"
+        with mock.patch.dict(os.environ, {"HYPNOMIX_USER_HOME": home}):
+            shown = DA.home_short(json.dumps({"dir": home + "\\Documents\\Hypnomix\\scan\\Song"}))
+        self.assertNotIn("someone", shown)
+        self.assertEqual(json.loads(shown)["dir"], "~\\Documents\\Hypnomix\\scan\\Song")
 
     def test_run_hypnomix_hands_the_command_the_real_folder(self):
         """The shortened form is what the Assistant is shown, and a command is run without a shell: the "~" must be
@@ -653,8 +667,9 @@ class Paths(unittest.TestCase):
         cmd, args = seen[0]
         real = str(self.home / "Documents" / "Hypnomix" / "scan" / "Song")
         self.assertEqual(cmd, "fix")
-        self.assertEqual(args[0], real)
-        self.assertEqual(args[3], "--out=" + real)
+        self.assertEqual(Path(args[0]), Path(real))                 # expanduser keeps the separators it was given: "/" or "\\" are the same folder
+        self.assertTrue(args[3].startswith("--out="))
+        self.assertEqual(Path(args[3].split("=", 1)[1]), Path(real))
         self.assertEqual(args[4:], ["~5 dB", "~someone"])           # only "~" and "~/..." mean the home folder
         self.assertEqual(CH.expand_home(["~", "x~/y"]), [str(self.home), "x~/y"])
 
@@ -712,7 +727,7 @@ print(JSON.stringify(out));"""
         with tempfile.TemporaryDirectory() as td:
             f = Path(td) / "t.js"
             f.write_text(prog, encoding="utf-8")
-            r = subprocess.run(runner + [str(f)], capture_output=True, text=True, timeout=60)
+            r = subprocess.run(runner + [str(f)], capture_output=True, text=True, timeout=60, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         got = json.loads(r.stdout.strip().splitlines()[-1])
         self.assertEqual(got, [{"folder": "~/Music", "name": "New Song"}, {"folder": ".", "name": "Song"}, {"folder": "/", "name": "Song"},

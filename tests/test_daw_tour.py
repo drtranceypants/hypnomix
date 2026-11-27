@@ -87,7 +87,7 @@ def run_js(body):
     with tempfile.TemporaryDirectory() as td:
         f = Path(td) / "t.js"
         f.write_text(page_src(body), encoding="utf-8")
-        r = subprocess.run(cmd + [str(f)], capture_output=True, text=True, timeout=60)
+        r = subprocess.run(cmd + [str(f)], capture_output=True, text=True, timeout=60, encoding="utf-8")
     if r.returncode:
         raise AssertionError(r.stdout + r.stderr)
     return json.loads(r.stdout.strip().splitlines()[-1])

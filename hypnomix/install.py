@@ -133,7 +133,7 @@ def install(argv):
             print("2. couldn't find Live's preferences folder; add this line to Options.txt yourself:", PARAM_LINE)
         else:
             opt = prefs / "Options.txt"
-            text = opt.read_text(encoding="utf-8", errors="surrogateescape") if opt.exists() else ""   # bytes of the person's own lines come back unchanged
+            text = opt.read_bytes().decode("utf-8", "surrogateescape") if opt.exists() else ""   # bytes of the person's own lines come back unchanged (text mode would turn CRLF into LF)
             if "PluginAutoPopulateThreshold" in text:
                 print(f"2. {opt} already sets the plug-in parameter threshold")
             else:
@@ -141,8 +141,9 @@ def install(argv):
                       "(Live shows up to 128 parameters of every plug-in to HypnoMix)")
                 if not dry:
                     opt.parent.mkdir(parents=True, exist_ok=True)
-                    opt.write_text(text + ("\n" if text and not text.endswith("\n") else "") + PARAM_LINE + "\n",
-                                   encoding="utf-8", errors="surrogateescape")
+                    eol = "\r\n" if ("\r\n" in text or (not text and os.name == "nt")) else "\n"   # the new line ends the way the person's own lines do; a new file gets the system's
+                    opt.write_bytes((text + (eol if text and not text.endswith("\n") else "") + PARAM_LINE + eol)
+                                    .encode("utf-8", "surrogateescape"))
     else:
         print("2. plug-in parameters: run `hypnomix install --plugin-params` to let HypnoMix see up to 128 parameters\n"
               "   of every plug-in without clicking Configure (adds one line to Live's Options.txt)")

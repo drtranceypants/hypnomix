@@ -22,6 +22,7 @@ class DiskCare(unittest.TestCase):
         os.environ.update(HYPNOMIX_USER_HOME=str(r), HYPNOMIX_HOME=str(r / ".hypnomix"), HYPNOMIX_APP_HOME=str(r / "Documents/Hypnomix"))
         from hypnomix.app import diskcare as DC
         self.DC, self.r = DC, r
+        self.top = str(Path(r.anchor))        # the top of the disk: "/" on a Mac, "C:\\" on Windows
         self._space = DC.space            # the test must not depend on how full this computer's own disk is
         DC.space = lambda: (500 * DC.GB, 1000 * DC.GB)
 
@@ -35,7 +36,7 @@ class DiskCare(unittest.TestCase):
         self.td.cleanup()
 
     def paths(self):
-        return {str(i[2].relative_to(self.r)) for i in self.DC.plan("ok")[0]}
+        return {i[2].relative_to(self.r).as_posix() for i in self.DC.plan("ok")[0]}
 
     def test_the_teacher_tabs_audio_examples_are_covered(self):
         touch(self.r / ".hypnomix/cache/teach/low-cut-a-v3.wav")                      # idle for weeks: made again on demand
@@ -143,7 +144,7 @@ class DiskCare(unittest.TestCase):
         self.refused("~", "home folder")
 
     def test_watch_refuses_the_top_of_the_disk(self):
-        self.refused("/", "top of the disk")
+        self.refused(Path(self.r.anchor), "top of the disk")           # "/" on a Mac, "C:\\" on Windows
 
     def test_watch_refuses_library(self):
         (self.r / "Library/Audio").mkdir(parents=True)
@@ -183,7 +184,7 @@ class DiskCare(unittest.TestCase):
         self.assertEqual(len(self.DC.watched()), 2)
 
     def test_a_hand_edited_watch_list_cannot_widen_the_clean(self):
-        self.DC.save({"watch": [str(self.r), "/", str(self.r / "Music")]})
+        self.DC.save({"watch": [str(self.r), self.top, str(self.r / "Music")]})
         (self.r / "Music").mkdir()
         self.assertEqual(self.DC.watched(), [])
         via_http = self.DC.handle_post("/api/diskcare/settings", {"watch": [str(self.r)]})
@@ -199,7 +200,7 @@ class DiskCare(unittest.TestCase):
         with gzip.open(als, "wb") as f:
             f.write(b'<Ableton><FileRef><Path Value="/x/Lead clean.wav" /></FileRef></Ableton>')
         self.DC.settings({"watch": [str(work)]})
-        got = {str(i[2].relative_to(self.r.resolve())) for i in self.DC.plan("ok")[0]}
+        got = {i[2].relative_to(self.r.resolve()).as_posix() for i in self.DC.plan("ok")[0]}
         self.assertIn("Music/Work/song/hypnomix-out/dehiss/Old take.wav", got)
         self.assertNotIn("Music/Work/song/hypnomix-out/dehiss/Lead clean.wav", got)
         self.DC.run()
@@ -230,7 +231,7 @@ class DiskCare(unittest.TestCase):
 
     def test_read_only_never_reads_the_top_of_the_disk_home_or_library(self):
         (self.r / "Library").mkdir()
-        self.DC.save({"watch": ["/", str(self.r), str(self.r / "Library"), 5, None, "", "~/nope"]})
+        self.DC.save({"watch": [self.top, str(self.r), str(self.r / "Library"), 5, None, "", "~/nope"]})
         self.assertEqual(self.DC.read_only(), [])
         self.assertEqual(self.DC.watched(), [])
 

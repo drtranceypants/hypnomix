@@ -449,7 +449,7 @@ class Flow(unittest.TestCase):
         from hypnomix.app import dawreview as DR, server as SV
         sess = Path(self.td.name) / "Harbor" / "Harbor.ardour"
         sess.parent.mkdir()
-        sess.write_text("<Session/>")
+        sess.write_text("<Session/>", encoding="utf-8")
         self.e.session = str(sess)
         ran = []
 
@@ -459,7 +459,7 @@ class Flow(unittest.TestCase):
             d.mkdir(parents=True, exist_ok=True)
             (d / "findings.json").write_text(json.dumps({"findings": [
                 {"id": "edges-1", "tool": "edges"}, {"id": "vocallevel-1", "tool": "vocallevel"},
-                {"id": "x", "tool": "names", "applies": "info"}]}))
+                {"id": "x", "tool": "names", "applies": "info"}]}), encoding="utf-8")
             SV.JOB.update(status="done", log=["saved Harbor.ardour", "bounced the mix", "scan done"], reason="")
             return {"dir": str(d)}
 
@@ -486,11 +486,11 @@ class Flow(unittest.TestCase):
         from hypnomix.app import dawreview as DR, server as SV
         sess = Path(self.td.name) / "Harbor" / "Harbor.ardour"
         sess.parent.mkdir()
-        sess.write_text("<Session/>")
+        sess.write_text("<Session/>", encoding="utf-8")
         self.e.session = str(sess)
         d = DR.scan_folder(SV, sess)
         d.mkdir(parents=True)
-        (d / "findings.json").write_text(json.dumps({"findings": [{"id": "old-1", "tool": "edges"}]}))
+        (d / "findings.json").write_text(json.dumps({"findings": [{"id": "old-1", "tool": "edges"}]}), encoding="utf-8")
         os.utime(d / "findings.json", (time.time() - 3600,) * 2)                  # from an earlier scan
 
         def fake_start(srv):
@@ -939,7 +939,8 @@ class Hardening(Flow):
             [("daw_track_set_mute", {"id": "252", "value": True})], "ok"])
         first = self.card()
         self.approve(first)
-        self.assertTrue(wait(lambda: CH.state()["pending"] is not None and CH.state()["pending"]["id"] != first["id"]))
+        # read the state ONCE: read twice, the pending action can clear between the two reads (seen under load)
+        self.assertTrue(wait(lambda: (CH.state()["pending"] or {}).get("id") not in (None, first["id"])))
         self.approve(self.card())
         self.done()
         res = self.results()
@@ -954,14 +955,14 @@ class Hardening(Flow):
         from hypnomix.app import dawreview as DR, server as SV
         sess = Path(self.td.name) / "Harbor" / "Harbor.ardour"
         sess.parent.mkdir()
-        sess.write_text("<Session/>")
+        sess.write_text("<Session/>", encoding="utf-8")
         self.e.session = str(sess)
 
         def fake_start(srv):
             d = DR.scan_folder(srv, sess)
             d.mkdir(parents=True, exist_ok=True)
             if status == "done":
-                (d / "findings.json").write_text(json.dumps({"findings": []}))
+                (d / "findings.json").write_text(json.dumps({"findings": []}), encoding="utf-8")
             SV.JOB.update(status=status, log=log, reason="" if status == "done" else "it broke")
         with mock.patch.object(DR, "start_scan", fake_start):
             self.run_chat("scan it", [[("scan_session", {})], "ok"])
@@ -1389,7 +1390,7 @@ class PageScripts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             f = Path(td) / "t.js"
             f.write_text(src, encoding="utf-8")
-            r = subprocess.run(cmd + [str(f)], capture_output=True, text=True, timeout=60)
+            r = subprocess.run(cmd + [str(f)], capture_output=True, text=True, timeout=60, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         return json.loads(r.stdout.strip().splitlines()[-1])
 
@@ -1561,7 +1562,7 @@ function chatDraw() {}
         with tempfile.TemporaryDirectory() as td:
             f = Path(td) / "t.js"
             f.write_text(src, encoding="utf-8")
-            r = subprocess.run(cmd + [str(f)], capture_output=True, text=True, timeout=60)
+            r = subprocess.run(cmd + [str(f)], capture_output=True, text=True, timeout=60, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         return json.loads(r.stdout.strip().splitlines()[-1])
 

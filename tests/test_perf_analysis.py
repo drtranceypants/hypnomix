@@ -638,19 +638,33 @@ class KeyHarmonic(unittest.TestCase):
             size = [31 if i == axis else 1 for i in range(2)]
             self.assertTrue(np.array_equal(K._median31(S, axis), median_filter(S, size=size, mode="reflect")))
 
-    def test_harmonic_is_librosas_to_the_last_bit_whole_or_in_blocks(self):
+    def test_harmonic_is_librosas_whole_and_within_rounding_in_blocks(self):
         import librosa
         from hypnomix.ears import key as K
         y = self.signal()
         want = librosa.effects.harmonic(y, margin=3)
-        self.assertTrue(np.array_equal(K.harmonic(y, margin=3), want))
+        self.assertTrue(np.array_equal(K.harmonic(y, margin=3), want))      # the whole-song path: exact
         sizes = []
         real = K._harmonic_block
         with mock.patch.object(K, "_harmonic_block", side_effect=lambda s, m, n: (sizes.append(len(s)), real(s, m, n))[1]):
             got = K.harmonic(y, margin=3, block_s=1.0)                  # a block a second, with a second and a half either side
-        self.assertTrue(np.array_equal(got, want))
+        # The blocked path was exact too on two Pythons and numpy 2.0 to 2.4, but on an Apple-silicon runner with librosa 1.0 and
+        # numpy 2.5 it differs by rounding. The bound below is far under a seam error (the next test measures one); the size is printed.
+        err = float(np.max(np.abs(got.astype(np.float64) - want.astype(np.float64))))
+        self.assertLessEqual(err, 1e-5 * float(np.max(np.abs(want))), f"blocks differ from the whole song by {err:g}")
         self.assertGreater(len(sizes), 4)
         self.assertLess(max(sizes), len(y))                             # never the whole song in one piece
+
+    def test_the_bound_on_the_blocked_path_catches_a_real_seam(self):
+        import librosa
+        from hypnomix.ears import key as K
+        y = self.signal()
+        want = librosa.effects.harmonic(y, margin=3)
+        peak = float(np.max(np.abs(want)))
+        with mock.patch.object(K, "_BLOCK_MARGIN_FRAMES", 1):           # a margin far too short for the median filters to see past
+            got = K.harmonic(y, margin=3, block_s=1.0)
+        err = float(np.max(np.abs(got.astype(np.float64) - want.astype(np.float64))))
+        self.assertGreater(err, 1e-4 * peak, f"a one-frame margin differs from the whole song by only {err:g}, so the bound would not notice a seam")
 
     def test_the_shipped_block_is_what_keeps_a_long_song_in_pieces(self):
         from hypnomix.ears import key as K

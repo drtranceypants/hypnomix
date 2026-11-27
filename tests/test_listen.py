@@ -3,6 +3,7 @@ import io, json, os, re, subprocess, sys, tempfile, threading, time, types, unit
 from pathlib import Path
 from unittest import mock
 
+from tests import _isolate
 from hypnomix.app import chat as CH
 from hypnomix.ears import critique as L
 
@@ -87,7 +88,7 @@ class Listener(unittest.TestCase):
         """The model rebuilt ~ from another home: the file name matches the scan's bounce, so that one is used."""
         song = self._song()
         scan = Path(self.d.name) / "scan"; scan.mkdir()
-        (scan / "scan.json").write_text(json.dumps({"mix": str(song)}))
+        (scan / "scan.json").write_text(json.dumps({"mix": str(song)}), encoding="utf-8")
         with mock.patch("hypnomix.app.server.scan_dir", return_value=scan):
             self.assertEqual(CH.scan_bounce("scan", Path("/elsewhere/Song.wav")), song)
             self.assertIsNone(CH.scan_bounce("scan", Path("/elsewhere/Other.wav")))
@@ -151,8 +152,8 @@ class Listener(unittest.TestCase):
     def _scan_with_review(self, chars=10_000):
         scan = Path(self.d.name) / "scan" / "Song"
         scan.mkdir(parents=True)
-        (scan / "findings.json").write_text("{}")
-        (scan / "REVIEW.md").write_text("r" * chars)
+        (scan / "findings.json").write_text("{}", encoding="utf-8")
+        (scan / "REVIEW.md").write_text("r" * chars, encoding="utf-8")
         return scan
 
     def _clicks(self, *answers):
@@ -227,7 +228,7 @@ class Listener(unittest.TestCase):
                 listen(**change)
                 t.join()
                 self.assertEqual(asks(), before + 1, change)
-            (scan / "REVIEW.md").write_text("changed review")               # a new review is new context
+            (scan / "REVIEW.md").write_text("changed review", encoding="utf-8")               # a new review is new context
             t = self._clicks((True, None))
             listen()
             t.join()
@@ -259,10 +260,16 @@ class Listener(unittest.TestCase):
         self.assertNotEqual(key, k(big))
         L.remember(song, "gemini", "m", "q", "c", None, "notes here", dict(input=5, output=6, cost=None))
         f = next(L.CACHE_DIR.glob("*.json"))
-        self.assertEqual(oct(f.stat().st_mode)[-3:], "600")
-        self.assertNotIn("AIza", f.read_text())                              # no key in it
+        self.assertNotIn("AIza", f.read_text(encoding="utf-8"))                              # no key in it
         self.assertEqual(L.cached(song, "gemini", "m", "q", "c")["notes"], "notes here")
         self.assertIsNone(L.cached(song, "gemini", "m", "other question", "c"))
+
+    @_isolate.POSIX_MODES
+    def test_the_saved_notes_are_readable_by_the_owner_alone(self):
+        song = self._song()
+        L.remember(song, "gemini", "m", "q", "c", None, "notes here", dict(input=5, output=6, cost=None))
+        f = next(L.CACHE_DIR.glob("*.json"))
+        self.assertEqual(oct(f.stat().st_mode)[-3:], "600")
 
     def test_a_long_song_asks_whole_or_the_first_twelve_minutes(self):
         CH.update_settings({"provider": "gemini", "key": "AIza-12345678", "listen_provider": "gemini"})
@@ -302,7 +309,7 @@ class Listener(unittest.TestCase):
         CH.update_settings({"provider": "anthropic", "key": "sk-ant-chat-11112222"})
         CH.update_settings({"listen_provider": "gemini", "listen_key": "AIza-listen-33334444",
                             "listen_model": "gemini-4-hydrogen"})
-        c = json.loads(self.conf.read_text())
+        c = json.loads(self.conf.read_text(encoding="utf-8"))
         self.assertEqual((c["provider"], c["keys"]["anthropic"], c["keys"]["gemini"]),
                          ("anthropic", "sk-ant-chat-11112222", "AIza-listen-33334444"))
         self.assertEqual(L.listener()[2:], ("gemini-4-hydrogen", "AIza-listen-33334444"))
@@ -310,8 +317,8 @@ class Listener(unittest.TestCase):
         self.assertNotIn("listen-3333", v)
         self.assertIn("…4444", v)
         CH.update_settings({"listen_provider": "gemini", "listen_forget": True})
-        self.assertNotIn("gemini", json.loads(self.conf.read_text())["keys"])
-        self.assertEqual(json.loads(self.conf.read_text())["keys"]["anthropic"], "sk-ant-chat-11112222")
+        self.assertNotIn("gemini", json.loads(self.conf.read_text(encoding="utf-8"))["keys"])
+        self.assertEqual(json.loads(self.conf.read_text(encoding="utf-8"))["keys"]["anthropic"], "sk-ant-chat-11112222")
 
     def test_audio_models_best_first_and_no_tts(self):
         names = ["gemini-3.5-flash", "gemini-3.8-flash-tts", "gemini-4-carbon", "gemini-2.5-flash-image",
@@ -375,7 +382,7 @@ class Context(unittest.TestCase):
     def _file(self, rel, text="hello"):
         f = self.root / rel
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(text)
+        f.write_text(text, encoding="utf-8")
         return f
 
     def test_normal_command_line_use_still_works(self):
@@ -480,7 +487,7 @@ class CommandLine(unittest.TestCase):
         self.d = tempfile.TemporaryDirectory()
         self.root = Path(self.d.name)
         conf = self.root / "ai.json"
-        conf.write_text(json.dumps({"keys": {"gemini": "AIza-12345678"}, "listen": {"provider": "gemini"}}))
+        conf.write_text(json.dumps({"keys": {"gemini": "AIza-12345678"}, "listen": {"provider": "gemini"}}), encoding="utf-8")
         self.p = [mock.patch.object(L, "CONF", conf), mock.patch.object(L, "CACHE_DIR", self.root / "cache" / "listen")]
         for p in self.p:
             p.start()
@@ -538,7 +545,7 @@ class CommandLine(unittest.TestCase):
         code, text, asked = self.run_main("--yes")
         self.assertIsNone(code)
         self.assertEqual((self.calls, asked), (["gemini-4-carbon"], 0))
-        out = (self.root / "out" / "Song.md").read_text()
+        out = (self.root / "out" / "Song.md").read_text(encoding="utf-8")
         self.assertIn("good low end", out)
         self.assertIn("100 tokens in", out)
 
@@ -562,7 +569,7 @@ class CommandLine(unittest.TestCase):
         self.assertIsNone(code)
         self.assertIn("showing the saved notes (free)", text)
         self.assertEqual((len(self.calls), asked), (1, 0))
-        self.assertIn("saved notes, nothing sent", (self.root / "out" / "Song.md").read_text())
+        self.assertIn("saved notes, nothing sent", (self.root / "out" / "Song.md").read_text(encoding="utf-8"))
         code, text, asked = self.run_main("--estimate")
         self.assertIn("saved notes would be shown, free", text)
         code, text, asked = self.run_main("--again")                             # a fresh listen is a new send: it asks
@@ -618,7 +625,7 @@ class CommandLine(unittest.TestCase):
         for want in ("--yes", "--estimate", "--minutes", "--again", "person has said yes", "asks"):
             self.assertIn(want, h)
         self.assertIn("y/N", L.__doc__)
-        self.assertIn("--yes", (Path(L.__file__).resolve().parents[2] / "AGENTS.md").read_text())
+        self.assertIn("--yes", (Path(L.__file__).resolve().parents[2] / "AGENTS.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

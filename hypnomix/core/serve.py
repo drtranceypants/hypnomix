@@ -8,6 +8,7 @@ program take a port that is in use, so there the option is left off: a plain bin
 may need a short wait while old connections close.
 """
 import os
+import socketserver
 from http.server import ThreadingHTTPServer
 
 
@@ -19,3 +20,9 @@ class LocalServer(ThreadingHTTPServer):
     def __init__(self, *args, **kw):
         self.allow_reuse_address = not _windows()        # read by server_bind, which the base class calls from here
         super().__init__(*args, **kw)
+
+    def server_bind(self):
+        # Not HTTPServer's: it asks the resolver for this computer's name (socket.getfqdn), which can take half a minute or
+        # more on a slow resolver, before the app listens. Nothing here uses the name.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[0], self.server_address[1]

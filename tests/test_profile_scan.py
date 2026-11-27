@@ -40,7 +40,7 @@ PROFILE_KEYS = [k for k in SONGS[0] if k not in ("duration_s", "true_peak_dbtp")
 def write_profile(path, songs=SONGS):
     prof = {"name": "mine", "songs": [f"s{i}" for i in range(len(songs))],
             "audio": {k: PR.stats([s[k] for s in songs]) for k in songs[0]}}
-    Path(path).write_text(json.dumps(prof))
+    Path(path).write_text(json.dumps(prof), encoding="utf-8")
     return path
 
 
@@ -165,7 +165,7 @@ class Check(Tmp):
     def setUp(self):
         super().setUp()
         self.mj = self.td / "mix.json"
-        self.mj.write_text(json.dumps(measure_result(spectral_centroid_hz=1500.0)))
+        self.mj.write_text(json.dumps(measure_result(spectral_centroid_hz=1500.0)), encoding="utf-8")
 
     def test_no_profile_is_one_info_line_and_no_findings(self):
         f, notes = S.profile_check(self.mj, path=self.td / "nope.json")
@@ -174,7 +174,7 @@ class Check(Tmp):
         self.assertIn("hypnomix profile build", notes[0])
 
     def test_a_broken_or_tiny_profile_is_a_note(self):
-        (self.td / "bad.json").write_text("{not json")
+        (self.td / "bad.json").write_text("{not json", encoding="utf-8")
         f, notes = S.profile_check(self.mj, path=self.td / "bad.json")
         self.assertEqual((f, len(notes)), ([], 1))
         self.assertIn("could not be read", notes[0])
@@ -192,7 +192,7 @@ class Check(Tmp):
         f, notes = S.profile_check(self.mj, path=self.prof)
         self.assertEqual([x["id"] for x in f], ["mix-profile-spectral_centroid_hz"])
         self.assertIn("1 of 15 measure sits outside", notes[0])
-        self.mj.write_text(json.dumps(measure_result()))
+        self.mj.write_text(json.dumps(measure_result()), encoding="utf-8")
         f, notes = S.profile_check(self.mj, path=self.prof)
         self.assertEqual(f, [])
         self.assertIn("all 15 measures sit inside", notes[0])
@@ -234,7 +234,7 @@ class InTheMixGroup(Tmp):
             if tool == "measure":
                 out = Path(args[2])
                 out.mkdir(parents=True, exist_ok=True)
-                (out / (Path(args[0]).stem + ".json")).write_text(json.dumps(measure_result(**mix_over)))
+                (out / (Path(args[0]).stem + ".json")).write_text(json.dumps(measure_result(**mix_over)), encoding="utf-8")
                 return 0, said
             return 0, "ok"
 
@@ -268,7 +268,7 @@ class InTheMixGroup(Tmp):
             if tool == "measure":
                 out = Path(args[2])
                 out.mkdir(parents=True, exist_ok=True)
-                (out / (Path(args[0]).stem + ".json")).write_text(json.dumps(measure_result()))
+                (out / (Path(args[0]).stem + ".json")).write_text(json.dumps(measure_result()), encoding="utf-8")
                 return 0, "mix.wav: -13.5 LUFS (pyln -13.5), TP -1.0 dBTP, LRA 6.5 LU"
             return (1, "FAILED: clipping") if tool == "qc" else (0, "ok")
         a = Namespace(mix=str(self.td / "mix.wav"), like=None, no_profile=True)
@@ -296,12 +296,12 @@ class InTheMixGroup(Tmp):
         found, notes, _ = self.run_group(dict(spectral_centroid_hz=1500.0))
         od = self.td / "scan"
         od.mkdir(exist_ok=True)
-        (od / "scan.json").write_text(json.dumps({"set": str(self.td / "x.als"), "mode": "set", "mix": "m.wav"}))
-        (od / "mix.json").write_text(json.dumps({"group": "mix", "findings": found, "notes": notes}))
+        (od / "scan.json").write_text(json.dumps({"set": str(self.td / "x.als"), "mode": "set", "mix": "m.wav"}), encoding="utf-8")
+        (od / "mix.json").write_text(json.dumps({"group": "mix", "findings": found, "notes": notes}), encoding="utf-8")
         with mock.patch("hypnomix.workflow.prefs.load", return_value={}):
             allf, _ = S.merge(od)
         self.assertIn("mix-profile-spectral_centroid_hz", {f["id"] for f in allf})
-        review = (od / "REVIEW.md").read_text()
+        review = (od / "REVIEW.md").read_text(encoding="utf-8")
         self.assertIn("darker than your songs", review)
         self.assertIn("90%", review)                  # the finding's own figure (or its kind's), not the 50% default
         from hypnomix.workflow import teach

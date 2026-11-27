@@ -334,7 +334,7 @@ class RepairedHistory(Base):
         conv.write_text(json.dumps(dict(id="abc", provider="anthropic", items=[
             {"kind": "user", "text": "tidy"}, {"kind": "ask", "id": "q", "what": "write", "text": "hypnomix tidy"}],
             history=[{"role": "user", "content": "tidy"}, self.CALL],
-            usage={"calls": 1, "input": 5})))
+            usage={"calls": 1, "input": 5})), encoding="utf-8")
         CH._load()
         check_claude(CH.CHAT["history"])
         self.assertEqual(CH.CHAT["history"][-1]["role"], "user")
@@ -349,7 +349,7 @@ class RepairedHistory(Base):
         with mock.patch("openai.OpenAI", Fake), mock.patch.object(CH, "say", side_effect=[None, None, RuntimeError("boom")] + [None] * 9):
             self.converse("go")                                             # the chat line for the tool fails: the turn dies mid-step
         check_openai(CH.CHAT["history"])
-        check_openai(json.loads((self.work / "assistant" / "conversation.json").read_text())["history"])
+        check_openai(json.loads((self.work / "assistant" / "conversation.json").read_text(encoding="utf-8"))["history"])
 
 
 # ================================================================ a conversation file of the wrong shape
@@ -357,7 +357,7 @@ class BadConversationFile(Base):
     def conv(self, text):
         f = self.work / "assistant" / "conversation.json"
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(text)
+        f.write_text(text, encoding="utf-8")
         return f
 
     def test_each_wrong_shape_starts_an_empty_chat_and_keeps_the_file_aside(self):
@@ -387,7 +387,7 @@ class BadConversationFile(Base):
         env = dict(os.environ, HYPNOMIX_APP_HOME=str(self.work), HYPNOMIX_HOME=str(Path(self.d.name) / "h"),
                    HOME=str(Path(self.d.name) / "fk"))
         r = subprocess.run([sys.executable, "-c", "from hypnomix.app import chat; print(chat.state()['total'])"], cwd=REPO, env=env,
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout.strip(), "1")                              # the note that it started empty
 
@@ -401,7 +401,7 @@ class SavedAsItGoes(Base):
         Fake, seen = openai_fake(steps)
         with mock.patch("openai.OpenAI", Fake):
             CH.send("tidy my song")
-            saved = json.loads(conv.read_text())                            # at once: just the person's words
+            saved = json.loads(conv.read_text(encoding="utf-8"))                            # at once: just the person's words
             self.assertEqual([m["content"] for m in saved["history"]], ["tidy my song"])
             for _ in range(200):
                 if CH.state()["pending"]:
@@ -409,7 +409,7 @@ class SavedAsItGoes(Base):
                 time.sleep(0.02)
             self.assertTrue(CH.state()["pending"])
             for _ in range(200):                                            # the card shows first, the save follows at once
-                saved = json.loads(conv.read_text())                        # the card is waiting: it is kept with its call
+                saved = json.loads(conv.read_text(encoding="utf-8"))                        # the card is waiting: it is kept with its call
                 if any(i.get("kind") == "ask" for i in saved["items"]):
                     break
                 time.sleep(0.02)
@@ -417,7 +417,7 @@ class SavedAsItGoes(Base):
             self.assertEqual(len(saved["history"]), 2)
             CH.answer(CH.state()["pending"]["id"], False)
             wait_idle()
-        self.assertEqual(len(json.loads(conv.read_text())["history"]), 4)
+        self.assertEqual(len(json.loads(conv.read_text(encoding="utf-8"))["history"]), 4)
 
 
 # ================================================================ Stop is heard while the model answers
@@ -499,7 +499,7 @@ class StopWhileAnswering(Base):
             gate.set()
 
     def test_the_stop_button_shows_that_it_is_stopping(self):
-        js = (REPO / "hypnomix/app/chat.js").read_text()
+        js = (REPO / "hypnomix/app/chat.js").read_text(encoding="utf-8")
         self.assertIn("Stopping…", js)
 
 
@@ -588,7 +588,7 @@ class CostLine(Base):
         CH.CHAT.update(provider="anthropic", usage=dict(CH.new_usage(), calls=1, cost=0.02))
         CH.update_settings({"provider": "ollama"})                           # the dropdown now says Ollama
         self.assertEqual(CH.state()["usage"]["cost_text"], "about $0.020")
-        self.assertIn("cost_text", (REPO / "hypnomix/app/chat.js").read_text())
+        self.assertIn("cost_text", (REPO / "hypnomix/app/chat.js").read_text(encoding="utf-8"))
 
     def test_a_listen_adds_to_the_listening_cost_and_leaves_the_chats_alone(self):
         from hypnomix.ears import critique as L
@@ -698,7 +698,7 @@ class LocalModelName(Base):
         self.assertEqual((r["ok"], r["model"], CH.active()[2]), (True, "", ""))
 
     def test_the_label_matches_what_happens(self):
-        js = (REPO / "hypnomix/app/setup.js").read_text()
+        js = (REPO / "hypnomix/app/setup.js").read_text(encoding="utf-8")
         self.assertNotIn("empty = the loaded one", js)
         self.assertIn("empty = the first model it lists", js)
 
@@ -820,8 +820,13 @@ class MissingLibrary(Base):
         with mock.patch.dict(sys.modules, {"anthropic": None}):
             self.converse("hi")
         text = self.errors()[0]
-        self.assertIn("Setup, then Extras", text)
-        self.assertIn(".[assistant]", text)
+        if sys.version_info < (3, 10):          # Anthropic's library cannot be installed here: the words say so, not "Extras"
+            self.assertIn("needs Python 3.10 or newer", text)
+            self.assertIn("another provider", text)
+            self.assertNotIn("Setup, then Extras", text)
+        else:
+            self.assertIn("Setup, then Extras", text)
+            self.assertIn(".[assistant]", text)
         self.assertNotIn("halted", text)
         self.assertIn("Setup, then Extras", CH._friendly(ModuleNotFoundError("No module named 'openai'"), "OpenAI"))
         for name in ("soundfile", "numpy.core", "google"):                   # another library is not the Assistant's

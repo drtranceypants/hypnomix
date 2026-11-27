@@ -51,7 +51,7 @@ def run(argv):
 
 def probe(path, entries="stream=codec_name,sample_rate,bits_per_raw_sample,bits_per_sample,channels:format_tags"):
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", entries, "-of", "json", str(path)],
-                       capture_output=True, text=True, check=True)
+                       capture_output=True, text=True, check=True, encoding="utf-8")
     return json.loads(r.stdout)
 
 
@@ -378,7 +378,7 @@ class OtherMasters(unittest.TestCase):
         code, text = run([m, "--title", "T", "--artist", "A", "--formats", "wav24,mp3", "--out", self.root / "o"])
         self.assertEqual(code, 0, text)
         f = self.root / "o" / "A - T"
-        j = json.loads((f / "release.json").read_text())
+        j = json.loads((f / "release.json").read_text(encoding="utf-8"))
         mp3 = next(r for r in j["files"] if r["format"] == "mp3")
         self.assertGreater(mp3["true_peak_decoded"], 0.0)
         self.assertIn("overshoots 0 dBTP by", mp3["advice"])

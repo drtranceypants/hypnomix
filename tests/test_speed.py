@@ -90,7 +90,7 @@ class QuickAndIncremental(unittest.TestCase):
             self.assertEqual(groups, ["files", "intent", "structure"])
             self.assertFalse((sd / "raw" / "names").exists())                  # nothing listened to
             self.assertTrue((sd / "raw" / "scanned.als").exists())             # kept for --since
-            self.assertTrue(json.loads((sd / "scan.json").read_text())["quick"])
+            self.assertTrue(json.loads((sd / "scan.json").read_text(encoding="utf-8"))["quick"])
 
     def test_since_reruns_only_what_changed_and_keeps_decisions(self):
         with tempfile.TemporaryDirectory() as td:
@@ -99,7 +99,7 @@ class QuickAndIncremental(unittest.TestCase):
             sd = td / "scan"
             code, out = hx("scan", als, "--only", "clips", "--only", "intent", "--only", "structure", "--out", sd, home=home)
             self.assertEqual(code, 0, out)
-            first = json.loads((sd / "findings.json").read_text())["findings"]
+            first = json.loads((sd / "findings.json").read_text(encoding="utf-8"))["findings"]
             click = next(f for f in first if f["tool"] == "smooth" and f["where"] == "2.2.00")
             hx("fix", sd, "--decide", f"{click['id']}=approve@40", home=home)
             # nothing changed: nothing re-runs
@@ -118,11 +118,11 @@ class QuickAndIncremental(unittest.TestCase):
             rerun = re.search(r"re-ran (.*?);", out).group(1)
             self.assertIn("intent", rerun)
             self.assertNotIn("clips", rerun)
-            now = json.loads((sd / "findings.json").read_text())["findings"]
+            now = json.loads((sd / "findings.json").read_text(encoding="utf-8"))["findings"]
             self.assertTrue(all(f.get("carried") for f in now if f["tool"] == "smooth"))
             new = [f for f in now if f.get("new")]
             self.assertTrue(any("panned hard right" in f["problem"] for f in new), new)
-            dec = json.loads((sd / "decisions.json").read_text())
+            dec = json.loads((sd / "decisions.json").read_text(encoding="utf-8"))
             same = next(f for f in now if f["tool"] == "smooth" and f["where"] == "2.2.00")
             self.assertEqual(dec[same["id"]]["amount"], 40)                     # the decision followed its finding
             # watch --once: one more incremental quick pass, read-only

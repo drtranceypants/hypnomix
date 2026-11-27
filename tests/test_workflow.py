@@ -16,7 +16,7 @@ def hx(*args, home=None):
     env = dict(os.environ)
     if home:
         env["HYPNOMIX_HOME"] = str(home)
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env, encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -64,7 +64,7 @@ class Prefs(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             code, out = hx("prefs", "set", "targets.lufs=-16", "protect.tracks=Lead Vox,Strings", home=td)
             self.assertEqual(code, 0, out)
-            d = json.loads((Path(td) / "preferences.json").read_text())
+            d = json.loads((Path(td) / "preferences.json").read_text(encoding="utf-8"))
             self.assertEqual(d["targets"]["lufs"], -16)
             self.assertEqual(d["protect"]["tracks"], ["Lead Vox", "Strings"])
             code, out = hx("prefs", "set", "nonsense=1", home=td)
@@ -101,8 +101,8 @@ class FixLogic(unittest.TestCase):
             als = make_set(sd / "Song.als")
             finding = dict(id="smooth-1", n=1, tool="smooth", kind="click", severity="low", track="Vox",
                            where="1.1.00", problem="p", fix="f", applies="set", protected=True)
-            (sd / "findings.json").write_text(json.dumps({"set": str(als), "notes": [], "findings": [finding]}))
-            (sd / "scan.json").write_text(json.dumps({"set": str(als), "mode": "set", "set_mtime": als.stat().st_mtime}))
+            (sd / "findings.json").write_text(json.dumps({"set": str(als), "notes": [], "findings": [finding]}), encoding="utf-8")
+            (sd / "scan.json").write_text(json.dumps({"set": str(als), "mode": "set", "set_mtime": als.stat().st_mtime}), encoding="utf-8")
             code, out = hx("fix", sd, "--approve", "smooth-1", "--out", "New.als")
             self.assertNotEqual(code, 0)
             self.assertIn("protected", out)
@@ -167,12 +167,12 @@ class FolderScan(unittest.TestCase):
             before = {p.name: p.read_bytes() for p in raw.iterdir()}
             code, out = hx("scan", raw, "--out", sd, home=home)
             self.assertEqual(code, 0, out)
-            F = json.loads((sd / "findings.json").read_text())["findings"]
+            F = json.loads((sd / "findings.json").read_text(encoding="utf-8"))["findings"]
             kinds = {(f["track"], f["kind"]) for f in F}
             self.assertIn(("Bass clipped.wav", "clipped"), kinds)
             self.assertIn(("Guitar noisy.wav", "noise"), kinds)
             self.assertIn(("Guitar noisy.wav", "dc"), kinds)
-            self.assertIn("Nothing has been changed", (sd / "REVIEW.md").read_text())
+            self.assertIn("Nothing has been changed", (sd / "REVIEW.md").read_text(encoding="utf-8"))
             dc = next(f for f in F if f["kind"] == "dc")
             code, out = hx("fix", sd, "--approve", dc["id"], home=home)
             self.assertEqual(code, 0, out)
@@ -180,10 +180,10 @@ class FolderScan(unittest.TestCase):
             self.assertEqual(before, {p.name: p.read_bytes() for p in raw.iterdir()})   # sources untouched
             code, out = hx("ab", sd, "--ids", dc["id"], home=home)
             self.assertEqual(code, 0, out)
-            ab = json.loads((sd / "ab" / "ab.json").read_text())
+            ab = json.loads((sd / "ab" / "ab.json").read_text(encoding="utf-8"))
             self.assertTrue((sd / "ab" / ab[dc["id"]]["a"]).exists())
             code, out = hx("review", sd, home=home)
-            page = (sd / "REVIEW.html").read_text()
+            page = (sd / "REVIEW.html").read_text(encoding="utf-8")
             self.assertIn(dc["id"], page)
             self.assertNotIn("</script><script", page)
 
@@ -212,7 +212,7 @@ class Plans(unittest.TestCase):
             original = src.read_bytes()
             code, out = hx("prep", raw, "--plan", sd, home=home)
             self.assertEqual(code, 0, out)
-            F = json.loads((sd / "findings.json").read_text())["findings"]
+            F = json.loads((sd / "findings.json").read_text(encoding="utf-8"))["findings"]
             steps = {f["plan"]["step"] for f in F}
             self.assertIn("rumble", steps)
             self.assertIn("gain", steps)
@@ -244,15 +244,15 @@ class ReviewAndAb(unittest.TestCase):
         from hypnomix.workflow import review as R
         with tempfile.TemporaryDirectory() as td:
             sd = Path(td)
-            (sd / "findings.json").write_text(json.dumps({"set": "x", "findings": [dict(id="a-1"), dict(id="a-2")]}))
+            (sd / "findings.json").write_text(json.dumps({"set": "x", "findings": [dict(id="a-1"), dict(id="a-2")]}), encoding="utf-8")
             R.record(sd, "a-1", "approve", "ok")
             with self.assertRaises(ValueError):
                 R.record(sd, "zzz", "approve")
             with self.assertRaises(ValueError):
                 R.record(sd, "a-2", "delete everything")
-            (sd / "dl.json").write_text(json.dumps({"a-2": {"decision": "skip"}, "bogus": {"decision": "approve"}}))
+            (sd / "dl.json").write_text(json.dumps({"a-2": {"decision": "skip"}, "bogus": {"decision": "approve"}}), encoding="utf-8")
             R.import_file(sd, sd / "dl.json")
-            dec = json.loads((sd / "decisions.json").read_text())
+            dec = json.loads((sd / "decisions.json").read_text(encoding="utf-8"))
             self.assertEqual({k: v["decision"] for k, v in dec.items()}, {"a-1": "approve", "a-2": "skip"})
 
     def test_ab_helpers(self):
@@ -292,12 +292,12 @@ class FinalRoundScan(unittest.TestCase):
         from hypnomix.workflow import scan
         with tempfile.TemporaryDirectory() as td:
             od = Path(td)
-            (od / "scan.json").write_text(json.dumps({"set": "x.als"}))
-            (od / "names.json").write_text(json.dumps({"group": "names", "set": "x.als", "seconds": 3.24, "findings": [], "notes": []}))
-            (od / "mix.json").write_text(json.dumps({"group": "mix", "set": "x.als", "seconds": 12.0, "findings": [], "notes": []}))
+            (od / "scan.json").write_text(json.dumps({"set": "x.als"}), encoding="utf-8")
+            (od / "names.json").write_text(json.dumps({"group": "names", "set": "x.als", "seconds": 3.24, "findings": [], "notes": []}), encoding="utf-8")
+            (od / "mix.json").write_text(json.dumps({"group": "mix", "set": "x.als", "seconds": 12.0, "findings": [], "notes": []}), encoding="utf-8")
             with mock.patch("hypnomix.workflow.prefs.load", return_value={}):
                 scan.merge(od)
-            info = json.loads((od / "scan.json").read_text())
+            info = json.loads((od / "scan.json").read_text(encoding="utf-8"))
         self.assertEqual(info["group_seconds"], {"names": 3.2, "mix": 12.0})
         self.assertEqual(info["set"], "x.als")
 
@@ -307,7 +307,7 @@ class FinalRoundScan(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             for name in ("Song.rpp", "Song.ardour"):
                 proj = Path(td) / name
-                proj.write_text("x")
+                proj.write_text("x", encoding="utf-8")
                 out = Path(td) / ("out-" + name)
                 argv = ["scan", str(proj), "--since", str(Path(td) / "old"), "--out", str(out)]
                 with mock.patch("sys.argv", argv), self.assertRaises(SystemExit) as cm:
@@ -320,11 +320,11 @@ class FinalRoundScan(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             folder = Path(td) / "Song"
             folder.mkdir()
-            (folder / "Song.ardour").write_text("<Session/>")
+            (folder / "Song.ardour").write_text("<Session/>", encoding="utf-8")
             self.assertTrue(scan.same_source(str(folder), folder / "Song.ardour"))
             self.assertTrue(scan.same_source(str(folder / "Song.ardour"), folder))
             other = Path(td) / "Other.als"
-            other.write_text("x")
+            other.write_text("x", encoding="utf-8")
             self.assertFalse(scan.same_source(str(folder), other))
 
     def test_a_nudge_of_a_hundredth_of_a_second_is_still_the_same_spot(self):
@@ -341,7 +341,7 @@ class FinalRoundScan(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             od = Path(td)
             scan.write_review(od, str(od / "Song.ardour"), [], [], {})
-            text = (od / "REVIEW.md").read_text()
+            text = (od / "REVIEW.md").read_text(encoding="utf-8")
         self.assertNotIn("later hypnomix release", text)
         self.assertIn('--approved --out "<Session> (fixed).ardour"', text)
         self.assertIn("not yet opened in HypnoMix DAW", text)
@@ -351,12 +351,12 @@ class FinalRoundScan(unittest.TestCase):
         good = {"set": "/x/Song.als", "findings": [{"id": "smooth-1", "tool": "smooth", "applies": "manual"}]}
         with tempfile.TemporaryDirectory() as td:
             sd = Path(td)
-            (sd / "findings.json").write_text('{"set": "/x/Song.als", "find')                    # cut off by a crash
-            (sd / "findings.json.bak").write_text(json.dumps(good))
-            (sd / "decisions.json").write_text('{"smooth-1": {"deci')
-            (sd / "decisions.json.bak").write_text(json.dumps({"smooth-1": {"decision": "approve", "note": "by hand"}}))
-            (sd / "scan.json").write_text("{")
-            (sd / "scan.json.bak").write_text(json.dumps({"set": "/x/Song.als", "mode": "folder"}))
+            (sd / "findings.json").write_text('{"set": "/x/Song.als", "find', encoding="utf-8")                    # cut off by a crash
+            (sd / "findings.json.bak").write_text(json.dumps(good), encoding="utf-8")
+            (sd / "decisions.json").write_text('{"smooth-1": {"deci', encoding="utf-8")
+            (sd / "decisions.json.bak").write_text(json.dumps({"smooth-1": {"decision": "approve", "note": "by hand"}}), encoding="utf-8")
+            (sd / "scan.json").write_text("{", encoding="utf-8")
+            (sd / "scan.json.bak").write_text(json.dumps({"set": "/x/Song.als", "mode": "folder"}), encoding="utf-8")
             self.assertEqual(O.load_findings_doc(sd)["findings"][0]["id"], "smooth-1")
             items, data = handoff.collect(sd)
             self.assertEqual([i["f"]["id"] for i in items], ["smooth-1"])
@@ -452,13 +452,13 @@ class TakeScales(unittest.TestCase):
             kj.write_text(json.dumps({"key": "G major", "sections": [
                 {"t0": 0.0, "t1": 40.0, "bars": "1-16", "root": 7, "scale": "G major"},
                 {"t0": 40.0, "t1": 80.0, "bars": "17-32", "root": 7, "scale": "G major", "unsure": True,
-                 "disputed": ["F#", "F"], "runner_up": "C major"}]}))
+                 "disputed": ["F#", "F"], "runner_up": "C major"}]}), encoding="utf-8")
             # one clip plays take seconds 5-15 at song seconds 35-45 (across the section line); a warped clip
             # arrives as small pieces: 20-20.25 and 20.25-20.5 of the take at song 60-60.5
             spans = [(35.0, 45.0, 5.0, 15.0), (60.0, 60.25, 20.0, 20.25), (60.25, 60.5, 20.25, 20.5)]
             rows = fix.take_scales(kj, spans, Path(td) / "take.json")
             self.assertEqual([(r["bars"], r["t0"], r["t1"]) for r in rows],
                              [("1-16", 5.0, 10.0), ("17-32", 10.0, 15.0), ("17-32", 20.0, 20.5)])
-            saved = json.loads((Path(td) / "take.json").read_text())
+            saved = json.loads((Path(td) / "take.json").read_text(encoding="utf-8"))
             self.assertEqual(saved["key"], "G major")                     # unplayed parts keep the overall key
             self.assertTrue(saved["sections"][1]["unsure"])               # the question travels with the section

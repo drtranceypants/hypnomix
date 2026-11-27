@@ -174,11 +174,11 @@ class DevicePairs(unittest.TestCase):
         sd = self.td / "scan"
         sd.mkdir()
         fs = [self.f, dict(id="devices-2", tool="devices", track="Return A", kind="gate", applies="set")]
-        (sd / "findings.json").write_text(json.dumps(dict(set=str(orig), findings=fs)))
-        (sd / "scan.json").write_text(json.dumps(dict(mode="set", set_mtime=orig.stat().st_mtime)))
+        (sd / "findings.json").write_text(json.dumps(dict(set=str(orig), findings=fs)), encoding="utf-8")
+        (sd / "scan.json").write_text(json.dumps(dict(mode="set", set_mtime=orig.stat().st_mtime)), encoding="utf-8")
         with mock.patch.object(ab, "hx", fake_hx(after)), mock.patch.object(sys, "argv", ["ab", str(sd)]):
             ab.main()
-        m = json.loads((sd / "ab" / "ab.json").read_text())
+        m = json.loads((sd / "ab" / "ab.json").read_text(encoding="utf-8"))
         row = m["devices-1"]
         self.assertTrue(row["model"])
         self.assertIn("not Live itself", row["note"])

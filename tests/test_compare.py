@@ -79,7 +79,7 @@ class Changed(unittest.TestCase):
         cls.out = cls.root / "cmp"
         cls.code, cls.text = run([cls.a, cls.b, "--names", "old,new", "--out", cls.out, "--bpm", "120"])
         cls.report = (cls.out / "COMPARE.md").read_text(encoding="utf-8") if (cls.out / "COMPARE.md").exists() else ""
-        cls.js = json.loads((cls.out / "COMPARE.json").read_text()) if (cls.out / "COMPARE.json").exists() else {}
+        cls.js = json.loads((cls.out / "COMPARE.json").read_text(encoding="utf-8")) if (cls.out / "COMPARE.json").exists() else {}
 
     @classmethod
     def tearDownClass(cls):
@@ -127,7 +127,7 @@ class Changed(unittest.TestCase):
             self.assertIn("b_lufs", s)
 
     def test_the_spots_are_level_matched_pairs_where_the_change_is(self):
-        ab = json.loads((self.out / "ab" / "ab.json").read_text())
+        ab = json.loads((self.out / "ab" / "ab.json").read_text(encoding="utf-8"))
         self.assertEqual(sorted(ab), ["spot-1", "spot-2", "spot-3"])
         top = ab["spot-1"]
         self.assertGreater(min(top["end_s"], 24) - max(top["start_s"], 16), 3.0)      # overlaps the low-passed stretch
@@ -217,7 +217,7 @@ class Refusals(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("not found", text)
         junk = self.root / "junk.wav"
-        junk.write_text("not audio")
+        junk.write_text("not audio", encoding="utf-8")
         code, text = run([self.a, junk, "--out", self.root / "o"])
         self.assertEqual(code, 1)
         self.assertIn("can't read", text)
@@ -225,7 +225,7 @@ class Refusals(unittest.TestCase):
 
     def test_a_file_that_is_not_audio_gets_a_clean_message(self):
         junk = self.root / "junk.wav"
-        junk.write_text("not audio")
+        junk.write_text("not audio", encoding="utf-8")
         code, text = run([self.a, junk, "--out", self.root / "o"])
         self.assertEqual(code, 1)
         self.assertIn("can't read junk.wav as audio: not an audio file HypnoMix can", text)
@@ -270,7 +270,7 @@ class Helpers(unittest.TestCase):
         self.assertIn("hold the same audio", compare.summary_line(A, B, ["old", "new"], [], [], True))
 
     def test_help_is_the_docstring(self):
-        r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "compare", "-h"], capture_output=True, text=True)
+        r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "compare", "-h"], capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0)
         self.assertIn("This bounce against the previous one", r.stdout)
         self.assertIn("--resample", r.stdout)

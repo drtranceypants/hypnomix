@@ -153,7 +153,7 @@ class ArdourTest(unittest.TestCase):
         sf.write(af / "comp.wav", np.full(3 * SR, 0.1), SR, subtype="FLOAT")
         sf.write(af / "gtr-L.wav", np.full(SR, 0.2), SR, subtype="FLOAT")
         sf.write(af / "gtr-R.wav", np.full(SR, 0.6), SR, subtype="FLOAT")
-        (self.dir / "Song.ardour").write_text(SESSION)
+        (self.dir / "Song.ardour").write_text(SESSION, encoding="utf-8")
 
     def tearDown(self):
         self._td.cleanup()
@@ -207,7 +207,7 @@ class ArdourTest(unittest.TestCase):
         (d / "interchange" / "Old" / "audiofiles").mkdir(parents=True)
         sf.write(d / "interchange" / "Old" / "audiofiles" / "lead.wav", np.linspace(0, 1, 2 * SR, endpoint=False),
                  SR, subtype="FLOAT")
-        (d / "Old.ardour").write_text(OLD)
+        (d / "Old.ardour").write_text(OLD, encoding="utf-8")
         p = project.load(d / "Old.ardour")
         self.assertEqual((p.tempo, p.beats_per_bar), (100, 4))
         tr = p.tracks[0]
@@ -220,7 +220,7 @@ class ArdourTest(unittest.TestCase):
 
     def test_not_a_session(self):
         bad = Path(self._td.name) / "x.ardour"
-        bad.write_text("<NotASession/>")
+        bad.write_text("<NotASession/>", encoding="utf-8")
         with self.assertRaises(SystemExit):
             project.load(bad)
 
@@ -241,7 +241,7 @@ class ArdourWriteTest(unittest.TestCase):
             af.mkdir(parents=True)
             for fn in ("lead.wav", "comp.wav", "gtr-L.wav", "gtr-R.wav"):
                 sf.write(af / fn, np.full(3 * SR, 0.1), SR, subtype="FLOAT")
-            (d / f"{name}.ardour").write_text(xml)
+            (d / f"{name}.ardour").write_text(xml, encoding="utf-8")
 
     def tearDown(self):
         self._td.cleanup()
@@ -284,7 +284,7 @@ class ArdourWriteTest(unittest.TestCase):
         # the old envelope's other points are still there (1 at 1 s and 0 at 2 s, region-relative)
         self.assertTrue(any(abs(t - 1.0) < 1e-6 and abs(v - 1) < 1e-6 for t, v in c.envelope))
         self.assertTrue(any(abs(t - 2.0) < 1e-6 and v == 0 for t, v in c.envelope))
-        self.assertIn('length="a', out.read_text())                       # the times keep Ardour 7's format
+        self.assertIn('length="a', out.read_text(encoding="utf-8"))                       # the times keep Ardour 7's format
         self.assertEqual(q.path.name, "Song (fixed).ardour")
         self.assertEqual(ET_name(out), "Song (fixed)")
 
@@ -298,7 +298,7 @@ class ArdourWriteTest(unittest.TestCase):
             AE.fader(tr, -6.0)
         src, out = self.edit(self.old, "Old", go)
         self.assertEqual(AE.check(src, out), [])
-        text = out.read_text()
+        text = out.read_text(encoding="utf-8")
         self.assertRegex(text, r"\n480 1\n")                              # fade in: 0.01 s = 480 samples, no 'a' times
         q = project.load(out)
         c = q.track("Audio 1").clips[0]
@@ -366,7 +366,7 @@ class ArdourWriteTest(unittest.TestCase):
         self.assertEqual({f["id"] for f, _ in skipped}, {"clips-3", "names-1"})
         self.assertTrue(any("structure check: OK" in l for l in log))
         self.assertEqual(sorted(x.name for x in self.new.glob("*.ardour")), ["Song (fixed).ardour", "Song.ardour"])
-        self.assertNotIn("(fixed)", (self.new / "Song.ardour").read_text())     # the original is untouched
+        self.assertNotIn("(fixed)", (self.new / "Song.ardour").read_text(encoding="utf-8"))     # the original is untouched
 
 
 def ET_name(path):

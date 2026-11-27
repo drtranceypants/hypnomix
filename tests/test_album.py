@@ -49,7 +49,7 @@ def run(*args, home=None):
     env = dict(os.environ)
     if home:
         env["HYPNOMIX_HOME"] = str(home)
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env, encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -315,7 +315,7 @@ class Album(unittest.TestCase):
         code, txt = run("album", *self.files, "--quick", "--suggest-order", "--order", "E verses,A one,C quiet,B two,D bright",
                         "--out", out, home=self.home)
         self.assertEqual(code, 0, txt)
-        md = (out / "ALBUM.md").read_text()
+        md = (out / "ALBUM.md").read_text(encoding="utf-8")
         self.assertIn("E verses", md)
         self.assertIn("## Order options (never applied)", md)
         self.assertTrue((out / "raw" / "album.json").exists())
@@ -331,14 +331,14 @@ class Album(unittest.TestCase):
     def test_a_folder_is_the_album(self):
         code, txt = run("album", self.songs, "--quick", "--out", self.dir / "cmd2", home=self.home)
         self.assertEqual(code, 0, txt)
-        self.assertIn("5 songs", (self.dir / "cmd2" / "ALBUM.md").read_text())
+        self.assertIn("5 songs", (self.dir / "cmd2" / "ALBUM.md").read_text(encoding="utf-8"))
 
     def test_plan_review_and_fix_end_to_end(self):
         """--plan -> findings -> approve two -> fix writes only the approved moves into new files."""
         scan = self.dir / "scan"
         code, txt = run("album", *self.files, "--quick", "--plan", scan, home=self.home)
         self.assertEqual(code, 0, txt)
-        data = json.loads((scan / "findings.json").read_text())
+        data = json.loads((scan / "findings.json").read_text(encoding="utf-8"))
         fs = {f["id"]: f for f in data["findings"]}
         self.assertTrue(fs)
         self.assertTrue(all(f["tool"] == "album" and f["applies"] == "audio" for f in fs.values()))
@@ -434,15 +434,15 @@ class Album(unittest.TestCase):
         scan = self.dir / "scan_merge"
         code, txt = run("album", *self.files, "--quick", "--plan", scan, home=self.home)
         self.assertEqual(code, 0, txt)
-        n = len(json.loads((scan / "findings.json").read_text())["findings"])
+        n = len(json.loads((scan / "findings.json").read_text(encoding="utf-8"))["findings"])
         self.assertGreater(n, 0)
         code, txt = run("fix", scan, "--decide", "album-1=approve", home=self.home)
         self.assertEqual(code, 0, txt)
         code, txt = run("scan", "--merge", scan, home=self.home)
         self.assertEqual(code, 0, txt)
-        self.assertEqual(len(json.loads((scan / "findings.json").read_text())["findings"]), n)
+        self.assertEqual(len(json.loads((scan / "findings.json").read_text(encoding="utf-8"))["findings"]), n)
         self.assertFalse((scan / "decisions-orphaned.json").exists())
-        self.assertEqual(json.loads((scan / "decisions.json").read_text())["album-1"]["decision"], "approve")
+        self.assertEqual(json.loads((scan / "decisions.json").read_text(encoding="utf-8"))["album-1"]["decision"], "approve")
 
 
 if __name__ == "__main__":

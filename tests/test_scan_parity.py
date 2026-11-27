@@ -70,7 +70,7 @@ def make_rpp(folder, items, name="Song", level=0.3):
     txt = ('<REAPER_PROJECT 0.1 "7.27/macOS-arm64" 1764000000\n  TEMPO 120 4 4\n  SAMPLERATE 44100 0 0\n'
            + track("Guitar", body, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa") + ">\n")
     p = folder / f"{name}.rpp"
-    p.write_text(txt)
+    p.write_text(txt, encoding="utf-8")
     return p
 
 
@@ -86,7 +86,7 @@ def make_ardour(folder, name="Song"):
     sf.write(af / "comp.wav", np.full(3 * ASR, 0.1), ASR, subtype="FLOAT")
     sf.write(af / "gtr-L.wav", np.full(ASR, 0.2), ASR, subtype="FLOAT")
     sf.write(af / "gtr-R.wav", np.full(ASR, 0.6), ASR, subtype="FLOAT")
-    (folder / f"{name}.ardour").write_text(SESSION.replace('name="Song"', f'name="{name}"', 1))
+    (folder / f"{name}.ardour").write_text(SESSION.replace('name="Song"', f'name="{name}"', 1), encoding="utf-8")
     return folder
 
 
@@ -120,7 +120,7 @@ QUICK = ["--only", "clips", "--only", "files", "--only", "intent", "--only", "ef
 
 
 def findings(od):
-    return json.loads((Path(od) / "findings.json").read_text())["findings"]
+    return json.loads((Path(od) / "findings.json").read_text(encoding="utf-8"))["findings"]
 
 
 def where_of(od, kind):
@@ -160,10 +160,10 @@ class ReaperRescan(Isolated):
         now = AT.load_json(od / "decisions.json", {})
         self.assertEqual(now, {after[second_start]: {"decision": "skip"}})  # the skip followed ITS finding
         self.assertNotIn(after[next(w for w in after if w != second_start)], now)   # nothing landed on the other one
-        orphans = json.loads((od / "decisions-orphaned.json").read_text())
+        orphans = json.loads((od / "decisions-orphaned.json").read_text(encoding="utf-8"))
         self.assertEqual(sorted(v["decision"]["decision"] for v in orphans.values()), ["approve", "approve"])
         self.assertIn("2 earlier decisions no longer match a finding and were set aside", text)
-        self.assertTrue(any("set aside" in n for n in json.loads((od / "findings.json").read_text())["notes"]))
+        self.assertTrue(any("set aside" in n for n in json.loads((od / "findings.json").read_text(encoding="utf-8"))["notes"]))
 
     def test_the_renders_are_not_reused_after_the_project_changed(self):
         proj = make_rpp(self.dir / "p", TWO_ITEMS)
@@ -172,33 +172,33 @@ class ReaperRescan(Isolated):
         wav = od / "raw" / "renders" / "Guitar.wav"
         y1, _ = sf.read(str(wav))
         self.assertAlmostEqual(float(y1[int(0.5 * SR) + 2]), 0.3, places=3)
-        stamp1 = (od / "raw" / "renders" / ".stamp").read_text()
+        stamp1 = (od / "raw" / "renders" / ".stamp").read_text(encoding="utf-8")
         make_rpp(self.dir / "p", [(0.5, 1.0, 0.2, "gtr.wav"), (2.0, 1.0, 0.0, "gtr.wav")])   # a fade-in on the first item
         scan(proj, "--out", od, *QUICK)
         y2, _ = sf.read(str(wav))
         self.assertLess(float(y2[int(0.5 * SR) + 2]), 0.01)               # the new render, not the old one
-        stamp2 = (od / "raw" / "renders" / ".stamp").read_text()
+        stamp2 = (od / "raw" / "renders" / ".stamp").read_text(encoding="utf-8")
         self.assertNotEqual(stamp1, stamp2)
         made = wav.stat().st_mtime_ns
         scan(proj, "--out", od, *QUICK)                                   # nothing changed: the renders are kept
-        self.assertEqual(stamp2, (od / "raw" / "renders" / ".stamp").read_text())
+        self.assertEqual(stamp2, (od / "raw" / "renders" / ".stamp").read_text(encoding="utf-8"))
         self.assertEqual(made, wav.stat().st_mtime_ns)
 
     def test_the_audio_file_changing_also_counts(self):
         proj = make_rpp(self.dir / "p", TWO_ITEMS)
         od = self.dir / "out"
         scan(proj, "--out", od, *QUICK)
-        s1 = (od / "raw" / "renders" / ".stamp").read_text()
+        s1 = (od / "raw" / "renders" / ".stamp").read_text(encoding="utf-8")
         make_rpp(self.dir / "p", TWO_ITEMS, level=0.5)                     # re-recorded: same project file, new audio
         scan(proj, "--out", od, *QUICK)
-        self.assertNotEqual(s1, (od / "raw" / "renders" / ".stamp").read_text())
+        self.assertNotEqual(s1, (od / "raw" / "renders" / ".stamp").read_text(encoding="utf-8"))
         y, _ = sf.read(str(od / "raw" / "renders" / "Guitar.wav"))
         self.assertAlmostEqual(float(y[int(0.5 * SR) + 2]), 0.5, places=3)
 
     def test_two_bypassed_plugins_on_one_track_are_two_findings_a_rescan_can_tell_apart(self):
         from hypnomix import project as PJ
         proj = make_rpp(self.dir / "p", TWO_ITEMS)
-        text = proj.read_text().replace("    FX 1\n", '''    FX 1
+        text = proj.read_text(encoding="utf-8").replace("    FX 1\n", '''    FX 1
     <FXCHAIN
       WNDRECT 0 0 0 0
       BYPASS 1 0 0
@@ -213,7 +213,7 @@ class ReaperRescan(Isolated):
       FXID {55555555-5555-5555-5555-555555555555}
     >
 ''', 1)
-        proj.write_text(text)
+        proj.write_text(text, encoding="utf-8")
         p = PJ.load(proj)
         out, _ = SP.g_effects(p, None, self.dir, SimpleNamespace())
         byp = [f for f in out if f["kind"] == "bypassed"]
@@ -224,8 +224,8 @@ class ReaperRescan(Isolated):
     def test_intent_questions_on_one_track_have_their_own_identity(self):
         from hypnomix import project as PJ
         proj = make_rpp(self.dir / "p", TWO_ITEMS)
-        proj.write_text(proj.read_text().replace("VOLPAN 1 0 -1 -1 1", "VOLPAN 1 1 -1 -1 1", 1)
-                        .replace("IPHASE 0", "IPHASE 1", 1))                      # panned hard, polarity flipped
+        proj.write_text(proj.read_text(encoding="utf-8").replace("VOLPAN 1 0 -1 -1 1", "VOLPAN 1 1 -1 -1 1", 1)
+                        .replace("IPHASE 0", "IPHASE 1", 1), encoding="utf-8")                      # panned hard, polarity flipped
         out, _ = SP.g_intent(PJ.load(proj), None, self.dir, SimpleNamespace())
         mine = [f for f in out if f["track"] == "Guitar" and not f["where"]]
         self.assertGreaterEqual(len(mine), 2)
@@ -267,9 +267,9 @@ class ReaperRescan(Isolated):
         self.assertTrue((od / "raw" / "intent-error.txt").exists())
         text, _ = scan(proj, "--out", od, *QUICK)
         self.assertFalse((od / "raw" / "intent-error.txt").exists())
-        self.assertFalse(any("failed" in n for n in json.loads((od / "intent.json").read_text())["notes"]))
+        self.assertFalse(any("failed" in n for n in json.loads((od / "intent.json").read_text(encoding="utf-8"))["notes"]))
         for stale in ("edges-error.txt", "key-error.txt", "tune-Guitar-error.txt", "sidechain-error.txt"):
-            (od / "raw" / stale).write_text("old")
+            (od / "raw" / stale).write_text("old", encoding="utf-8")
         scan(proj, "--out", od, *QUICK)                                    # clips and effects ran again
         self.assertFalse((od / "raw" / "edges-error.txt").exists())
         self.assertFalse((od / "raw" / "sidechain-error.txt").exists())
@@ -327,9 +327,9 @@ class SameNameProjects(Isolated):
                                               f1["muted"]: {"decision": "approve"}})
         # the person removed the pan automation in Ardour and saved: that finding is gone and every later id shifts
         sess = s / "Song.ardour"
-        txt = sess.read_text()
+        txt = sess.read_text(encoding="utf-8")
         a, b = txt.index("      <Pannable>"), txt.index("</Pannable>") + len("</Pannable>")
-        sess.write_text(txt[:a] + txt[b:])
+        sess.write_text(txt[:a] + txt[b:], encoding="utf-8")
         text, _ = scan(s, "--out", od, "--only", "intent", "--only", "effects")
         f2 = by()
         self.assertNotIn("automation: Pan", f2)
@@ -337,7 +337,7 @@ class SameNameProjects(Isolated):
         self.assertNotEqual(f2["muted"], f1["muted"])
         now = AT.load_json(od / "decisions.json")
         self.assertEqual(now, {f2["automation: Volume"]: {"decision": "approve"}, f2["muted"]: {"decision": "approve"}})
-        orphans = json.loads((od / "decisions-orphaned.json").read_text())
+        orphans = json.loads((od / "decisions-orphaned.json").read_text(encoding="utf-8"))
         self.assertEqual([v["decision"]["decision"] for v in orphans.values()], ["skip"])
         self.assertIn("1 earlier decision no longer matches a finding and was set aside", text)
 
@@ -349,7 +349,7 @@ class PlainNotes(Isolated):
         boom = RuntimeError("could not read '/private/tmp/some/deep/folder/take 3.wav' as audio")
         with mock.patch.object(SP, "g_intent", side_effect=boom):
             text, _ = scan(proj, "--out", od, *QUICK)
-        notes = json.loads((od / "intent.json").read_text())["notes"]
+        notes = json.loads((od / "intent.json").read_text(encoding="utf-8"))["notes"]
         self.assertEqual(len(notes), 1)
         n = notes[0]
         self.assertTrue(n.startswith("intent: failed (could not read 'take 3.wav' as audio)"), n)
@@ -358,9 +358,9 @@ class PlainNotes(Isolated):
         for bad in ("Traceback", "File \"", "line ", "RuntimeError", "/private"):
             self.assertNotIn(bad, n)
         self.assertNotIn("\n", n)
-        self.assertIn("Traceback", (od / "raw" / "intent-error.txt").read_text())
+        self.assertIn("Traceback", (od / "raw" / "intent-error.txt").read_text(encoding="utf-8"))
         self.assertTrue((od / "files.json").exists())                      # the other groups still ran
-        review = (od / "REVIEW.md").read_text()
+        review = (od / "REVIEW.md").read_text(encoding="utf-8")
         self.assertIn("## Checks that did NOT run", review)
         self.assertIn(n, review)
         self.assertIn("did NOT run", text)
@@ -401,7 +401,7 @@ class PlainNotes(Isolated):
         self.assertIn("failed (no sung notes found (is this a monophonic vocal?))", n)
         self.assertIn("raw/tune-Lead-error.txt", n)
         self.assertNotIn("Traceback", n)
-        self.assertIn("Traceback", (od / "raw" / "tune-Lead-error.txt").read_text())
+        self.assertIn("Traceback", (od / "raw" / "tune-Lead-error.txt").read_text(encoding="utf-8"))
 
 
 class Preferences(Isolated):
@@ -420,7 +420,7 @@ class Preferences(Isolated):
                 Path(args[args.index("--json") + 1]).write_text(json.dumps(
                     {"findings": [dict(id="tune-1", tool="tune", kind="pitch", severity="low", where="1.1.01", problem="p",
                                        fix="f", applies="audio")], "key": "C major", "tuning_cents": 0,
-                     "flagged": [1, 2, 3]}))
+                     "flagged": [1, 2, 3]}), encoding="utf-8")
             return 0, ""
         with mock.patch.object(S, "hx", side_effect=fake), mock.patch.object(S, "pref_wants", side_effect=wants):
             return SP.g_vocals(p, R, od, a, {"Lead": "lead_vocal"})
@@ -467,7 +467,7 @@ class CompactReview(Isolated):
         scan(proj, "--out", od, "--only", "files")
         fs = [f for f in findings(od) if f["kind"] == "missing-audio"]
         self.assertEqual(len(fs), 6)
-        review = (od / "REVIEW.md").read_text()
+        review = (od / "REVIEW.md").read_text(encoding="utf-8")
         self.assertEqual(review.count("offers to search for missing media"), 1)
         self.assertTrue(all(len(f["fix"]) < 80 for f in fs))
         self.assertEqual(review.count("**files · missing-audio** (6 items)"), 1)     # the kind is explained once
@@ -483,8 +483,8 @@ class CompactReview(Isolated):
 
 # ---------------------------------------------------------------- 2. decisions are read with the backup fallback
 def cut_off(path):
-    text = Path(path).read_text()
-    Path(path).write_text(text[: len(text) // 2])
+    text = Path(path).read_text(encoding="utf-8")
+    Path(path).write_text(text[: len(text) // 2], encoding="utf-8")
 
 
 class AtomicReaders(Isolated):
@@ -509,14 +509,14 @@ class AtomicReaders(Isolated):
         err = io.StringIO()
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
             P.learn(sd, path)
-        learned = json.loads(path.read_text())["learned"]
+        learned = json.loads(path.read_text(encoding="utf-8"))["learned"]
         self.assertEqual(learned["smooth/click/low"], {"approve": 1})       # read from decisions.json.bak
         self.assertIn("using the previous copy", err.getvalue())
 
     def test_prefs_learn_says_so_when_there_is_no_usable_copy(self):
         from hypnomix.workflow import prefs as P
         sd = self.scan_folder()
-        (sd / "decisions.json").write_text('{"smooth-1": {"decis')
+        (sd / "decisions.json").write_text('{"smooth-1": {"decis', encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as cm:
             P.learn(sd, self.dir / "prefs.json")
         self.assertIn("could not be read", str(cm.exception))
@@ -530,7 +530,7 @@ class AtomicReaders(Isolated):
         cut_off(sd / "findings.json")
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             P.learn(sd, self.dir / "prefs.json")
-        self.assertEqual(json.loads((self.dir / "prefs.json").read_text())["learned"]["smooth/click/low"], {"approve": 1})
+        self.assertEqual(json.loads((self.dir / "prefs.json").read_text(encoding="utf-8"))["learned"]["smooth/click/low"], {"approve": 1})
 
     def test_ab_reads_a_cut_off_findings_file_from_its_backup(self):
         from hypnomix.workflow import ab
@@ -550,7 +550,7 @@ class AtomicReaders(Isolated):
         from hypnomix.workflow import ab
         sd = self.dir / "scan"
         sd.mkdir()
-        (sd / "findings.json").write_text('{"set": "x.al')
+        (sd / "findings.json").write_text('{"set": "x.al', encoding="utf-8")
         old = sys.argv
         sys.argv = ["ab", str(sd)]
         try:
@@ -597,17 +597,17 @@ class MoreAtomicReaders(Isolated):
         cut_off(sd / "history" / "history.json")
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(H.load(sd), {"versions": []})                   # no usable copy: starts a new log, still runs
-        (sd / "history" / "history.json").write_text("[1, 2]")                # parses, but is not a log
+        (sd / "history" / "history.json").write_text("[1, 2]", encoding="utf-8")                # parses, but is not a log
         self.assertEqual(H.load(sd), {"versions": []})
 
     def test_the_history_command_does_not_crash_on_a_cut_off_log(self):
         sd = self.dir / "scan"
         (sd / "history").mkdir(parents=True)
-        (sd / "history" / "history.json").write_text('{"vers')
+        (sd / "history" / "history.json").write_text('{"vers', encoding="utf-8")
         AT.write_json(sd / "scan.json", {"set": "x.als", "mode": "set"})
         env = dict(os.environ, HOME=str(self.dir / "h"), HYPNOMIX_HOME=str(self.dir / "hx"), PYTHONPATH=str(ROOT))
         r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "history", str(sd)], capture_output=True, text=True,
-                           env=env, cwd=str(self.dir))
+                           env=env, cwd=str(self.dir), encoding="utf-8")
         self.assertNotIn("Traceback", r.stderr)
         self.assertEqual(r.returncode, 0, r.stderr[-500:])
 
@@ -644,12 +644,12 @@ class MoreAtomicReaders(Isolated):
         from hypnomix.workflow import prefs as P
         sd = self.dir / "scan"
         sd.mkdir()
-        (sd / "decisions.json").write_text("{}")                              # what a re-scan that set everything aside leaves
+        (sd / "decisions.json").write_text("{}", encoding="utf-8")                              # what a re-scan that set everything aside leaves
         with self.assertRaises(SystemExit) as cm:
             P.learn(sd, self.dir / "prefs.json")
         self.assertIn("no decisions recorded yet", str(cm.exception))
         self.assertNotIn("corrupt", str(cm.exception))
-        (sd / "decisions.json").write_text('{"a": {"decis')
+        (sd / "decisions.json").write_text('{"a": {"decis', encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as cm:
             P.learn(sd, self.dir / "prefs.json")
         self.assertIn("decisions.json.corrupt", str(cm.exception))
@@ -666,24 +666,24 @@ class PlanFiles(Isolated):
         od = self.dir / "out"
         with mock.patch.object(prefs, "PREFS", self.dir / "none.json"), contextlib.redirect_stdout(io.StringIO()):
             PL.write(od, "balance", src, [dict(kind="level", track="a.wav", problem="p", fix="f")], ["n"])
-            first = json.loads((od / "balance.json").read_text())
+            first = json.loads((od / "balance.json").read_text(encoding="utf-8"))
             PL.write(od, "balance", src, [dict(kind="level", track="a.wav", problem="q", fix="f")], ["n"])
         self.assertEqual(first["findings"][0]["id"], "balance-1")
-        self.assertEqual(json.loads((od / "balance.json.bak").read_text())["findings"][0]["problem"], "p")
-        self.assertEqual(json.loads((od / "scan.json.bak").read_text())["set"], str(src.resolve()))
+        self.assertEqual(json.loads((od / "balance.json.bak").read_text(encoding="utf-8"))["findings"][0]["problem"], "p")
+        self.assertEqual(json.loads((od / "scan.json.bak").read_text(encoding="utf-8"))["set"], str(src.resolve()))
         self.assertEqual([p.name for p in od.glob(".*.tmp")], [])            # no half-written leftovers
         cut_off(od / "scan.json")
         with mock.patch.object(prefs, "PREFS", self.dir / "none.json"), contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
             PL.write(od, "balance", src, [dict(kind="level", track="a.wav", problem="r", fix="f")], ["n"])
-        self.assertEqual(json.loads((od / "scan.json").read_text())["set"], str(src.resolve()))   # not lost to the cut
+        self.assertEqual(json.loads((od / "scan.json").read_text(encoding="utf-8"))["set"], str(src.resolve()))   # not lost to the cut
 
 
 # ---------------------------------------------------------------- 3. the caches live under the hypnomix home
 class CachesFollowTheHome(Isolated):
     def run_py(self, code, home, fake_home):
-        env = dict(os.environ, HOME=str(fake_home), HYPNOMIX_HOME=str(home), PYTHONPATH=str(ROOT))
-        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, cwd=str(self.dir))
+        env = dict(os.environ, HOME=str(fake_home), USERPROFILE=str(fake_home), HYPNOMIX_HOME=str(home), PYTHONPATH=str(ROOT))
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, cwd=str(self.dir), encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stderr[-800:])
         return r.stdout.strip()
 
@@ -719,13 +719,13 @@ print(V.STYLE, T.PROFILE, V.style_path(), T.profile_path(), sep="|")
 """
         out = self.run_py(code, home, fake).split("|")
         self.assertEqual(out, [str(home / "harmony-style.json"), str(home / "taste.json")] * 2)
-        env = dict(os.environ, HOME=str(fake), HYPNOMIX_HOME=str(home), PYTHONPATH=str(ROOT))
+        env = dict(os.environ, HOME=str(fake), USERPROFILE=str(fake), HYPNOMIX_HOME=str(home), PYTHONPATH=str(ROOT))
         for args in (["voices", "--confirm", "lead_margin=4"],
                      ["taste", str(als), "--out", str(self.dir / "tasteout")]):
             r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *args], capture_output=True, text=True, env=env,
-                               cwd=str(self.dir))
+                               cwd=str(self.dir), encoding="utf-8")
             self.assertEqual(r.returncode, 0, r.stderr[-800:])
-        self.assertEqual(json.loads((home / "harmony-style.json").read_text())["confirmed"], {"lead_margin": 4.0})
+        self.assertEqual(json.loads((home / "harmony-style.json").read_text(encoding="utf-8"))["confirmed"], {"lead_margin": 4.0})
         self.assertTrue((home / "taste.json").exists())
         self.assertEqual(sorted(p.name for p in fake.iterdir()), [])             # nothing under the real home, not even a folder
 
@@ -733,9 +733,9 @@ print(V.STYLE, T.PROFILE, V.style_path(), T.profile_path(), sep="|")
         fake = self.dir / "realhome"
         fake.mkdir()
         env = {k: v for k, v in os.environ.items() if k != "HYPNOMIX_HOME"}
-        env.update(HOME=str(fake), PYTHONPATH=str(ROOT))
+        env.update(HOME=str(fake), USERPROFILE=str(fake), PYTHONPATH=str(ROOT))
         r = subprocess.run([sys.executable, "-c", "from hypnomix.studio import voices as V; from hypnomix.workflow "
-                            "import taste as T; print(V.CACHE, T.CACHE)"], capture_output=True, text=True, env=env)
+                            "import taste as T; print(V.CACHE, T.CACHE)"], capture_output=True, text=True, env=env, encoding="utf-8")
         want = str(fake / ".hypnomix" / "cache")
         self.assertEqual(r.stdout.split(), [want, want], r.stderr[-500:])
 
@@ -747,7 +747,7 @@ print(V.STYLE, T.PROFILE, V.style_path(), T.profile_path(), sep="|")
             self.assertIn("not studied yet", T.song(als)["skipped"])
             nd = T.cache_dir() / "names" / T.cache_key(als)
             nd.mkdir(parents=True)
-            (nd / "names.json").write_text(json.dumps({"tracks": [{"old": "Vox", "label": "Lead Vocal", "confidence": 0.9}]}))
+            (nd / "names.json").write_text(json.dumps({"tracks": [{"old": "Vox", "label": "Lead Vocal", "confidence": 0.9}]}), encoding="utf-8")
             self.assertNotIn("not studied yet", str(T.song(als).get("skipped", "")))
         with mock.patch.dict(os.environ, {"HYPNOMIX_HOME": str(self.dir / "h2")}):   # another home: nothing studied there
             self.assertIn("not studied yet", T.song(als)["skipped"])
@@ -801,7 +801,7 @@ class AlignPort(unittest.TestCase):
             self.assertEqual(self.A.APP, "http://127.0.0.1:9125")
 
     def test_no_port_is_written_into_the_source_any_more(self):
-        text = (ROOT / "hypnomix" / "reaper" / "align.py").read_text()
+        text = (ROOT / "hypnomix" / "reaper" / "align.py").read_text(encoding="utf-8")
         self.assertNotIn('"http://127.0.0.1:8791"', text)
         self.assertNotIn("default=8791", text)
 

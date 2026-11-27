@@ -28,7 +28,7 @@ class Meta(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name) / "Song"
         self.dir.mkdir()
-        (self.dir / "Song.ardour").write_text(SESSION)
+        (self.dir / "Song.ardour").write_text(SESSION, encoding="utf-8")
 
     def tearDown(self):
         self.tmp.cleanup()

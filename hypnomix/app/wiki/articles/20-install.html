@@ -27,7 +27,7 @@ teaser: The easy way: download the HypnoMix installer for Mac or Windows (one in
       <li><h4>Connect it to Ableton Live</h4>
         <div class="term" data-label="terminal"><pre><span class="p">$</span> hypnomix install</pre></div>
         <p>This copies the bundled AbletonOSC remote script into Live's User Library and walks you through the rest, including the two-minute BlackHole setup. Then <b>restart Live</b> and choose <b>Settings → Link, Tempo &amp; MIDI → Control Surface: AbletonOSC</b>.</p>
-        <p>To reach more of your plug-ins' parameters: <code>hypnomix install --plugin-params</code> (adds one line to Live's <code>Options.txt</code>; restart Live).</p></li>
+        <p>To reach more of your plug-ins' parameters: <code>hypnomix install --plugin-params</code> (adds one line to Live's <code>Options.txt</code> and leaves your own lines exactly as they are, line endings included; restart Live).</p></li>
       <li><h4>Check everything</h4>
         <div class="term" data-label="terminal"><pre><span class="p">$</span> hypnomix doctor</pre></div>
         <p>It checks ffmpeg and the Python packages, and, if you use Ableton Live, AbletonOSC, the Live connection, BlackHole and plug-in parameter access, and tells you what to fix. On a computer without Live those Live parts are marked optional (<code>·</code>) and never make it report a problem.</p></li>

@@ -29,7 +29,7 @@ class ABProject(unittest.TestCase):
         (self.dir / "Audio").mkdir()
         sf.write(self.dir / "Audio" / "lead.wav", (np.arange(3 * SR) / (3 * SR)).astype(np.float32), SR, subtype="FLOAT")
         self.song = self.dir / "Song.rpp"
-        self.song.write_text(_with_send(RPP))
+        self.song.write_text(_with_send(RPP), encoding="utf-8")
 
     def tearDown(self):
         self._td.cleanup()
@@ -154,7 +154,7 @@ class Panel(unittest.TestCase):
 class MainMatch(unittest.TestCase):
     def test_main_has_the_match_gain(self):
         jd = ROOT / "hypnomix" / "reaper" / "jsfx"
-        main, inc = (jd / "hypnomix_main.jsfx").read_text(), (jd / "hypnomix_meter.jsfx-inc").read_text()
+        main, inc = (jd / "hypnomix_main.jsfx").read_text(encoding="utf-8"), (jd / "hypnomix_meter.jsfx-inc").read_text(encoding="utf-8")
         self.assertIn("slider9:abgain=0<-12,12,0.01>-match gain dB (set by hypnomix during A/B)", main)  # hidden slider
         self.assertIn("match_g=10^(abgain/20)", inc.replace(" ", ""))
         self.assertTrue(inc.rstrip().endswith("spl0 *= match_g; spl1 *= match_g;        // after measuring: Main reports the level before matching"))
@@ -165,10 +165,10 @@ class MainMatch(unittest.TestCase):
         import re
         jd = ROOT / "hypnomix" / "reaper" / "jsfx"
         for f in ("hypnomix_main.jsfx", "hypnomix_probe.jsfx"):
-            txt = (jd / f).read_text()
+            txt = (jd / f).read_text(encoding="utf-8")
             self.assertEqual([x for x in re.findall(r"^@(\w+)", txt, re.M) if x != "gfx"], [], f)
         for f in jd.iterdir():
-            names = re.findall(r"^slider\d+:(\w+)=", f.read_text(), re.M)
+            names = re.findall(r"^slider\d+:(\w+)=", f.read_text(encoding="utf-8"), re.M)
             self.assertFalse({n.lower() for n in names} & {"match", "matchi", "strlen", "sprintf", "printf", "str_setlen"}, f.name)
 
 

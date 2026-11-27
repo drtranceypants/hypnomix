@@ -73,6 +73,28 @@ POSIX_ONLY = unittest.skipIf(sys.platform == "win32", "SKIPPED: this test starts
                                                       "and signals, which Windows does not have, so it was NOT run")
 
 
+def _bind_without_dns():
+    """http.server.HTTPServer.server_bind asks the resolver for this computer's name (socket.getfqdn, a reverse lookup of
+    the address). A stand-in server in a test has no use for the name, and on a runner with a slow resolver each one
+    waited more than half a minute. The stand-in servers of a run bind without the lookup."""
+    import http.server
+    import socketserver
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[0], self.server_address[1]
+    http.server.HTTPServer.server_bind = server_bind
+
+
+def find_bash():
+    """Git Bash (or any real bash), never Windows' System32 bash.exe, which is the WSL launcher: it finds no distribution
+    and prints a sentence in UTF-16 instead of running the script."""
+    for cand in (shutil.which("bash"), r"C:\Program Files\Git\bin\bash.exe"):
+        if cand and os.path.exists(cand) and "system32" not in cand.lower().replace("/", "\\"):
+            return cand
+    return None
+
+
 def isolate():
     """Point the unset folders at a temporary one. Returns the temporary folder, or None when already done."""
     if os.environ.get(MARK):
@@ -93,7 +115,13 @@ def isolate():
     tmp = root / "tmp"                          # what the tests leave in the system's temporary folder goes with the rest
     tmp.mkdir()
     os.environ["TMPDIR"] = str(tmp)
+    # Apple's own Python 3.9 (Xcode, the Command Line Tools: what `uv venv --python 3.9` finds on a Mac runner) keeps its
+    # compiled modules in ~/Library/Caches/com.apple.python, under the HOME the program was STARTED with. A test that starts
+    # a program with an empty folder as HOME and then checks that nothing was written there found "Library". The compiled
+    # modules of every program a test starts go inside the temporary folder instead (and are removed with it).
+    os.environ.setdefault("PYTHONPYCACHEPREFIX", str(root / "pycache"))
     tempfile.tempdir = str(tmp)
+    _bind_without_dns()
     os.environ[MARK] = str(root)
     atexit.register(shutil.rmtree, str(root), True)
     paths = sys.modules.get("hypnomix.core.paths")

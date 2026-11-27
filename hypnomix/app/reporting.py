@@ -256,7 +256,11 @@ def main_hook(etype, value, tb):
 
 
 def install_hooks():
-    _OLD_HOOK[0] = threading.excepthook
-    threading.excepthook = thread_hook
-    _OLD_SYS_HOOK[0] = sys.excepthook
-    sys.excepthook = main_hook
+    """Put the two hooks in place. Asking twice changes nothing: a hook that remembered itself as "the old one" would call
+    itself until Python gave up, and write a crash record at every level."""
+    if threading.excepthook is not thread_hook:
+        _OLD_HOOK[0] = threading.excepthook
+        threading.excepthook = thread_hook
+    if sys.excepthook is not main_hook:
+        _OLD_SYS_HOOK[0] = sys.excepthook
+        sys.excepthook = main_hook

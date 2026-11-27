@@ -62,11 +62,11 @@ class Report(unittest.TestCase):
         cap = capture([("Main", True, rows(lambda i: block(k=0.2, peak=0.5)))])
         with tempfile.TemporaryDirectory() as d:
             cf = Path(d) / "c.json"
-            cf.write_text(json.dumps(cap))
+            cf.write_text(json.dumps(cap), encoding="utf-8")
             P.report(cf, Path(d) / "scan")
-            data = json.loads((Path(d) / "scan" / "findings.json").read_text())
+            data = json.loads((Path(d) / "scan" / "findings.json").read_text(encoding="utf-8"))
             self.assertTrue((Path(d) / "scan" / "REVIEW.md").exists())
-            self.assertEqual(json.loads((Path(d) / "scan" / "scan.json").read_text())["mode"], "live")
+            self.assertEqual(json.loads((Path(d) / "scan" / "scan.json").read_text(encoding="utf-8"))["mode"], "live")
             self.assertIsInstance(data["findings"], list)
 
 
@@ -89,7 +89,7 @@ class Hub(unittest.TestCase):
             self.assertTrue(st[0]["live"])
             with tempfile.TemporaryDirectory() as d:
                 f = hub.end(d, "song")
-                cap = json.loads(Path(f).read_text())
+                cap = json.loads(Path(f).read_text(encoding="utf-8"))
                 self.assertEqual(len(cap["tracks"]["7"]["blocks"]), 20)
         finally:
             hub.server.shutdown()
@@ -205,7 +205,7 @@ class Cards(unittest.TestCase):
             with gzip.open(src, "wb") as fh:
                 fh.write(xml.encode())
             sig = P.signature(["Vox 1", "Gtr"])
-            (Path(d) / "cards.json").write_text(json.dumps({sig: {"chords": "| Am | F | C | G |"}}))
+            (Path(d) / "cards.json").write_text(json.dumps({sig: {"chords": "| Am | F | C | G |"}}), encoding="utf-8")
             c = P.read_cards(src, Path(d) / "cards.json")
         self.assertEqual(c["tracks"]["Vox 1"], {"role": "lead vocal", "protect": "on: ask"})
         self.assertEqual(c["tracks"]["Gtr"], {"role": "auto"})
@@ -290,14 +290,14 @@ class ReportSurvivesMerge(unittest.TestCase):
         cap = capture([("Main", True, rows(lambda i: block(k=0.2, peak=1.2)))])
         with tempfile.TemporaryDirectory() as d:
             cf = Path(d) / "c.json"
-            cf.write_text(json.dumps(cap))
+            cf.write_text(json.dumps(cap), encoding="utf-8")
             od = Path(d) / "scan"
             F = P.report(cf, od)
             (od / "master.json").write_text(json.dumps({"group": "master", "set": "", "seconds": 1,
                                                         "findings": [dict(id="master-1", tool="master", kind="limiter",
                                                                           severity="info", track="mix", where="",
                                                                           problem="x", fix="y", applies="audio")],
-                                                        "notes": []}))
+                                                        "notes": []}), encoding="utf-8")
             merged, _ = S.merge(od)
             ids = {f["id"] for f in merged}
             self.assertIn("master-1", ids)

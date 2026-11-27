@@ -60,7 +60,7 @@ class Homed(unittest.TestCase):
         d.mkdir(parents=True)
         findings = [dict(id=f"{t}-{i}", tool=t, kind="k", severity="low", track=tracks[i % len(tracks)], where="1.1.1",
                          problem=f"x on {tracks[0]}", fix="y", applies="set") for i, t in enumerate(tools)]
-        (d / "findings.json").write_text(json.dumps(dict(set=str(self.user / "Music" / f"{name}.als"), findings=findings)))
+        (d / "findings.json").write_text(json.dumps(dict(set=str(self.user / "Music" / f"{name}.als"), findings=findings)), encoding="utf-8")
         return d
 
 
@@ -234,10 +234,10 @@ class CliCrash(Homed):
         self.assertEqual(len(files), 1)
         self.assertRegex(files[0].name, r"^\d{8}T\d{6}Z-boom\.json$")
         self.assertIn(files[0].name, err)
-        rec = json.loads(files[0].read_text())
+        rec = json.loads(files[0].read_text(encoding="utf-8"))
         self.assertEqual((rec["command"], rec["where"], rec["exception"]), ("boom", "cli", "KeyError"))
         self.assertEqual(rec["options"], ["<path>", "--mix <path>", "--bpm <number>"])      # names kept, values by kind
-        text = files[0].read_text()
+        text = files[0].read_text(encoding="utf-8")
         for secret in (SECRET, str(self.user), "Music", "Song One", "Song.wav"):
             self.assertNotIn(secret, text)
         self.assertIn("<hidden>", rec["message"])
@@ -341,7 +341,7 @@ class CliCrash(Homed):
         files = list((self.home / "crashes").glob("*.json"))
         self.assertEqual(len(files), 1)
         self.assertRegex(files[0].name, r"^\d{8}T\d{6}Z-boom\.json$")
-        rec = json.loads(files[0].read_text())
+        rec = json.loads(files[0].read_text(encoding="utf-8"))
         self.assertEqual(rec["command"], "boom")
         self.assertEqual(rec["options"], ["--what <text>", "--mix <path>", "--bpm <number>"])
         self.assertEqual((R.last_run()["what"], R.last_run()["status"]), ("boom", "crashed"))
@@ -361,7 +361,7 @@ class CliCrash(Homed):
         self.kind = FileNotFoundError(2, "No such file or directory", "Secret Banjo Song.als")
         code, out, err = self.run_cli(["boom"])
         self.assertEqual(code, 70)
-        text = (list((self.home / "crashes").glob("*.json"))[0]).read_text()
+        text = (list((self.home / "crashes").glob("*.json"))[0]).read_text(encoding="utf-8")
         self.assertNotIn("Secret Banjo", text)
         report = R.build("crash")
         self.assertNotIn("Secret Banjo", report)
@@ -418,7 +418,7 @@ class Contents(Homed):
         self.assertNotIn("/usr/local/bin", text)
 
     def test_the_setup_daw_is_named(self):
-        (self.home / "setup.json").write_text(json.dumps({"daw": "reaper"}))
+        (self.home / "setup.json").write_text(json.dumps({"daw": "reaper"}), encoding="utf-8")
         self.assertIn("DAW chosen in Setup: REAPER", R.build("bug"))
 
     def test_a_crash_report_puts_the_record_first(self):
@@ -457,7 +457,7 @@ class SendingIsTheirs(Homed):
         a = R.save_report("one", self.work / "reports")
         b = R.save_report("two", self.work / "reports")
         self.assertNotEqual(a, b)
-        self.assertEqual((a.read_text(), b.read_text()), ("one", "two"))
+        self.assertEqual((a.read_text(encoding="utf-8"), b.read_text(encoding="utf-8")), ("one", "two"))
 
 
 class Command(Homed):
@@ -510,7 +510,7 @@ class Command(Homed):
     def test_out_saves_a_new_file_and_never_over_one(self):
         t = self.root / "r.md"
         code, out, err = self.run_cmd("--out", str(t))
-        self.assertEqual(t.read_text(), out)
+        self.assertEqual(t.read_text(encoding="utf-8"), out)
         self.assertIn("saved as", err)
         code, _, _ = self.run_cmd("--out", str(t))
         self.assertIn("never writes over a file", code)
@@ -606,7 +606,7 @@ class Server(Homed):
         self.assertEqual(code, 500)
         self.assertEqual(body["error"], self.RP.SAID)
         self.assertEqual(len(self.records()), 1)
-        rec = json.loads(self.records()[0].read_text())
+        rec = json.loads(self.records()[0].read_text(encoding="utf-8"))
         self.assertEqual((rec["where"], rec["exception"]), ("app-request", "ZeroDivisionError"))
         self.assertTrue(any(f["file"] == "hypnomix/app/server.py" for f in rec["traceback"]))
         code, body = self.call("/api/crashes")
@@ -641,7 +641,7 @@ class Server(Homed):
         self.assertEqual(self.S.JOB["reason"], self.RP.SAID)
         self.assertIn(self.RP.SAID, self.S.JOB["log"])
         self.assertEqual(len(self.records()), 1)
-        self.assertEqual(json.loads(self.records()[0].read_text())["where"], "app-job")
+        self.assertEqual(json.loads(self.records()[0].read_text(encoding="utf-8"))["where"], "app-job")
         self.assertEqual(R.last_run()["status"], "failed")        # the job's end is remembered for the next report
 
     def test_a_thread_that_dies_leaves_a_record(self):
@@ -652,7 +652,7 @@ class Server(Homed):
         args = types.SimpleNamespace(exc_type=info[0], exc_value=info[1], exc_traceback=info[2], thread=threading.current_thread())
         with mock.patch.object(self.RP, "_OLD_HOOK", [lambda a: None]):
             self.RP.thread_hook(args)
-        self.assertEqual(json.loads(self.records()[0].read_text())["where"], "app-thread")
+        self.assertEqual(json.loads(self.records()[0].read_text(encoding="utf-8"))["where"], "app-thread")
 
     def test_the_test_hooks_exist_only_under_their_environment_variable(self):
         os.environ.pop("HYPNOMIX_TEST_HOOKS", None)
@@ -675,7 +675,7 @@ class Server(Homed):
         self.assertEqual(self.records(), [])
         code, body = self.page_error()
         self.assertEqual((code, body["recorded"]), (200, True))
-        rec = json.loads(self.records()[0].read_text())
+        rec = json.loads(self.records()[0].read_text(encoding="utf-8"))
         self.assertEqual((rec["where"], rec["command"]), ("page", "page-script"))
         self.assertNotIn(str(self.user), json.dumps(rec))
         self.assertNotIn("127.0.0.1", json.dumps(rec))
@@ -820,7 +820,7 @@ class Server(Homed):
         with mock.patch.object(prefs, "load", ns["broken"]):
             code, body = self.call("/api/state")
         self.assertEqual(code, 500)
-        self.assertEqual(sorted(json.loads(r.read_text())["exception"] for r in self.records()), ["AttributeError", "KeyError"])
+        self.assertEqual(sorted(json.loads(r.read_text(encoding="utf-8"))["exception"] for r in self.records()), ["AttributeError", "KeyError"])
         n = len(self.records())
         for path, body in (("/api/decide", {}), ("/api/decide", {"dir": 5, "id": ["x"]})):
             code, answer = self.call(path, body)
@@ -836,7 +836,7 @@ class Server(Homed):
         with mock.patch.object(self.RP, "_OLD_SYS_HOOK", [lambda *a: seen.append(a)]), contextlib.redirect_stderr(err):
             self.RP.main_hook(*info)
         self.assertEqual(len(seen), 1)                                                      # the usual traceback still follows
-        self.assertEqual(json.loads(self.records()[0].read_text())["where"], "app-server")
+        self.assertEqual(json.loads(self.records()[0].read_text(encoding="utf-8"))["where"], "app-server")
         self.assertIn("nothing was sent", err.getvalue())
         with mock.patch.object(self.RP, "_OLD_SYS_HOOK", [lambda *a: None]), contextlib.redirect_stderr(io.StringIO()):
             self.RP.main_hook(KeyboardInterrupt, KeyboardInterrupt(), None)
@@ -848,6 +848,20 @@ class Server(Homed):
             self.assertEqual(sys.excepthook, self.RP.main_hook)
         finally:
             sys.excepthook, threading.excepthook = old, self.RP._OLD_HOOK[0]
+
+    def test_asking_for_the_hooks_twice_changes_nothing(self):
+        saved = (sys.excepthook, threading.excepthook, list(self.RP._OLD_SYS_HOOK), list(self.RP._OLD_HOOK))
+        try:
+            self.RP.install_hooks()
+            self.RP.install_hooks()
+            self.RP.install_hooks()
+            self.assertIs(sys.excepthook, self.RP.main_hook)
+            self.assertIs(threading.excepthook, self.RP.thread_hook)
+            self.assertIsNot(self.RP._OLD_SYS_HOOK[0], self.RP.main_hook)        # else the hook calls itself until Python gives up
+            self.assertIsNot(self.RP._OLD_HOOK[0], self.RP.thread_hook)
+        finally:
+            sys.excepthook, threading.excepthook = saved[0], saved[1]
+            self.RP._OLD_SYS_HOOK[:], self.RP._OLD_HOOK[:] = saved[2], saved[3]
 
     def test_long_text_in_both_boxes_previews_through_a_post(self):
         what = "音" * 4000
@@ -889,9 +903,9 @@ class DiskCare(Homed):
         d.mkdir()
         for i in range(23):
             f = d / f"20261126T0000{i:02d}Z-cmd.json"
-            f.write_text("x" * 100)
+            f.write_text("x" * 100, encoding="utf-8")
             os.utime(f, (time.time() - 7200, time.time() - 7200))                      # disk care leaves what changed in the last hour
-        (d / "_state.json").write_text("{}")
+        (d / "_state.json").write_text("{}", encoding="utf-8")
         v = DC.view()["crashes"]
         self.assertEqual((v["count"], v["keeps"]), (24, 20))
         self.assertGreater(v["bytes"], 2000)

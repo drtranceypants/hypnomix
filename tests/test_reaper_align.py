@@ -82,7 +82,7 @@ def stack_project(d, delay=0.04, harm=True):
 {track("Lead Vox", [item(0, 8, "lead.wav")])}{track("Double", [item(0, 3.95, "dbl.wav"), item(3.95, 4.05, "dbl.wav", soffs=3.95)])}{track("Harmony", [item(0, 8, "harm.wav", vol=0.7)]) if harm else ""}{track("Keys", [item(0, 8, "keys.wav")])}>
 """
     path = d / "Song.rpp"
-    path.write_text(txt.replace("\n", "\r\n"))
+    path.write_text(txt.replace("\n", "\r\n"), encoding="utf-8")
     return path
 
 
@@ -92,7 +92,7 @@ def lag_at(ref, y, t):
 
 def run_alignset(*argv):
     r = subprocess.run([sys.executable, "-m", "hypnomix.studio.alignset", *map(str, argv)], cwd=ROOT,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8")
     if r.returncode:
         raise AssertionError(r.stderr[-3000:] + r.stdout[-2000:])
     return r
@@ -151,7 +151,7 @@ class StretchMarkers(unittest.TestCase):
             E.set_stretch(c, [(0.0, 3.95), (1.0, 4.96), (4.05, 8.0)])     # replaced, not added
             out = d / "x.rpp"
             E.save(p, out)
-            self.assertEqual(out.read_text().count("SM "), 1)
+            self.assertEqual(out.read_text(encoding="utf-8").count("SM "), 1)
             q = project.load(out)
             self.assertEqual(q.track("Double").clips[1].take.stretch, [(0.0, 3.95), (1.0, 4.96), (4.05, 8.0)])
             self.assertEqual(E.check(path, out), [])
@@ -171,7 +171,7 @@ class AlignProject(unittest.TestCase):
         run_alignset(path, "--guide", "Lead", "--parts", "Double", "--out", self.d / "o", "--json", self.d / "r.json",
                      "--apply")
         self.assertEqual(path.read_bytes(), before)                     # the user's project: untouched
-        res = json.loads((self.d / "r.json").read_text())
+        res = json.loads((self.d / "r.json").read_text(encoding="utf-8"))
         out = Path(res["out_set"])
         self.assertEqual(out.name, "Song (aligned).rpp")
         self.assertEqual(E.check(path, out), [])
@@ -194,13 +194,13 @@ class AlignProject(unittest.TestCase):
         # running again never overwrites the first result
         run_alignset(path, "--guide", "Lead", "--parts", "Double", "--out", self.d / "o2", "--json", self.d / "r2.json",
                      "--apply")
-        self.assertEqual(Path(json.loads((self.d / "r2.json").read_text())["out_set"]).name, "Song (aligned 2).rpp")
+        self.assertEqual(Path(json.loads((self.d / "r2.json").read_text(encoding="utf-8"))["out_set"]).name, "Song (aligned 2).rpp")
 
     def test_takes_option_puts_the_timing_on_new_takes(self):
         path = stack_project(self.d, harm=False)
         run_alignset(path, "--guide", "Lead", "--parts", "Double", "--takes", "--out", self.d / "o", "--json",
                      self.d / "r.json", "--apply")
-        res = json.loads((self.d / "r.json").read_text())
+        res = json.loads((self.d / "r.json").read_text(encoding="utf-8"))
         q = project.load(Path(res["out_set"]))
         dbl = q.track("Double")
         self.assertTrue(all(len(c.takes) == 2 and c.active == 1 and not c.take.stretch for c in dbl.clips))
@@ -213,7 +213,7 @@ class AlignProject(unittest.TestCase):
         path = stack_project(self.d)
         run_alignset(path, "--guide", "Lead", "--parts", "Double", "Harmony", "--protect", "5-8", "--out",
                      self.d / "o", "--json", self.d / "r.json")
-        res = json.loads((self.d / "r.json").read_text())
+        res = json.loads((self.d / "r.json").read_text(encoding="utf-8"))
         self.assertIsNone(res["out_set"])                                # measured only: no project written
         self.assertFalse(list(self.d.glob("Song (aligned*")))
         self.assertEqual([r["track"] for r in res["parts"]][-2:], ["Double", "Harmony"])
@@ -224,7 +224,7 @@ class AlignProject(unittest.TestCase):
         path = stack_project(self.d, harm=False)
         run_alignset(path, "--guide", "Lead", "--parts", "Double", "--formant", "0.4", "--out", self.d / "o",
                      "--json", self.d / "r.json", "--apply")
-        res = json.loads((self.d / "r.json").read_text())
+        res = json.loads((self.d / "r.json").read_text(encoding="utf-8"))
         out = Path(res["out_set"])
         self.assertEqual(E.check(path, out), [])
         q = project.load(out)
@@ -244,7 +244,7 @@ class AlignProject(unittest.TestCase):
     def test_refuses_a_tempo_map_and_wrong_names(self):
         path = stack_project(self.d)
         r = subprocess.run([sys.executable, "-m", "hypnomix.studio.alignset", str(path), "--guide", "Nope", "--parts",
-                            "Double"], cwd=ROOT, capture_output=True, text=True)
+                            "Double"], cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("guide", r.stderr)
 
@@ -254,7 +254,7 @@ class AppEndpoints(unittest.TestCase):
         from hypnomix.app import align as AL
         with tempfile.TemporaryDirectory() as td:
             rp = Path(td) / "Song.rpp"
-            rp.write_text("<REAPER_PROJECT\n>\n")
+            rp.write_text("<REAPER_PROJECT\n>\n", encoding="utf-8")
             code, st = AL.handle_post("/api/align/choose", {"path": str(rp)})
             self.assertEqual(code, 200)
             self.assertEqual(st["set_name"], "Song.rpp")
@@ -352,7 +352,7 @@ class Panel(unittest.TestCase):
 
 class BridgeScript(unittest.TestCase):
     def test_bridge_has_the_align_commands(self):
-        lua = (ROOT / "hypnomix" / "reaper" / "bridge.lua").read_text()
+        lua = (ROOT / "hypnomix" / "reaper" / "bridge.lua").read_text(encoding="utf-8")
         for name in ("C.align_where", "align_draw", "C.open_project"):
             self.assertIn(name, lua)
 

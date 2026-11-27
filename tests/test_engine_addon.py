@@ -167,7 +167,7 @@ class Base(unittest.TestCase):
         data = self.good_bytes if data is None else data
         self.server.routes[path] = (kind, data)
         self.manifest.write_text(json.dumps({"format": 1, "engine": version, "platforms": {"mac-arm64": {
-            "url": self.server.url(path), "sha256": sha or hashlib.sha256(data).hexdigest(), "size": size or len(data)}}}))
+            "url": self.server.url(path), "sha256": sha or hashlib.sha256(data).hexdigest(), "size": size or len(data)}}}), encoding="utf-8")
 
     def residue(self):
         """Anything in the engine folder that is not a whole version: half-made folders."""
@@ -183,7 +183,7 @@ class Adding(Base):
         self.assertEqual((s["installed"], s["current"], s["needs_update"], s["available"]), ("1.0.0", True, False, True))
         self.assertEqual(s["program"], str(prog))
         self.assertEqual(self.residue(), [])                                     # no half-made folder, no archive left
-        self.assertEqual(json.loads((self.root / "1.0.0" / "ADDON.json").read_text())["sha256"], hashlib.sha256(self.good_bytes).hexdigest())
+        self.assertEqual(json.loads((self.root / "1.0.0" / "ADDON.json").read_text(encoding="utf-8"))["sha256"], hashlib.sha256(self.good_bytes).hexdigest())
         self.assertEqual(DW.find_engine(), prog)                                 # the DAW tab's lookup
         self.assertTrue(DW.available())
         self.assertEqual(self.server.seen, ["/engine.tar.gz"])
@@ -273,7 +273,9 @@ class Adding(Base):
 
     def test_a_kit_with_a_control_or_invisible_character_in_a_file_name_is_not_added(self):
         for label, name in (("escape", "share/a\x1b[2Jb.txt"), ("newline", "share/a\nb.txt"), ("right-to-left", "share/a\u202eb.txt")):
-            with tempfile.TemporaryDirectory() as td:
+            with self.subTest(label), tempfile.TemporaryDirectory() as td:
+                if sys.platform == "win32" and label in ("escape", "newline"):
+                    self.skipTest("SKIPPED: Windows cannot make a file whose name has a control character, so this name was NOT tested here")
                 kit = make_kit(td, extra={name: b"x"})
                 self.assertTrue(any("control or invisible" in w for w in EA.kit_problems(kit)), label)
                 self.publish(data=tar_dir(kit, Path(td) / "k.tar.gz"))
@@ -324,7 +326,7 @@ class Adding(Base):
         self.root.mkdir(parents=True)
         old = self.root / ".incoming-dead"
         (old / "kit").mkdir(parents=True)
-        (old / "kit" / "junk").write_text("x")
+        (old / "kit" / "junk").write_text("x", encoding="utf-8")
         os.utime(old, (time.time() - 7200, time.time() - 7200))
         fresh = self.root / ".incoming-live"                                     # another add that started a minute ago is left alone
         fresh.mkdir()
@@ -346,7 +348,7 @@ class Adding(Base):
         EA.install()
         prog = self.root / "1.0.0" / "bin" / "hypnomix-engine"
         prog.unlink()                                                             # damaged
-        (self.root / "1.0.0" / "stray.txt").write_text("from the old copy")
+        (self.root / "1.0.0" / "stray.txt").write_text("from the old copy", encoding="utf-8")
         s = EA.install()
         self.assertTrue(prog.is_file())
         self.assertFalse((self.root / "1.0.0" / "stray.txt").exists())            # the whole kit was replaced, not mixed
@@ -355,7 +357,7 @@ class Adding(Base):
     def test_a_failed_swap_puts_the_old_copy_back(self):
         old, new = Path(self.td.name) / "old", Path(self.td.name) / "new"
         (old / "bin").mkdir(parents=True)
-        (old / "bin" / "x").write_text("old")
+        (old / "bin" / "x").write_text("old", encoding="utf-8")
         (new).mkdir()
         final = Path(self.td.name) / "final"
         shutil.copytree(old, final)
@@ -370,7 +372,7 @@ class Adding(Base):
         with mock.patch.object(EA.os, "replace", flaky):
             with self.assertRaises(OSError):
                 EA._swap(new, final)
-        self.assertEqual((final / "bin" / "x").read_text(), "old")
+        self.assertEqual((final / "bin" / "x").read_text(encoding="utf-8"), "old")
 
     def test_nothing_is_added_when_the_manifest_has_no_address_for_this_computer(self):
         self.publish()
@@ -386,12 +388,12 @@ class Adding(Base):
         good = {"url": self.server.url("/x"), "sha256": "a" * 64, "size": 10}
         for bad in (dict(good, url="http://127.0.0.1/x"), dict(good, url="https://user:pw@example.org/x"), dict(good, url=""),
                     dict(good, sha256="xyz"), dict(good, size=0), dict(good, size="10"), dict(good, size=True), "https://x"):
-            self.manifest.write_text(json.dumps({"engine": "1.0.0", "platforms": {"mac-arm64": bad}}))
+            self.manifest.write_text(json.dumps({"engine": "1.0.0", "platforms": {"mac-arm64": bad}}), encoding="utf-8")
             self.assertFalse(EA.state()["available"], bad)
         for ver in ("../x", "", ".hidden", "a/b", 5):
-            self.manifest.write_text(json.dumps({"engine": ver, "platforms": {"mac-arm64": good}}))
+            self.manifest.write_text(json.dumps({"engine": ver, "platforms": {"mac-arm64": good}}), encoding="utf-8")
             self.assertFalse(EA.state()["available"], ver)
-        self.manifest.write_text("not json")
+        self.manifest.write_text("not json", encoding="utf-8")
         self.assertFalse(EA.state()["available"])
 
     def test_the_progress_is_reported(self):
@@ -434,10 +436,10 @@ class Removing(Base):
         half-made ones go, and the folder stays while anything else is in it."""
         self.publish()
         EA.install()
-        (self.root / "my-notes.txt").write_text("mine")
+        (self.root / "my-notes.txt").write_text("mine", encoding="utf-8")
         (self.root / "notes").mkdir()
         (self.root / "Backups").mkdir()
-        (self.root / "2024-notes").write_text("mine")
+        (self.root / "2024-notes").write_text("mine", encoding="utf-8")
         self.assertEqual(EA.installed_versions(), ["1.0.0"])
         EA.remove()
         self.assertEqual(sorted(p.name for p in self.root.iterdir()), ["2024-notes", "Backups", "my-notes.txt", "notes"])
@@ -454,7 +456,7 @@ class Removing(Base):
     def test_remove_never_follows_a_link_out_of_the_folder(self):
         outside = Path(self.td.name) / "precious"
         outside.mkdir()
-        (outside / "keep.txt").write_text("keep")
+        (outside / "keep.txt").write_text("keep", encoding="utf-8")
         self.root.mkdir(parents=True)
         os.symlink(outside, self.root / "9.9.9")
         os.symlink(outside, self.root / ".incoming-link")
@@ -496,7 +498,7 @@ class Versions(Base):
         EA.install()
         other = Path(self.td.name) / "bin" / "hypnomix-engine"
         other.parent.mkdir()
-        other.write_text("x")
+        other.write_text("x", encoding="utf-8")
         self.assertEqual(EA.note_ran(other), [])
         self.assertEqual(EA.note_ran("/nonexistent/engine"), [])
         self.assertTrue((self.root / "1.0.0").is_dir())
@@ -547,7 +549,7 @@ class FindingIt(Base):
         prog = self.root / "1.0.0" / "bin" / "hypnomix-engine"
         override = Path(self.td.name) / "mine" / "hypnomix-engine"
         override.parent.mkdir()
-        override.write_text("x")
+        override.write_text("x", encoding="utf-8")
         override.chmod(0o755)
         with mock.patch.dict(os.environ, {"HYPNOMIX_ENGINE": str(override)}):
             self.assertEqual(DW.candidates()[:2], [override, prog])
@@ -561,7 +563,7 @@ class FindingIt(Base):
             self.assertIn(bundled, cand)
             self.assertLess(cand.index(prog), cand.index(bundled))
             bundled.parent.mkdir(parents=True)
-            bundled.write_text("x")
+            bundled.write_text("x", encoding="utf-8")
             bundled.chmod(0o755)
             self.assertEqual(DW.find_engine(), prog)
             EA.remove()
@@ -588,7 +590,7 @@ class Shipped(unittest.TestCase):
     """The manifest that ships in the app, today: nothing to download."""
 
     def test_the_shipped_manifest_names_no_address(self):
-        d = json.loads(EA.MANIFEST.read_text())
+        d = json.loads(EA.MANIFEST.read_text(encoding="utf-8"))
         self.assertEqual(d["format"], 1)
         self.assertRegex(d["engine"], EA.VERSION.pattern)
         self.assertEqual(d["platforms"], {})                                       # unpublished: when it is, this test changes with it
@@ -691,7 +693,7 @@ class Command(Base):
         self.assertFalse(self.root.exists())
 
     def test_unpublished_says_so_and_exits_with_an_error(self):
-        self.manifest.write_text(json.dumps({"format": 1, "engine": "1.0.0", "platforms": {}}))
+        self.manifest.write_text(json.dumps({"format": 1, "engine": "1.0.0", "platforms": {}}), encoding="utf-8")
         code, out, err = self.run_cmd("install", "--yes")
         self.assertEqual(code, 1)
         self.assertIn("not available yet", err)
@@ -701,7 +703,7 @@ class Command(Base):
         from hypnomix import cli
         self.assertEqual(cli.COMMANDS["engine"][0], "hypnomix.app.engine_addon")
         r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "engine", "-h"], cwd=str(ROOT), capture_output=True, text=True, timeout=60,
-                           env=dict(os.environ, PYTHONPATH=str(ROOT)))
+                           env=dict(os.environ, PYTHONPATH=str(ROOT)), encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stderr)
         for word in ("--yes", "status", "install", "remove", "where", "HYPNOMIX_HOME"):
             self.assertIn(word, r.stdout)
@@ -773,7 +775,7 @@ class Routes(Base):
         self.fail("the add did not finish")
 
     def test_the_state_is_in_setups_state_and_has_its_own_route(self):
-        self.manifest.write_text(json.dumps({"format": 1, "engine": "1.0.0", "platforms": {}}))
+        self.manifest.write_text(json.dumps({"format": 1, "engine": "1.0.0", "platforms": {}}), encoding="utf-8")
         code, s = self.call("/api/setup/state")
         self.assertEqual(code, 200)
         self.assertFalse(s["engine"]["available"])
@@ -831,7 +833,7 @@ class Routes(Base):
         self.assertNotIn(evil, self.server.seen)
 
     def test_unpublished_the_click_is_answered_plainly_and_nothing_is_made(self):
-        self.manifest.write_text(json.dumps({"format": 1, "engine": "1.0.0", "platforms": {}}))
+        self.manifest.write_text(json.dumps({"format": 1, "engine": "1.0.0", "platforms": {}}), encoding="utf-8")
         code, r = self.call("/api/setup/engine/install", {})
         self.assertEqual(code, 400)
         self.assertIn("not available yet", r["error"])
@@ -854,7 +856,7 @@ class Routes(Base):
         self.assertTrue((self.root / "1.0.0").is_dir())
 
     def test_the_daw_choice_is_remembered_and_nothing_is_downloaded(self):
-        self.manifest.write_text(json.dumps({"format": 1, "engine": "1.0.0", "platforms": {}}))
+        self.manifest.write_text(json.dumps({"format": 1, "engine": "1.0.0", "platforms": {}}), encoding="utf-8")
         with mock.patch.object(SU, "STATE", Path(self.td.name) / "setup.json"):
             code, r = self.call("/api/setup/daw", {"daw": "hypnomix", "teach_level": ""})
             self.assertEqual((code, r["daw"]), (200, "hypnomix"))
@@ -890,11 +892,16 @@ class Archive(Base):
         self.assertEqual(names, sorted(names))
         self.assertTrue(all(m.mtime == EA.FIXED_TIME and m.uid == m.gid == 0 and not m.uname and not m.gname for m in ms))
         self.assertTrue(all(m.mode in (0o644, 0o755) for m in ms))
-        self.assertTrue(next(m for m in ms if m.name == "bin/hypnomix-engine").mode == 0o755)
         raw = self.good.read_bytes()
         self.assertEqual(raw[:3], b"\x1f\x8b\x08")
         self.assertEqual(raw[3] & 0x08, 0)                                              # no file name in the gzip header
         self.assertEqual(raw[4:8], b"\0\0\0\0")                                         # and no time
+
+    @_isolate.POSIX_MODES
+    def test_a_program_is_packed_executable(self):
+        with tarfile.open(self.good) as t:
+            ms = t.getmembers()
+        self.assertEqual(next(m for m in ms if m.name == "bin/hypnomix-engine").mode, 0o755)
 
     def test_a_kit_that_is_not_fit_is_not_packed(self):
         for kw, word in ((dict(licence=False), "licence text"), (dict(notice=False), "source notice"), (dict(link=True), "symbolic links")):
@@ -925,10 +932,10 @@ class Archive(Base):
 
     def test_an_existing_archive_is_never_overwritten(self):
         out = Path(self.td.name) / "o.tar.gz"
-        out.write_text("mine")
+        out.write_text("mine", encoding="utf-8")
         with self.assertRaises(EA.AddonError):
             EA.pack(self.kit, out)
-        self.assertEqual(out.read_text(), "mine")
+        self.assertEqual(out.read_text(encoding="utf-8"), "mine")
 
     def test_a_packed_kit_installs(self):
         """The archive pack() makes is the one install() accepts (the whole path, the owner's side to the person's)."""
@@ -939,13 +946,13 @@ class Archive(Base):
     @unittest.skipUnless(BASH, "SKIPPED: no bash here, so this test was NOT run")
     def test_the_script_checks_packs_prints_the_manifest_line_and_uploads_nothing(self):
         shipped = ROOT / "hypnomix" / "app" / "engine_addon.json"
-        before = shipped.read_text()
+        before = shipped.read_text(encoding="utf-8")
         with tempfile.TemporaryDirectory() as td:
             kit = make_kit(td)
             out = Path(td) / "out"
             env = dict(os.environ, HYPNOMIX_PYTHON=sys.executable)
             r = subprocess.run([BASH, str(ROOT / "packaging/mac/build_engine_archive.sh"), str(kit), "mac-arm64", str(out)],
-                               capture_output=True, text=True, timeout=120, env=env)
+                               capture_output=True, text=True, timeout=120, env=env, encoding="utf-8")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             arc = next(out.glob("HypnoMix-engine-*-mac-arm64.tar.gz"))
             sha = hashlib.sha256(arc.read_bytes()).hexdigest()
@@ -953,9 +960,9 @@ class Archive(Base):
             self.assertIn(f'"mac-arm64": {{"url": "https://github.com/drtranceypants/hypnomix/releases/download/v', r.stdout)
             self.assertIn(f'"sha256": "{sha}", "size": {arc.stat().st_size}}}', r.stdout)
             self.assertIn("Nothing was uploaded", r.stdout)
-            self.assertEqual(shipped.read_text(), before)                              # the manifest is the owner's to edit
+            self.assertEqual(shipped.read_text(encoding="utf-8"), before)                              # the manifest is the owner's to edit
             r2 = subprocess.run([BASH, str(ROOT / "packaging/mac/build_engine_archive.sh"), str(kit), "mac-arm64", str(Path(td) / "out2")],
-                                capture_output=True, text=True, timeout=120, env=env)
+                                capture_output=True, text=True, timeout=120, env=env, encoding="utf-8")
             self.assertEqual(hashlib.sha256(next((Path(td) / "out2").glob("*.tar.gz")).read_bytes()).hexdigest(), sha)   # same kit, same bytes
 
     @_isolate.POSIX_ONLY                                      # the packaging scripts are Mac scripts (lipo, hdiutil)
@@ -966,7 +973,7 @@ class Archive(Base):
                 kit = make_kit(td, **kw)
                 out = Path(td) / "out"
                 r = subprocess.run([BASH, str(ROOT / "packaging/mac/build_engine_archive.sh"), str(kit), "mac-arm64", str(out)],
-                                   capture_output=True, text=True, timeout=120, env=dict(os.environ, HYPNOMIX_PYTHON=sys.executable))
+                                   capture_output=True, text=True, timeout=120, env=dict(os.environ, HYPNOMIX_PYTHON=sys.executable), encoding="utf-8")
                 self.assertEqual(r.returncode, 1, kw)
                 self.assertIn("nothing was written", r.stdout + r.stderr)
                 self.assertFalse(out.exists(), kw)
@@ -974,10 +981,10 @@ class Archive(Base):
     @_isolate.POSIX_ONLY                                      # the packaging scripts are Mac scripts (lipo, hdiutil)
     @unittest.skipUnless(BASH, "SKIPPED: no bash here, so this test was NOT run")
     def test_the_installer_script_no_longer_takes_the_engine(self):
-        sh = (ROOT / "packaging/mac/build_dmg.sh").read_text()
+        sh = (ROOT / "packaging/mac/build_dmg.sh").read_text(encoding="utf-8")
         for word in ("--daw)", "check_kit", "edition", "Resources/engine", "LICENSES/engine", "-full-"):
             self.assertNotIn(word, sh, word)
-        r = subprocess.run([BASH, str(ROOT / "packaging/mac/build_dmg.sh"), "--daw", "/nowhere"], capture_output=True, text=True, timeout=60)
+        r = subprocess.run([BASH, str(ROOT / "packaging/mac/build_dmg.sh"), "--daw", "/nowhere"], capture_output=True, text=True, timeout=60, encoding="utf-8")
         self.assertEqual(r.returncode, 1)
         self.assertIn("unknown option", r.stdout + r.stderr)
         self.assertEqual(subprocess.run([BASH, "-n", str(ROOT / "packaging/mac/build_engine_archive.sh")]).returncode, 0)
@@ -998,17 +1005,17 @@ class KitCheck(Base):
                      "GNU General Public License version 2 or later; source at https://example.org/src\n"):
             with tempfile.TemporaryDirectory() as td:
                 kit = make_kit(td)
-                (kit / "SOURCE.txt").write_text(line)
+                (kit / "SOURCE.txt").write_text(line, encoding="utf-8")
                 self.assertTrue(EA.kit_problems(kit), line)
         with tempfile.TemporaryDirectory() as td:
             kit = make_kit(td)
-            (kit / "SOURCE.txt").write_text("GNU General Public License, version 2 or later. Source: https://example.org/src, commit 3fa9c21b.\n")
+            (kit / "SOURCE.txt").write_text("GNU General Public License, version 2 or later. Source: https://example.org/src, commit 3fa9c21b.\n", encoding="utf-8")
             self.assertEqual(EA.kit_problems(kit), [])
 
     def test_a_licence_file_that_is_not_the_gpl_is_refused(self):
         with tempfile.TemporaryDirectory() as td:
             kit = make_kit(td)
-            (kit / "COPYING").write_text("all rights reserved\n")
+            (kit / "COPYING").write_text("all rights reserved\n", encoding="utf-8")
             self.assertIn("licence", EA.kit_problems(kit)[0])
 
 
@@ -1057,7 +1064,7 @@ class Limits(Base):
         self.assertEqual(EA.installed_versions(), ["9.0.0", "1.0.0"])             # the newer one is there ...
         self.assertEqual(EA.find(), self.root / "1.0.0" / "bin" / "hypnomix-engine")      # ... but this app works with 1.0.0
         self.assertEqual(DW.find_engine(), self.root / "1.0.0" / "bin" / "hypnomix-engine")
-        self.manifest.write_text(json.dumps({"format": 1, "engine": "3.0.0", "platforms": {}}))   # the manifest names one that is not there
+        self.manifest.write_text(json.dumps({"format": 1, "engine": "3.0.0", "platforms": {}}), encoding="utf-8")   # the manifest names one that is not there
         self.assertEqual(EA.find(), self.root / "9.0.0" / "bin" / "hypnomix-engine")   # then the newest other one
 
     @_isolate.POSIX_MODES                                                          # Windows has no executable bit
@@ -1158,12 +1165,13 @@ class ElsewhereRunning(Base):
     """Remove is refused while the engine runs, whichever process asks: the command line and the Assistant are not the app."""
 
     def setUp(self):
+        from tests.test_daw import make_fake, need_fake, with_session
+        need_fake(self)                                                             # a visible skip on Windows, but for the tests that never start it
         super().setUp()
         self.publish()
         EA.install()
-        from tests.test_daw import make_fake, with_session
         self.prog = self.root / "1.0.0" / "bin" / "hypnomix-engine"
-        fake = make_fake(self.td.name)                                              # a stand-in that answers like the engine
+        fake = make_fake(self.td.name, skip=False)                                  # a stand-in that answers like the engine
         self.prog.write_bytes(fake.read_bytes())
         self.prog.chmod(0o755)
         self.eng = with_session(DW.Engine(binary=self.prog, attach_url="http://127.0.0.1:9/mcp"), self.td.name)
@@ -1171,7 +1179,7 @@ class ElsewhereRunning(Base):
 
     def other_process(self, *argv):
         r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "engine", *argv], cwd=str(ROOT), capture_output=True, text=True,
-                           timeout=120, env=dict(os.environ, PYTHONPATH=str(ROOT), HYPNOMIX_DISKCARE="off"))
+                           timeout=120, env=dict(os.environ, PYTHONPATH=str(ROOT), HYPNOMIX_DISKCARE="off"), encoding="utf-8")
         return r.returncode, r.stdout, r.stderr
 
     def test_another_process_cannot_remove_an_engine_this_one_started(self):
@@ -1209,7 +1217,7 @@ class ElsewhereRunning(Base):
     def test_an_engine_that_died_leaves_a_marker_that_is_ignored_and_cleaned_by_remove(self):
         gone = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
         gone.wait()
-        (self.root / ".running").write_text(json.dumps({"pid": gone.pid, "program": str(self.prog)}))
+        (self.root / ".running").write_text(json.dumps({"pid": gone.pid, "program": str(self.prog)}), encoding="utf-8")
         self.assertFalse(EA.running())
         self.assertFalse(EA.state()["running"])
         EA.remove()
@@ -1227,24 +1235,24 @@ class ElsewhereRunning(Base):
         EA.clear_running(live.pid)
         self.assertFalse(EA.running())
         for junk in ("not json", "[]", json.dumps({"pid": "x"}), json.dumps({"pid": -5}), json.dumps({"pid": True})):
-            (self.root / ".running").write_text(junk)
+            (self.root / ".running").write_text(junk, encoding="utf-8")
             self.assertFalse(EA.running(), junk)
 
     def test_a_marker_with_a_huge_process_id_is_ignored_not_a_crash(self):
         """os.killpg raises OverflowError for a number that is not a C int: state(), running() and remove() must not die."""
         for pid in (2 ** 31, 4294967296, 10 ** 30):
-            (self.root / ".running").write_text(json.dumps({"pid": pid, "program": str(self.prog)}))
+            (self.root / ".running").write_text(json.dumps({"pid": pid, "program": str(self.prog)}), encoding="utf-8")
             self.assertFalse(EA.running(), pid)
             self.assertFalse(EA.state()["running"], pid)
         self.assertFalse(EA._alive(2 ** 40))
-        (self.root / ".running").write_text(json.dumps({"pid": 4294967296}))
+        (self.root / ".running").write_text(json.dumps({"pid": 4294967296}), encoding="utf-8")
         EA.remove()
         self.assertFalse(self.root.exists())
 
     def test_only_an_engine_inside_the_add_on_folder_is_marked(self):
         other = Path(self.td.name) / "bin" / "hypnomix-engine"
         other.parent.mkdir()
-        other.write_text("x")
+        other.write_text("x", encoding="utf-8")
         EA.mark_running(other, os.getpid())
         self.assertFalse((self.root / ".running").exists())
 

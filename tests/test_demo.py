@@ -22,7 +22,7 @@ def digest(a):
 
 def run(*args):
     env = dict(os.environ)
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env, encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -154,11 +154,11 @@ class Written(unittest.TestCase):
                 info = sf.info(str(folder / n))
                 self.assertEqual((info.samplerate, info.channels, info.subtype), (44100, 1, "PCM_24"))
                 self.assertAlmostEqual(info.duration, 40.0, delta=0.01)
-            md = (folder / "DEMO.md").read_text()
+            md = (folder / "DEMO.md").read_text(encoding="utf-8")
             for n in "123456":
                 self.assertIn(f"| {n} |", md)
             self.assertIn("hypnomix scan", md)
-            self.assertEqual(json.loads((folder / "demo.json").read_text())["kind"], "folder")
+            self.assertEqual(json.loads((folder / "demo.json").read_text(encoding="utf-8"))["kind"], "folder")
             path2, folder2 = D.write_demo(td, "folder")               # never reuses or overwrites a folder
             self.assertNotEqual(folder, folder2)
             self.assertTrue(folder.exists() and folder2.exists())
@@ -167,7 +167,7 @@ class Written(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path, folder = D.write_demo(td, "reaper")
             self.assertEqual(path.suffix, ".rpp")
-            text = path.read_text()
+            text = path.read_bytes().decode("utf-8")                              # as written: read_text would turn CRLF (what Windows writes) into LF
             self.assertEqual(rpp.dumps(rpp.load(path)), text)                      # the parser gives back exactly what was written
             p = project.load(path)
             self.assertEqual((p.daw, p.tempo, p.beats_per_bar, p.sample_rate), ("reaper", 96.0, 4, 44100))

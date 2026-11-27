@@ -740,6 +740,8 @@ def home_short(text):
         return text
     for h in _homes():
         text = text.replace(h, "~")
+        if "\\" in h:
+            text = text.replace(h.replace("\\", "\\\\"), "~")        # the same folder inside JSON text, where each backslash is doubled
     return _HOME_RE.sub("~", text)
 
 

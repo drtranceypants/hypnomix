@@ -23,9 +23,9 @@ def make_kit(root, licence=True, notice=True, extra=None, link=False):
         f.write_bytes(b"\xcf\xfa\xed\xfe fake program")
         f.chmod(0o755)
     if licence:
-        (kit / "COPYING").write_text(GPL)
+        (kit / "COPYING").write_text(GPL, encoding="utf-8")
     if notice:
-        (kit / "SOURCE.txt").write_text(NOTICE)
+        (kit / "SOURCE.txt").write_text(NOTICE, encoding="utf-8")
     for rel, data in (extra or {}).items():
         f = kit / rel
         f.parent.mkdir(parents=True, exist_ok=True)
@@ -48,7 +48,7 @@ class KitChecks(unittest.TestCase):
             cmd = [BASH, str(ROOT / "packaging/mac/check_kit.sh"), str(kit)]
         else:
             cmd = [BASH, str(ROOT / "packaging/mac/build_engine_archive.sh"), str(kit), "mac-arm64", str(Path(self.td.name) / "out")]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=dict(os.environ, HYPNOMIX_PYTHON=sys.executable))
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=dict(os.environ, HYPNOMIX_PYTHON=sys.executable), encoding="utf-8")
         return r.returncode, r.stdout + r.stderr
 
     def test_a_complete_kit_passes(self):
@@ -74,7 +74,7 @@ class KitChecks(unittest.TestCase):
 
     def test_a_licence_file_that_is_not_the_gpl_is_refused(self):
         kit = make_kit(self.td.name)
-        (kit / "COPYING").write_text("all rights reserved\n")
+        (kit / "COPYING").write_text("all rights reserved\n", encoding="utf-8")
         self.assertEqual(self.check(kit)[0], 1)
 
     def test_no_source_notice_is_refused(self):
@@ -84,7 +84,7 @@ class KitChecks(unittest.TestCase):
 
     def test_a_notice_that_names_no_licence_is_refused(self):
         kit = make_kit(self.td.name)
-        (kit / "SOURCE.txt").write_text("thanks for using this\n")
+        (kit / "SOURCE.txt").write_text("thanks for using this\n", encoding="utf-8")
         self.assertEqual(self.check(kit)[0], 1)
 
     def test_a_one_line_notice_is_refused(self):
@@ -93,13 +93,13 @@ class KitChecks(unittest.TestCase):
                      "GNU General Public License version 2 or later; source at https://example.org/src\n",   # no version built from
                      "GNU General Public License version 2 or later; source: version 1.2.3 of the engine\n"):  # no where/when
             kit = make_kit(self.td.name)
-            (kit / "SOURCE.txt").write_text(line)
+            (kit / "SOURCE.txt").write_text(line, encoding="utf-8")
             code, out = self.check(kit)
             self.assertEqual((code, "no source notice" in out), (1, True), line)
 
     def test_a_notice_with_an_address_and_a_commit_is_fine(self):
         kit = make_kit(self.td.name)
-        (kit / "SOURCE.txt").write_text("GNU General Public License, version 2 or later. Source: https://example.org/src, commit 3fa9c21b.\n")
+        (kit / "SOURCE.txt").write_text("GNU General Public License, version 2 or later. Source: https://example.org/src, commit 3fa9c21b.\n", encoding="utf-8")
         self.assertEqual(self.check(kit)[0], 0)
 
     def test_a_home_path_inside_a_program_is_refused_without_printing_it(self):
@@ -147,22 +147,16 @@ class KitChecks(unittest.TestCase):
     def test_the_scripts_parse_and_check_before_they_pack(self):
         for f in ("packaging/mac/build_dmg.sh", "packaging/mac/check_kit.sh", "packaging/mac/build_engine_archive.sh", "macapp/build.sh"):
             self.assertEqual(subprocess.run([BASH, "-n", str(ROOT / f)]).returncode, 0, f)
-        sh = (ROOT / "packaging/mac/build_engine_archive.sh").read_text()
+        sh = (ROOT / "packaging/mac/build_engine_archive.sh").read_text(encoding="utf-8")
         self.assertLess(sh.index('check_kit "$kit"'), sh.index("pack_engine.py"))             # checked before anything is made
         self.assertNotRegex(sh, r"\b(gh|curl|scp|rsync|git push)\b\s")                       # it never uploads
-        self.assertIn("check_kit.sh", (ROOT / "macapp/build.sh").read_text())
-
-    def test_the_app_asks_for_the_microphone_in_words_that_cover_the_daw_if_it_is_added(self):
-        sh = (ROOT / "packaging/mac/build_dmg.sh").read_text()
-        self.assertIn("NSMicrophoneUsageDescription</key><string>$mictext", sh)
-        self.assertRegex(sh, r'mictext="[^"]*HypnoMix DAW[^"]*records from the audio input')
-        self.assertNotIn("HypnomixEdition", sh)
+        self.assertIn("check_kit.sh", (ROOT / "macapp/build.sh").read_text(encoding="utf-8"))
 
 
 class MacAppQuit(unittest.TestCase):
     """The window asks the server before it quits and waits for it to exit (compiled for a syntax check separately)."""
     def swift(self):
-        return (ROOT / "macapp" / "Hypnomix.swift").read_text()
+        return (ROOT / "macapp" / "Hypnomix.swift").read_text(encoding="utf-8")
 
     def test_quit_asks_save_dont_save_cancel_and_waits_for_the_server(self):
         s = self.swift()
@@ -185,7 +179,7 @@ class MacAppQuit(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             r = subprocess.run([swiftc, "-typecheck", "-target", "arm64-apple-macos12", "-module-cache-path", td,
                                 str(ROOT / "macapp" / "Hypnomix.swift"), "-framework", "Cocoa", "-framework", "WebKit"],
-                               capture_output=True, text=True, timeout=300)
+                               capture_output=True, text=True, timeout=300, encoding="utf-8")
             self.assertEqual(r.returncode, 0, r.stderr[-1500:])
 
 
@@ -199,14 +193,20 @@ class DownloadWording(unittest.TestCase):
                           r"your download|full-mac|replaces (this|the) app|coming soon")
         for f in self.PLAIN + [ROOT / "hypnomix/app/wiki/articles/18-daw.html", ROOT / "hypnomix/app/wiki/articles/26-features.html",
                                ROOT / "hypnomix/app/wiki/articles/27-next.html", ROOT / "README.md", ROOT / "docs/APP.md", ROOT / "AGENTS.md"]:
-            for m in gone.finditer(f.read_text()):
+            for m in gone.finditer(f.read_text(encoding="utf-8")):
                 self.fail(f"{f.name}: still describes the old plan of two downloads: {m.group(0)!r}")
+
+    def test_the_app_asks_for_the_microphone_in_words_that_cover_the_daw_if_it_is_added(self):
+        sh = (ROOT / "packaging/mac/build_dmg.sh").read_text(encoding="utf-8")                # only read as text: no shell needed
+        self.assertIn("NSMicrophoneUsageDescription</key><string>$mictext", sh)
+        self.assertRegex(sh, r'mictext="[^"]*HypnoMix DAW[^"]*records from the audio input')
+        self.assertNotIn("HypnomixEdition", sh)
 
     def test_setup_has_no_download_step_and_asks_which_daw(self):
         from hypnomix.app import setup as SU
         self.assertFalse(hasattr(SU, "DOWNLOADS") or hasattr(SU, "downloads"))
         self.assertEqual([d["id"] for d in SU.DAWS], ["live", "reaper", "hypnomix", "other"])
-        js = (ROOT / "hypnomix/app/setup.js").read_text()
+        js = (ROOT / "hypnomix/app/setup.js").read_text(encoding="utf-8")
         for gone in ("pickDownload", "Which Hypnomix do you want", "data-edition"):
             self.assertNotIn(gone, js)
         self.assertIn("Add HypnoMix DAW", js)
@@ -214,7 +214,7 @@ class DownloadWording(unittest.TestCase):
 
     def test_the_licence_is_stated_where_the_engine_is_described(self):
         for f in ("THIRD_PARTY.md", "packaging/README.md", "hypnomix/app/wiki/articles/20-install.html", "hypnomix/app/wiki/articles/18-setup.html"):
-            t = " ".join(re.sub(r"<[^>]+>", " ", (ROOT / f).read_text()).split())
+            t = " ".join(re.sub(r"<[^>]+>", " ", (ROOT / f).read_text(encoding="utf-8")).split())
             self.assertRegex(t, r"GNU General Public License", f)
             self.assertRegex(t, r"HypnoMix DAW" if "/wiki/" in f else r"Ardour", f)      # Ardour is named only where the disclosure belongs
             self.assertIn("source will be published with the first release that includes the engine", t, f)
@@ -223,12 +223,12 @@ class DownloadWording(unittest.TestCase):
     def test_what_is_true_today_is_said_plainly(self):
         for f in ("README.md", "docs/APP.md", "packaging/README.md", "hypnomix/app/wiki/articles/18-setup.html",
                   "hypnomix/app/wiki/articles/20-install.html", "hypnomix/app/wiki/articles/18-daw.html"):
-            t = " ".join(re.sub(r"<[^>]+>", " ", (ROOT / f).read_text()).split())
+            t = " ".join(re.sub(r"<[^>]+>", " ", (ROOT / f).read_text(encoding="utf-8")).split())
             self.assertRegex(t, r"(?i)not available yet", f)
             self.assertRegex(t, r"(?i)one (app|download|installer)", f)
 
     def test_what_was_not_verified_is_said_plainly(self):
-        t = " ".join((ROOT / "packaging/README.md").read_text().split())
+        t = " ".join((ROOT / "packaging/README.md").read_text(encoding="utf-8").split())
         for word in ("real sound card", "recording", "native File menu", "disk image", "signing", "Intel"):
             self.assertIn(word, t)
 
@@ -238,7 +238,7 @@ class DownloadWording(unittest.TestCase):
             c = Path(td).resolve() / "Hypnomix.app" / "Contents"
             (c / "MacOS").mkdir(parents=True)
             eng = c / "MacOS" / "hypnomix-engine"
-            eng.write_text("x"); eng.chmod(0o755)
+            eng.write_text("x", encoding="utf-8"); eng.chmod(0o755)
             py = c / "Resources" / "python" / "bin" / "python3"
             with mock.patch.object(daw.sys, "executable", str(py)), mock.patch.dict(os.environ, {"HYPNOMIX_ENGINE": ""}), \
                     mock.patch.object(daw, "_conf", lambda: {}):
@@ -250,15 +250,15 @@ class DownloadWording(unittest.TestCase):
         from hypnomix.app import setup as SU
         with tempfile.TemporaryDirectory() as td, mock.patch.object(SU, "STATE", Path(td) / "setup.json"):
             self.assertFalse(SU.is_done())
-            SU.STATE.write_text('{"done": true, "version": %d}' % SU.VERSION)
+            SU.STATE.write_text('{"done": true, "version": %d}' % SU.VERSION, encoding="utf-8")
             self.assertTrue(SU.is_done())
-            SU.STATE.write_text('{"done": true, "version": 0}')
+            SU.STATE.write_text('{"done": true, "version": 0}', encoding="utf-8")
             self.assertFalse(SU.is_done())                            # an older setup that gained a step is shown again
-        server = (ROOT / "hypnomix/app/server.py").read_text()
+        server = (ROOT / "hypnomix/app/server.py").read_text(encoding="utf-8")
         self.assertIn('"true" if DW.STATE["daw"] and SU.is_done() else "false"', server)
 
     def test_the_update_banner_says_plainly_a_release_has_no_installer_for_this_computer(self):
-        js = (ROOT / "hypnomix/app/update.js").read_text()
+        js = (ROOT / "hypnomix/app/update.js").read_text(encoding="utf-8")
         self.assertIn("U.no_download", js)
         self.assertIn("has no installer for this computer yet", js)
         self.assertNotIn("no_full_download", js)

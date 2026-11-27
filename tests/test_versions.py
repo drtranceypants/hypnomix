@@ -106,7 +106,7 @@ class Versions(unittest.TestCase):
         self.assertEqual([p.name for p in self.out.iterdir()], ["My Song (versions)"])        # no partial left
 
     def test_null_test_says_the_stems_add_up(self):
-        j = json.loads((self.folder / "versions.json").read_text())
+        j = json.loads((self.folder / "versions.json").read_text(encoding="utf-8"))
         self.assertEqual(j["null"]["verdict"], "add up")
         self.assertLess(j["null"]["residual_db"], -100)          # the mix IS the sum, to 24-bit rounding
         self.assertIn("null test", self.text)
@@ -123,7 +123,7 @@ class Versions(unittest.TestCase):
         inst = self.st["Drums"] + self.st["Bass"] + self.st["Pad"]
         for kind, want in (("instrumental", inst), ("a cappella", voc), ("TV mix", inst + voc * dsp.undb(-6))):
             y, _ = load(self.folder / f"My Song ({kind}).wav")
-            j = json.loads((self.folder / "versions.json").read_text())
+            j = json.loads((self.folder / "versions.json").read_text(encoding="utf-8"))
             g = next(v for v in j["versions"] if v["kind"] == kind)["gain_db"]
             ref = want * dsp.undb(g)
             fit = float(np.sum(y * ref) / np.sum(ref * ref))          # the gain in the report is rounded to 0.01 dB
@@ -137,7 +137,7 @@ class Versions(unittest.TestCase):
         self.assertLess(abs(float(np.corrcoef(i[:, 0], a[:, 0])[0, 1])), 0.2)       # different audio, not two copies
 
     def test_every_version_is_gain_matched_to_the_mix_with_gain_only(self):
-        j = json.loads((self.folder / "versions.json").read_text())
+        j = json.loads((self.folder / "versions.json").read_text(encoding="utf-8"))
         mix_l = j["mix"]["lufs"]
         for v in j["versions"]:
             if v["kind"] == "radio edit":
@@ -151,7 +151,7 @@ class Versions(unittest.TestCase):
         self.assertIn("gain only", md)
 
     def test_radio_edit_is_the_mix_minus_the_cuts_to_the_sample(self):
-        j = json.loads((self.folder / "versions.json").read_text())
+        j = json.loads((self.folder / "versions.json").read_text(encoding="utf-8"))
         cut = j["cuts"][0]
         self.assertTrue(cut["snapped"])
         self.assertAlmostEqual(cut["start"], 4.0, delta=0.06)           # 3.2 s snapped to the bar line at 4.0
@@ -171,7 +171,7 @@ class Versions(unittest.TestCase):
         for needle in ("Do the stems add up to the mix?", "ADD UP", "Lead Vox.wav", "bar lines found from the audio", "Drums.wav", "release checks",
                        "removed 0:04.0", "you asked for 0:03.20-0:07.90", "What each check found", "My Song (TV mix).wav"):
             self.assertIn(needle, md)
-        j = json.loads((self.folder / "versions.json").read_text())
+        j = json.loads((self.folder / "versions.json").read_text(encoding="utf-8"))
         for v in j["versions"]:
             self.assertIn(v["qc"]["status"], ("PASS", "WARN", "FAIL"))
 
@@ -283,7 +283,7 @@ class Radio(unittest.TestCase):
             self.assertIn("cut from all the stems added up", (f / "VERSIONS.md").read_text(encoding="utf-8"))
             e = sf.info(str(f / "Song (radio edit).wav"))
             self.assertAlmostEqual(e.frames / SR, SECONDS - 4.0, delta=1 / SR)
-            j = json.loads((f / "versions.json").read_text())
+            j = json.loads((f / "versions.json").read_text(encoding="utf-8"))
             self.assertIsNone(j["null"])
             self.assertTrue(all("no gain change" in v["gain_note"] or "turned down" in v["gain_note"] for v in j["versions"]))
 
@@ -360,7 +360,7 @@ class CheckAndRefusals(unittest.TestCase):
 
     def test_a_file_that_is_not_audio_gets_a_clean_message(self):
         junk = self.root / "junk.wav"
-        junk.write_text("not audio")
+        junk.write_text("not audio", encoding="utf-8")
         code, text = run(["--stems", self.dir, "--vocals", "Lead*,Harm*", "--mix", junk, "--check"])
         self.assertEqual(code, 1)
         self.assertIn("can't read junk.wav as audio: not an audio file HypnoMix can", text)
@@ -369,7 +369,7 @@ class CheckAndRefusals(unittest.TestCase):
         self.assertNotIn("Traceback", text)
 
     def test_help_is_the_docstring(self):
-        r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "versions", "-h"], capture_output=True, text=True)
+        r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "versions", "-h"], capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0)
         self.assertIn("NULL TEST", r.stdout)
         self.assertIn("--vocals", r.stdout)

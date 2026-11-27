@@ -38,9 +38,9 @@ class Where(unittest.TestCase):
     def test_out_is_new_and_numbered(self):
         with tempfile.TemporaryDirectory() as td:
             s = Path(td) / "Song.ardour"
-            s.write_text("<Session/>")
+            s.write_text("<Session/>", encoding="utf-8")
             self.assertEqual(DR.out_for(s).name, "Song (hypnomix).ardour")
-            (Path(td) / "Song (hypnomix).ardour").write_text("x")
+            (Path(td) / "Song (hypnomix).ardour").write_text("x", encoding="utf-8")
             self.assertEqual(DR.out_for(s).name, "Song (hypnomix 2).ardour")
             self.assertEqual(DR.out_for(Path(td) / "Song (hypnomix).ardour").name, "Song (hypnomix 2).ardour")
 
@@ -86,7 +86,7 @@ class Routes(unittest.TestCase):
         self.home = Path(self.td.name).resolve()
         self.sess = self.home / "Song" / "Song.ardour"
         self.sess.parent.mkdir()
-        self.sess.write_text("<Session/>")
+        self.sess.write_text("<Session/>", encoding="utf-8")
         self.env = mock.patch.dict("os.environ", {"HYPNOMIX_APP_HOME": str(self.home / "app")})
         self.env.start()
         self.eng = FakeEngine(self.sess)
@@ -121,7 +121,7 @@ class Routes(unittest.TestCase):
         mix = Path(r["dir"]) / DR.MIX_NAME
         self.assertTrue(mix.exists())
         self.assertEqual(steps[2][1], ["scan", str(self.sess), "--out", r["dir"], "--mix", str(mix)])
-        self.assertEqual(json.loads((Path(r["dir"]) / "daw-session.json").read_text())["session"], str(self.sess))
+        self.assertEqual(json.loads((Path(r["dir"]) / "daw-session.json").read_text(encoding="utf-8"))["session"], str(self.sess))
 
     def test_a_scan_of_a_saved_session_saves_nothing(self):
         self.eng.reported_dirty = False
@@ -153,7 +153,7 @@ class Routes(unittest.TestCase):
                    applies="set", edit=dict(op="dip", t0=2.0, t1=2.3, db=6.0), problem="a burst", fix="a dip"),
               dict(id="tune-Vocals", tool="tune", severity="medium", track="Vocals", where="whole take", applies="audio",
                    problem="off", fix="tune")]
-        (d / "findings.json").write_text(json.dumps(dict(set=str(self.sess), notes=[], findings=fs)))
+        (d / "findings.json").write_text(json.dumps(dict(set=str(self.sess), notes=[], findings=fs)), encoding="utf-8")
         return d
 
     def test_decide_apply_and_refusals(self):
@@ -161,13 +161,13 @@ class Routes(unittest.TestCase):
         post = lambda path, body: DR.handle_post(SV, path, dict(body, dir=str(d)))[1]
         post("/api/dawreview/decide", dict(id="clips-1", decision="approve"))
         post("/api/dawreview/decide", dict(id="tune-Vocals", decision="change", note="gentler"))
-        dec = json.loads((d / "decisions.json").read_text())
+        dec = json.loads((d / "decisions.json").read_text(encoding="utf-8"))
         self.assertEqual(dec["clips-1"]["decision"], "approve")
         self.assertEqual(dec["tune-Vocals"]["note"], "gentler")
         with self.assertRaises(ValueError):           # tuning is not written into an Ardour session: no Approve
             post("/api/dawreview/decide", dict(id="tune-Vocals", decision="approve"))
         post("/api/dawreview/decide", dict(id="tune-Vocals", decision="clear"))
-        self.assertNotIn("tune-Vocals", json.loads((d / "decisions.json").read_text()))
+        self.assertNotIn("tune-Vocals", json.loads((d / "decisions.json").read_text(encoding="utf-8")))
         r = post("/api/dawreview/apply", {})
         kind, steps, _ = self.runs[-1]
         self.assertEqual(kind, "fix")
@@ -189,7 +189,7 @@ class SnapshotWrite(unittest.TestCase):
             real = ET.ElementTree.write
 
             def half(self, path, *a, **k):
-                Path(path).write_text("<?xml version='1.0'?><Session")      # cut off, then the disk is full
+                Path(path).write_text("<?xml version='1.0'?><Session", encoding="utf-8")      # cut off, then the disk is full
                 raise OSError(28, "No space left on device")
             with mock.patch.object(ET.ElementTree, "write", half):
                 with self.assertRaises(OSError):

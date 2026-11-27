@@ -167,7 +167,7 @@ class Reaper(unittest.TestCase):
         y = (np.arange(3 * SR) / (3 * SR)).astype(np.float32)
         sf.write(self.dir / "Audio" / "lead.wav", y, SR, subtype="FLOAT")
         self.song = self.dir / "Song.rpp"
-        self.song.write_text(RPP)
+        self.song.write_bytes(RPP.encode("utf-8"))      # text mode would turn each \n into \r\n on Windows, and the parser keeps the file's own line ends
 
     def tearDown(self):
         self._td.cleanup()
@@ -185,7 +185,7 @@ class Reaper(unittest.TestCase):
         with self.assertRaises(SystemExit):
             rpp.save(root, self.song)          # never over the original
         root.chunks("TRACK")[1].set("VOLPAN", 0.7, -0.25, -1, -1, 1)
-        txt = rpp.save(root, self.dir / "Song (fixed).rpp").read_text()
+        txt = rpp.save(root, self.dir / "Song (fixed).rpp").read_text(encoding="utf-8")
         self.assertIn("    VOLPAN 0.7 -0.25 -1 -1 1", txt)
         self.assertEqual(txt.count("\n"), RPP.count("\n"))
 
@@ -254,7 +254,7 @@ class Reaper(unittest.TestCase):
   >
 >
 """
-        (self.dir / "x.rpp").write_text(txt)
+        (self.dir / "x.rpp").write_text(txt, encoding="utf-8")
         p = project.load(self.dir / "x.rpp")
         c = p.tracks[0].clips[0]
         self.assertEqual(c.fade_in_shape, 6)              # shape 6 is saved as 5.1
@@ -337,7 +337,7 @@ class Reaper(unittest.TestCase):
         root = rpp.parse(txt)
         guitar = root.chunks("TRACK")[3]
         guitar.add(rpp.Line(["AUXRECV", 1, 0, 0.5, 0, 0, 0, 0, 0, 0, "-1:U", 0, -1, "''"]))   # a send from Lead Vocal
-        (self.dir / "S.rpp").write_text(rpp.dumps(root))
+        (self.dir / "S.rpp").write_text(rpp.dumps(root), encoding="utf-8")
         p = project.load(self.dir / "S.rpp")
         E.reorder(p, [3, 0, 1, 2])                          # Guitar to the top; the folder block keeps its tracks
         out = self.dir / "S (fixed).rpp"
@@ -395,7 +395,7 @@ class Reaper(unittest.TestCase):
                          track("Harmony 1", "0 0", 0.5, [247, 247, 294], "    FREEMODE 2\n" if lanes else ""),
                          track("Harmony 2", "2 -1", 1.0, [294, 294, 247]), ">", ""])
         path = self.dir / ("Stack lanes.rpp" if lanes else "Stack.rpp")
-        path.write_text(txt)
+        path.write_text(txt, encoding="utf-8")
         p = project.load(path)
         orow = [dict(id=str(t.index), kind="Group" if t.kind == "folder" else "Audio", cat=3,
                      parent=str(t.parent.index) if t.parent else None) for t in p.tracks]
@@ -505,7 +505,7 @@ class Reaper(unittest.TestCase):
                '    <FXCHAIN\n      BYPASS 0 0 0\n      <VST "VST: ReaComp (Cockos)" reacomp.vst.dylib 0 "" 1919247213<5653547265636D726561636F6D700000> ""\n'
                f'        {hdr}\n        {state}\n        AAAQAAAA\n      >\n    >\n  >\n>\n')
         path = self.dir / "Sc.rpp"
-        path.write_text(txt)
+        path.write_text(txt, encoding="utf-8")
         p = project.load(path)
         found = SCP.find(p)
         self.assertEqual(len(found), 1)
@@ -525,7 +525,7 @@ class Reaper(unittest.TestCase):
         from hypnomix.project import rpp_edit as E
         out = self.dir / "Sc (fixed).rpp"
         E.save(p, out)
-        before, after = path.read_text().splitlines(), out.read_text().splitlines()
+        before, after = path.read_text(encoding="utf-8").splitlines(), out.read_text(encoding="utf-8").splitlines()
         self.assertEqual([k for k, (a, b) in enumerate(zip(before, after)) if a != b], [after.index(next(l for l in after if l.strip().startswith("776t3g3w")))])
         back = SCP.settings(SCP.find(project.load(out))[0]["state"].vals)
         self.assertAlmostEqual(back["threshold_db"], -5.7, places=2)

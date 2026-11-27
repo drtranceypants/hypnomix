@@ -49,7 +49,7 @@ class Base(unittest.TestCase):
         env.pop("HYPNOMIX_DEBUG", None)
         env.pop("HYPNOMIX_OUT", None)
         r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True,
-                           cwd=str(self.td), env=env)
+                           cwd=str(self.td), env=env, encoding="utf-8")
         return r.returncode, r.stdout, r.stderr
 
     def wav(self, name, y, sr=SR, subtype="FLOAT"):
@@ -168,8 +168,8 @@ class Commands(Base):
             self.assertNotIn("Traceback", err)
             self.assertIn("skipped empty.wav: it has no audio in it", err, cmd[0])
             self.assertIn("skipped six.wav: it has 6 channels", err, cmd[0])
-        self.assertIn("| bass |", (self.td / "st.md").read_text())
-        self.assertNotIn("| six |", (self.td / "st.md").read_text())          # no table row of invented numbers
+        self.assertIn("| bass |", (self.td / "st.md").read_text(encoding="utf-8"))
+        self.assertNotIn("| six |", (self.td / "st.md").read_text(encoding="utf-8"))          # no table row of invented numbers
         os.remove(folder / "bass.wav"); os.remove(folder / "keys.wav"); os.remove(folder / "vox.wav")
         rc, _, err = self.hx("masking", folder)                             # one usable stem left: nothing to compare
         self.assertEqual(rc, 1, err)
@@ -214,18 +214,21 @@ class Commands(Base):
         self.assertEqual(len(list(out.glob("*.wav"))), 1)
 
 
-@unittest.skipIf(sys.platform == "win32" or (hasattr(os, "geteuid") and os.geteuid() == 0), "needs a folder this user cannot write")
 class UnwritableOut(Base):
+    """A place nothing can be written under: a FILE where the folder would be, so the same sentence is asked for on every system
+    and for every user (a read-only folder is no obstacle to root, and Windows has no such bits)."""
     def setUp(self):
         super().setUp()
         self.ro = self.td / "ro"
-        self.ro.mkdir()
-        os.chmod(self.ro, 0o555)
+        self.make_blocker()
         self.song = self.wav("song.wav", np.stack([tone(), tone() * 0.8], axis=1))
         self.stems = self.td / "stems"
         self.stems.mkdir()
         for n in ("bass", "keys", "vox", "drums"):
             sf.write(str(self.stems / f"{n}.wav"), np.stack([tone(), tone()], axis=1), SR)
+
+    def make_blocker(self):
+        self.ro.write_text("a file where a folder was expected", encoding="utf-8")        # the 'part of that path is a file' sentence
 
     def check(self, rc, out, err, target):
         self.assertEqual(rc, 2, err)
@@ -269,11 +272,12 @@ class UnwritableOut(Base):
             paths.check_out(self.ro / "x" / "y")
         self.assertEqual(cm.exception.code, 2)
         blocker = self.td / "afile"
-        blocker.write_text("x")
+        blocker.write_text("x", encoding="utf-8")
         with self.assertRaises(SystemExit):
             paths.out_at(str(blocker / "sub"))                  # a path through a file, not a folder
 
     @_isolate.POSIX_MODES
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "SKIPPED: root can read a file with no permissions, so this test was NOT run")
     def test_a_late_permission_error_is_still_one_sentence(self):
         msg = cli._audio_read_message(PermissionError(13, "Permission denied", str(self.ro / "late.md")))
         self.assertIn("can't write to", msg)
@@ -287,6 +291,18 @@ class UnwritableOut(Base):
             os.chmod(unreadable, 0o644)
         self.assertIn("can't read", msg)                        # an unreadable INPUT is not blamed on --out
         self.assertIsNone(cli._audio_read_message(KeyError("x")))
+
+
+@_isolate.POSIX_MODES
+@unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "SKIPPED: root can write into a read-only folder, so this test was NOT run")
+class UnwritableFolderOut(UnwritableOut):
+    """The same commands and the same sentence, with a READ-ONLY FOLDER in the way (chmod 0o555): paths.check_out takes its
+    permission branch here, where a file in the way takes its 'part of that path is a file' branch. Every test is inherited."""
+    def make_blocker(self):
+        self.ro.mkdir()
+        os.chmod(self.ro, 0o555)                                # Base's cleanup puts the mode back before it deletes the folder
+
+    test_a_late_permission_error_is_still_one_sentence = None    # does not use the folder: it runs once, in UnwritableOut
 
 
 class Distortion(unittest.TestCase):

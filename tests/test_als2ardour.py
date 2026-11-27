@@ -158,7 +158,7 @@ class ConstantRatio(unittest.TestCase):
             p = make_set(td, extra=fast)
             f, rep, w = X.convert(p, td / "S", log=lambda *a: None)
             self.assertEqual(len(w.report["warped"]), 1)
-            self.assertIn("Plain constant ratio (1)", rep.read_text())
+            self.assertIn("Plain constant ratio (1)", rep.read_text(encoding="utf-8"))
             s = ardour.read(f)
             c = s.track("Fast").clips[0]
             self.assertIn("(x1.2500)", c.take.path.name)
@@ -297,7 +297,7 @@ class Als2Ardour(unittest.TestCase):
         self.assertAlmostEqual(ramp.seconds(4), 60 / 15 * math.log(2), places=9)   # integral of 60/bpm over a ramp
 
     def test_report_lists_what_is_not_carried(self):
-        r = self.rep.read_text()
+        r = self.rep.read_text(encoding="utf-8")
         self.assertIn("Compressor", r)                          # the Lead's device, listed
         self.assertIn("EQ Eight", r)
         self.assertIn("Limiter", r)                             # the main track's
@@ -379,12 +379,12 @@ class NoClobber(unittest.TestCase):
         d = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, d, ignore_errors=True)
         (d / "junk.als").write_bytes(b"not a set")
-        (d / "afile").write_text("x")
+        (d / "afile").write_text("x", encoding="utf-8")
         with self.assertRaises(SystemExit):
             X.convert(d / "junk.als", d / "o" / "S")
         self.assertFalse((d / "o").exists())
         (d / "p").mkdir()
-        (d / "p" / "plain.als").write_text('<?xml version="1.0"?><Ableton><LiveSet><Tracks/></LiveSet></Ableton>')
+        (d / "p" / "plain.als").write_text('<?xml version="1.0"?><Ableton><LiveSet><Tracks/></LiveSet></Ableton>', encoding="utf-8")
         with self.assertRaises(SystemExit):
             X.convert(d / "p" / "plain.als", d / "afile")
         f, _, _ = X.convert(d / "p" / "plain.als", d / "o" / "S")
@@ -440,7 +440,7 @@ class DroppedFeaturesAreListed(unittest.TestCase):
                   .replace('<MidiNoteEvent Time="0" Duration="0.5"', '<MidiNoteEvent Probability="0.5" Time="0" '
                            'Duration="0.5"', 1))
         cls.f, cls.rep, cls.w = _convert(als, d / "Out")
-        cls.text = cls.rep.read_text()
+        cls.text = cls.rep.read_text(encoding="utf-8")
 
     @classmethod
     def tearDownClass(cls):
@@ -521,7 +521,7 @@ class RampsAndMidi(unittest.TestCase):
             self.assertAlmostEqual(sc1 / 282240000, t_ard, delta=2e-6)    # what is written is what Ardour computes
         live = X.Tempo(BPM, [(0, 100), (16, 100), (16, 140), (32, 140), (48, 70)])
         self.assertAlmostEqual(t_ard, live.seconds(q(tp[-1][2])), delta=2e-4)    # and Live's own seconds
-        text = rep.read_text()
+        text = rep.read_text(encoding="utf-8")
         self.assertIn("Tempo ramps (bar 9 to bar 13 (140 to 70 BPM))", text)     # the bars are named
         err = float(text.split("up to ")[1].split(" ms")[0])
         self.assertLess(err, 1.0)
@@ -597,13 +597,13 @@ class Hostile(unittest.TestCase):
         import re
         _edit_set(als, lambda x: re.sub(r'<CurrentEnd Value="[^"]*"/>', "", x, count=1))
         f, rep, w = _convert(als, self.td / "S")
-        self.assertIn("no readable start or end", rep.read_text())
+        self.assertIn("no readable start or end", rep.read_text(encoding="utf-8"))
 
     def test_not_a_number_is_never_written(self):
         als = make_set(self.td)
         _edit_set(als, lambda x: x.replace('<SampleVolume Value="0.5"/>', '<SampleVolume Value="nan"/>', 1))
         f, _, _ = _convert(als, self.td / "S")
-        txt = f.read_text()
+        txt = f.read_text(encoding="utf-8")
         self.assertNotIn("nan", txt.lower().replace("name", "").replace("nano", ""))
         self.assertNotIn("inf", txt.lower().replace("info", "").replace("inform", ""))
 
@@ -612,7 +612,7 @@ class Hostile(unittest.TestCase):
         from hypnomix.core import gz
         from hypnomix.project import als2ardour as X
         p = self.td / "big.als"
-        p.write_text('<?xml version="1.0"?><Ableton><LiveSet><Tracks/></LiveSet></Ableton>' + " " * 5000)
+        p.write_text('<?xml version="1.0"?><Ableton><LiveSet><Tracks/></LiveSet></Ableton>' + " " * 5000, encoding="utf-8")
         with mock.patch.object(gz, "CAP", 1000):
             with self.assertRaises(SystemExit) as cm:
                 X.load_xml(p)
@@ -633,12 +633,12 @@ class Hostile(unittest.TestCase):
             f, rep, w = _convert(als, self.td / "S")
         self.assertIn("Live 99.1", err.getvalue())
         self.assertTrue(f.exists())
-        self.assertIn("saved by Live 99.1", rep.read_text())
+        self.assertIn("saved by Live 99.1", rep.read_text(encoding="utf-8"))
 
     def test_a_text_file_with_a_raw_audio_name_is_not_copied(self):
         secret = self.td / "secret"
         secret.mkdir()
-        (secret / "hist.sw").write_text("password=hunter2 api_key=abc123 ssh-rsa AAAAB3Nza\n" * 400)
+        (secret / "hist.sw").write_text("password=hunter2 api_key=abc123 ssh-rsa AAAAB3Nza\n" * 400, encoding="utf-8")
         als = make_set(self.td, _audio_track(40, "Sneaky", _clip(41, 0, 2, secret / "hist.sw"), 700,
                                              out="AudioOut/Main"))
         f, rep, w = _convert(als, self.td / "S", 44100)
@@ -646,8 +646,8 @@ class Hostile(unittest.TestCase):
         self.assertNotIn("hist.wav", [x.name for x in audio.iterdir()])
         self.assertEqual([x for x in audio.iterdir() if b"hunter2" in x.read_bytes()[:200000]
                           or b"password" in x.read_bytes()], [])
-        self.assertIn("hist.sw", rep.read_text())                          # listed as unreadable
-        self.assertIn("not an audio file", rep.read_text())
+        self.assertIn("hist.sw", rep.read_text(encoding="utf-8"))                          # listed as unreadable
+        self.assertIn("not an audio file", rep.read_text(encoding="utf-8"))
 
     def test_container_check_goes_by_the_contents(self):
         from hypnomix.project import als2ardour as X
@@ -681,7 +681,7 @@ class Hostile(unittest.TestCase):
     def test_samples_outside_the_project_folder_are_listed(self):
         als = make_set(self.td)                       # make_set keeps its audio next to the project folder, not in it
         f, rep, w = _convert(als, self.td / "S")
-        text = rep.read_text()
+        text = rep.read_text(encoding="utf-8")
         self.assertIn("Samples from outside the Live project folder", text)
         self.assertIn("vox.wav", text)
         inside = self.td / "Song Project" / "Samples"
@@ -691,7 +691,7 @@ class Hostile(unittest.TestCase):
         _edit_set(als2, lambda x: x.replace(str(self.td / "vox.wav"), str(inside / "inner.wav")).replace(
             str(self.td / "gtr.wav"), str(inside / "inner.wav")).replace(str(self.td / "slow.wav"), str(inside / "inner.wav")))
         f, rep, w = _convert(als2, self.td / "S2")
-        self.assertNotIn("Samples from outside the Live project folder", rep.read_text())
+        self.assertNotIn("Samples from outside the Live project folder", rep.read_text(encoding="utf-8"))
 
     def test_long_names_are_cut(self):
         long_ = "a" * 200
@@ -707,7 +707,7 @@ class Hostile(unittest.TestCase):
         for sub_ in ("audiofiles", "midifiles"):
             for x in (self.td / "S" / "interchange" / "S" / sub_).iterdir():
                 self.assertLessEqual(len(x.name.encode()), 140, x.name)
-        self.assertIn("(here: ", rep.read_text())                              # the full Live name stays in the report
+        self.assertIn("(here: ", rep.read_text(encoding="utf-8"))                              # the full Live name stays in the report
 
     def test_memory_stays_small_for_a_long_file(self):
         import tracemalloc
@@ -760,7 +760,7 @@ class MoreDroppedFeatures(unittest.TestCase):
         from hypnomix.project import als2ardour as X
         als = self._make(self.td)
         f, rep, w = _convert(als, self.td / "Out")
-        text = rep.read_text()
+        text = rep.read_text(encoding="utf-8")
         self.assertIn("Split stereo pan is NOT carried (1)", text)
         self.assertIn("Lead: left channel panned -0.50, right channel +0.75", text)
         self.assertIn("Grooves are NOT carried (2)", text)
@@ -777,7 +777,7 @@ class MoreDroppedFeatures(unittest.TestCase):
 
     def test_a_groove_the_set_does_not_play_is_not_listed(self):
         _, rep, _ = _convert(self._make(self.td, groove_amount=0), self.td / "Out")      # the global groove amount is 0
-        text = rep.read_text()
+        text = rep.read_text(encoding="utf-8")
         self.assertNotIn("Grooves are NOT carried", text)
         self.assertIn("Split stereo pan is NOT carried", text)
 
@@ -856,6 +856,15 @@ class AdtsAndOutdir(unittest.TestCase):
             os.chmod(ro, 0o755)
         self.assertIn("cannot be created here", str(cm.exception))
 
+    def test_a_new_folder_under_a_file_is_one_sentence_too(self):
+        """The same sentence where no permission bits exist (Windows) and for root: the parent is a file, not a folder."""
+        als = make_set(self.td)
+        blocker = self.td / "ro"
+        blocker.write_text("x", encoding="utf-8")
+        with self.assertRaises(SystemExit) as cm:
+            _convert(als, blocker / "Sess")
+        self.assertIn("cannot be created here", str(cm.exception))
+
     def test_a_failed_run_takes_the_parent_folders_it_made_away_again(self):
         from unittest import mock
         from hypnomix.project import als2ardour as X
@@ -892,7 +901,7 @@ class Meters(unittest.TestCase):
             m = root.find(".//Meter")
             self.assertEqual((m.get("divisions-per-bar"), m.get("note-value")), (num, den))
             self.assertEqual([t.get("bbt") for t in root.iter("Tempo")][1], bbt)         # the step at beat 16
-            self.assertIn(f"{num}/{den}", rep.read_text())
+            self.assertIn(f"{num}/{den}", rep.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

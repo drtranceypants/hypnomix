@@ -12,7 +12,7 @@ APP = Path(__file__).resolve().parents[1] / "hypnomix" / "app"
 
 
 def src(name):
-    return (APP / name).read_text()
+    return (APP / name).read_text(encoding="utf-8")
 
 
 class GuiServer(unittest.TestCase):
@@ -63,15 +63,15 @@ class GuiServer(unittest.TestCase):
     def scan(self, name, source, findings, dec=None, mode="set", **meta):
         d = self.work / "scan" / name
         (d / "ab").mkdir(parents=True)
-        (d / "findings.json").write_text(json.dumps(dict(set=str(source), notes=[], findings=findings)))
-        (d / "scan.json").write_text(json.dumps(dict(dict(set=str(source), mode=mode), **meta)))
+        (d / "findings.json").write_text(json.dumps(dict(set=str(source), notes=[], findings=findings)), encoding="utf-8")
+        (d / "scan.json").write_text(json.dumps(dict(dict(set=str(source), mode=mode), **meta)), encoding="utf-8")
         if dec is not None:
-            (d / "decisions.json").write_text(json.dumps(dec))
+            (d / "decisions.json").write_text(json.dumps(dec), encoding="utf-8")
         return d
 
     def source(self, name, text="x"):
         p = self.music / name
-        p.write_text(text)
+        p.write_text(text, encoding="utf-8")
         return p
 
     def songs(self):
@@ -88,12 +88,12 @@ class GuiServer(unittest.TestCase):
     def test_a_run_that_wrote_nothing_does_not_mark_the_song_applied(self):
         als = self.source("Song.als")
         d = self.scan("Song", als, [F("smooth-1")], {"smooth-1": {"decision": "approve"}})
-        (d / "fix-log.md").write_text("\n## fix run now\n\n### FAILED (not done)\n\n- tune-Vox: not tuned\n")      # every run appends here, even one that wrote nothing
+        (d / "fix-log.md").write_text("\n## fix run now\n\n### FAILED (not done)\n\n- tune-Vox: not tuned\n", encoding="utf-8")      # every run appends here, even one that wrote nothing
         (d / "history").mkdir()
-        (d / "history" / "history.json").write_text(json.dumps({"versions": [dict(n=1, kind="fix", input=str(als), output=None, approved=[dict(id="smooth-1")], failed=["tune-Vox: x"])]}))
+        (d / "history" / "history.json").write_text(json.dumps({"versions": [dict(n=1, kind="fix", input=str(als), output=None, approved=[dict(id="smooth-1")], failed=["tune-Vox: x"])]}), encoding="utf-8")
         self.assertFalse(self.songs()["Song"]["applied"])
         new = self.source("Song (fixed).als")
-        (d / "history" / "history.json").write_text(json.dumps({"versions": [dict(n=1, kind="fix", input=str(als), output=str(new), approved=[dict(id="smooth-1")], failed=[])]}))
+        (d / "history" / "history.json").write_text(json.dumps({"versions": [dict(n=1, kind="fix", input=str(als), output=str(new), approved=[dict(id="smooth-1")], failed=[])]}), encoding="utf-8")
         self.assertTrue(self.songs()["Song"]["applied"])                                    # a new file the run made, still there
         new.unlink()
         self.assertFalse(self.songs()["Song"]["applied"])                                   # gone: nothing is applied any more
@@ -102,10 +102,10 @@ class GuiServer(unittest.TestCase):
         stems = self.music / "Stems"
         stems.mkdir()
         d = self.scan("Stems", stems, [F("clip-1", "repair", "clip", applies="audio")], {"clip-1": {"decision": "approve"}}, mode="folder")
-        (d / "fix-log.md").write_text("\n## fix run now\n")
+        (d / "fix-log.md").write_text("\n## fix run now\n", encoding="utf-8")
         self.assertFalse(self.songs()["Stems"]["applied"])
         (d / "fixed").mkdir()
-        (d / "fixed" / "Bass.wav").write_text("x")
+        (d / "fixed" / "Bass.wav").write_text("x", encoding="utf-8")
         self.assertTrue(self.songs()["Stems"]["applied"])
 
     def test_a_failed_apply_that_wrote_nothing_says_so_and_lists_no_spots_to_listen_at(self):
@@ -113,10 +113,10 @@ class GuiServer(unittest.TestCase):
         d = self.scan("Song", als, [F("smooth-1", where="12.3.50"), F("tune-Vox", "tune", "pitch", applies="audio")],
                       {"smooth-1": {"decision": "approve"}, "tune-Vox": {"decision": "approve"}})
         (d / "fix-log.md").write_text("\n## fix run now\n\napproved: smooth-1, tune-Vox\n\n### FAILED (not done)\n\n"
-                                      "- tune-Vox: not tuned: confirm the key with the person, then pass --key \"<key>\" (the scan estimated None)\n")
+                                      "- tune-Vox: not tuned: confirm the key with the person, then pass --key \"<key>\" (the scan estimated None)\n", encoding="utf-8")
         (d / "history").mkdir()
         (d / "history" / "history.json").write_text(json.dumps({"versions": [dict(
-            n=1, kind="fix", at="2026-11-26 10:00:00", input=str(als), output=None, approved=[dict(id="smooth-1"), dict(id="tune-Vox")], failed=["x"])]}))
+            n=1, kind="fix", at="2026-11-26 10:00:00", input=str(als), output=None, approved=[dict(id="smooth-1"), dict(id="tune-Vox")], failed=["x"])]}), encoding="utf-8")
         self.S.JOB.update(id=3, status="failed", kind="fix", dir=str(d.resolve()), files=[], stopped=False,
                           reason=self.S.app_words('tune-Vox: not tuned: confirm the key with the person, then pass --key "<key>" (the scan estimated None)'),
                           log=["$ hypnomix fix", "FAILED (not done):"])
@@ -134,9 +134,9 @@ class GuiServer(unittest.TestCase):
         als = self.source("Song.als")
         new = self.source("Song (fixed).als")
         d = self.scan("Song", als, [F("order-1", "order", "track-order", where=""), F("tune-Vox", "tune", "pitch", applies="audio")])
-        (d / "fix-log.md").write_text("\n## fix run now\n")
+        (d / "fix-log.md").write_text("\n## fix run now\n", encoding="utf-8")
         (d / "history").mkdir()
-        (d / "history" / "history.json").write_text(json.dumps({"versions": [dict(n=1, kind="fix", input=str(als), output=str(new), approved=[dict(id="order-1")], failed=["tune-Vox: x"])]}))
+        (d / "history" / "history.json").write_text(json.dumps({"versions": [dict(n=1, kind="fix", input=str(als), output=str(new), approved=[dict(id="order-1")], failed=["tune-Vox: x"])]}), encoding="utf-8")
         self.S.JOB.update(id=4, status="failed", kind="fix", dir=str(d.resolve()), files=[str(new)], stopped=False, reason="tune-Vox: x", log=["x"])
         r = self.result(d)
         self.assertFalse(r["wrote_nothing"])
@@ -147,9 +147,9 @@ class GuiServer(unittest.TestCase):
         stems = self.music / "Stems"
         stems.mkdir()
         d = self.scan("Stems", stems, [F("clip-1", "repair", "clip", applies="audio")], {"clip-1": {"decision": "approve"}}, mode="folder")
-        (d / "fix-log.md").write_text("\n## fix run now\n\n### FAILED (not done)\n\n- clip-1: not repaired\n")
+        (d / "fix-log.md").write_text("\n## fix run now\n\n### FAILED (not done)\n\n- clip-1: not repaired\n", encoding="utf-8")
         (d / "fixed").mkdir()
-        (d / "fixed" / "Bass (dehiss).wav").write_text("x")                                     # what an earlier run left
+        (d / "fixed" / "Bass (dehiss).wav").write_text("x", encoding="utf-8")                                     # what an earlier run left
         self.S.JOB.update(id=5, status="failed", kind="fix", dir=str(d.resolve()), files=[], stopped=False, reason="clip-1: not repaired", log=["x"])
         r = self.result(d)
         self.assertTrue(r["wrote_nothing"])                                                    # this run wrote nothing
@@ -279,12 +279,12 @@ class GuiServer(unittest.TestCase):
     def test_abset_says_ardour_has_no_a_b_build_and_does_not_ask_for_a_live_set(self):
         from hypnomix.workflow import abset
         d = self.scan("Sess", self.music / "Sess.ardour", [F("smooth-1")], mode="ardour")
-        (self.music / "Sess.ardour").write_text("<Session/>")
+        (self.music / "Sess.ardour").write_text("<Session/>", encoding="utf-8")
         with self.assertRaises(RuntimeError) as cm:
             abset.build(d)
         self.assertIn("HypnoMix DAW has no A/B build yet", str(cm.exception))
         self.assertNotIn("Live", str(cm.exception))
-        text = (Path(abset.__file__).with_name("ab.py")).read_text()
+        text = (Path(abset.__file__).with_name("ab.py")).read_text(encoding="utf-8")
         self.assertIn("build the A/B project with `hypnomix abset`", text)                    # the REAPER note points at the build
 
     # ---- the file chooser
@@ -301,7 +301,7 @@ class GuiServer(unittest.TestCase):
         ui = src("ui.py")
         self.assertIn("st.chooser !== false", ui)
         self.assertIn("data-form=\"mix\"", ui)                                                # the paths of the other files can still be typed
-        self.assertNotIn("on every system", (Path(__file__).resolve().parents[1] / "docs" / "APP.md").read_text())
+        self.assertNotIn("on every system", (Path(__file__).resolve().parents[1] / "docs" / "APP.md").read_text(encoding="utf-8"))
 
     # ---- the setup step that makes a command
     def test_the_setup_never_writes_through_a_link_or_over_a_command_it_did_not_make(self):
@@ -311,7 +311,7 @@ class GuiServer(unittest.TestCase):
         ext = home / "ext"
         ext.mkdir()
         orig = ext / "hypnomix-orig"
-        orig.write_text("ORIGINAL user script\n")
+        orig.write_text("ORIGINAL user script\n", encoding="utf-8")
         shim = home / ".local" / "bin" / "hypnomix"
         agent = self.root / "agent"
         try:
@@ -320,25 +320,25 @@ class GuiServer(unittest.TestCase):
             self.skipTest("this system makes no symbolic links")
         with mock.patch.object(SU, "shim_path", lambda: shim), mock.patch.object(SU, "agent_dir", lambda: agent):
             r = SU.make_cli()
-            self.assertEqual(orig.read_text(), "ORIGINAL user script\n")                     # not written through
+            self.assertEqual(orig.read_text(encoding="utf-8"), "ORIGINAL user script\n")                     # not written through
             self.assertTrue(shim.is_symlink())
             self.assertIn("left exactly as it is", r["note"])
             self.assertTrue((agent / "AGENTS.md").exists() or (agent / "CLAUDE.md").exists())          # the folder is still made
             shim.unlink()
-            shim.write_text("#!/bin/sh\nexec pipx run hypnomix\n")                             # a plain file that is not ours
+            shim.write_text("#!/bin/sh\nexec pipx run hypnomix\n", encoding="utf-8")                             # a plain file that is not ours
             self.assertIn("left exactly as it is", SU.make_cli()["note"])
-            self.assertIn("pipx", shim.read_text())
-            shim.write_text("#!/usr/bin/python3\nfrom hypnomix.cli import main\nmain()\n")        # a pip console script names hypnomix.cli too
+            self.assertIn("pipx", shim.read_text(encoding="utf-8"))
+            shim.write_text("#!/usr/bin/python3\nfrom hypnomix.cli import main\nmain()\n", encoding="utf-8")        # a pip console script names hypnomix.cli too
             self.assertIn("left exactly as it is", SU.make_cli()["note"])
-            self.assertIn("from hypnomix.cli import main", shim.read_text())
+            self.assertIn("from hypnomix.cli import main", shim.read_text(encoding="utf-8"))
             shim.unlink()
             r = SU.make_cli()                                                                  # nothing there: it is made
             self.assertEqual(r["note"], "")
-            self.assertIn("hypnomix.cli", shim.read_text())
+            self.assertIn("hypnomix.cli", shim.read_text(encoding="utf-8"))
             self.assertEqual(r["command"], str(shim))                                           # the command it made, not another one found on the PATH
-            shim.write_text(shim.read_text() + "# older\n")                                     # one it made earlier is made again
+            shim.write_text(shim.read_text(encoding="utf-8") + "# older\n", encoding="utf-8")                                     # one it made earlier is made again
             self.assertEqual(SU.make_cli()["note"], "")
-            self.assertNotIn("# older", shim.read_text())
+            self.assertNotIn("# older", shim.read_text(encoding="utf-8"))
 
     def test_the_assistant_leaves_out_its_choose_buttons_when_the_app_has_no_file_chooser(self):
         js = src("chat.js")
@@ -367,15 +367,15 @@ class GuiServer(unittest.TestCase):
         from hypnomix.workflow import prefs
         home = self.root / "hh"
         home.mkdir()
-        (home / "setup.json").write_text(json.dumps({"daw": "reaper"}))
-        with mock.patch.dict(os.environ, {"HYPNOMIX_HOME": str(home), "HOME": str(self.root / "nobody")}):
+        (home / "setup.json").write_text(json.dumps({"daw": "reaper"}), encoding="utf-8")
+        with mock.patch.dict(os.environ, {"HYPNOMIX_HOME": str(home), "HOME": str(self.root / "nobody"), "USERPROFILE": str(self.root / "nobody")}):
             self.assertEqual(prefs.setup_daw(), "reaper")                                   # the folder HYPNOMIX_HOME names, as setup.py keeps it
-        with mock.patch.dict(os.environ, {"HYPNOMIX_HOME": str(self.root / "elsewhere"), "HOME": str(self.root / "nobody")}):
+        with mock.patch.dict(os.environ, {"HYPNOMIX_HOME": str(self.root / "elsewhere"), "HOME": str(self.root / "nobody"), "USERPROFILE": str(self.root / "nobody")}):
             self.assertEqual(prefs.setup_daw(), "")
         (self.root / "nobody" / ".hypnomix").mkdir(parents=True)
-        (self.root / "nobody" / ".hypnomix" / "setup.json").write_text(json.dumps({"daw": "ardour"}))
+        (self.root / "nobody" / ".hypnomix" / "setup.json").write_text(json.dumps({"daw": "ardour"}), encoding="utf-8")
         env = {k: v for k, v in os.environ.items() if k != "HYPNOMIX_HOME"}
-        env["HOME"] = str(self.root / "nobody")
+        env["HOME"] = env["USERPROFILE"] = str(self.root / "nobody")
         with mock.patch.dict(os.environ, env, clear=True):
             self.assertEqual(prefs.setup_daw(), "ardour")                                   # unset: the usual place
 
@@ -383,10 +383,10 @@ class GuiServer(unittest.TestCase):
         home = self.root / "hh2"
         home.mkdir()
         (home / "setup.json").write_text(json.dumps({"daw": "reaper"}), encoding="utf-8")
-        with mock.patch.dict(os.environ, {"HYPNOMIX_HOME": str(home), "HOME": str(self.root / "nobody2")}):
+        with mock.patch.dict(os.environ, {"HYPNOMIX_HOME": str(home), "HOME": str(self.root / "nobody2"), "USERPROFILE": str(self.root / "nobody2")}):
             qs = {q["key"]: q for q in call(self.base, "/api/prefs")[1]}
             self.assertEqual(qs["tools.daw"]["default"], "reaper")                          # not a fixed "live"
-        with mock.patch.dict(os.environ, {"HYPNOMIX_HOME": str(self.root / "nowhere"), "HOME": str(self.root / "nobody2")}):
+        with mock.patch.dict(os.environ, {"HYPNOMIX_HOME": str(self.root / "nowhere"), "HOME": str(self.root / "nobody2"), "USERPROFILE": str(self.root / "nobody2")}):
             qs = {q["key"]: q for q in call(self.base, "/api/prefs")[1]}
             self.assertEqual(qs["tools.daw"]["default"], "live")                            # Setup never answered: the question's own default
 
@@ -450,7 +450,7 @@ class PageRules(unittest.TestCase):
             import subprocess
             body = ui[ui.index("function pickFlag(kind)"):ui.index("function toolsView()")]
             code = "const S={toolHelp:process.argv[1]};" + body + "console.log(JSON.stringify(['set','audio','folder'].map(pickFlag)));"
-            run = lambda usage: json.loads(subprocess.run([node, "-e", code, usage], capture_output=True, text=True, check=True).stdout)
+            run = lambda usage: json.loads(subprocess.run([node, "-e", code, usage], capture_output=True, text=True, check=True, encoding="utf-8").stdout)
             self.assertEqual(run("usage: hypnomix plugins [-h] [--free] [--folder FORMAT=DIR] [--save]"), ["", "", ""])
             self.assertEqual(run("usage: hypnomix loop [-h] --set SET [--folder DIR]"), ["--set ", "", "--folder "])
 

@@ -15,13 +15,13 @@ SR = 44100
 
 def hx(*args, home):
     env = dict(os.environ, HYPNOMIX_HOME=str(home), HYPNOMIX_RENDER_CACHE=str(Path(home) / "cache"))
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env, encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
 def py(mod, *args, home):
     env = dict(os.environ, HYPNOMIX_HOME=str(home), HYPNOMIX_RENDER_CACHE=str(Path(home) / "cache"))
-    r = subprocess.run([sys.executable, "-m", mod, *map(str, args)], capture_output=True, text=True, env=env)
+    r = subprocess.run([sys.executable, "-m", mod, *map(str, args)], capture_output=True, text=True, env=env, encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -58,8 +58,8 @@ def fake_scan(sd, als, findings):
     sd.mkdir(parents=True, exist_ok=True)
     for n, f in enumerate(findings, 1):
         f.setdefault("n", n)
-    (sd / "findings.json").write_text(json.dumps({"set": str(als), "notes": [], "findings": findings}))
-    (sd / "scan.json").write_text(json.dumps({"set": str(als), "mode": "set", "set_mtime": Path(als).stat().st_mtime}))
+    (sd / "findings.json").write_text(json.dumps({"set": str(als), "notes": [], "findings": findings}), encoding="utf-8")
+    (sd / "scan.json").write_text(json.dumps({"set": str(als), "mode": "set", "set_mtime": Path(als).stat().st_mtime}), encoding="utf-8")
 
 
 def F(i, kind="click", size_db=8, sev="medium", track="Vox", tool="smooth", applies="set"):
@@ -114,11 +114,11 @@ class Amount(unittest.TestCase):
             sd = td / "scan"
             code, out = hx("scan", als, "--only", "clips", "--out", sd, home=home)
             self.assertEqual(code, 0, out)
-            ids = [f["id"] for f in json.loads((sd / "findings.json").read_text())["findings"] if f["tool"] == "smooth"]
+            ids = [f["id"] for f in json.loads((sd / "findings.json").read_text(encoding="utf-8"))["findings"] if f["tool"] == "smooth"]
             self.assertEqual(len(ids), 4, ids)
             code, out = hx("fix", sd, "--decide", "smooth-1=approve@50,smooth-3=approve", "--as", "Ana", home=home)
             self.assertEqual(code, 0, out)
-            dec = json.loads((sd / "decisions.json").read_text())
+            dec = json.loads((sd / "decisions.json").read_text(encoding="utf-8"))
             self.assertEqual((dec["smooth-1"]["amount"], dec["smooth-1"]["by"]), (50, "Ana"))
             code, out = hx("fix", sd, "--approved", "--out", "Song (fixed).als", home=home)
             self.assertEqual(code, 0, out)
@@ -127,7 +127,7 @@ class Amount(unittest.TestCase):
             fades = sorted(r["after"] for r in rows if r["what"].startswith("fade in"))
             self.assertEqual(fades, ["2 ms", "5 ms"])                         # 50% of a 5 ms fade, and a full one
             # history: logged, with the amount; undo writes a NEW set equal to the input
-            h = json.loads((sd / "history" / "history.json").read_text())
+            h = json.loads((sd / "history" / "history.json").read_text(encoding="utf-8"))
             self.assertEqual(h["versions"][0]["approved"][0]["amount"], 50)
             before = {p.name for p in td.glob("*.als")}
             code, out = py("hypnomix.workflow.history", sd, "--undo", "1", home=home)
@@ -144,7 +144,7 @@ class Amount(unittest.TestCase):
             self.assertTrue(rebuilt.exists(), out)
             rows = D.diff(als, rebuilt)
             self.assertEqual([r["after"] for r in rows if r["what"].startswith("fade in")], ["5 ms"])
-            h = json.loads((sd / "history" / "history.json").read_text())
+            h = json.loads((sd / "history" / "history.json").read_text(encoding="utf-8"))
             self.assertEqual([v["kind"] for v in h["versions"]], ["fix", "undo", "undo-item"])
 
 
@@ -169,19 +169,19 @@ class Grouped(unittest.TestCase):
             self.assertNotIn("smooth-3", out.split("dry run")[0].split("undecided finding(s)")[1])
             self.assertFalse((sd / "decisions.json").exists())
             code, out = hx("fix", sd, "--decide-like", "smooth-1=approve@70", home=home)
-            dec = json.loads((sd / "decisions.json").read_text())
+            dec = json.loads((sd / "decisions.json").read_text(encoding="utf-8"))
             self.assertEqual(sorted(dec), ["smooth-1", "smooth-2"])
             self.assertEqual(dec["smooth-2"]["via"], "like:smooth-1")
             self.assertEqual(dec["smooth-2"]["amount"], 70)
             hx("fix", sd, "--decide", "smooth-2=skip", home=home)                   # an individual decision wins
             hx("fix", sd, "--decide-like", "smooth-1=approve", home=home)
-            self.assertEqual(json.loads((sd / "decisions.json").read_text())["smooth-2"]["decision"], "skip")
+            self.assertEqual(json.loads((sd / "decisions.json").read_text(encoding="utf-8"))["smooth-2"]["decision"], "skip")
 
     def test_review_page_record_like(self):
         from hypnomix.workflow import review as R
         with tempfile.TemporaryDirectory() as td:
             sd = Path(td)
-            (sd / "findings.json").write_text(json.dumps({"set": "x", "findings": [F(1), F(2), F(3, kind="cut")]}))
+            (sd / "findings.json").write_text(json.dumps({"set": "x", "findings": [F(1), F(2), F(3, kind="cut")]}), encoding="utf-8")
             self.assertEqual(R.record_like(sd, "smooth-1", "approve", 40), ["smooth-1", "smooth-2"])
             e = R.record(sd, "smooth-3", "approve", "", amount=25, by="Bo")
             self.assertEqual((e["amount"], e["by"]), (25, "Bo"))
@@ -211,15 +211,15 @@ class Budget(unittest.TestCase):
             od, home = Path(td) / "scan", Path(td) / "home"
             od.mkdir()
             home.mkdir()
-            (home / "preferences.json").write_text(json.dumps({"review": {"max_questions": 2}}))
-            (home / "taste.json").write_text(json.dumps({"profile": {"harmonies": {"lead_margin": 3.5}}}))
+            (home / "preferences.json").write_text(json.dumps({"review": {"max_questions": 2}}), encoding="utf-8")
+            (home / "taste.json").write_text(json.dumps({"profile": {"harmonies": {"lead_margin": 3.5}}}), encoding="utf-8")
             fs = [F(i, sev="low", size_db=8 + i) for i in range(1, 7)] + \
                 [dict(id="harmony-1", tool="voices", kind="harmony-balance", severity="low", track="(vocal parts)",
                       where="", problem="p", fix="f", applies="audio")]
-            (od / "clips.json").write_text(json.dumps({"group": "clips", "set": "S.als", "findings": fs, "notes": []}))
+            (od / "clips.json").write_text(json.dumps({"group": "clips", "set": "S.als", "findings": fs, "notes": []}), encoding="utf-8")
             code, out = hx("scan", "--merge", od, home=home)
             self.assertEqual(code, 0, out)
-            md = (od / "REVIEW.md").read_text()
+            md = (od / "REVIEW.md").read_text(encoding="utf-8")
             self.assertIn("question budget: 2", md)
             self.assertIn("Low priority: batch", md)
             self.assertIn("why this technique:", md)
@@ -227,21 +227,21 @@ class Budget(unittest.TestCase):
             self.assertIn("confidence:", md)
             self.assertIn("about 3.5 dB under the lead", md)              # "you usually" from taste.json
             code, out = hx("review", od, home=home)
-            page = (od / "REVIEW.html").read_text()
+            page = (od / "REVIEW.html").read_text(encoding="utf-8")
             self.assertIn("ovBatchHTML", page)
             self.assertIn('"max": 2', page)
             self.assertNotIn("</script><script", page)
-            (home / "preferences.json").write_text(json.dumps({"review": {"teach": "off"}}))
+            (home / "preferences.json").write_text(json.dumps({"review": {"teach": "off"}}), encoding="utf-8")
             hx("scan", "--merge", od, home=home)
-            self.assertNotIn("why this technique:", (od / "REVIEW.md").read_text())
+            self.assertNotIn("why this technique:", (od / "REVIEW.md").read_text(encoding="utf-8"))
 
     def test_usually_handles_missing_files(self):
         from hypnomix.workflow import oversight as O
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(O.usually(F(1), home=td, prefs={}), "")
-            (Path(td) / "library.json").write_text(json.dumps({"kinds": {"smooth/click": {"approve": 5, "skip": 1}}}))
+            (Path(td) / "library.json").write_text(json.dumps({"kinds": {"smooth/click": {"approve": 5, "skip": 1}}}), encoding="utf-8")
             self.assertIn("approved 5 of 6", O.usually(F(1), home=td, prefs={}))
-            (Path(td) / "library.json").write_text("not json")
+            (Path(td) / "library.json").write_text("not json", encoding="utf-8")
             self.assertEqual(O.usually(F(1), home=td, prefs={}), "")
 
     def test_confidence(self):
@@ -279,7 +279,7 @@ class Collaborators(unittest.TestCase):
             fs = [F(1), F(2), F(3), F(4)]
             for d in (mine, theirs):
                 d.mkdir()
-                (d / "findings.json").write_text(json.dumps({"set": "/x/Song.als", "findings": fs}))
+                (d / "findings.json").write_text(json.dumps({"set": "/x/Song.als", "findings": fs}), encoding="utf-8")
             O.save_decisions(mine, {"smooth-1": O.entry("approve", by="Owner"), "smooth-2": O.entry("skip", by="Owner"),
                                     "smooth-4": "approve"})
             O.save_decisions(theirs, {"smooth-1": O.entry("approve", by="Cy"), "smooth-2": O.entry("approve", "too clicky", 60, by="Cy"),
@@ -317,7 +317,7 @@ class Collaborators(unittest.TestCase):
             mine, theirs = Path(td) / "mine", Path(td) / "theirs"
             for d, fs in ((mine, [F(1), F(2)]), (theirs, [dict(F(2), id="smooth-9")])):
                 d.mkdir()
-                (d / "findings.json").write_text(json.dumps({"set": "S.als", "findings": fs}))
+                (d / "findings.json").write_text(json.dumps({"set": "S.als", "findings": fs}), encoding="utf-8")
             O.save_decisions(theirs, {"smooth-9": O.entry("skip", by="Cy")})
             O.export(theirs, Path(td) / "x.json", by="Cy")
             r = O.merge(mine, Path(td) / "x.json")

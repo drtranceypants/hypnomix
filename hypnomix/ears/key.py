@@ -117,15 +117,18 @@ def _harmonic_block(y, margin, n_fft):
                          length=y.shape[-1])
 
 
+_BLOCK_MARGIN_FRAMES = 64                                      # frames of the song either side of a block (tests/test_perf_analysis.py shortens it to prove that it matters)
+
+
 def harmonic(y, margin=3, n_fft=2048, block_s=60.0, sr=22050):
-    """librosa.effects.harmonic(y, margin=margin), the same samples to the last bit, in two ways that cost less:
+    """librosa.effects.harmonic(y, margin=margin), the same samples (to the last bit with the libraries it was written against, within rounding with others), in two ways that cost less:
     the median filters (most of the time HPSS takes) run in worker threads (_median31), and a long song is done a
     minute at a time. Everything in HPSS looks only a few frames around the one it is working on, so a block with a
     second of the song either side gives the same samples in its own part; one pass over a nine-minute song held
     2 GB, one block at a time holds about a fifth of that."""
     hop = n_fft // 4
     L = max(hop, int(block_s * sr) // hop * hop)               # a block starts on a frame of the whole song
-    ctx = 64 * hop                                             # 64 frames either side: the median reaches 15, the overlap 3
+    ctx = _BLOCK_MARGIN_FRAMES * hop                           # 64 frames either side: the median reaches 15, the overlap 3
     n = y.shape[-1]
     if n <= L + 2 * ctx:
         return _harmonic_block(y, margin, n_fft)

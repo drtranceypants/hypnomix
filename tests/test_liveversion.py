@@ -185,7 +185,7 @@ class Writing(Tmp):
         found = {}
         for py in sorted(root.rglob("*.py")):
             rel = str(py.relative_to(root))
-            text = py.read_text()
+            text = py.read_text(encoding="utf-8")
             if "gzip" not in text:
                 continue
             tree = ast.parse(text)
@@ -226,7 +226,7 @@ class Writing(Tmp):
     def test_the_offset_command_takes_the_flag(self):
         import subprocess, sys
         r = subprocess.run([sys.executable, "-m", "hypnomix.session.automation", "offset", "-h"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8")
         self.assertIn("--force-live-version", r.stdout)
 
 
@@ -259,7 +259,7 @@ class ReadingNewerSets(Tmp):
         import subprocess, sys
         p = write_set(self.td / "n.als", "13")
         r = subprocess.run([sys.executable, "-m", "hypnomix.cli", "scan", str(p), "--quick", "--out", str(self.td / "scan")],
-                           capture_output=True, text=True, env=dict(os.environ, HYPNOMIX_HOME=str(self.td / "home")))
+                           capture_output=True, text=True, env=dict(os.environ, HYPNOMIX_HOME=str(self.td / "home")), encoding="utf-8")
         self.assertEqual(r.stderr.count("saved by Live 13.0.2"), 1, r.stderr[-800:])
         self.assertIn("scanning n.als", r.stdout)
 
@@ -301,11 +301,11 @@ class EveryWriterRefuses(Tmp):
         with gzip.open(src, "wb") as f:
             f.write(x)
         base = [sys.executable, "-m", "hypnomix.cli", "unroll", str(src), "--track", "X"]
-        r = subprocess.run(base + ["--apply", str(self.td / "a.als")], capture_output=True, text=True)
+        r = subprocess.run(base + ["--apply", str(self.td / "a.als")], capture_output=True, text=True, encoding="utf-8")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("saved by Live 13.0.2", r.stdout + r.stderr)
         self.assertFalse((self.td / "a.als").exists())
-        r = subprocess.run(base + ["--apply", str(self.td / "b.als"), "--force-live-version"], capture_output=True, text=True)
+        r = subprocess.run(base + ["--apply", str(self.td / "b.als"), "--force-live-version"], capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertTrue((self.td / "b.als").exists())
         # `fix` runs its tools as child processes: its own flag reaches them through the environment
@@ -322,7 +322,7 @@ class EveryWriterRefuses(Tmp):
         for cmd in ("fix", "unroll", "tidy", "order", "edges", "cliplevel", "motion", "borrow", "duck", "devices",
                     "sidechain", "name", "vocallevel", "abset", "smooth", "timing", "masking", "distortion", "voices",
                     "tempomap", "breathe", "loops", "tighten", "colour", "alignset", "variations"):
-            r = subprocess.run([sys.executable, "-m", "hypnomix.cli", cmd, "--help"], capture_output=True, text=True)
+            r = subprocess.run([sys.executable, "-m", "hypnomix.cli", cmd, "--help"], capture_output=True, text=True, encoding="utf-8")
             self.assertIn("--force-live-version", r.stdout, f"hypnomix {cmd} --help does not list the flag")
 
 

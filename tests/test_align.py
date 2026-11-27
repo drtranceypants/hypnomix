@@ -225,7 +225,7 @@ class AppAndDevice(unittest.TestCase):
             js_box = [b["box"] for b in patch["patcher"]["boxes"] if b["box"].get("maxclass") == "jsui"][0]
             self.assertEqual(js_box["filename"], "hypnomix_align.js")
             self.assertEqual(patch["patcher"]["devicewidth"], float(AD.W))
-            js = (out / "hypnomix_align.js").read_text()
+            js = (out / "hypnomix_align.js").read_text(encoding="utf-8")
             self.assertNotIn("__", js)
 
     def test_device_script_in_a_simulated_live(self):

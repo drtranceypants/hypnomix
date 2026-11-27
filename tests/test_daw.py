@@ -98,7 +98,12 @@ FAKE = textwrap.dedent('''\
             out = json.dumps({{"jsonrpc": "2.0", "id": req["id"], "result": res}}).encode()
             self.send_response(200); self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(out))); self.end_headers(); self.wfile.write(out)
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", opts["port"] if "--port" in sys.argv else 0), H)
+    class Srv(http.server.ThreadingHTTPServer):
+        def server_bind(self):          # the base class asks DNS for this computer's name (socket.getfqdn); a stand-in has no use for it
+            import socketserver
+            socketserver.TCPServer.server_bind(self)
+            self.server_name, self.server_port = self.server_address[:2]
+    srv = Srv(("127.0.0.1", opts["port"] if "--port" in sys.argv else 0), H)
     print("engine log line", flush=True)
     if mode == "lookalike_first":      # log lines that only CONTAIN the markers, before the real READY (a track or file name)
         print("warning: track named HYPNOMIX-ENGINE ERROR boom is silent", flush=True)
@@ -138,17 +143,35 @@ def tearDownModule():
     _ISO[0].cleanup()
 
 
-def need_fake():
-    """Raise the visible skip on Windows. A setUp or setUpClass that makes a folder or sets the environment before it calls
-    make_fake calls this first: after a SkipTest in setUpClass nothing is cleaned up, so nothing may be made yet."""
-    if sys.platform == "win32":
+# The tests that never start the stand-in (they hand its path to the supervisor, or test what is around it): counted on a Mac
+# by watching subprocess.Popen. They run on Windows too; every other test in the classes that use it is a visible skip there.
+STARTLESS = frozenset({
+    "test_1_no_engine_yet", "test_3_engine_routes_need_the_token", "test_4_the_daw_view",
+    "test_5_the_page_is_served_only_at_its_own_address", "test_6_names_too_long_or_like_options_are_a_400_not_a_dropped_connection",
+    "test_daw_config_follows_hypnomix_home", "test_mcp_takes_only_json_rpc",
+    "test_post_routes_need_the_token_and_check_fields", "test_the_daw_page_has_a_nonce_and_no_inline_handlers",
+    "test_upload_checks_before_reading",
+    "test_names_too_long_for_the_disk_are_a_sentence_not_a_dropped_connection", "test_option_like_and_odd_names_are_refused",
+    "test_ready_for_another_port_is_not_believed_even_as_the_first_line", "test_the_source_tree_is_never_guessed",
+    "test_the_default_output_and_no_input_are_passed_on_a_mac", "test_the_view_keeps_the_session_when_the_engine_goes",
+    "test_a_marker_for_a_live_process_group_counts_and_a_damaged_one_does_not", "test_a_marker_with_a_huge_process_id_is_ignored_not_a_crash",
+    "test_an_engine_that_died_leaves_a_marker_that_is_ignored_and_cleaned_by_remove", "test_only_an_engine_inside_the_add_on_folder_is_marked",
+})
+
+
+def need_fake(case=None):
+    """Raise the visible skip on Windows, unless `case` is a test that never starts the stand-in. A setUp or setUpClass that makes
+    a folder or sets the environment before it calls make_fake calls this first: after a SkipTest in setUpClass nothing is
+    cleaned up, so nothing may be made yet (a class with a setUpClass asks from its setUp instead)."""
+    if sys.platform == "win32" and not (case is not None and getattr(case, "_testMethodName", "") in STARTLESS):
         raise unittest.SkipTest("SKIPPED: the stand-in engine is a script with a shebang line, which Windows cannot start, so this test was NOT run")
 
 
-def make_fake(folder):
-    need_fake()
+def make_fake(folder, skip=True):
+    if skip:
+        need_fake()
     f = Path(folder) / "hypnomix-engine"
-    f.write_text(FAKE.format(python=sys.executable))
+    f.write_text(FAKE.format(python=sys.executable), encoding="utf-8")
     f.chmod(0o755)
     return f
 
@@ -157,7 +180,7 @@ def with_session(eng, folder):
     """The real engine needs a session to run (Start with none waits for New / Open): give the engine one."""
     d = Path(folder) / "Song"
     d.mkdir(exist_ok=True)
-    (d / "Song.ardour").write_text("<Session/>")
+    (d / "Song.ardour").write_text("<Session/>", encoding="utf-8")
     eng.session = str(d / "Song.ardour")
     return eng
 
@@ -181,9 +204,9 @@ def alive(pid):
 
 class Supervisor(unittest.TestCase):
     def setUp(self):
-        need_fake()                                                    # before any folder or environment change
+        need_fake(self)                                                # before any folder or environment change
         self.td = tempfile.TemporaryDirectory()
-        self.bin = make_fake(self.td.name)
+        self.bin = make_fake(self.td.name, skip=False)
         self.eng = with_session(DW.Engine(binary=self.bin, attach_url="http://127.0.0.1:9/mcp"), self.td.name)
 
     def tearDown(self):
@@ -212,7 +235,7 @@ class Supervisor(unittest.TestCase):
     def test_open_and_new_session(self):
         sess = Path(self.td.name) / "Song"
         sess.mkdir(exist_ok=True)
-        (sess / "Song.ardour").write_text("<Session/>")
+        (sess / "Song.ardour").write_text("<Session/>", encoding="utf-8")
         self.eng.open(sess)                                       # a folder opens its own snapshot
         info = self.eng.call("tools/call", {"name": "session_get_info", "arguments": {}})["structuredContent"]
         self.assertEqual((info["argv"]["dir"], info["argv"]["snapshot"], info["argv"]["new"]), (str(sess), "Song", False))
@@ -230,7 +253,7 @@ class Supervisor(unittest.TestCase):
 
     def test_restarts_after_a_crash_on_the_same_session(self):
         sess = Path(self.td.name) / "Song.ardour"
-        sess.write_text("<Session/>")
+        sess.write_text("<Session/>", encoding="utf-8")
         pid = self.eng.start(session=sess)["pid"]
         os.kill(pid, signal.SIGKILL)
         self.assertTrue(wait(lambda: self.eng.status()["pid"] not in (None, pid) and self.eng.state == "running"))
@@ -270,7 +293,7 @@ class Supervisor(unittest.TestCase):
                 self.assertEqual(DW.last_session(), sess)          # the next start of the app opens it again
             finally:
                 eng.stop()
-            (Path(self.td.name) / "daw.json").write_text(json.dumps({"last": str(Path(self.td.name) / "gone.ardour")}))
+            (Path(self.td.name) / "daw.json").write_text(json.dumps({"last": str(Path(self.td.name) / "gone.ardour")}), encoding="utf-8")
             self.assertIsNone(DW.last_session())                   # moved or deleted since: nothing
 
     def test_a_new_session_once_made_is_opened_on_a_restart(self):
@@ -278,7 +301,7 @@ class Supervisor(unittest.TestCase):
         st = self.eng.new_session(self.td.name, "Made")
         self.assertEqual(st["new"], [self.td.name, "Made"])          # the stand-in makes no files: still "new"
         made.mkdir()
-        (made / "Made.ardour").write_text("<Session/>")            # as the real engine does on --new
+        (made / "Made.ardour").write_text("<Session/>", encoding="utf-8")            # as the real engine does on --new
         st = self.eng.restart()                                     # (a crash restart reads READY the same way)
         self.assertEqual((st["session"], st["new"]), (str(made / "Made.ardour"), None))   # opened, never made again
         argv = self.eng.call("tools/call", {"name": "session_get_info", "arguments": {}})["structuredContent"]["argv"]
@@ -346,7 +369,7 @@ class Supervisor(unittest.TestCase):
     def test_start_on_a_session_folder(self):
         sess = Path(self.td.name) / "Song"
         sess.mkdir(exist_ok=True)
-        (sess / "Song.ardour").write_text("<Session/>")
+        (sess / "Song.ardour").write_text("<Session/>", encoding="utf-8")
         self.eng.start(session=sess)                              # `hypnomix app --daw --session DIR`, /api/daw/start
         info = self.eng.call("tools/call", {"name": "session_get_info", "arguments": {}})["structuredContent"]
         self.assertEqual((info["argv"]["dir"], info["argv"]["snapshot"]), (str(sess), "Song"))
@@ -363,7 +386,7 @@ class Supervisor(unittest.TestCase):
     def test_exiting_by_itself_is_said_and_keeps_the_session(self):
         # exit 0 without the app asking: "stopped unexpectedly", the session kept for Start, no restart loop
         sess = Path(self.td.name) / "Song.ardour"
-        sess.write_text("<Session/>")
+        sess.write_text("<Session/>", encoding="utf-8")
         with mock.patch.dict(os.environ, {"HYPNOMIX_FAKE_ENGINE_MODE": "quit"}):
             st = self.eng.start(session=sess)
             self.assertEqual(st["state"], "running")
@@ -381,7 +404,7 @@ class Supervisor(unittest.TestCase):
 
     def test_the_view_keeps_the_session_when_the_engine_goes(self):
         # app.js: an engine that went away is shown with Start; the mock song is loaded only when you ask for it
-        js = (DW.ROOT / "js" / "app.js").read_text()
+        js = (DW.ROOT / "js" / "app.js").read_text(encoding="utf-8")
         watch = js[js.index("async function watchEngine"):js.index("setInterval(watchEngine")]
         self.assertNotIn("loadMock", watch)
         self.assertIn("engineLost(st)", watch)
@@ -396,13 +419,13 @@ class Supervisor(unittest.TestCase):
         launcher = Path(self.td.name) / "launch.sh"
         hung = Path(self.td.name) / "hung.pid"
         launcher.write_text(f"#!/bin/sh\n/bin/sh -c 'trap \"\" TERM; echo $$ > {hung}; while :; do sleep 1; done' &\n"
-                            f"exec {self.bin} \"$@\"\n")
+                            f"exec {self.bin} \"$@\"\n", encoding="utf-8")
         launcher.chmod(0o755)
         eng = with_session(DW.Engine(binary=launcher, attach_url="http://127.0.0.1:9/mcp"), self.td.name)
         try:
             eng.start()
-            self.assertTrue(wait(lambda: hung.exists() and hung.read_text().strip()))
-            pid = int(hung.read_text())
+            self.assertTrue(wait(lambda: hung.exists() and hung.read_text(encoding="utf-8").strip()))
+            pid = int(hung.read_text(encoding="utf-8"))
             self.assertTrue(alive(pid))
             eng.stop(timeout=3)
             self.assertTrue(wait(lambda: not alive(pid), 5))
@@ -435,9 +458,9 @@ class Hardening(unittest.TestCase):
     """The supervisor under attack and under accident: two requests at once, odd bytes, text that looks like the engine's
     own words, a hung start, the environment it is given, names that look like options."""
     def setUp(self):
-        need_fake()                                                    # before any folder or environment change
+        need_fake(self)                                                # before any folder or environment change
         self.td = tempfile.TemporaryDirectory()
-        self.bin = make_fake(self.td.name)
+        self.bin = make_fake(self.td.name, skip=False)
         self.pids = Path(self.td.name) / "pids.txt"
         self.env = mock.patch.dict(os.environ, {"HYPNOMIX_FAKE_ENGINE_PIDS": str(self.pids)})
         self.env.start()
@@ -450,7 +473,7 @@ class Hardening(unittest.TestCase):
         self.td.cleanup()
 
     def started(self):
-        return [int(x) for x in self.pids.read_text().split()] if self.pids.exists() else []
+        return [int(x) for x in self.pids.read_text(encoding="utf-8").split()] if self.pids.exists() else []
 
     def info(self):
         return self.eng.call("tools/call", {"name": "session_get_info", "arguments": {}})["structuredContent"]
@@ -554,7 +577,7 @@ class Hardening(unittest.TestCase):
     def test_a_start_with_another_session_while_running_changes_nothing(self):
         other = Path(self.td.name) / "Other" / "Other.ardour"
         other.parent.mkdir()
-        other.write_text("<Session/>")
+        other.write_text("<Session/>", encoding="utf-8")
         pid = self.eng.start()["pid"]
         mine = self.eng.session
         with self.assertRaises(RuntimeError):
@@ -627,7 +650,7 @@ class Hardening(unittest.TestCase):
     def test_a_session_the_engine_refuses_leaves_the_open_one_open(self):
         bad = Path(self.td.name) / "Broken" / "Broken.ardour"
         bad.parent.mkdir()
-        bad.write_text("<Session/>")
+        bad.write_text("<Session/>", encoding="utf-8")
         self.eng.start()
         mine = self.eng.session
         with mock.patch.dict(os.environ, {"HYPNOMIX_FAKE_ENGINE_BAD": "Broken"}):
@@ -640,7 +663,7 @@ class Hardening(unittest.TestCase):
 
     def test_a_session_called_like_an_option_is_still_a_name(self):
         odd = Path(self.td.name) / "-b.ardour"
-        odd.write_text("<Session/>")
+        odd.write_text("<Session/>", encoding="utf-8")
         self.eng.open(odd)
         argv = self.info()["argv"]
         self.assertEqual((argv["dir"], argv["snapshot"], argv.get("backend")), (self.td.name, "-b", None))
@@ -805,7 +828,7 @@ class Unsaved(unittest.TestCase):
     def test_the_routes_that_would_lose_work_say_unsaved(self):
         sess = Path(self.td.name) / "Other" / "Other.ardour"
         sess.parent.mkdir()
-        sess.write_text("<Session/>")
+        sess.write_text("<Session/>", encoding="utf-8")
         routes = [("/api/daw/stop", {}), ("/api/daw/restart", {}), ("/api/daw/open", {"path": str(sess)}),
                   ("/api/daw/new", {"folder": self.td.name, "name": "Fresh"})]
         self.tool("track_set_fader_db", id="1", db=-3)
@@ -825,7 +848,7 @@ class Unsaved(unittest.TestCase):
         self.tool("track_set_fader_db", id="1", db=-3)
         code, st = DW.handle_post("/api/daw/restart", {"save": True})
         self.assertEqual((code, st["state"]), (200, "running"))
-        saves = [c["name"] for c in map(json.loads, self.calls.read_text().splitlines()) if c["name"] == "session_save"]
+        saves = [c["name"] for c in map(json.loads, self.calls.read_text(encoding="utf-8").splitlines()) if c["name"] == "session_save"]
         self.assertEqual(saves, ["session_save"])
         self.assertFalse(self.eng.dirty)
 
@@ -874,7 +897,7 @@ class AppQuits(unittest.TestCase):
 
     def test_the_engine_follows_its_app_away(self):
         sleeper = subprocess.Popen(["sleep", "60"])
-        p = subprocess.Popen([str(self.bin), "--parent-pid", str(sleeper.pid)], stdout=subprocess.PIPE, text=True)
+        p = subprocess.Popen([str(self.bin), "--parent-pid", str(sleeper.pid)], stdout=subprocess.PIPE, text=True, encoding="utf-8")
         try:
             while "READY" not in p.stdout.readline():
                 pass
@@ -900,11 +923,11 @@ class AppQuits(unittest.TestCase):
         port, probe = self.free_port(), None
         sess = Path(self.td.name) / "Song" / "Song.ardour"
         sess.parent.mkdir()
-        sess.write_text("<Session/>")
+        sess.write_text("<Session/>", encoding="utf-8")
         env = dict(os.environ, HYPNOMIX_FAKE_ENGINE_NO_PARENT="1",      # (so only the app's own shutdown can end it)
                    HYPNOMIX_ENGINE=str(self.bin), HYPNOMIX_PORT=str(port), HYPNOMIX_PROBE_PORT=str(port + 1000 if port + 1000 < 65000 else port - 1))
         app = subprocess.Popen([sys.executable, "-m", "hypnomix.cli", "app", "--port", str(port), "--no-open", "--home", self.td.name],
-                               env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=str(Path(__file__).resolve().parents[1]))
+                               env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=str(Path(__file__).resolve().parents[1]), encoding="utf-8")
         pid = None
         try:
             base = f"http://127.0.0.1:{port}"
@@ -941,15 +964,15 @@ class TestBuildApp(unittest.TestCase):
     Session go through the DAW view to the supervisor. The installer no longer carries the engine."""
     def test_the_window_and_the_view_are_wired(self):
         root = Path(__file__).resolve().parents[1]
-        swift = (root / "macapp" / "Hypnomix.swift").read_text()
+        swift = (root / "macapp" / "Hypnomix.swift").read_text(encoding="utf-8")
         for word in ('"New Session…"', '"Open Session…"', "HX.menuSession", "Resources/engine/bin/hypnomix-engine",
                      "JSONSerialization", "makeSignalSource(signal: SIGTERM"):
             self.assertIn(word, swift)
-        js = (DW.ROOT / "js" / "app.js").read_text()
+        js = (DW.ROOT / "js" / "app.js").read_text(encoding="utf-8")
         self.assertIn("HX.menuSession = async function (req)", js)
         self.assertIn("'/api/daw/new' : '/api/daw/open'", js)
         self.assertIn("'To ' + what + ', the engine closes '", js)      # asks before closing an open session (HX.guardedPost: Save / Don't save / Cancel)
-        sh = (root / "packaging" / "mac" / "build_dmg.sh").read_text()
+        sh = (root / "packaging" / "mac" / "build_dmg.sh").read_text(encoding="utf-8")
         for word in ("--app-only)", 'codesign --verify --deep --strict "$app"', "Hypnomix-$version-mac-$arch.dmg"):
             self.assertIn(word, sh)
         self.assertNotIn("--daw)", sh)                                  # the engine is not put inside the installer's app
@@ -959,7 +982,7 @@ class Attach(unittest.TestCase):
     """No engine program yet: use a HypnoMix window that is already running (here: the stand-in, started by hand)."""
     def setUp(self):
         self.td = tempfile.TemporaryDirectory()
-        self.p = subprocess.Popen([str(make_fake(self.td.name))], stdout=subprocess.PIPE, text=True)
+        self.p = subprocess.Popen([str(make_fake(self.td.name))], stdout=subprocess.PIPE, text=True, encoding="utf-8")
         line = ""
         while "READY" not in line:
             line = self.p.stdout.readline()
@@ -982,7 +1005,7 @@ class Attach(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             eng.restart()
         sess = Path(self.td.name) / "S.ardour"
-        sess.write_text("<Session/>")
+        sess.write_text("<Session/>", encoding="utf-8")
         with self.assertRaises(RuntimeError):
             eng.open(sess)                                       # opening is done in that window
         eng.stop()
@@ -1011,18 +1034,18 @@ class Attach(unittest.TestCase):
                 self.assertIn(kit, DW.candidates())                                    # a test build's kit is still looked for
                 self.assertIsNone(DW.find_engine())                                    # an app without it (or the add-on) has none
                 kit.parent.mkdir(parents=True)
-                kit.write_text("#!/bin/sh\n")
+                kit.write_text("#!/bin/sh\n", encoding="utf-8")
                 kit.chmod(0o755)
                 self.assertEqual(DW.find_engine(), kit)
             dev = Path(self.td.name) / "tree" / "hypnomix" / "engine" / "engine-dev"     # a source build
             dev.parent.mkdir(parents=True)
-            dev.write_text("#!/bin/sh\n")
+            dev.write_text("#!/bin/sh\n", encoding="utf-8")
             dev.chmod(0o755)
             with mock.patch.object(DW, "candidates", lambda: [dev]):
                 self.assertIsNone(DW.find_engine())                    # the script alone: not built yet
                 built = Path(self.td.name) / "tree" / "build" / "hypnomix" / "engine" / "hypnomix-engine"
                 built.parent.mkdir(parents=True)
-                built.write_text("")
+                built.write_text("", encoding="utf-8")
                 self.assertEqual(DW.find_engine(), dev)
         finally:
             self.patch.start()
@@ -1043,14 +1066,16 @@ def call(base, path, body=None, headers=None, raw=None):
 
 class Proxy(unittest.TestCase):
     """The app server: POST /mcp to the engine (localhost, the page's token), the DAW view, the engine routes."""
+    def setUp(self):
+        need_fake(self)                                                # only the tests that start the stand-in are skipped on Windows
+
     @classmethod
     def setUpClass(cls):
-        need_fake()                                                    # before any folder or environment change
         cls.td = tempfile.TemporaryDirectory()
         os.environ["HYPNOMIX_APP_HOME"] = cls.td.name
         from hypnomix.app import server as S
         cls.S = S
-        cls.eng = with_session(DW.Engine(binary=make_fake(cls.td.name), attach_url="http://127.0.0.1:9/mcp"), cls.td.name)
+        cls.eng = with_session(DW.Engine(binary=make_fake(cls.td.name, skip=False), attach_url="http://127.0.0.1:9/mcp"), cls.td.name)
         cls.patch = mock.patch.object(DW, "ENGINE", cls.eng)
         cls.patch.start()
         cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), S.make_handler(0))
@@ -1263,7 +1288,7 @@ class Upload(unittest.TestCase):
         others = [self.up / "Music", self.up / "notes.txt", self.up / "0123456789abc", self.up / "abc"]   # not made by the app
         others[0].mkdir(exist_ok=True)
         (others[0] / "keep.wav").write_bytes(b"x")
-        others[1].write_text("x")
+        others[1].write_text("x", encoding="utf-8")
         others[2].mkdir(exist_ok=True)
         others[3].mkdir(exist_ok=True)
         for q in mine + others:
@@ -1298,7 +1323,7 @@ class Bridge(unittest.TestCase):
         self.td.cleanup()
 
     def engine_calls(self):
-        return [json.loads(x) for x in self.calls.read_text().splitlines()] if self.calls.exists() else []
+        return [json.loads(x) for x in self.calls.read_text(encoding="utf-8").splitlines()] if self.calls.exists() else []
 
     def test_no_engine_no_tools(self):
         self.assertEqual(self.CH.engine_tools(), [])
@@ -1390,7 +1415,7 @@ class ViewRules(unittest.TestCase):
     """What the DAW view's scripts promise (there is no JavaScript runner in the test suite: these check the code
     paths are there; the browser test of the release checks them on the engine)."""
     def js(self, name):
-        return (DW.ROOT / "js" / name).read_text()
+        return (DW.ROOT / "js" / name).read_text(encoding="utf-8")
 
     def test_the_scan_sends_save_true_only_after_save_and_scan(self):
         rv = self.js("review.js")
@@ -1455,15 +1480,17 @@ class ViewRules(unittest.TestCase):
 class Security(unittest.TestCase):
     """The DAW view and its routes follow the app's rules: a CSP nonce on the page, no inline handlers, the token
     on every POST, fields checked."""
+    def setUp(self):
+        need_fake(self)                                                # only the tests that start the stand-in are skipped on Windows
+
     @classmethod
     def setUpClass(cls):
-        need_fake()                                                    # before any folder or environment change
         cls.td = tempfile.TemporaryDirectory()
         cls.env = mock.patch.dict(os.environ, {"HYPNOMIX_APP_HOME": cls.td.name})
         cls.env.start()
         from hypnomix.app import server as S
         cls.S = S
-        cls.eng = with_session(DW.Engine(binary=make_fake(cls.td.name), attach_url="http://127.0.0.1:9/mcp"), cls.td.name)
+        cls.eng = with_session(DW.Engine(binary=make_fake(cls.td.name, skip=False), attach_url="http://127.0.0.1:9/mcp"), cls.td.name)
         cls.patch = mock.patch.object(DW, "ENGINE", cls.eng)
         cls.patch.start()
         cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), S.make_handler(0))
@@ -1495,7 +1522,7 @@ class Security(unittest.TestCase):
         self.assertNotEqual(m.group(1), re.search(r"'nonce-([^']+)'", call(self.base, "/daw/")[2]["Content-Security-Policy"]).group(1))
         self.assertIsNone(re.search(rb"<[^>]+\son[a-z]+\s*=", page))
         for f in sorted((DW.ROOT / "js").glob("*.js")):                   # no handler attributes written by script
-            self.assertIsNone(re.search(r"""['"<]\s*\w*\s+on[a-z]+=["']""", f.read_text()), f.name)
+            self.assertIsNone(re.search(r"""['"<]\s*\w*\s+on[a-z]+=["']""", f.read_text(encoding="utf-8")), f.name)
         for path in ("/daw/js/app.js", "/api/daw/state"):
             hh = call(self.base, path)[2]
             self.assertEqual(hh["X-Frame-Options"], "DENY")
@@ -1546,7 +1573,7 @@ class Security(unittest.TestCase):
         with tempfile.TemporaryDirectory() as h:
             with mock.patch.dict(os.environ, {"HYPNOMIX_HOME": h}):
                 self.assertEqual(DW.conf_path(), Path(h) / "daw.json")
-                (Path(h) / "daw.json").write_text(json.dumps({"args": "-b X"}))
+                (Path(h) / "daw.json").write_text(json.dumps({"args": "-b X"}), encoding="utf-8")
                 with mock.patch.dict(os.environ, {"HYPNOMIX_ENGINE_ARGS": ""}):
                     os.environ.pop("HYPNOMIX_ENGINE_ARGS")
                     self.assertEqual(DW.extra_args(), ["-b", "X"])

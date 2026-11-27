@@ -52,7 +52,7 @@ class ReadErrors(Temp):
             dsp.load(self.d / "nope.wav")
         self.assertIn("no such file", str(c.exception))
         self.assertIn("nope.wav", str(c.exception))
-        bad = self.d / "bad.wav"; bad.write_text("not audio")
+        bad = self.d / "bad.wav"; bad.write_text("not audio", encoding="utf-8")
         with self.assertRaises(dsp.AudioReadError) as c:
             dsp.load(bad)
         self.assertIn("not an audio file HypnoMix can decode", str(c.exception))
@@ -61,7 +61,7 @@ class ReadErrors(Temp):
         self.assertIn("folder", str(c.exception))
 
     def test_every_command_gives_one_plain_line_and_exit_2(self):
-        bad = self.d / "bad.wav"; bad.write_text("not audio")
+        bad = self.d / "bad.wav"; bad.write_text("not audio", encoding="utf-8")
         missing = self.d / "missing.wav"
         for cmd in (["qc"], ["clicks"], ["key", "--audio"], ["translate"], ["harsh"], ["sections"], ["master"]):
             for f, why in ((missing, "no such file"), (bad, "not an audio file")):
@@ -128,7 +128,7 @@ class Measure(Temp):
     def test_exit_codes(self):
         good = tone(self.d / "good.wav", 4)
         silent = self.d / "silent.wav"; sf.write(str(silent), np.zeros((SR * 4, 2)), SR)
-        bad = self.d / "bad.wav"; bad.write_text("x")
+        bad = self.d / "bad.wav"; bad.write_text("x", encoding="utf-8")
         code, out, _ = self._main([good]); self.assertEqual(code, 0); self.assertIn("good.wav", out)
         code, _, err = self._main([self.d / "missing.wav"]); self.assertEqual(code, 2); self.assertIn("no such file", err)
         code, _, err = self._main([bad]); self.assertEqual(code, 2); self.assertIn("not an audio file", err)
@@ -162,8 +162,8 @@ class Install(Temp):
     def test_logs_made_by_live_do_not_cause_a_backup(self):
         from hypnomix import install
         src = self.d / "src"; (src / "abletonosc").mkdir(parents=True)
-        (src / "abletonosc" / "track.py").write_text("x = 1\n")
-        (src / "__init__.py").write_text("")
+        (src / "abletonosc" / "track.py").write_text("x = 1\n", encoding="utf-8")
+        (src / "__init__.py").write_text("", encoding="utf-8")
         scripts = self.d / "Remote Scripts"; scripts.mkdir()
         out = io.StringIO()
         with mock.patch.object(install, "SCRIPT_SRC", src), mock.patch.object(install, "remote_scripts_dir", lambda: scripts), \
@@ -171,7 +171,7 @@ class Install(Temp):
             install.install([])                                      # first install
             dest = scripts / "AbletonOSC"
             self.assertTrue((dest / "abletonosc" / "track.py").exists())
-            (dest / "logs").mkdir(); (dest / "logs" / "abletonosc.log").write_text("live was here")
+            (dest / "logs").mkdir(); (dest / "logs" / "abletonosc.log").write_text("live was here", encoding="utf-8")
             (dest / "__pycache__").mkdir(); (dest / "__pycache__" / "a.pyc").write_bytes(b"\0")
             (dest / "abletonosc" / "x.pyc").write_bytes(b"\0")
             out.truncate(0); out.seek(0)
@@ -179,22 +179,22 @@ class Install(Temp):
             self.assertIn("already up to date", out.getvalue())
             self.assertNotIn("moved to", out.getvalue())
             self.assertEqual([p.name for p in scripts.iterdir()], ["AbletonOSC"])
-            (src / "abletonosc" / "track.py").write_text("x = 2\n")  # a real change still backs up, once
+            (src / "abletonosc" / "track.py").write_text("x = 2\n", encoding="utf-8")  # a real change still backs up, once
             install.install([])
             names = sorted(p.name for p in scripts.iterdir())
             self.assertEqual(len(names), 2, names)
-            self.assertEqual((dest / "abletonosc" / "track.py").read_text(), "x = 2\n")
+            self.assertEqual((dest / "abletonosc" / "track.py").read_text(encoding="utf-8"), "x = 2\n")
             self.assertFalse((dest / "logs").exists())
 
     def test_same_tree_sees_real_differences(self):
         from hypnomix import install
         a, b = self.d / "a", self.d / "b"
         for r in (a, b):
-            r.mkdir(); (r / "f.py").write_text("1")
+            r.mkdir(); (r / "f.py").write_text("1", encoding="utf-8")
         self.assertTrue(install._same_tree(a, b))
-        (b / "g.py").write_text("2")
+        (b / "g.py").write_text("2", encoding="utf-8")
         self.assertFalse(install._same_tree(a, b))
-        (a / "g.py").write_text("3")
+        (a / "g.py").write_text("3", encoding="utf-8")
         self.assertFalse(install._same_tree(a, b))
 
 
@@ -242,11 +242,11 @@ class OrderNames(Temp):
                 order.read_names(arg)
             self.assertIn("--names expects", str(c.exception))
             self.assertIn("names.json", str(c.exception))
-        bad = self.d / "x.json"; bad.write_text("{nope")
+        bad = self.d / "x.json"; bad.write_text("{nope", encoding="utf-8")
         with self.assertRaises(SystemExit) as c:
             order.read_names(str(bad))
         self.assertIn("not valid JSON", str(c.exception))
-        ok = self.d / "names.json"; ok.write_text(json.dumps({"tracks": [{"old": "a"}]}))
+        ok = self.d / "names.json"; ok.write_text(json.dumps({"tracks": [{"old": "a"}]}), encoding="utf-8")
         self.assertEqual(order.read_names(str(ok)), [{"old": "a"}])
 
 
@@ -336,7 +336,7 @@ class Prefs(Temp):
 
     def test_good_numbers(self):
         self.assertIsNone(self.set("targets.lufs=-16.5", "targets.true_peak=-2", "review.max_questions=5"))
-        got = json.loads(self.P.PREFS.read_text())
+        got = json.loads(self.P.PREFS.read_text(encoding="utf-8"))
         self.assertEqual(got["targets"], {"lufs": -16.5, "true_peak": -2})
         self.assertEqual(got["review"]["max_questions"], 5)
 
@@ -346,7 +346,7 @@ class Prefs(Temp):
         self.assertIn("taste.tuning must be one of: natural, tight, off", self.set("taste.tuning=sloppy"))
         self.assertIn("cleanup.order must be one of: on, off", self.set("cleanup.order=maybe"))
         self.assertIsNone(self.set("taste.tuning=Natural", "cleanup.order=no", "cleanup.retire=yes", "review.teach=off"))
-        got = json.loads(self.P.PREFS.read_text())
+        got = json.loads(self.P.PREFS.read_text(encoding="utf-8"))
         self.assertEqual(got["taste"]["tuning"], "natural")
         self.assertEqual(got["cleanup"], {"order": "off", "retire": "on"})
         self.assertEqual(got["review"]["teach"], "off")
@@ -384,17 +384,17 @@ class Prefs(Temp):
     def test_daw_follows_setup_until_answered(self):
         setup = self.d / "setup.json"
         self.assertEqual(self.P.daw({}, setup), "")
-        setup.write_text(json.dumps({"daw": "reaper"}))
+        setup.write_text(json.dumps({"daw": "reaper"}), encoding="utf-8")
         self.assertEqual(self.P.daw({}, setup), "reaper")
         self.assertEqual(self.P.daw({"tools": {"daw": "ardour"}}, setup), "ardour")    # Preferences win
         self.assertEqual(self.P.daw({"tools": {"daw": "ableton"}}, setup), "live")      # older answers still read
         self.assertEqual(self.P.daw({"tools": {"daw": "logic"}}, setup), "other")
-        setup.write_text("not json")
+        setup.write_text("not json", encoding="utf-8")
         self.assertEqual(self.P.daw({}, setup), "")
 
     def test_get_and_unanswered_use_setup_for_the_daw(self):
         (self.d / "home" / ".hypnomix").mkdir(parents=True)
-        (self.d / "home" / ".hypnomix" / "setup.json").write_text(json.dumps({"daw": "ardour"}))
+        (self.d / "home" / ".hypnomix" / "setup.json").write_text(json.dumps({"daw": "ardour"}), encoding="utf-8")
         self.assertEqual(self.P.get({}, "tools.daw"), "ardour")
         self.assertNotIn("tools.daw", [q["key"] for q in self.P.unanswered({})])
         self.assertEqual(self.P.get({"tools": {"daw": "reaper"}}, "tools.daw"), "reaper")
@@ -431,7 +431,7 @@ class StartUp(unittest.TestCase):
                 "import hypnomix.core.dsp, hypnomix.ears.measure, hypnomix.ears.spectrogram, hypnomix.ears.stems\n"
                 "bad = [m for m in ('scipy.signal', 'pyloudnorm', 'librosa', 'matplotlib') if m in sys.modules]\n"
                 "print(bad)\n")
-        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(Path(__file__).resolve().parent.parent))
+        r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, cwd=str(Path(__file__).resolve().parent.parent), encoding="utf-8")
         self.assertEqual(r.stdout.strip(), "[]", r.stderr)
 
     def test_dsp_still_offers_scipy_names_to_other_modules(self):

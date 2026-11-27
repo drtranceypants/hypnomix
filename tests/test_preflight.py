@@ -21,7 +21,7 @@ def run(*args, home=None):
     env = dict(os.environ)
     if home:
         env["HYPNOMIX_HOME"] = str(home)
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env, encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -67,8 +67,10 @@ class Folder(unittest.TestCase):
         write(d, "Quiet.wav", tone(300) * 0.001)                                           # -60 dBFS peak
         write(d, "DC.wav", tone(147) * 0.3 + 0.02)
         write(d, "Clipped.wav", np.clip(tone(110) * 6, -1, 1))
-        write(d, "Bad:name?.wav", tone(392) * 0.3)
-        write(d, "CON.wav", tone(294) * 0.3)
+        cls.odd_names = sys.platform != "win32"                                            # Windows cannot hold either of these two files
+        if cls.odd_names:
+            write(d, "Bad:name?.wav", tone(392) * 0.3)
+            write(d, "CON.wav", tone(294) * 0.3)
         write(d, "one side.wav", np.stack([tone(500) * 0.3, np.zeros(N)], 1))
         cls.lossy = shutil.which("ffmpeg") is not None
         if cls.lossy:
@@ -126,7 +128,19 @@ class Folder(unittest.TestCase):
         self.assertIn("Vocal lossy.mp3", self.who("lossy"))
         self.assertNotIn("Vocal lossy.mp3", self.who("mixed-bits"))
 
+    def test_names_that_will_not_travel_by_name(self):
+        """The same check on the names alone, so it is also run where no file can have them."""
+        out = {f["kind"]: f for f in PF.check_names([Path("/x/Bad:name?.wav"), Path("/x/CON.wav"), Path("/x/Kick.wav")])}
+        self.assertIn("Bad:name?.wav", out["name-chars"]["track"])
+        self.assertIn("Bad-name-.wav", out["name-chars"]["fix"])
+        self.assertIn("Nothing was renamed", out["name-chars"]["fix"])
+        self.assertIn("CON.wav", out["name-reserved"]["track"])
+        self.assertEqual(len(out), 2)
+
     def test_names_that_will_not_travel(self):
+        if not self.odd_names:
+            self.skipTest("SKIPPED: Windows cannot hold a file called Bad:name?.wav or CON.wav, so the folder check was NOT run here; "
+                          "test_names_that_will_not_travel_by_name checks the same names")
         self.assertIn("Bad:name?.wav", self.who("name-chars"))
         self.assertIn("CON.wav", self.who("name-reserved"))
         self.assertIn("Bad-name-.wav", self.by["name-chars"][0]["fix"])
@@ -151,7 +165,7 @@ class Folder(unittest.TestCase):
         self.assertTrue(any(f["severity"] == "high" for f in self.findings))
         code, txt = run("preflight", self.stems, "--out", self.dir / "out1", home=self.home)
         self.assertEqual(code, 1)                                           # something high: a script can gate on it
-        md = (self.dir / "out1" / "PREFLIGHT.md").read_text()
+        md = (self.dir / "out1" / "PREFLIGHT.md").read_text(encoding="utf-8")
         self.assertIn("## Every file", md)
         self.assertIn("Nothing was changed, renamed or deleted", md)
 
@@ -235,7 +249,7 @@ class Folder(unittest.TestCase):
         scan = self.dir / "scan"
         code, txt = run("preflight", self.stems, "--plan", scan, home=self.home)
         self.assertEqual(code, 0, txt)
-        data = json.loads((scan / "findings.json").read_text())
+        data = json.loads((scan / "findings.json").read_text(encoding="utf-8"))
         fs = data["findings"]
         self.assertEqual(len(fs), len(self.findings))
         planned = {f["kind"]: f for f in fs if f.get("plan")}
@@ -379,7 +393,7 @@ class Project(unittest.TestCase):
             subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(cls.dir / "Audio" / "gtr.wav"), "-b:a", "128k",
                             str(cls.dir / "Audio" / "vox.mp3")])
         cls.rpp = cls.dir / "Song.rpp"
-        cls.rpp.write_text(RPP)
+        cls.rpp.write_text(RPP, encoding="utf-8")
 
     @classmethod
     def tearDownClass(cls):
@@ -412,9 +426,9 @@ class Project(unittest.TestCase):
         scan = self.dir / "scanp"
         code, txt = run("preflight", self.rpp, "--plan", scan, home=self.home)
         self.assertEqual(code, 0, txt)
-        data = json.loads((scan / "findings.json").read_text())
+        data = json.loads((scan / "findings.json").read_text(encoding="utf-8"))
         self.assertTrue(any(f["kind"] == "missing" for f in data["findings"]))
-        self.assertIn("preflight", (scan / "REVIEW.md").read_text())
+        self.assertIn("preflight", (scan / "REVIEW.md").read_text(encoding="utf-8"))
 
     def test_a_live_set_is_read_the_same_way(self):
         sys.path.insert(0, str(Path(__file__).parent))
@@ -435,14 +449,14 @@ class Project(unittest.TestCase):
 
     def test_a_broken_project_is_one_plain_line(self):
         junk = self.dir / "junk.rpp"
-        junk.write_text("junk\n")
+        junk.write_text("junk\n", encoding="utf-8")
         code, txt = run("preflight", junk, "--out", self.dir / "oj", home=self.home)
         self.assertNotEqual(code, 0)
         self.assertNotIn("Traceback", txt)
         self.assertIn("junk.rpp", txt)
         self.assertIn("REAPER project", txt)
         als = self.dir / "junk.als"
-        als.write_text("hello\n")
+        als.write_text("hello\n", encoding="utf-8")
         code, txt = run("preflight", als, "--out", self.dir / "oj2", home=self.home)
         self.assertNotEqual(code, 0)
         self.assertNotIn("Traceback", txt)

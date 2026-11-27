@@ -27,8 +27,8 @@ def bundle(root, name, text="v1"):
     """A fake plug-in bundle: a folder with Contents/MacOS/<binary> (plain text, never run)."""
     b = Path(root) / name
     (b / "Contents" / "MacOS").mkdir(parents=True)
-    (b / "Contents" / "MacOS" / b.stem).write_text(text)
-    (b / "Contents" / "Info.plist").write_text("<plist/>")
+    (b / "Contents" / "MacOS" / b.stem).write_text(text, encoding="utf-8")
+    (b / "Contents" / "Info.plist").write_text("<plist/>", encoding="utf-8")
     return b
 
 
@@ -104,7 +104,7 @@ class Catalogue(unittest.TestCase):
         self.assertTrue(C.validate([1, 2]))
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / "c.json"
-            f.write_text(json.dumps({"schema": 1, "version": "2026.1.1", "items": ["x"]}))
+            f.write_text(json.dumps({"schema": 1, "version": "2026.1.1", "items": ["x"]}), encoding="utf-8")
             with self.assertRaises(C.CatalogueError):
                 C.load(f)
 
@@ -176,7 +176,7 @@ class Installer(unittest.TestCase):
         # update: version 2 drops the AU and changes the VST3
         z2 = self.build_zip("foo2.zip", ["Fooverb.vst3"], text="v2")
         I.install(ITEM, archive=z2, info={"version": "2"}, confirm_unverified=True)
-        self.assertEqual((vst3 / "Contents/MacOS/Fooverb").read_text(), "v2")
+        self.assertEqual((vst3 / "Contents/MacOS/Fooverb").read_text(encoding="utf-8"), "v2")
         self.assertFalse(au.exists())
         self.assertEqual(I.manifest()["items"]["fooverb"]["paths"], [str(vst3)])
         self.assertEqual(I.status([ITEM])["fooverb"]["version"], "2")
@@ -194,13 +194,13 @@ class Installer(unittest.TestCase):
         with self.assertRaises(I.NeedsConfirm) as cm:
             I.install(ITEM, archive=z, info={"version": "1"}, confirm_unverified=True)
         self.assertIn(str(mine), cm.exception.paths)
-        self.assertEqual((mine / "Contents/MacOS/Fooverb").read_text(), "the person's own copy")
+        self.assertEqual((mine / "Contents/MacOS/Fooverb").read_text(encoding="utf-8"), "the person's own copy")
         self.assertNotIn("fooverb", I.manifest()["items"])
         # confirmed: replaced, and the old copy is kept in the store's trash, not deleted
         e = I.install(ITEM, archive=z, info={"version": "1"}, confirm_unverified=True, confirm_overwrite=True)
-        self.assertEqual((mine / "Contents/MacOS/Fooverb").read_text(), "v1")
+        self.assertEqual((mine / "Contents/MacOS/Fooverb").read_text(encoding="utf-8"), "v1")
         self.assertEqual(len(e["replaced_kept_in"]), 1)
-        self.assertEqual((Path(e["replaced_kept_in"][0]) / "Contents/MacOS/Fooverb").read_text(), "the person's own copy")
+        self.assertEqual((Path(e["replaced_kept_in"][0]) / "Contents/MacOS/Fooverb").read_text(encoding="utf-8"), "the person's own copy")
 
     def test_another_items_bundle_needs_confirming_too(self):
         z = self.build_zip("foo.zip", ["Fooverb.vst3"])
@@ -261,7 +261,7 @@ class Installer(unittest.TestCase):
     def test_dmg_with_a_link_outside_is_refused(self):
         src = self.tmp / "dmgsrc" / "Evil.vst3" / "Contents"
         src.mkdir(parents=True)
-        (src / "Info.plist").write_text("x")
+        (src / "Info.plist").write_text("x", encoding="utf-8")
         os.symlink(str(Path.home()), src / "home")
         dmg = self.tmp / "evil.dmg"
         subprocess.run(["hdiutil", "create", "-quiet", "-fs", "HFS+", "-srcfolder", str(self.tmp / "dmgsrc"),
@@ -291,7 +291,7 @@ class Installer(unittest.TestCase):
     def test_content_goes_to_the_library(self):
         d = self.tmp / "kit" / "Test Kit v1"
         (d / "Samples").mkdir(parents=True)
-        (d / "kit.sfz").write_text("<region> sample=Samples/kick.wav")
+        (d / "kit.sfz").write_text("<region> sample=Samples/kick.wav", encoding="utf-8")
         (d / "Samples" / "kick.wav").write_bytes(b"RIFF")
         t = self.tmp / "kit.tar.gz"
         with tarfile.open(t, "w:gz") as tf:
@@ -309,7 +309,7 @@ class Installer(unittest.TestCase):
     def test_7z(self):
         d = self.tmp / "k7"
         (d / "Kit").mkdir(parents=True)
-        (d / "Kit" / "a.sfz").write_text("x")
+        (d / "Kit" / "a.sfz").write_text("x", encoding="utf-8")
         z = self.tmp / "kit.7z"
         tar = shutil.which("bsdtar") or "/usr/bin/tar"
         r = subprocess.run([tar, "--format", "7zip", "-cf", str(z), "-C", str(d), "Kit"], capture_output=True)
@@ -326,11 +326,11 @@ class Installer(unittest.TestCase):
         dmg = self.tmp / "foo.dmg"
         subprocess.run(["hdiutil", "create", "-quiet", "-fs", "HFS+", "-volname", "Foo", "-srcfolder", str(d), "-ov",
                         "-format", "UDZO", str(dmg)], check=True)
-        before = subprocess.run(["hdiutil", "info"], capture_output=True, text=True).stdout.count("hypnomix-store-mnt")
+        before = subprocess.run(["hdiutil", "info"], capture_output=True, text=True, encoding="utf-8").stdout.count("hypnomix-store-mnt")
         e = I.install(dict(ITEM, formats=["CLAP"]), archive=dmg, info={"version": "1"}, confirm_unverified=True)
         self.assertEqual(e["paths"], [str(self.root / "Library/Audio/Plug-Ins/CLAP/Fooverb.clap")])
         self.assertFalse((self.root / "Library/Audio/Plug-Ins/CLAP/Applications").exists())
-        after = subprocess.run(["hdiutil", "info"], capture_output=True, text=True).stdout.count("hypnomix-store-mnt")
+        after = subprocess.run(["hdiutil", "info"], capture_output=True, text=True, encoding="utf-8").stdout.count("hypnomix-store-mnt")
         self.assertEqual(before, after)                                     # detached again
         # a zip with the dmg inside (how some publishers ship): unpacked one level deeper
         z = self.tmp / "wrapped.zip"
@@ -381,7 +381,7 @@ class Catalogue2(unittest.TestCase):
         data = json.loads(json.dumps(C.load()))
         mutate(data)
         f = Path(tempfile.mkdtemp(prefix="hx-cat-")) / "catalogue.json"
-        f.write_text(json.dumps(data))
+        f.write_text(json.dumps(data), encoding="utf-8")
         self.addCleanup(shutil.rmtree, f.parent, ignore_errors=True)
         return f
 
@@ -561,7 +561,7 @@ class Safety(unittest.TestCase):
         other = bundle(vst3, "Other.vst3")
         outside = self.tmp / "outside"
         outside.mkdir()
-        (outside / "victim.txt").write_text("keep me")
+        (outside / "victim.txt").write_text("keep me", encoding="utf-8")
         os.symlink(outside, vst3 / "lnk")
         (self.root / "Music/Hypnomix Library").mkdir(parents=True)
         for bad in (vst3 / "lnk" / "victim.txt",                                    # through a link in a parent folder
@@ -593,7 +593,7 @@ class Safety(unittest.TestCase):
     def test_app_routes_use_the_same_check(self):
         from hypnomix.app import store as ST
         out = self.tmp / "outside.pkg"
-        out.write_text("x")
+        out.write_text("x", encoding="utf-8")
         I._save_manifest({"items": {"fooverb": {"id": "fooverb", "paths": [], "method": "pkg", "installer": str(out)}}})
         self.assertEqual(ST.handle_post("/api/store/open-installer", {"id": "fooverb"})[0], 404)
         self.assertFalse(ST._reveal(str(out)))
@@ -741,7 +741,7 @@ class Safety(unittest.TestCase):
             zf.writestr("Foo Installer.pkg", "xar!")
         e = I.install(dict(ITEM, method="pkg"), archive=z, info={"version": "1"}, confirm_unverified=True, open_pkg=lambda p: True)
         self.assertTrue(e["quarantined"])
-        r = subprocess.run(["xattr", "-p", "com.apple.quarantine", e["installer"]], capture_output=True, text=True)
+        r = subprocess.run(["xattr", "-p", "com.apple.quarantine", e["installer"]], capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(r.returncode, 0)
         self.assertTrue(r.stdout.startswith("0081;"))
 
@@ -969,7 +969,7 @@ class Loopback(unittest.TestCase):
         self.assertEqual(I.status([item])["fooverb"]["method"], "pkg")
         if sys.platform == "darwin" and shutil.which("xattr"):
             self.assertTrue(e["quarantined"])
-            r = real_run(["xattr", "-p", "com.apple.quarantine", str(kept)], capture_output=True, text=True)
+            r = real_run(["xattr", "-p", "com.apple.quarantine", str(kept)], capture_output=True, text=True, encoding="utf-8")
             self.assertTrue(r.stdout.startswith("0081;"))
         I.uninstall("fooverb")                                               # Forget: the kept installer goes, nothing else
         self.assertFalse(kept.exists())
@@ -1090,10 +1090,10 @@ class DiskCareCoversTheStore(unittest.TestCase):
                 fresh.write_bytes(b"x")
                 os.utime(fresh, (old, old))
                 items, _ = DC.plan("ok")
-                gone = {str(p.relative_to(st)) for rule, a, p, n in items if rule == "store"}
+                gone = {p.relative_to(st).as_posix() for rule, a, p, n in items if rule == "store"}
                 self.assertEqual(gone, {"work/foo-1", "installers/old", "trash/20260101-000000"})
                 self.assertIn("store", [r["rule"] for r in DC.summary(items)])
-                self.assertIn("store:", (Path(DC.__file__).with_name("diskcare.js")).read_text())
+                self.assertIn("store:", (Path(DC.__file__).with_name("diskcare.js")).read_text(encoding="utf-8"))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -1517,7 +1517,7 @@ class UnpackTimeLimit(unittest.TestCase):
         self.assertEqual(I._duration(5900), "99 minutes")
         self.assertEqual(I._duration(7200), "2 hours")
         self.assertEqual(I._duration(90), "90 seconds")
-        art = (Path(I.__file__).parents[1] / "app" / "wiki" / "articles" / "18-store.html").read_text()
+        art = (Path(I.__file__).parents[1] / "app" / "wiki" / "articles" / "18-store.html").read_text(encoding="utf-8")
         self.assertIn("about 13 GB up gets the 2 hours", art)
         self.assertNotIn("about 14 GB", art)
 
@@ -1641,7 +1641,7 @@ class UnpackTimeLimit(unittest.TestCase):
         self.assertIn("took longer than the 40 minutes", str(cm.exception))
 
     def test_no_caller_still_has_the_old_fixed_limit(self):
-        text = Path(I.__file__).read_text()
+        text = Path(I.__file__).read_text(encoding="utf-8")
         self.assertEqual(text.count("timeout=900"), 1)                        # only the default of the short listing helper
         section = lambda fn: text.split("def " + fn, 1)[1].split("\ndef ", 1)[0]
         self.assertIn("limit_s()", section("_dmg_copy"))                      # the disk image is opened and copied by size

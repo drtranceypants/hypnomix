@@ -7,7 +7,7 @@ from hypnomix.session import plugins as P
 
 
 def hx(*args):
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -23,7 +23,7 @@ def build(td):
         dict(name="Vendor: Chorus Thing", type="aufx", subtype="chor", manufacturer="vndr"),
         dict(name="Vendor: Big Synth", type="aumu", subtype="bsyn", manufacturer="vndr")])))
     (td / "CLAP").mkdir()
-    (td / "CLAP/Surge XT.clap").write_text("x")
+    (td / "CLAP/Surge XT.clap").write_text("x", encoding="utf-8")
     (td / "LV2/thing.lv2").mkdir(parents=True)
     return td
 
@@ -69,7 +69,7 @@ class Finding(unittest.TestCase):
         self.assertEqual([r["name"] for r in found], ["Odd"])
 
     def test_every_free_name_is_in_the_readme(self):
-        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
         table = readme[readme.index("### Free plug-ins that work with HypnoMix"):]
         for f in P.FREE:
             self.assertIn(f["name"], table, f["name"])
@@ -126,14 +126,14 @@ class Saving(unittest.TestCase):
         self.td.cleanup()
 
     def test_saved_names_are_the_free_ones_and_hand_entries_are_kept(self):
-        self.prefs.write_text(json.dumps({"tools": {"daw": "ableton", "plugins": ["Hand Added"]}}))
+        self.prefs.write_text(json.dumps({"tools": {"daw": "ableton", "plugins": ["Hand Added"]}}), encoding="utf-8")
         P.save_prefs(self.found, False, False, self.prefs)
-        d = json.loads(self.prefs.read_text())
+        d = json.loads(self.prefs.read_text(encoding="utf-8"))
         self.assertEqual(d["tools"]["daw"], "ableton")
         self.assertEqual(sorted(d["tools"]["plugins"]), sorted(["Hand Added", "DragonflyHallReverb", "TDR Nova", "LoudMax"]))
         self.assertEqual(len(d["tools"]["plugins_found"]), len(self.found))
         P.save_prefs(self.found, False, True, self.prefs)
-        self.assertNotIn("Hand Added", json.loads(self.prefs.read_text())["tools"]["plugins"])
+        self.assertNotIn("Hand Added", json.loads(self.prefs.read_text(encoding="utf-8"))["tools"]["plugins"])
 
     def test_a_plugin_that_failed_to_load_is_not_offered(self):
         for r in self.found:
@@ -161,18 +161,18 @@ class Command(unittest.TestCase):
             self.assertIn("on the free list", out)
             self.assertIn("nothing was written", out)
             code, out = hx(*args, "--json", d / "out.json")
-            doc = json.loads((d / "out.json").read_text())
+            doc = json.loads((d / "out.json").read_text(encoding="utf-8"))
             self.assertEqual(doc["free_installed"], ["DragonflyHallReverb", "LoudMax", "Surge XT", "TDR Nova"])
             self.assertFalse(doc["checked"])
             self.assertIsNone(doc["saved"])
             code, out = hx(*args, "--free", "--json")                   # data on stdout, the report on stderr
             self.assertEqual(code, 0, out)
-            r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args), "--free", "--json"], capture_output=True, text=True)
+            r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args), "--free", "--json"], capture_output=True, text=True, encoding="utf-8")
             self.assertEqual({p["name"] for p in json.loads(r.stdout)["plugins"]}, {"DragonflyHallReverb", "LoudMax", "Surge XT", "TDR Nova"})
             code, out = hx(*args, "--save", "--prefs-file", d / "p.json")
             self.assertEqual(code, 0, out)
             self.assertIn("saved 4 free plug-in(s)", out)
-            self.assertEqual(json.loads((d / "p.json").read_text())["tools"]["plugins"][0], "DragonflyHallReverb")
+            self.assertEqual(json.loads((d / "p.json").read_text(encoding="utf-8"))["tools"]["plugins"][0], "DragonflyHallReverb")
 
     def test_a_bad_folder_option_is_explained(self):
         code, out = hx("plugins", "--folder", "vst2=/x")

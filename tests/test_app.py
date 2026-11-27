@@ -36,9 +36,9 @@ class App(unittest.TestCase):
             dict(id="tune-Lead", tool="tune", kind="pitch", severity="medium", track="Lead", where="bars 17-24", problem="flat notes", fix="tune", applies="audio"),
             dict(id="mix-1", tool="measure", kind="loudness", severity="info", track="mix", where="", problem="-12 LUFS", fix="", applies="info"),
         ]
-        (d / "findings.json").write_text(json.dumps(dict(set="/nowhere/Song.als", findings=findings, notes=[])))
+        (d / "findings.json").write_text(json.dumps(dict(set="/nowhere/Song.als", findings=findings, notes=[])), encoding="utf-8")
         sf.write(str(d / "ab" / "smooth-1 A (now).wav"), np.zeros(4410, dtype=np.float32), 44100)
-        (d / "ab" / "ab.json").write_text(json.dumps({"smooth-1": {"a": "smooth-1 A (now).wav", "b": "smooth-1 A (now).wav"}}))
+        (d / "ab" / "ab.json").write_text(json.dumps({"smooth-1": {"a": "smooth-1 A (now).wav", "b": "smooth-1 A (now).wav"}}), encoding="utf-8")
         cls.dir = str(d)
         cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), S.make_handler(0))
         port = cls.srv.server_address[1]
@@ -78,7 +78,7 @@ class App(unittest.TestCase):
         self.assertEqual(call(self.base, "/api/decide", body)[0], 403)
         self.assertEqual(call(self.base, "/api/decide", body, self.S.TOKEN, {"Origin": "http://evil.example"})[0], 403)
         self.assertEqual(call(self.base, "/api/decide", body, self.S.TOKEN)[0], 200)
-        self.assertEqual(json.loads((Path(self.dir) / "decisions.json").read_text())["smooth-1"]["decision"], "approve")
+        self.assertEqual(json.loads((Path(self.dir) / "decisions.json").read_text(encoding="utf-8"))["smooth-1"]["decision"], "approve")
         self.assertEqual(call(self.base, "/api/decide", dict(body, dir="/etc"), self.S.TOKEN)[0], 400)
         self.assertEqual(call(self.base, "/api/review?dir=/etc")[0], 400)
         self.assertEqual(call(self.base, "/api/tool", dict(cmd="install", args=""), self.S.TOKEN)[0], 400)
@@ -158,7 +158,7 @@ class App(unittest.TestCase):
     def test_the_app_has_no_inline_event_handlers_for_the_policy_to_break(self):
         import re
         from hypnomix.app import ui
-        sources = [ui.PAGE] + [p.read_text() for p in Path(ui.__file__).parent.glob("*.js")]
+        sources = [ui.PAGE] + [p.read_text(encoding="utf-8") for p in Path(ui.__file__).parent.glob("*.js")]
         for src in sources:
             self.assertEqual(re.findall(r"""<[a-z][^>]*\son[a-z]+\s*=\s*["'{\\]""", src), [])
             self.assertNotIn("javascript:", src)
@@ -287,7 +287,7 @@ class App(unittest.TestCase):
         self.assertEqual(self.S.bounce_file(str(good)), str(good.resolve()))
         outside = Path(self.td.name) / "elsewhere.wav"
         outside.write_bytes(b"RIFF")
-        (bounces / "notes.txt").write_text("x")
+        (bounces / "notes.txt").write_text("x", encoding="utf-8")
         link = bounces / "link.wav"
         link.symlink_to(outside)
         for bad in (str(outside), "/etc/passwd", str(bounces / "notes.txt"), str(bounces / "nope.wav"), str(bounces / ".." / "elsewhere.wav"),
@@ -302,7 +302,7 @@ class App(unittest.TestCase):
         als = Path(self.td.name) / "My Song.als"
         als.write_bytes(b"x")
         txt = Path(self.td.name) / "notes.txt"
-        txt.write_text("x")
+        txt.write_text("x", encoding="utf-8")
         lnk = Path(self.td.name) / "sneaky.als"
         lnk.symlink_to(txt)
         run = dict(guide="Lead", parts=["Double"])
@@ -383,16 +383,16 @@ class AppFlow(unittest.TestCase):
     def scan(self, name, source, findings, dec=None, mode="set", **meta):
         d = self.work / "scan" / name
         (d / "ab").mkdir(parents=True)
-        (d / "findings.json").write_text(json.dumps(dict(set=str(source), notes=[], findings=findings)))
+        (d / "findings.json").write_text(json.dumps(dict(set=str(source), notes=[], findings=findings)), encoding="utf-8")
         was = Path(source).stat().st_mtime if Path(source).is_file() else None
-        (d / "scan.json").write_text(json.dumps(dict(dict(set=str(source), mode=mode, set_mtime=was), **meta)))
+        (d / "scan.json").write_text(json.dumps(dict(dict(set=str(source), mode=mode, set_mtime=was), **meta)), encoding="utf-8")
         if dec is not None:
-            (d / "decisions.json").write_text(json.dumps(dec))
+            (d / "decisions.json").write_text(json.dumps(dec), encoding="utf-8")
         return d
 
     def source(self, name, text="x"):
         p = self.music / name
-        p.write_text(text)
+        p.write_text(text, encoding="utf-8")
         return p
 
     def review(self, d):
@@ -461,8 +461,8 @@ class AppFlow(unittest.TestCase):
         self.assertEqual(S.source_kind("/x/Stems", "folder"), "folder")
         als = self.source("Song.als")
         self.assertEqual(S.free_out(als, "als"), "Song (fixed).als")
-        (self.music / "Song (fixed).als").write_text("x")
-        (self.music / "Song (fixed 2).als").write_text("x")
+        (self.music / "Song (fixed).als").write_text("x", encoding="utf-8")
+        (self.music / "Song (fixed 2).als").write_text("x", encoding="utf-8")
         self.assertEqual(S.free_out(als, "als"), "Song (fixed 3).als")
         self.assertEqual(S.free_out(self.music / "R.rpp", "rpp"), "R (fixed).rpp")
         self.assertEqual(S.free_out(self.music / "S.ardour", "ardour"), "S (fixed).ardour")
@@ -480,7 +480,7 @@ class AppFlow(unittest.TestCase):
             code, j, _ = self.post("/api/fix", dict(dir=str(d), out="Mine.als"))
             self.assertEqual(code, 200, j)
             self.assertEqual(Path(j["out"]).name, "Mine" + suffix, j)                              # never "Rsong (fixed).rpp.als"
-        (self.music / "Taken.als").write_text("x")
+        (self.music / "Taken.als").write_text("x", encoding="utf-8")
         d = self.scan("Song", als, [F("smooth-1")], {"smooth-1": {"decision": "approve"}})
         code, j, _ = self.post("/api/fix", dict(dir=str(d), out="Taken"))
         self.assertEqual(code, 409)
@@ -570,7 +570,7 @@ class AppFlow(unittest.TestCase):
         S.subprocess.Popen = lambda argv, **kw: opened.append(argv)
         S.subprocess.run = lambda argv, **kw: opened.append(argv) or subprocess.CompletedProcess(argv, 0)
         try:
-            S.sys.platform = "linux"
+            S.sys.platform, S.is_windows = "linux", lambda: False            # a real Windows answers is_windows() from os.name
             S.shutil.which = lambda n: None
             ok, why = S.reveal(f)
             self.assertFalse(ok)
@@ -597,10 +597,10 @@ class AppFlow(unittest.TestCase):
         a = self.source("Song.als")
         (self.music / "Elsewhere").mkdir()
         b = self.music / "Elsewhere" / "Song.als"
-        b.write_text("y")
+        b.write_text("y", encoding="utf-8")
         ard = self.music / "Song"                                  # an Ardour session folder with the same name
         ard.mkdir()
-        (ard / "Song.ardour").write_text("z")
+        (ard / "Song.ardour").write_text("z", encoding="utf-8")
         stems1, stems2 = self.music / "x" / "Stems", self.music / "y" / "Stems"
         for s in (stems1, stems2):
             s.mkdir(parents=True)
@@ -611,8 +611,8 @@ class AppFlow(unittest.TestCase):
             d = Path(r["dir"])
             if not d.exists() or not (d / "scan.json").exists():                        # the stand-in scan: record what a real one would
                 (d / "raw").mkdir(parents=True, exist_ok=True)
-                (d / "scan.json").write_text(json.dumps(dict(set=str(src.resolve()), mode="set")))
-                (d / "findings.json").write_text(json.dumps(dict(set=str(src.resolve()), findings=[])))
+                (d / "scan.json").write_text(json.dumps(dict(set=str(src.resolve()), mode="set")), encoding="utf-8")
+                (d / "findings.json").write_text(json.dumps(dict(set=str(src.resolve()), findings=[])), encoding="utf-8")
             dirs.append((r["dir"], r["reused"]))
         names = [Path(d).name for d, _ in dirs]
         self.assertEqual(names, ["Song", "Song (2)", "Song (3)", "Stems", "Stems (2)", "Song", "Stems (2)"])
@@ -622,7 +622,7 @@ class AppFlow(unittest.TestCase):
         self.assertEqual(rows["Song (2)"]["parent"], str(b.resolve().parent))
         self.assertEqual(rows["Stems"]["parent"], str(stems1.resolve().parent))
         # decisions and the fix log of one never turn up in another
-        (self.work / "scan" / "Song" / "decisions.json").write_text('{"x": {"decision": "approve"}}')
+        (self.work / "scan" / "Song" / "decisions.json").write_text('{"x": {"decision": "approve"}}', encoding="utf-8")
         self.assertEqual(self.review(self.work / "scan" / "Song (2)")["decisions"], {})
 
     def test_scan_asks_for_a_song_that_can_be_scanned(self):
@@ -640,7 +640,7 @@ class AppFlow(unittest.TestCase):
     def test_a_rescan_of_a_live_set_carries_decisions_and_others_set_them_aside(self):
         als = self.source("Song.als")
         d = self.scan("Song", als, [F("smooth-1")], {"smooth-1": {"decision": "approve"}}, mix="/m/mix.wav", key="F# major")
-        (d / "app-scan.json").write_text(json.dumps(dict(source=str(als), deep=True, like="/m/like.wav")))
+        (d / "app-scan.json").write_text(json.dumps(dict(source=str(als), deep=True, like="/m/like.wav")), encoding="utf-8")
         code, r, _ = self.post("/api/rescan", dict(dir=str(d)))
         self.assertEqual((code, r["reused"], r["carries_decisions"]), (200, True, True))
         steps = self.runs[-1][2]
@@ -661,7 +661,7 @@ class AppFlow(unittest.TestCase):
         self.assertNotIn("--since", argv)
         next(a for _, a, _ in steps if callable(a))()                                       # the first step: get ready
         self.assertFalse((d2 / "decisions.json").exists())
-        self.assertEqual(json.loads((d2 / "decisions before re-scan.json").read_text())["fade-1"]["decision"], "approve")
+        self.assertEqual(json.loads((d2 / "decisions before re-scan.json").read_text(encoding="utf-8"))["fade-1"]["decision"], "approve")
         self.assertEqual(self.post("/api/rescan", dict(dir=str(self.work / "scan")))[0], 400)
         # two folders hold scans of the same set (an older app made them): Re-scan on one card goes into THAT folder
         d3 = self.scan("Song (older)", als, [F("smooth-1")])
@@ -745,12 +745,12 @@ history: logged as v1 (`hypnomix history "x"`)
         new = self.source("Song (fixed).als")
         d = self.scan("Song", als, [F("smooth-1", where="12.3.50"), F("smooth-2", where="1 clip(s)"), F("order-1", "order", "track-order", where="", default="approve"),
                                     F("merge-1", "tidy", "consolidate", default="approve"), F("eq-1", applies="manual"), F("tune-Lead", "tune", applies="audio")])
-        (d / "fix-log.md").write_text(self.LOG)
+        (d / "fix-log.md").write_text(self.LOG, encoding="utf-8")
         (d / "history").mkdir()
-        (d / "history" / "v1-input.als").write_text("x")
+        (d / "history" / "v1-input.als").write_text("x", encoding="utf-8")
         (d / "history" / "history.json").write_text(json.dumps({"versions": [dict(
             n=1, kind="fix", at="2026-11-26 10:00:00", input=str(als), output=str(new), input_snapshot="v1-input.als", changes=3,
-            failed=[], approved=[dict(id=i) for i in ("smooth-1", "smooth-2", "order-1", "merge-1", "eq-1", "tune-Lead")])]}))
+            failed=[], approved=[dict(id=i) for i in ("smooth-1", "smooth-2", "order-1", "merge-1", "eq-1", "tune-Lead")])]}), encoding="utf-8")
         code, r, _ = call(self.base, "/api/fix/result?dir=" + urllib.request.quote(str(d)))
         self.assertEqual(code, 200, r)
         self.assertEqual([f["name"] for f in r["files"]], ["Song (fixed).als"])
@@ -775,7 +775,7 @@ history: logged as v1 (`hypnomix history "x"`)
     def test_a_run_that_wrote_nothing_is_not_called_applied(self):
         als = self.source("Song.als")
         d = self.scan("Song", als, [F("smooth-1")], {"smooth-1": {"decision": "approve"}})
-        (d / "fix-log.md").write_text("\n## fix run now\n\napproved: smooth-1\n\n### skipped (not applied)\n\n- smooth-1: gone\n")
+        (d / "fix-log.md").write_text("\n## fix run now\n\napproved: smooth-1\n\n### skipped (not applied)\n\n- smooth-1: gone\n", encoding="utf-8")
         S = self.S
         S.JOB.update(id=7, status="done", kind="fix", dir=str(d.resolve()), files=[], stopped=False, reason="",
                      log=["$ hypnomix fix", "no set changes could be applied; see fix-log.md"])
@@ -791,10 +791,10 @@ history: logged as v1 (`hypnomix history "x"`)
         als = self.source("Song.als")
         d = self.scan("Song", als, [F("smooth-1")])
         (d / "history").mkdir()
-        (d / "history" / "v1-input.als").write_text("x")
+        (d / "history" / "v1-input.als").write_text("x", encoding="utf-8")
         (d / "history" / "history.json").write_text(json.dumps({"versions": [
             dict(n=1, kind="fix", at="t1", input=str(als), output=str(self.music / "Song (fixed).als"), input_snapshot="v1-input.als", approved=[dict(id="smooth-1")], failed=[]),
-            dict(n=2, kind="fix", at="t2", input=str(als), output=None, approved=[dict(id="x")], failed=["x: stopped"])]}))
+            dict(n=2, kind="fix", at="t2", input=str(als), output=None, approved=[dict(id="x")], failed=["x: stopped"])]}), encoding="utf-8")
         code, r, _ = call(self.base, "/api/history?dir=" + urllib.request.quote(str(d)))
         self.assertEqual(code, 200)
         self.assertEqual([(e["n"], e["can_undo"]) for e in r["entries"]], [(2, False), (1, True)])
@@ -813,7 +813,7 @@ history: logged as v1 (`hypnomix history "x"`)
             src = self.source(name)
             d2 = self.scan(name.split(".")[0], src, [F("fade-1")], mode=mode)
             (d2 / "history").mkdir()
-            (d2 / "history" / "history.json").write_text(json.dumps({"versions": [dict(n=1, kind="fix", at="t", input=str(src), output=str(self.music / "o"), approved=[dict(id="fade-1")])]}))
+            (d2 / "history" / "history.json").write_text(json.dumps({"versions": [dict(n=1, kind="fix", at="t", input=str(src), output=str(self.music / "o"), approved=[dict(id="fade-1")])]}), encoding="utf-8")
             e = call(self.base, "/api/history?dir=" + urllib.request.quote(str(d2)))[1]["entries"][0]
             self.assertFalse(e["can_undo"])
             self.assertIn("no snapshot", e["why_not"])
@@ -826,7 +826,7 @@ history: logged as v1 (`hypnomix history "x"`)
     def test_a_damaged_decisions_file_keeps_the_song_in_the_list_and_can_be_restored(self):
         als = self.source("Song.als")
         d = self.scan("Song", als, [F("smooth-1"), F("eq-1", applies="manual")])
-        (d / "decisions.json").write_text('{"smooth-1": {"decision": "appr')
+        (d / "decisions.json").write_text('{"smooth-1": {"decision": "appr', encoding="utf-8")
         row = call(self.base, "/api/state")[1]["scans"][0]
         self.assertEqual((row["name"], row["damaged"], row["can_restore"]), ("Song", "decisions.json", False))
         r = self.review(d)
@@ -838,17 +838,17 @@ history: logged as v1 (`hypnomix history "x"`)
         self.assertIn("damaged", j["error"])
         self.assertEqual(self.post("/api/fix", dict(dir=str(d)))[0], 409)
         self.assertEqual(self.post("/api/restore-decisions", dict(dir=str(d)))[0], 409)          # no backup to restore
-        (d / "decisions.json.bak").write_text(json.dumps({"smooth-1": {"decision": "skip"}}))
+        (d / "decisions.json.bak").write_text(json.dumps({"smooth-1": {"decision": "skip"}}), encoding="utf-8")
         row = call(self.base, "/api/state")[1]["scans"][0]
         self.assertTrue(row["can_restore"])
         code, j, _ = self.post("/api/restore-decisions", dict(dir=str(d)))
         self.assertEqual((code, j["restored"], j["kept"]), (200, True, "decisions.damaged.json"))
         self.assertEqual(self.review(d)["decisions"]["smooth-1"]["decision"], "skip")
-        self.assertEqual((d / "decisions.damaged.json").read_text(), '{"smooth-1": {"decision": "appr')     # the damaged file is kept
+        self.assertEqual((d / "decisions.damaged.json").read_text(encoding="utf-8"), '{"smooth-1": {"decision": "appr')     # the damaged file is kept
         self.assertEqual(self.post("/api/restore-decisions", dict(dir=str(d)))[0], 400)         # no longer damaged
         # no backup: start again (the damaged file is still kept)
         (d / "decisions.json.bak").unlink()
-        (d / "decisions.json").write_text("{nope")
+        (d / "decisions.json").write_text("{nope", encoding="utf-8")
         code, j, _ = self.post("/api/restore-decisions", dict(dir=str(d), fresh=True))
         self.assertEqual((code, j["restored"], j["kept"]), (200, False, "decisions.damaged 2.json"))
         self.assertEqual(self.review(d)["decisions"], {})
@@ -861,9 +861,9 @@ history: logged as v1 (`hypnomix history "x"`)
         self.assertFalse((d / "decisions.json.bak").exists())                         # one write: nothing before it to keep
         self.assertEqual(self.post("/api/decide", dict(dir=str(d), id="smooth-2", decision="skip"))[0], 200)
         self.assertEqual(self.post("/api/decide", dict(dir=str(d), ids=["smooth-3"], decision="approve"))[0], 200)
-        self.assertEqual(sorted(json.loads((d / "decisions.json.bak").read_text())), ["smooth-1", "smooth-2"])   # the writer's own name
-        full = (d / "decisions.json").read_text()
-        (d / "decisions.json").write_text(full[:len(full) // 2])                      # a crash in the middle of a write
+        self.assertEqual(sorted(json.loads((d / "decisions.json.bak").read_text(encoding="utf-8"))), ["smooth-1", "smooth-2"])   # the writer's own name
+        full = (d / "decisions.json").read_text(encoding="utf-8")
+        (d / "decisions.json").write_text(full[:len(full) // 2], encoding="utf-8")                      # a crash in the middle of a write
         row = call(self.base, "/api/state")[1]["scans"][0]
         self.assertEqual((row["name"], row["damaged"], row["can_restore"]), ("Song", "decisions.json", True))   # still listed, Restore offered
         r = self.review(d)
@@ -882,7 +882,7 @@ history: logged as v1 (`hypnomix history "x"`)
         d.mkdir(parents=True)
         atomic.write_json(d / "scan.json", dict(mode="folder", group_seconds=dict(mix=7)))
         atomic.write_json(d / "scan.json", dict(mode="folder", group_seconds=dict(mix=8)))       # the first one is now scan.json.bak
-        (d / "scan.json").write_text('{"mode": "fol')
+        (d / "scan.json").write_text('{"mode": "fol', encoding="utf-8")
         self.assertEqual(self.S.read_scan_json(d), dict(mode="folder", group_seconds=dict(mix=7)))
         self.assertEqual(self.S.prior_times(d)["groups"], dict(mix=7.0))
         (d / "scan.json.bak").unlink()
@@ -892,7 +892,7 @@ history: logged as v1 (`hypnomix history "x"`)
     def test_a_damaged_findings_file_is_listed_not_dropped(self):
         als = self.source("Song.als")
         d = self.scan("Song", als, [F("smooth-1")])
-        (d / "findings.json").write_text('{"findings": [ {"id"')
+        (d / "findings.json").write_text('{"findings": [ {"id"', encoding="utf-8")
         row = call(self.base, "/api/state")[1]["scans"][0]
         self.assertEqual((row["name"], row["damaged"], row["can_rescan"]), ("Song", "findings.json", True))
         r = self.review(d)
@@ -904,7 +904,7 @@ history: logged as v1 (`hypnomix history "x"`)
         # a scan that never finished is listed too
         d2 = self.work / "scan" / "Half"
         d2.mkdir()
-        (d2 / "scan.json").write_text(json.dumps(dict(set=str(als), mode="set")))
+        (d2 / "scan.json").write_text(json.dumps(dict(set=str(als), mode="set")), encoding="utf-8")
         rows = {r["name"]: r for r in call(self.base, "/api/state")[1]["scans"]}
         self.assertTrue(rows["Half"]["incomplete"])
 
@@ -969,7 +969,7 @@ history: logged as v1 (`hypnomix history "x"`)
 
     # ---- the port the app runs on is the port its devices and jobs use
     def _main_with(self, argv, env):
-        from hypnomix.app import update as UP, diskcare as DC
+        from hypnomix.app import update as UP, diskcare as DC, reporting as RP
 
         class FakeServer:
             def __init__(self, *a, **k): pass
@@ -980,6 +980,7 @@ history: logged as v1 (`hypnomix history "x"`)
         try:
             with mock.patch.object(self.S, "LocalServer", FakeServer), mock.patch.object(self.S, "start_probe_hub"), \
                     mock.patch.object(UP, "check_in_background"), mock.patch.object(DC, "start_in_background"), \
+                    mock.patch.object(RP, "install_hooks"), \
                     mock.patch.object(sys, "argv", ["hypnomix-app"] + argv), mock.patch("builtins.print"):
                 self.S.main()
             return os.environ.get("HYPNOMIX_PORT")
@@ -1035,7 +1036,7 @@ history: logged as v1 (`hypnomix history "x"`)
             # once the demo has run, the second step finds the song it wrote and starts the scan on it
             out = Path(argv[2])
             out.mkdir(parents=True)
-            (out / "Demo.als").write_text("x")
+            (out / "Demo.als").write_text("x", encoding="utf-8")
             self.S.JOB["log"] = ["$ hypnomix demo", f"wrote {out / 'Demo.als'}"]
             more = steps[1][1]()
             self.assertEqual(more[0][0], "Getting ready")
@@ -1067,18 +1068,18 @@ history: logged as v1 (`hypnomix history "x"`)
         keep = self.source("Song (fixed).als")                                                # a real result next to it is never touched
 
         def fake(argv):
-            step_file.write_text("temp")
+            step_file.write_text("temp", encoding="utf-8")
             return subprocess.Popen(["sh", "-c", f"sleep 120 & echo $! > '{pidfile}'; wait"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    text=True, start_new_session=True)
+                                    text=True, start_new_session=True, encoding="utf-8")
         real = S.popen_job
         S.popen_job = fake
         try:
             S.run_job("fix", "Applying", [("Applying", ["fix", str(d)], True)], d)
             for _ in range(100):
-                if pidfile.exists() and pidfile.read_text().strip():
+                if pidfile.exists() and pidfile.read_text(encoding="utf-8").strip():
                     break
                 time.sleep(0.05)
-            child = int(pidfile.read_text())
+            child = int(pidfile.read_text(encoding="utf-8"))
             os.kill(child, 0)                                                                    # the grandchild is running
             self.assertEqual(call(self.base, "/api/stop", {}, S.TOKEN)[1], {"stopped": True})
             for _ in range(100):
@@ -1151,7 +1152,7 @@ class Device(unittest.TestCase):
             sub = next(b["box"]["patcher"] for b in patch["patcher"]["boxes"] if b["box"].get("text") == "p hypnomix_panel")
             self.assertEqual([b["box"].get("jsarguments") for b in sub["boxes"] if b["box"]["maxclass"] == "jsui"], [["float"]])
             self.assertEqual(len(patch["patcher"]["lines"]), 11)
-            js = (out / "hypnomix_device.js").read_text()
+            js = (out / "hypnomix_device.js").read_text(encoding="utf-8")
             self.assertIn("127.0.0.1:8791", js)
             self.assertNotIn("__", js.replace("__PORT__", ""))                            # every placeholder filled
             for fn in ("function paint()", "function onclick(", "function bang()", "function jump("):
@@ -1195,16 +1196,16 @@ class ReviewB(unittest.TestCase):
     def scan(self, name, findings, dec=None, ab=None, source="/nowhere/Song.als"):
         d = self.work / "scan" / name
         (d / "ab").mkdir(parents=True)
-        (d / "findings.json").write_text(json.dumps(dict(set=source, notes=[], findings=findings)))
-        (d / "scan.json").write_text(json.dumps(dict(set=source, mode="set")))
+        (d / "findings.json").write_text(json.dumps(dict(set=source, notes=[], findings=findings)), encoding="utf-8")
+        (d / "scan.json").write_text(json.dumps(dict(set=source, mode="set")), encoding="utf-8")
         if dec is not None:
-            (d / "decisions.json").write_text(json.dumps(dec))
+            (d / "decisions.json").write_text(json.dumps(dec), encoding="utf-8")
         if ab is not None:
-            (d / "ab" / "ab.json").write_text(json.dumps(ab))
+            (d / "ab" / "ab.json").write_text(json.dumps(ab), encoding="utf-8")
         return d
 
     def saved(self, d):
-        return json.loads((d / "decisions.json").read_text())
+        return json.loads((d / "decisions.json").read_text(encoding="utf-8"))
 
     def tiny_set(self, path, tempo):
         import gzip
@@ -1246,10 +1247,10 @@ class ReviewB(unittest.TestCase):
         d = self.scan("Song", [F("smooth-1"), F("smooth-2")], dec={"smooth-1": dict(decision="skip", conflicts=[dict(by="ann", decision="approve")])})
         self.assertEqual(self.post("/api/decide", dict(dir=str(d), ids=["smooth-1", "smooth-2"], decision="approve"))[0], 200)
         self.assertEqual(self.saved(d)["smooth-1"]["conflicts"][0]["by"], "ann")
-        (d / "decisions.json").write_text("{broken")
+        (d / "decisions.json").write_text("{broken", encoding="utf-8")
         code, r, _ = self.post("/api/decide", dict(dir=str(d), ids=["smooth-1"], decision="approve"))
         self.assertEqual(code, 409)
-        self.assertEqual((d / "decisions.json").read_text(), "{broken")                # nothing was written over it
+        self.assertEqual((d / "decisions.json").read_text(encoding="utf-8"), "{broken")                # nothing was written over it
 
     def test_the_single_decision_still_works_and_says_what_it_recorded(self):
         d = self.scan("Song", [F("smooth-1")])
@@ -1340,8 +1341,8 @@ class ReviewB(unittest.TestCase):
         d = self.work / "scan" / "Mix"
         (d / "ab").mkdir(parents=True)
         (d / "findings.json").write_text(json.dumps(dict(set="/nowhere/Mix.ardour", notes=[], findings=[
-            F("smooth-1", edit=dict(op="fade")), F("timing-1", "timing", "late", edit=dict(op="nudge"))])))
-        (d / "scan.json").write_text(json.dumps(dict(set="/nowhere/Mix.ardour", mode="ardour")))
+            F("smooth-1", edit=dict(op="fade")), F("timing-1", "timing", "late", edit=dict(op="nudge"))])), encoding="utf-8")
+        (d / "scan.json").write_text(json.dumps(dict(set="/nowhere/Mix.ardour", mode="ardour")), encoding="utf-8")
         r = self.post("/api/decide-low", dict(dir=str(d), dry_run=True))[1]
         self.assertEqual([x["id"] for x in r["items"]], ["smooth-1"])
         self.assertEqual(r["left_out"]["by_hand"], 1)
@@ -1394,9 +1395,9 @@ class ReviewB(unittest.TestCase):
 
     def test_the_songs_list_still_notices_a_song_saved_after_the_scan(self):
         src = self.root / "Song.als"
-        src.write_text("x")
+        src.write_text("x", encoding="utf-8")
         d = self.scan("Song", [F("smooth-1")], source=str(src))
-        (d / "scan.json").write_text(json.dumps(dict(set=str(src), mode="set", set_mtime=src.stat().st_mtime)))
+        (d / "scan.json").write_text(json.dumps(dict(set=str(src), mode="set", set_mtime=src.stat().st_mtime)), encoding="utf-8")
         self.assertFalse(self.S.scans()[0]["stale"])
         os.utime(src, (time.time() + 50, time.time() + 50))
         self.assertTrue(self.S.scans()[0]["stale"])                                            # the song is looked at on every ask
@@ -1516,21 +1517,21 @@ class ReviewB(unittest.TestCase):
         d.mkdir(parents=True)
         self.S.JOB.update(log=self.SCAN_LOG, walls={"Scanning (changes nothing)": 12.34, "Building before / after clips": 3.0})
         self.S.save_times(d)
-        t = json.loads((d / "app-scan.json").read_text())["times"]
+        t = json.loads((d / "app-scan.json").read_text(encoding="utf-8"))["times"]
         self.assertEqual((t["groups"], t["wall"], t["names"], t["ab_wall"]), (dict(names=2, files=1), 12.3, ["names", "files", "clips", "timing"], 3.0))
         pr = self.S.prior_times(d)
         self.assertEqual((pr["groups"], pr["wall"], pr["ab_wall"]), (dict(names=2.0, files=1.0), 12.3, 3.0))
         self.S.JOB.update(log=["scanning Song.als: nothing changed → /x"], walls={"Scanning again (changes nothing)": 0.2})
         self.S.save_times(d)
-        self.assertEqual(json.loads((d / "app-scan.json").read_text())["times"]["wall"], 12.3)
-        (d / "scan.json").write_text(json.dumps(dict(group_seconds=dict(mix=9))))               # a scan that writes its own seconds wins
+        self.assertEqual(json.loads((d / "app-scan.json").read_text(encoding="utf-8"))["times"]["wall"], 12.3)
+        (d / "scan.json").write_text(json.dumps(dict(group_seconds=dict(mix=9))), encoding="utf-8")               # a scan that writes its own seconds wins
         self.assertEqual(self.S.prior_times(d)["groups"], dict(mix=9.0))
 
     def test_the_old_per_group_files_give_a_first_estimate_for_a_scan_the_command_line_made(self):
         d = self.work / "scan" / "Song"
         d.mkdir(parents=True)
-        (d / "mix.json").write_text(json.dumps(dict(group="mix", seconds=8.2, findings=[])))
-        (d / "decisions.json").write_text("{}")
+        (d / "mix.json").write_text(json.dumps(dict(group="mix", seconds=8.2, findings=[])), encoding="utf-8")
+        (d / "decisions.json").write_text("{}", encoding="utf-8")
         self.assertEqual(self.S.prior_times(d)["groups"], dict(mix=8.2))
 
     def test_the_job_route_carries_the_progress_and_the_page_never_shows_a_percentage(self):
@@ -1551,13 +1552,13 @@ class ReviewB(unittest.TestCase):
         self.assertIn('src="/review.js"', RawGet(self.base, "/")[2].decode())
 
     def test_one_player_per_card_switches_between_a_and_b_in_place(self):
-        js = (Path(self.S.__file__).with_name("review.js")).read_text()
+        js = (Path(self.S.__file__).with_name("review.js")).read_text(encoding="utf-8")
         self.assertEqual(js.count("<audio"), 1)                                                  # one element in a card, not two
         self.assertIn("au.currentTime", js)
         self.assertIn("au.dataset[side]", js)
 
     def test_a_decision_patches_a_card_and_never_redraws_the_list(self):
-        js = (Path(self.S.__file__).with_name("review.js")).read_text()
+        js = (Path(self.S.__file__).with_name("review.js")).read_text(encoding="utf-8")
         body = js[js.index("function decideOne"):js.index("function batchDecide")]
         self.assertNotIn("innerHTML", body)
         for name in ("function patchCard", "function patchMany"):
@@ -1588,7 +1589,7 @@ class ReviewB(unittest.TestCase):
     def test_the_page_is_a_list_with_headings_live_regions_and_a_message_region_instead_of_alerts(self):
         from hypnomix.app import ui
         page = ui.PAGE
-        js = (Path(self.S.__file__).with_name("review.js")).read_text()
+        js = (Path(self.S.__file__).with_name("review.js")).read_text(encoding="utf-8")
         for want in ('id="msg" role="alert"', 'id="sr"', 'aria-live', 'role="status"', ':focus-visible', 'prefers-reduced-motion', 'class="skiplink"', 'aria-label="Main"',
                      'id="jobprog" role="status" aria-live="polite"', 'role="log"'):
             self.assertIn(want, page)

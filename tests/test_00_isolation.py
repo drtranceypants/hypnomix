@@ -13,6 +13,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -25,7 +26,7 @@ def run_in_clean_environment(code, home):
     """Run `code` in a new Python with none of the isolation variables set and `home` as the home folder."""
     env = {k: v for k, v in os.environ.items() if k not in CLEAN}
     env.update(HOME=str(home), USERPROFILE=str(home))
-    return subprocess.run([sys.executable, "-c", code], cwd=str(REPO), env=env, capture_output=True, text=True, timeout=120)
+    return subprocess.run([sys.executable, "-c", code], cwd=str(REPO), env=env, capture_output=True, text=True, timeout=120, encoding="utf-8")
 
 
 class Isolation(unittest.TestCase):
@@ -71,7 +72,7 @@ class Isolation(unittest.TestCase):
             code = "import os, tests; print(os.environ['HYPNOMIX_HOME']); print(os.environ['HOME'])"
             env = {k: v for k, v in os.environ.items() if k not in CLEAN}
             env.update(HOME=str(home), HYPNOMIX_HOME=str(mine), HYPNOMIX_USER_HOME=str(home))
-            r = subprocess.run([sys.executable, "-c", code], cwd=str(REPO), env=env, capture_output=True, text=True, timeout=120)
+            r = subprocess.run([sys.executable, "-c", code], cwd=str(REPO), env=env, capture_output=True, text=True, timeout=120, encoding="utf-8")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(r.stdout.split(), [str(mine), str(home)])     # their folder, and HOME left alone
 
@@ -102,7 +103,7 @@ class Isolation(unittest.TestCase):
                     f"print([n for n in {names!r} if n in os.environ])\n")
             env = {k: v for k, v in os.environ.items() if k not in CLEAN}
             env.update(HOME=str(home), **{n: "x" for n in names})
-            r = subprocess.run([sys.executable, "-c", code], cwd=str(REPO), env=env, capture_output=True, text=True, timeout=120)
+            r = subprocess.run([sys.executable, "-c", code], cwd=str(REPO), env=env, capture_output=True, text=True, timeout=120, encoding="utf-8")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(r.stdout.strip().splitlines()[-1], "[]")
 
@@ -120,9 +121,22 @@ class Notice(unittest.TestCase):
             self.assertTrue(any(l.startswith(f"tests: {tool} is not installed") for l in lines), (tool, lines))
 
     def test_nothing_is_said_when_everything_is_there(self):
+        real_library = types.ModuleType("anthropic")                     # not the stand-in a Python 3.9 run puts there
         with mock.patch.object(_isolate.importlib.util, "find_spec", return_value=object()), \
-                mock.patch.object(_isolate.shutil, "which", return_value="/usr/bin/x"):
+                mock.patch.object(_isolate.shutil, "which", return_value="/usr/bin/x"), \
+                mock.patch.dict(sys.modules, {"anthropic": real_library}):
             self.assertEqual(_isolate.notice(), [])
+
+    def test_the_stand_in_for_a_library_that_cannot_be_installed_is_named(self):
+        stand_in = types.ModuleType("anthropic")
+        stand_in.STAND_IN = True
+        with mock.patch.object(_isolate.importlib.util, "find_spec", return_value=object()), \
+                mock.patch.object(_isolate.shutil, "which", return_value="/usr/bin/x"), \
+                mock.patch.dict(sys.modules, {"anthropic": stand_in}):
+            lines = _isolate.notice()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("needs Python 3.10", lines[0])
+        self.assertIn("stand-in", lines[0])
 
 
 if __name__ == "__main__":

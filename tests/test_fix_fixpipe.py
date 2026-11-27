@@ -33,7 +33,7 @@ def hx(*args, home):
     env = dict(os.environ, HYPNOMIX_HOME=str(home), HYPNOMIX_APP_HOME=str(Path(home) / "app"), HOME=str(home),
                HYPNOMIX_USER_HOME=str(home), HYPNOMIX_DISKCARE="off")
     r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env,
-                       cwd=str(ROOT))
+                       cwd=str(ROOT), encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -56,8 +56,8 @@ def scenario(root, findings, name="Song"):
     sd.mkdir(exist_ok=True)
     rows = [dict(dict(n=i, severity="low", track="Vox", where="1.1.00", problem="p", fix="f", kind="x"), **f)
             for i, f in enumerate(findings, 1)]
-    (sd / "findings.json").write_text(json.dumps({"set": str(als), "notes": [], "findings": rows}))
-    (sd / "scan.json").write_text(json.dumps({"set": str(als), "mode": "set", "set_mtime": als.stat().st_mtime}))
+    (sd / "findings.json").write_text(json.dumps({"set": str(als), "notes": [], "findings": rows}), encoding="utf-8")
+    (sd / "scan.json").write_text(json.dumps({"set": str(als), "mode": "set", "set_mtime": als.stat().st_mtime}), encoding="utf-8")
     return sd, als
 
 
@@ -81,7 +81,7 @@ class Base(unittest.TestCase):
 
     def versions(self, sd):
         p = Path(sd) / "history" / "history.json"
-        return json.loads(p.read_text())["versions"] if p.exists() else []
+        return json.loads(p.read_text(encoding="utf-8"))["versions"] if p.exists() else []
 
 
 class ApprovedButNotWritten(Base):
@@ -137,9 +137,9 @@ class ApprovedButNotWritten(Base):
     def test_an_approved_id_that_is_not_in_the_scan_any_more_is_listed(self):
         sd, als = scenario(self.td / "a", [dict(id="info-1", tool="intent", applies="manual", fix="by hand")])
         self.fix(sd, "--decide", "info-1=approve")
-        dec = json.loads((sd / "decisions.json").read_text())
+        dec = json.loads((sd / "decisions.json").read_text(encoding="utf-8"))
         dec["ghost-7"] = dict(dec["info-1"])
-        (sd / "decisions.json").write_text(json.dumps(dec))
+        (sd / "decisions.json").write_text(json.dumps(dec), encoding="utf-8")
         code, out = self.fix(sd, "--approved")
         self.assertEqual(code, 0, out)
         self.assertIn("approved, but not in this scan any more (1)", out)
@@ -227,7 +227,7 @@ class ConcurrentDecisions(Base):
             for p in ps:
                 p.communicate()
                 self.assertEqual(p.returncode, 0)
-            self.assertEqual(sorted(json.loads((sd / "decisions.json").read_text())), sorted(ids), f"round {rnd}")
+            self.assertEqual(sorted(json.loads((sd / "decisions.json").read_text(encoding="utf-8"))), sorted(ids), f"round {rnd}")
 
 
 class FolderRepairs(Base):
@@ -242,7 +242,7 @@ class FolderRepairs(Base):
         sd = self.td / "scan"
         code, out = hx("scan", raw, "--out", sd, home=self.home)
         self.assertEqual(code, 0, out)
-        return sd, [f for f in json.loads((sd / "findings.json").read_text())["findings"] if f["kind"] == "dc"]
+        return sd, [f for f in json.loads((sd / "findings.json").read_text(encoding="utf-8"))["findings"] if f["kind"] == "dc"]
 
     def test_same_stem_in_three_formats_gives_three_repaired_copies(self):
         raw = self.raw_folder("take.wav", "take.flac", "take.aiff")
@@ -313,11 +313,11 @@ class Helpers(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             d = Path(td)
             self.assertEqual(F.free_dest(d, "a (clean).wav"), d / "a (clean).wav")
-            (d / "a (clean).wav").write_text("1")
+            (d / "a (clean).wav").write_text("1", encoding="utf-8")
             self.assertEqual(F.free_dest(d, "a (clean).wav"), d / "a (clean 2).wav")
-            (d / "a (clean 2).wav").write_text("2")
+            (d / "a (clean 2).wav").write_text("2", encoding="utf-8")
             self.assertEqual(F.free_dest(d, "a (clean).wav"), d / "a (clean 3).wav")
-            (d / "plain.txt").write_text("x")
+            (d / "plain.txt").write_text("x", encoding="utf-8")
             self.assertEqual(F.free_dest(d, "plain.txt"), d / "plain 2.txt")
 
     def test_a_long_line_keeps_its_reason_and_loses_only_the_path(self):
@@ -394,9 +394,9 @@ class Helpers(unittest.TestCase):
 class AbPreviewNotes(Base):
     def prepare(self, scan_extra):
         sd, als = scenario(self.td / "a", [dict(id="tune-Vox", tool="tune", applies="audio", track="Vox", kind="pitch")])
-        scan = json.loads((sd / "scan.json").read_text())
+        scan = json.loads((sd / "scan.json").read_text(encoding="utf-8"))
         scan.update(key="A minor", **scan_extra)
-        (sd / "scan.json").write_text(json.dumps(scan))
+        (sd / "scan.json").write_text(json.dumps(scan), encoding="utf-8")
         (sd / "raw" / "renders").mkdir(parents=True)
         sf.write(str(sd / "raw" / "renders" / "Vox.wav"), tone(4.0), SR)
         return sd
@@ -411,7 +411,7 @@ class AbPreviewNotes(Base):
             return 0, "ok"
         with mock.patch.object(ab, "hx", fake), mock.patch("sys.argv", ["ab", str(sd)]), mock.patch("sys.stdout", io.StringIO()):
             ab.main()
-        return calls, json.loads((sd / "ab" / "ab.json").read_text())
+        return calls, json.loads((sd / "ab" / "ab.json").read_text(encoding="utf-8"))
 
     def test_tune_preview_gets_the_instrumental_the_scan_was_given(self):
         back = self.td / "backing.wav"
@@ -483,7 +483,7 @@ class AbsetBuildsQuietly(Base):
         from hypnomix.workflow import abset as A
         sd, als = scenario(self.td / "a", [RENAME])
         (sd / "raw").mkdir()
-        (sd / "raw" / "note.txt").write_text("x")
+        (sd / "raw" / "note.txt").write_text("x", encoding="utf-8")
         made = []
         real = tempfile.mkdtemp
 
@@ -494,7 +494,7 @@ class AbsetBuildsQuietly(Base):
         with mock.patch("os.symlink", side_effect=err), mock.patch("tempfile.mkdtemp", spy):
             tmp = A.scratch_scan(sd)
             try:
-                self.assertEqual((tmp / "raw" / "note.txt").read_text(), "x")
+                self.assertEqual((tmp / "raw" / "note.txt").read_text(encoding="utf-8"), "x")
                 self.assertFalse((tmp / "raw").is_symlink())
                 self.assertFalse((tmp / "history").exists())
             finally:
@@ -545,12 +545,12 @@ class ArdourDiffShowsRealEditsOnly(unittest.TestCase):
         from hypnomix.workflow import history as H
         td = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, td, True)
-        (td / "a.ardour").write_text(self.A)
+        (td / "a.ardour").write_text(self.A, encoding="utf-8")
         import xml.etree.ElementTree as ET
         ET.ElementTree(ET.parse(str(td / "a.ardour")).getroot()).write(str(td / "b.ardour"), encoding="utf-8", xml_declaration=True)
         same = H.text_diff(td / "a.ardour", td / "b.ardour")
         self.assertTrue(same.startswith("0 changed line(s)"), same)
-        (td / "c.ardour").write_text(self.A.replace('gain="1"', 'gain="0.5"'))
+        (td / "c.ardour").write_text(self.A.replace('gain="1"', 'gain="0.5"'), encoding="utf-8")
         changed = H.text_diff(td / "a.ardour", td / "c.ardour")
         self.assertTrue(changed.startswith("2 changed line(s)"), changed)
         self.assertIn('gain="0.5"', changed)
@@ -568,11 +568,11 @@ class DemoReachesTheTuningFix(unittest.TestCase):
         self.assertFalse((folder / "Audio" / "Instrumental.wav").exists())
         info = sf.info(str(back))
         self.assertGreater(info.duration, 30)
-        text = (folder / "DEMO.md").read_text()
+        text = (folder / "DEMO.md").read_text(encoding="utf-8")
         self.assertIn(f'--key "A minor" --backing "{back}"', text)
         _, flat = demo.write_demo(td, "folder")
         self.assertFalse((flat / "Instrumental.wav").exists())                  # a folder of stems stays only stems
-        self.assertNotIn("--backing", (flat / "DEMO.md").read_text())
+        self.assertNotIn("--backing", (flat / "DEMO.md").read_text(encoding="utf-8"))
 
 
 class HarmonyOutsideLive(Base):
@@ -583,13 +583,13 @@ class HarmonyOutsideLive(Base):
         sf.write(str(d / "Lead.wav"), (0.3 * np.sin(2 * np.pi * 220 * t) * ((t % 1) < 0.8)).astype(np.float32), SR)
         sf.write(str(d / "Harm.wav"), (0.5 * np.sin(2 * np.pi * 277 * t) * ((t % 1) < 0.8)).astype(np.float32), SR)
         proj = d / f"Song{suffix}"
-        proj.write_text("x")
+        proj.write_text("x", encoding="utf-8")
         sd = self.td / "scan"
         sd.mkdir()
         f = dict(id="harmony-1", n=1, tool="voices", kind="balance", severity="low", track="(vocal parts)", where="",
                  problem="p", fix="f", applies="audio", stems=[str(d / "Lead.wav"), str(d / "Harm.wav")], lead="Lead")
-        (sd / "findings.json").write_text(json.dumps({"set": str(proj), "findings": [f]}))
-        (sd / "scan.json").write_text(json.dumps({"set": str(proj), "mode": "reaper", "set_mtime": proj.stat().st_mtime}))
+        (sd / "findings.json").write_text(json.dumps({"set": str(proj), "findings": [f]}), encoding="utf-8")
+        (sd / "scan.json").write_text(json.dumps({"set": str(proj), "mode": "reaper", "set_mtime": proj.stat().st_mtime}), encoding="utf-8")
         return sd, proj
 
     def test_harmony_balance_in_a_reaper_project_or_ardour_session_is_balanced_copies(self):
@@ -604,7 +604,7 @@ class HarmonyOutsideLive(Base):
                 self.assertNotIn("FAILED", out)
                 self.assertTrue(list((sd / "fixed" / "voices").glob("*.wav")))
                 self.assertFalse((proj.parent / f"Song (fixed){suffix}").exists())     # no project is written for it
-                self.assertEqual(proj.read_text(), "x")
+                self.assertEqual(proj.read_text(encoding="utf-8"), "x")
                 self.assertIn(f"Song (fixed){suffix} was not used", out)               # and --out says it was not used
                 self.assertNotIn("Open the new project", out)
                 self.assertNotIn("Written and re-read", out)
@@ -617,7 +617,7 @@ class HarmonyOutsideLive(Base):
         self.assertFalse(server.writes_set(f, "ardour"))
         self.assertTrue(server.writes_set(dict(applies="audio", tool="tune"), "rpp"))
         self.assertTrue(server.writes_set(dict(applies="set", tool="clips"), "ardour"))
-        js = (ROOT / "hypnomix" / "app" / "review.js").read_text()
+        js = (ROOT / "hypnomix" / "app" / "review.js").read_text(encoding="utf-8")
         self.assertIn("f.tool === 'voices' && kind === 'als'", js)
         self.assertIn("writesSetOf(f, R.kind)", js)
 
@@ -629,7 +629,7 @@ class HistoryForProjects(Base):
         sd = self.td / "scan"
         with mock.patch.dict(os.environ, dict(HYPNOMIX_HOME=str(self.home), HOME=str(self.home))):
             scan(proj, "--out", sd, *QUICK)
-        ids = [f["id"] for f in json.loads((sd / "findings.json").read_text())["findings"] if f["tool"] == "clips"][:2]
+        ids = [f["id"] for f in json.loads((sd / "findings.json").read_text(encoding="utf-8"))["findings"] if f["tool"] == "clips"][:2]
         self.assertEqual(len(ids), 2)
         code, out = self.fix(sd, "--approve", ",".join(ids), "--out", "Song (fixed).rpp")
         self.assertEqual(code, 0, out)

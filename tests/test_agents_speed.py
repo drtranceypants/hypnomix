@@ -24,7 +24,7 @@ def env_for(home, **extra):
 
 def hx(*args, home, cwd=None, **extra):
     r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True,
-                       env=env_for(home, **extra), cwd=str(cwd or ROOT))
+                       env=env_for(home, **extra), cwd=str(cwd or ROOT), encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -38,8 +38,8 @@ def finding(i, tool="smooth", kind="click", where=None, applies="manual", **kw):
 def scan_dir(td, findings, setp="", mode="set", name="scan"):
     sd = Path(td) / name
     sd.mkdir(parents=True, exist_ok=True)
-    (sd / "findings.json").write_text(json.dumps({"set": str(setp), "notes": [], "findings": findings}))
-    (sd / "scan.json").write_text(json.dumps({"set": str(setp), "mode": mode}))
+    (sd / "findings.json").write_text(json.dumps({"set": str(setp), "notes": [], "findings": findings}), encoding="utf-8")
+    (sd / "scan.json").write_text(json.dumps({"set": str(setp), "mode": mode}), encoding="utf-8")
     return sd
 
 
@@ -50,19 +50,19 @@ class Atomic(unittest.TestCase):
             p = Path(td) / "decisions.json"
             AT.write_json(p, {"a": 1})
             AT.write_json(p, {"a": 2})
-            self.assertEqual(json.loads(p.read_text()), {"a": 2})
-            self.assertEqual(json.loads(Path(str(p) + ".bak").read_text()), {"a": 1})
-            p.write_text('{"a": 2, "b": [1, 2')                       # a crash in the middle of a plain write
+            self.assertEqual(json.loads(p.read_text(encoding="utf-8")), {"a": 2})
+            self.assertEqual(json.loads(Path(str(p) + ".bak").read_text(encoding="utf-8")), {"a": 1})
+            p.write_text('{"a": 2, "b": [1, 2', encoding="utf-8")                       # a crash in the middle of a plain write
             self.assertEqual(AT.load_json(p, {}, warn=False), {"a": 1})   # the backup, not an exception
             AT.write_json(p, {"a": 3})                                   # a cut-off file never replaces a good backup
-            self.assertEqual(json.loads(p.read_text()), {"a": 3})
-            self.assertEqual(json.loads(Path(str(p) + ".bak").read_text()), {"a": 1})
+            self.assertEqual(json.loads(p.read_text(encoding="utf-8")), {"a": 3})
+            self.assertEqual(json.loads(Path(str(p) + ".bak").read_text(encoding="utf-8")), {"a": 1})
 
     def test_no_backup_returns_default_and_keeps_the_broken_file(self):
         from hypnomix.core import atomic as AT
         with tempfile.TemporaryDirectory() as td:
             p = Path(td) / "findings.json"
-            p.write_text("{ not json")
+            p.write_text("{ not json", encoding="utf-8")
             self.assertEqual(AT.load_json(p, {"x": 0}, warn=False), {"x": 0})
             self.assertTrue((Path(td) / "findings.json.corrupt").exists())
             self.assertIsNone(AT.load_json(Path(td) / "missing.json"))
@@ -79,7 +79,7 @@ class Atomic(unittest.TestCase):
                     AT.write_json(p, {"v": 2})
             finally:
                 os.replace = real
-            self.assertEqual(json.loads(p.read_text()), {"v": 1})
+            self.assertEqual(json.loads(p.read_text(encoding="utf-8")), {"v": 1})
             self.assertEqual([x.name for x in Path(td).iterdir() if x.name.endswith(".tmp")], [])
 
     def test_decisions_use_it(self):
@@ -87,7 +87,7 @@ class Atomic(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             O.save_decisions(td, {"smooth-1": O.entry("approve")})
             O.save_decisions(td, {"smooth-1": O.entry("skip")})
-            (Path(td) / "decisions.json").write_text('{"smooth-1": {"decis')
+            (Path(td) / "decisions.json").write_text('{"smooth-1": {"decis', encoding="utf-8")
             self.assertEqual(O.load_decisions(td)["smooth-1"]["decision"], "approve")      # the .bak
 
 
@@ -104,7 +104,7 @@ class FixDecisions(unittest.TestCase):
             code, out = hx("fix", sd, "--decide", "smooth-1=skip", "--decide", "smooth-2=skip,smooth-3=change",
                            "--note", "less", home=home)
             self.assertEqual(code, 0, out)
-            dec = json.loads((sd / "decisions.json").read_text())
+            dec = json.loads((sd / "decisions.json").read_text(encoding="utf-8"))
             self.assertEqual({k: v["decision"] for k, v in dec.items()},
                              {"smooth-1": "skip", "smooth-2": "skip", "smooth-3": "change"})
             code, out = hx("fix", sd, "--approve", "smooth-4", "--approve", "smooth-5", home=home)
@@ -113,7 +113,7 @@ class FixDecisions(unittest.TestCase):
             sd2 = scan_dir(td, [finding(1), finding(2), finding(3)], name="scan2")
             code, out = hx("fix", sd2, "--approve", "smooth-1", "--approve", "smooth-2,smooth-3", home=home)
             self.assertEqual(code, 0, out)
-            dec = json.loads((sd2 / "decisions.json").read_text())
+            dec = json.loads((sd2 / "decisions.json").read_text(encoding="utf-8"))
             self.assertEqual(sorted(dec), ["smooth-1", "smooth-2", "smooth-3"])      # all three, not only the last
 
     def test_not_applied_lists_changes_by_hand_and_what_to_do_next(self):
@@ -129,7 +129,7 @@ class FixDecisions(unittest.TestCase):
             self.assertIn("less correction on the verse", out)
             self.assertIn("smooth-1", out.split("approved, but by hand")[1])
             self.assertIn("next:", out)
-            log = (sd / "fix-log.md").read_text()
+            log = (sd / "fix-log.md").read_text(encoding="utf-8")
             self.assertIn("Not applied", log)
             self.assertIn("less correction on the verse", log)
 
@@ -150,7 +150,7 @@ class FixDecisions(unittest.TestCase):
                              retire=["old a", "old b"])
             retire["id"] = "retire-1"
             sd = scan_dir(td, [order, retire], setp=als)
-            (sd / "scan.json").write_text(json.dumps({"set": str(als), "mode": "set", "set_mtime": als.stat().st_mtime}))
+            (sd / "scan.json").write_text(json.dumps({"set": str(als), "mode": "set", "set_mtime": als.stat().st_mtime}), encoding="utf-8")
             code, out = hx("fix", sd, "--approved", "--out", "Song (fixed).als", home=home)
             head = out.split("About to write")[0]
             self.assertIn("Also applied because they are on by default (skip them to opt out", head)
@@ -215,7 +215,7 @@ class FixDecisions(unittest.TestCase):
 
 class ReScanKeepsDecisionsOnTheirFindings(unittest.TestCase):
     def _group(self, od, rows):
-        (Path(od) / "clips.json").write_text(json.dumps({"group": "clips", "set": "S.als", "findings": rows, "notes": []}))
+        (Path(od) / "clips.json").write_text(json.dumps({"group": "clips", "set": "S.als", "findings": rows, "notes": []}), encoding="utf-8")
 
     def test_an_approval_never_moves_to_a_different_finding(self):
         from hypnomix.workflow import oversight as O
@@ -234,7 +234,7 @@ class ReScanKeepsDecisionsOnTheirFindings(unittest.TestCase):
             self.assertNotIn("smooth-1", dec)                                    # did NOT attach to the clip at 9.1
             self.assertEqual(dec["smooth-2"]["decision"], "skip")               # followed ITS finding (13.1) to the new id
             self.assertIn("1 earlier decision no longer matches a finding and was set aside", out)
-            orphans = json.loads((od / "decisions-orphaned.json").read_text())
+            orphans = json.loads((od / "decisions-orphaned.json").read_text(encoding="utf-8"))
             self.assertEqual(orphans["smooth-1"]["decision"]["decision"], "approve")
             self.assertEqual(orphans["smooth-1"]["was"]["where"], "5.1.00")
             # merging again with nothing changed must not lose or move anything
@@ -268,16 +268,16 @@ class ReScanKeepsDecisionsOnTheirFindings(unittest.TestCase):
         from hypnomix.workflow import scan as S
         with tempfile.TemporaryDirectory() as td:
             a = Path(td) / "Song.als"
-            a.write_text("x")
+            a.write_text("x", encoding="utf-8")
             ard = Path(td) / "Song"
             ard.mkdir()
             base = Path(td) / "out" / "Song"
             base.mkdir(parents=True)
-            (base / "scan.json").write_text(json.dumps({"set": str(a)}))
+            (base / "scan.json").write_text(json.dumps({"set": str(a)}), encoding="utf-8")
             self.assertEqual(S.scan_folder(base, a), base)                        # the same source: reuse the folder
             got = S.scan_folder(base, ard)
             self.assertEqual(got.name, "Song (2)")
-            (got / "scan.json").write_text(json.dumps({"set": str(ard)}))
+            (got / "scan.json").write_text(json.dumps({"set": str(ard)}), encoding="utf-8")
             third = Path(td) / "Other" / "Song"
             third.parent.mkdir()
             third.touch()
@@ -327,7 +327,7 @@ class PlainNotes(unittest.TestCase):
             self.assertNotIn("\n", note)
             self.assertIn("key map: failed (no notes or values were found to measure)", note)
             self.assertIn("raw/key-error.txt", note)
-            self.assertIn("Traceback", (Path(td) / "raw" / "key-error.txt").read_text())
+            self.assertIn("Traceback", (Path(td) / "raw" / "key-error.txt").read_text(encoding="utf-8"))
 
     def test_a_group_that_raises_is_reported_plainly(self):
         from hypnomix.workflow import review as RV, scan as S
@@ -336,7 +336,7 @@ class PlainNotes(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             od = Path(td)
             S.write_review(od, "", [], notes, {})
-            md = (od / "REVIEW.md").read_text()
+            md = (od / "REVIEW.md").read_text(encoding="utf-8")
             self.assertEqual(md.count("Checks that did NOT run"), 1)
             self.assertIn("- tidy: did NOT run (z)", md.split("## Notes")[0])
 
@@ -347,7 +347,7 @@ class Preferences(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             home = Path(td) / "home"
             home.mkdir()
-            (home / "preferences.json").write_text(json.dumps({"taste": {"tuning": "off", "timing": "off"}}))
+            (home / "preferences.json").write_text(json.dumps({"taste": {"tuning": "off", "timing": "off"}}), encoding="utf-8")
             from hypnomix.workflow import prefs as P
             keep = P.PREFS
             P.PREFS = home / "preferences.json"
@@ -361,7 +361,7 @@ class Preferences(unittest.TestCase):
 
                 def fake_hx(*args, **kw):
                     (od / "raw" / "timing.json").write_text(json.dumps(
-                        dict(findings=rows, looseness_ms=9, tracks=["Gtr"], grid=[])))
+                        dict(findings=rows, looseness_ms=9, tracks=["Gtr"], grid=[])), encoding="utf-8")
                     return 0, ""
                 real = S.hx
                 S.hx = fake_hx
@@ -389,7 +389,7 @@ class ReviewIsCompact(unittest.TestCase):
                 for i in range(1, n + 1)]
         rows += [dict(id=f"timing-{i}", tool="timing", kind="hit", severity="medium", track="Gtr", where=f"{i}.2.00",
                       problem="a hit behind the band", fix="nudge it", applies="set") for i in range(1, n // 2)]
-        (Path(od) / "clips.json").write_text(json.dumps({"group": "clips", "set": "S.als", "findings": rows, "notes": []}))
+        (Path(od) / "clips.json").write_text(json.dumps({"group": "clips", "set": "S.als", "findings": rows, "notes": []}), encoding="utf-8")
         return rows
 
     def test_each_explanation_is_written_once_and_items_keep_only_what_is_theirs(self):
@@ -398,7 +398,7 @@ class ReviewIsCompact(unittest.TestCase):
             od.mkdir()
             rows = self._many(od)
             self.assertEqual(hx("scan", "--merge", od, home=home)[0], 0)
-            md = (od / "REVIEW.md").read_text()
+            md = (od / "REVIEW.md").read_text(encoding="utf-8")
             self.assertEqual(md.count("why this technique:"), 2)                  # one per kind, not one per finding
             self.assertEqual(md.count("common practice:"), 2)
             self.assertEqual(md.count("more like this"), 0)
@@ -465,7 +465,7 @@ class CachesStayUnderTheHypnomixHome(unittest.TestCase):
                 y = (0.2 * np.sin(2 * np.pi * 110 * np.arange(SR * 2) / SR)).astype(np.float32)
                 a = N.audio_features(y, SR)
                 f = next((Path(td) / "cache" / "names").rglob("*.json"))
-                f.write_text('{"features": {"active')
+                f.write_text('{"features": {"active', encoding="utf-8")
                 self.assertEqual(N.audio_features(y, SR), a)
             finally:
                 if old is None:
@@ -490,7 +490,7 @@ class CachesStayUnderTheHypnomixHome(unittest.TestCase):
                 "render.cache_put('ab' + '0' * 62, np.zeros(10, dtype=np.float32))\n")
             env = dict(os.environ, HOME=str(real_home), HYPNOMIX_HOME=str(hh), PYTHONPATH=str(ROOT))
             env.pop("HYPNOMIX_RENDER_CACHE", None)
-            r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, cwd=td)
+            r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, cwd=td, encoding="utf-8")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(list(real_home.iterdir()), [])                       # not even an empty ~/.hypnomix
             for sub in ("pitch", "names", "render"):
@@ -525,7 +525,7 @@ class ParallelChecks(unittest.TestCase):
                     p = Path(td) / f"Take {i}.wav"
                     sf.write(str(p), np.clip(y * (6 if i == 0 else 1), -1, 1), SR, subtype="PCM_24")
                     files.append(p)
-                (Path(td) / "Bad.wav").write_text("not audio")
+                (Path(td) / "Bad.wav").write_text("not audio", encoding="utf-8")
                 files.append(Path(td) / "Bad.wav")
                 got = S.measure_files(files, 3)
                 self.assertEqual([p.name for p, _ in got], [f.name for f in files])
@@ -577,10 +577,10 @@ class Ports(unittest.TestCase):
                 tpl = Path(td) / "Max Audio Effect.amxd"
                 D.write_amxd(tpl, b"ampf\x04\x00\x00\x00aaaameta\x04\x00\x00\x00\x00\x00\x00\x00", blank)
                 out = D.build(Path(td) / "review", tpl)
-                self.assertIn("127.0.0.1:9101", (out / "hypnomix_device.js").read_text())
+                self.assertIn("127.0.0.1:9101", (out / "hypnomix_device.js").read_text(encoding="utf-8"))
                 out = PR.build(Path(td) / "probe", tpl)
-                self.assertIn("9101", (out / "hypnomix_probe.js").read_text())
-                self.assertIn("9101", (out / "hypnomix_master.js").read_text())
+                self.assertIn("9101", (out / "hypnomix_probe.js").read_text(encoding="utf-8"))
+                self.assertIn("9101", (out / "hypnomix_master.js").read_text(encoding="utf-8"))
                 _, patch = D.read_amxd(out / "HypnomixProbe.amxd")
                 self.assertIn("udpsend 127.0.0.1 9102", [b["box"].get("text") for b in patch["patcher"]["boxes"]])
         finally:

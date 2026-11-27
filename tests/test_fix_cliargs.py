@@ -31,7 +31,7 @@ def hx(base, *args, cwd=None, timeout=240, extra_env=None):
     env = env_for(base)
     env.update(extra_env or {})
     r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, env=env,
-                       cwd=str(cwd or base), timeout=timeout)
+                       cwd=str(cwd or base), timeout=timeout, encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -101,9 +101,9 @@ class SharedChecks(unittest.TestCase):
 def scan_folder(d, findings, decisions):
     sd = Path(d) / "scan"
     sd.mkdir()
-    (sd / "findings.json").write_text(json.dumps(dict(set=str(d), findings=findings)))
-    (sd / "scan.json").write_text(json.dumps(dict(set=str(d), mode="folder")))
-    (sd / "decisions.json").write_text(json.dumps(decisions))
+    (sd / "findings.json").write_text(json.dumps(dict(set=str(d), findings=findings)), encoding="utf-8")
+    (sd / "scan.json").write_text(json.dumps(dict(set=str(d), mode="folder")), encoding="utf-8")
+    (sd / "decisions.json").write_text(json.dumps(decisions), encoding="utf-8")
     return sd
 
 
@@ -142,7 +142,7 @@ class Handoff(Tmp):
         code, text = hx(self.d, "handoff", sd, "--bpm", "96", "--daw", "reaper")
         self.assertEqual(code, 0, text)
         self.assertIn("1 spot(s) with a position", text)
-        md = (sd / "handoff" / "HANDOFF.md").read_text()
+        md = (sd / "handoff" / "HANDOFF.md").read_text(encoding="utf-8")
         self.assertIn("bar 7.1 · 0:15.0", md)
         self.assertNotIn("no position", md)
         self.assertTrue((sd / "handoff" / "markers.csv").exists())
@@ -210,7 +210,7 @@ class Prefs(Tmp):
         code, text = hx(self.d, "prefs", "set", "targets.true_peak=-2", "tools.plugins=Alpha Verb,Gamma Comp", "review.name=Sam",
                         "taste.profile=off", "protect.notes=a long tail", "cleanup.order=off", "review.teach=off")
         self.assertEqual(code, 0, text)
-        got = json.loads((self.d / "hx" / "preferences.json").read_text())
+        got = json.loads((self.d / "hx" / "preferences.json").read_text(encoding="utf-8"))
         self.assertEqual(got["targets"]["true_peak"], -2)
         self.assertEqual(got["tools"]["plugins"], ["Alpha Verb", "Gamma Comp"])
         self.assertEqual(got["review"]["name"], "Sam")
@@ -351,21 +351,21 @@ class Plugins(Tmp):
     def test_save_with_a_filter_is_refused_and_the_saved_list_is_whole(self):
         code, text = hx(self.d, *self.base(), "--save")
         self.assertEqual(code, 0, text)
-        whole = json.loads((self.d / "p.json").read_text())["tools"]["plugins_found"]
+        whole = json.loads((self.d / "p.json").read_text(encoding="utf-8"))["tools"]["plugins_found"]
         self.assertEqual(len(whole), 3)
         for flag in (["--only", "Cascadia"], ["--free"]):
             code, text = hx(self.d, *self.base(), "--save", *flag)
             self.assertEqual(code, 1, text)
             self.assertIn("--save keeps the whole list", text)
-            self.assertEqual(json.loads((self.d / "p.json").read_text())["tools"]["plugins_found"], whole)
+            self.assertEqual(json.loads((self.d / "p.json").read_text(encoding="utf-8"))["tools"]["plugins_found"], whole)
 
     def test_json_never_replaces_a_file_and_needs_a_folder(self):
         keep = self.d / "p2.json"
-        keep.write_text("precious")
+        keep.write_text("precious", encoding="utf-8")
         code, text = hx(self.d, *self.base(), "--json", keep)
         self.assertEqual(code, 1, text)
         self.assertIn("already exists", text)
-        self.assertEqual(keep.read_text(), "precious")
+        self.assertEqual(keep.read_text(encoding="utf-8"), "precious")
         code, text = hx(self.d, *self.base(), "--json", self.d / "nodir" / "x.json")
         self.assertEqual(code, 1, text)
         self.assertIn("does not exist", text)
@@ -441,9 +441,9 @@ class Master(Tmp):
 class NotLiveSets(Tmp):
     def files(self):
         rpp = self.d / "Song.rpp"
-        rpp.write_text('<REAPER_PROJECT 0.1 "7.27" 1\n>\n')
+        rpp.write_text('<REAPER_PROJECT 0.1 "7.27" 1\n>\n', encoding="utf-8")
         ardour = self.d / "Song.ardour"
-        ardour.write_text('<?xml version="1.0"?>\n<Session/>\n')
+        ardour.write_text('<?xml version="1.0"?>\n<Session/>\n', encoding="utf-8")
         return rpp, ardour
 
     def test_check_and_diff_say_what_to_use_instead(self):
@@ -489,7 +489,7 @@ class Install(Tmp):
         self.assertIn("dry run", text)
         self.assertFalse(scripts.exists())                                         # nothing was copied
         (scripts / "AbletonOSC").mkdir(parents=True)
-        (scripts / "AbletonOSC" / "old.txt").write_text("x")
+        (scripts / "AbletonOSC" / "old.txt").write_text("x", encoding="utf-8")
         buf = io.StringIO()
         with mock.patch.object(I, "remote_scripts_dir", return_value=scripts), mock.patch.object(I, "live_prefs_dir", return_value=None), \
                 contextlib.redirect_stdout(buf):
@@ -578,9 +578,9 @@ class AbAndFixNames(Tmp):
         sd.mkdir()
         f = dict(id="smooth-1", n=1, tool="smooth", kind="click", severity="low", track="Vox", where="1.1.00", problem="p",
                  fix="f", applies="set")
-        (sd / "findings.json").write_text(json.dumps(dict(set=str(als), notes=[], findings=[f])))
-        (sd / "scan.json").write_text(json.dumps(dict(set=str(als), mode="set", set_mtime=als.stat().st_mtime)))
-        (sd / "decisions.json").write_text(json.dumps({"smooth-1": dict(decision="approve")}))
+        (sd / "findings.json").write_text(json.dumps(dict(set=str(als), notes=[], findings=[f])), encoding="utf-8")
+        (sd / "scan.json").write_text(json.dumps(dict(set=str(als), mode="set", set_mtime=als.stat().st_mtime)), encoding="utf-8")
+        (sd / "decisions.json").write_text(json.dumps({"smooth-1": dict(decision="approve")}), encoding="utf-8")
         return sd
 
     def test_ab_names_a_folder_that_does_not_exist_and_an_id_that_does_not(self):
@@ -621,12 +621,12 @@ class AbAndFixNames(Tmp):
 class InstallDocs(unittest.TestCase):
     def test_the_source_install_activates_the_environment(self):
         for rel in ("README.md", "docs/guides/01-getting-started.md"):
-            text = (ROOT / rel).read_text()
+            text = (ROOT / rel).read_text(encoding="utf-8")
             i = text.index("uv venv && uv pip install -e .")
             tail = text[i:i + 400]
             self.assertIn("source .venv/bin/activate", tail, rel)
             self.assertLess(tail.index("source .venv/bin/activate"), tail.index("hypnomix install"), rel)
-        self.assertIn("rubberband", (ROOT / "README.md").read_text().split("**From source**")[1][:900])
+        self.assertIn("rubberband", (ROOT / "README.md").read_text(encoding="utf-8").split("**From source**")[1][:900])
 
 
 class DemoText(Tmp):
@@ -634,7 +634,7 @@ class DemoText(Tmp):
         out = self.d / "o"
         code, text = quick("demo", "--kind", "reaper", "--out", out)
         self.assertEqual(code, 0, text)
-        md = next(out.rglob("DEMO.md")).read_text()
+        md = next(out.rglob("DEMO.md")).read_text(encoding="utf-8")
         line = next(x for x in md.splitlines() if "--approved" in x)
         self.assertIn('--out "Hypnomix Demo Song (fixed).rpp"', line)                # a bare name: `fix` puts it by the project
         self.assertNotIn(str(out), line)
@@ -721,6 +721,19 @@ class MissingLiveSets(Tmp):
         err, _, _ = C.check(str(self.d / "dir"))
         self.assertIn("folder", err[0])
 
+    def test_a_folder_opened_with_permission_denied_is_still_a_folder(self):
+        """Windows answers "permission denied" (errno 13), not IsADirectoryError, when a folder is opened as a file."""
+        from hypnomix.session import check as C
+        (self.d / "dir").mkdir()
+        denied = PermissionError(13, "Permission denied", str(self.d / "dir"))
+        with mock.patch.object(C, "read_gz", side_effect=denied):
+            err, _, _ = C.check(str(self.d / "dir"))
+        self.assertIn("folder", err[0])
+        self.assertNotIn("gzip", err[0])
+        with mock.patch.object(C, "read_gz", side_effect=PermissionError(13, "Permission denied", str(self.d / "x.als"))):
+            err, _, _ = C.check(str(self.d / "x.als"))                       # a file that is really refused keeps its own words
+        self.assertIn("gzip", err[0])
+
     def test_a_real_set_still_checks(self):
         from hypnomix.core import gz
         p = self.d / "Song.als"
@@ -771,9 +784,9 @@ class RerunsNeverReplace(Tmp):
         folder = self.d / "hypnomix-out" / "tune"
         code, text = hx(self.d, "tune", "Lead.wav", "--key", "A minor", "--report-only")
         self.assertEqual(code, 0, text)
-        first = (folder / "Lead.notes.txt").read_text()
+        first = (folder / "Lead.notes.txt").read_text(encoding="utf-8")
         code, text = hx(self.d, "tune", "Lead.wav", "--key", "A minor", "--report-only", "--tuning", "10")
         self.assertEqual(code, 0, text)
-        self.assertEqual((folder / "Lead.notes.txt").read_text(), first)
+        self.assertEqual((folder / "Lead.notes.txt").read_text(encoding="utf-8"), first)
         self.assertTrue((folder / "Lead 2.notes.txt").exists())
         self.assertIn("Lead 2.notes.txt", text)

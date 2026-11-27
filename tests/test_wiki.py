@@ -68,8 +68,8 @@ class WikiTest(unittest.TestCase):
         self.src = self.root / "wiki"
         (self.src / "articles").mkdir(parents=True)
         (self.src / "assets").mkdir()
-        (self.src / "articles" / "01-l3.html").write_text(ART)
-        (self.src / "articles" / "02-l4.html").write_text(ART2)
+        (self.src / "articles" / "01-l3.html").write_text(ART, encoding="utf-8")
+        (self.src / "articles" / "02-l4.html").write_text(ART2, encoding="utf-8")
         (self.src / "assets" / "clip.mp4").write_bytes(bytes(range(100)))
         self.home = self.root / "home"
         self.p = [mock.patch.object(wiki, "HERE", self.src), mock.patch.object(wiki, "HOME", self.home),
@@ -113,7 +113,7 @@ class WikiTest(unittest.TestCase):
     def test_newer_site_copy_wins_unless_you_are_editing(self):
         live = {"commit_time": 200, "articles": [dict(wiki.local()[0], title="From the site")], "assets": []}
         (self.home / "wiki-live").mkdir(parents=True)
-        (self.home / "wiki-live" / "articles.json").write_text(json.dumps(live))
+        (self.home / "wiki-live" / "articles.json").write_text(json.dumps(live), encoding="utf-8")
         arts, about = wiki.current()
         self.assertEqual((arts[0]["title"], about["source"]), ("From the site", "the website"))
         with mock.patch.object(wiki, "checkout", lambda: (Path("/x"), 100, ["a.html"])):    # unpublished edits
@@ -127,16 +127,16 @@ class WikiTest(unittest.TestCase):
     def test_build_site(self):
         out = self.root / "site" / "wiki"
         tpl = self.root / "tpl.html"
-        tpl.write_text(TEMPLATE)
+        tpl.write_text(TEMPLATE, encoding="utf-8")
         with mock.patch.object(sys, "argv", ["x", "--template", str(tpl), "--out", str(out), "--src", str(self.src)]):
             wiki_build.main()
-        page = (out / "index.html").read_text()
+        page = (out / "index.html").read_text(encoding="utf-8")
         self.assertIn("<nav>site</nav><main>", page)
         self.assertIn('<article class="wa" id="l3"><div class="no">lesson 3</div><h2 class="wt">The first pass</h2>', page)
         self.assertIn('<a href="#l4">the next one</a>', page)            # links between articles stay on the page
         self.assertIn('<div class="term" data-label="go"><button class="copy">copy</button><pre>', page)
         self.assertIn('<a href="#l3">← The first pass</a>', page)
-        data = json.loads((out / "articles.json").read_text())
+        data = json.loads((out / "articles.json").read_text(encoding="utf-8"))
         self.assertEqual([a["id"] for a in data["articles"]], ["l3", "l4", "commands"])
         self.assertEqual(data["assets"], ["clip.mp4"])
         self.assertNotIn("file", data["articles"][0])
@@ -146,9 +146,9 @@ class WikiTest(unittest.TestCase):
         arts = wiki.local()
         arts[0]["teaser"] = "Short & sweet."
         page = self.root / "home.html"
-        page.write_text("<p>top</p><!--wiki:l3-->OLD COPY<!--/wiki:l3--><!--wiki:gone-->keep<!--/wiki:gone--><p>end</p>")
+        page.write_text("<p>top</p><!--wiki:l3-->OLD COPY<!--/wiki:l3--><!--wiki:gone-->keep<!--/wiki:gone--><p>end</p>", encoding="utf-8")
         changed, missing = wiki_build.refresh_page(page, arts)
-        s = page.read_text()
+        s = page.read_text(encoding="utf-8")
         self.assertTrue(changed)
         self.assertEqual(missing, ["gone"])
         self.assertNotIn("OLD COPY", s)
@@ -165,8 +165,8 @@ class WikiTest(unittest.TestCase):
     def test_guides_are_articles(self):
         gdir = self.src / "guides"
         gdir.mkdir()
-        (gdir / "03-vocal-things.md").write_text(GUIDE)
-        (gdir / "99-commands.md").write_text("---\ntitle: Commands\n---\n# Commands\n")   # generated: left out
+        (gdir / "03-vocal-things.md").write_text(GUIDE, encoding="utf-8")
+        (gdir / "99-commands.md").write_text("---\ntitle: Commands\n---\n# Commands\n", encoding="utf-8")   # generated: left out
         wiki._CACHE.clear()
         arts = wiki.local()
         self.assertEqual([a["id"] for a in arts], ["l3", "l4", "vocals-guide", "commands"])
@@ -184,7 +184,7 @@ class WikiTest(unittest.TestCase):
         self.assertIn('<p class="note-box">Tip: under ~10 ms reads as one voice.</p>', h)
         self.assertIn('<p class="warn-box">Careful: the device is new.</p>', h)
         self.assertIn("<ul><li>one</li><li>two continued</li></ul>", h)
-        (self.src / "articles" / "03-vocals-guide.html").write_text("<!--\ntitle: Mine\n-->\n<p>x</p>")
+        (self.src / "articles" / "03-vocals-guide.html").write_text("<!--\ntitle: Mine\n-->\n<p>x</p>", encoding="utf-8")
         wiki._CACHE.clear()
         self.assertEqual([a["title"] for a in wiki.local() if a["id"] == "vocals-guide"], ["Mine"])  # a file wins
 
@@ -202,9 +202,9 @@ class WikiTest(unittest.TestCase):
     def test_docs_are_articles(self):
         ddir = self.src / "docs"
         (ddir / "guides").mkdir(parents=True)
-        (ddir / "LIVE.md").write_text("# Working inside Live\n\nThe probe. See `docs/guides/03-x.md`.\n\n---\n\n## Limits\n\n- one\n    more\n")
-        (ddir / "guides" / "03-x.md").write_text("---\ntitle: X guide\n---\n# X\n\nBody.\n")
-        (self.src / "articles" / "05-live.html").write_text("<!--\ntitle: Taken\n-->\n<p>x</p>")
+        (ddir / "LIVE.md").write_text("# Working inside Live\n\nThe probe. See `docs/guides/03-x.md`.\n\n---\n\n## Limits\n\n- one\n    more\n", encoding="utf-8")
+        (ddir / "guides" / "03-x.md").write_text("---\ntitle: X guide\n---\n# X\n\nBody.\n", encoding="utf-8")
+        (self.src / "articles" / "05-live.html").write_text("<!--\ntitle: Taken\n-->\n<p>x</p>", encoding="utf-8")
         wiki._CACHE.clear()
         arts = wiki.local()
         self.assertEqual([a["id"] for a in arts], ["l3", "l4", "live", "x", "live-doc", "commands"])
@@ -222,7 +222,7 @@ class WikiTest(unittest.TestCase):
     def test_skills_are_articles(self):
         sk = self.src / "skills" / "mix-engineer"
         sk.mkdir(parents=True)
-        (sk / "SKILL.md").write_text("---\nname: mix-engineer\ndescription: Turn stems into a song. Use when someone hands over stems.\n---\n\n# Mix engineer\n\nSteps. Read `docs/LIVE.md`.\n")
+        (sk / "SKILL.md").write_text("---\nname: mix-engineer\ndescription: Turn stems into a song. Use when someone hands over stems.\n---\n\n# Mix engineer\n\nSteps. Read `docs/LIVE.md`.\n", encoding="utf-8")
         wiki._CACHE.clear()
         k = next(a for a in wiki.local() if a["id"] == "skill-mix-engineer")
         self.assertEqual((k["group"], k["title"], k["no"], k["src"]),
@@ -233,7 +233,7 @@ class WikiTest(unittest.TestCase):
         self.assertIn("<p class=\"lead\">Steps.", k["html"])
         ag = self.src / "agents"
         ag.mkdir()
-        (ag / "hypnomix-scanner.md").write_text("---\nname: hypnomix-scanner\ndescription: Runs one scan group.\ntools: Bash, Read\n---\n\nYou run one part.\n")
+        (ag / "hypnomix-scanner.md").write_text("---\nname: hypnomix-scanner\ndescription: Runs one scan group.\ntools: Bash, Read\n---\n\nYou run one part.\n", encoding="utf-8")
         wiki._CACHE.clear()
         arts = wiki.local()
         self.assertEqual([a["id"] for a in arts if a["group"] == "AI: Claude Code skills and subagent"], ["skill-mix-engineer", "agent-hypnomix-scanner"])
@@ -255,7 +255,7 @@ class WikiTest(unittest.TestCase):
     def test_every_doc_ships_with_the_app(self):
         """Each docs/*.md is listed in pyproject.toml, so an installed hypnomix has the same wiki."""
         root = Path(wiki.__file__).resolve().parents[2]
-        toml = (root / "pyproject.toml").read_text()
+        toml = (root / "pyproject.toml").read_text(encoding="utf-8")
         self.assertIn('"skills" = "hypnomix/app/wiki/skills"', toml)
         self.assertIn('"agents" = "hypnomix/app/wiki/agents"', toml)
         for n in wiki_md.ROOT_FILES:
@@ -283,9 +283,9 @@ class WikiTest(unittest.TestCase):
 
     def test_whole_articles_on_other_pages(self):
         page = self.root / "home.html"
-        page.write_text("<section id=\"l3\"><h2>x</h2><!--wiki-full:l3-->OLD<!--/wiki-full:l3--><div class=\"demo\">keep</div></section>")
+        page.write_text("<section id=\"l3\"><h2>x</h2><!--wiki-full:l3-->OLD<!--/wiki-full:l3--><div class=\"demo\">keep</div></section>", encoding="utf-8")
         changed, missing = wiki_build.refresh_page(page, wiki.local())
-        s = page.read_text()
+        s = page.read_text(encoding="utf-8")
         self.assertTrue(changed)
         self.assertNotIn("OLD", s)
         self.assertIn('<a href="/wiki/#l4">the next one</a>', s)                         # wiki links go to the wiki
@@ -295,11 +295,11 @@ class WikiTest(unittest.TestCase):
 
     def test_command_count_on_other_pages(self):
         page = self.root / "home.html"
-        page.write_text("<p>all <!--wiki:commands-count-->83<!--/wiki:commands-count--> commands</p>")
+        page.write_text("<p>all <!--wiki:commands-count-->83<!--/wiki:commands-count--> commands</p>", encoding="utf-8")
         arts = wiki.local()
         n = re.search(r"all (\d+) commands", next(a for a in arts if a["id"] == "commands")["sub"]).group(1)
         wiki_build.refresh_page(page, arts)
-        self.assertIn(f"all <!--wiki:commands-count-->{n}<!--/wiki:commands-count--> commands", page.read_text())
+        self.assertIn(f"all <!--wiki:commands-count-->{n}<!--/wiki:commands-count--> commands", page.read_text(encoding="utf-8"))
 
     def test_shipped_wiki_is_complete(self):
         """The wiki that ships with the app: every image or video an article uses is there, and nothing extra."""
@@ -377,11 +377,18 @@ class Harmless(unittest.TestCase):
                      r"<input|<link|<meta|<base|style\s*=|data-upd|data-pick|data-tool|//evil", re.I)
 
     def test_attack_strings_lose_everything_dangerous(self):
+        # Only markup is judged: every "<" and ">" in text is escaped, so a real tag is exactly what this finds, and the words
+        # of a tag that was cut off at the end of the text are inert. Python's html.parser keeps such words as text in some
+        # releases ('&lt;img src=x onerror=alert(1)//') and drops them in others (''): neither is dangerous.
+        tag = re.compile(r"<[^>]*>")
         for s in self.ATTACKS:
             for wrapped in (s, "<p>before</p>" + s + "<p>after</p>", f'<div class="a">{s}</div>'):
                 out = wiki.sanitize_html(wrapped)
-                self.assertIsNone(self.BAD.search(out), (wrapped, out))
-            self.assertIsNone(self.BAD.search(wiki.sanitize_html(wiki.sanitize_html(s))), s)       # and cleaning twice is stable
+                self.assertIsNone(self.BAD.search(" ".join(tag.findall(out))), (wrapped, out))
+                self.assertNotIn("<", tag.sub("", out), (wrapped, out))                           # and no "<" is left outside a tag
+            twice = wiki.sanitize_html(wiki.sanitize_html(s))
+            self.assertIsNone(self.BAD.search(" ".join(tag.findall(twice))), s)                  # and cleaning twice is stable
+            self.assertNotIn("<", tag.sub("", twice), s)
 
     def test_what_is_kept(self):
         out = wiki.sanitize_html('<p class="lead" style="x" onclick="y">A <a href="https://example.com/a?b=1&amp;c=2" target="_blank">link</a> '
@@ -434,14 +441,14 @@ class Harmless(unittest.TestCase):
             wiki._LIVE.update(checked=time.time(), busy=False, error=None)
             f = Path(td) / "wiki-live" / "articles.json"
             f.parent.mkdir()
-            f.write_text(json.dumps(poisoned))
+            f.write_text(json.dumps(poisoned), encoding="utf-8")
             a = wiki.article("evil")
             self.assertEqual(a["html"], '<p>a</p><img src="x">')
             self.assertEqual(a["url"], wiki.SITE + "/wiki/#evil")
             self.assertNotIn("file", a)
             self.assertEqual([x["id"] for x in wiki.index()["articles"]], ["evil"])
             self.assertEqual(wiki.live()["assets"], [])                                      # a string where a list belongs
-            f.write_text("[1, 2]")                                                           # not even the right shape
+            f.write_text("[1, 2]", encoding="utf-8")                                                           # not even the right shape
             self.assertIsNone(wiki.live())
             self.assertEqual(wiki.current()[1]["source"], "this computer")
         wiki._CACHE.clear()
@@ -449,7 +456,7 @@ class Harmless(unittest.TestCase):
         self.assertNotIn("<script", a["html"])
 
     def test_the_browsers_second_layer_uses_the_same_lists(self):
-        js = (Path(wiki.__file__).with_name("wiki.js")).read_text()
+        js = (Path(wiki.__file__).with_name("wiki.js")).read_text(encoding="utf-8")
         lit = lambda name: re.search(r"const %s = '([^']*)'\.split\(' '\)" % name, js).group(1).split()
         self.assertEqual(lit("CLEAN_TAGS"), wiki.CLEAN_TAGS)
         self.assertEqual(lit("CLEAN_DROP"), wiki.CLEAN_DROP)
@@ -471,7 +478,7 @@ class Harmless(unittest.TestCase):
         self.assertIn("b.closest('.wa')", ui.PAGE)                                              # and the page's handler ignores anything inside one
         for cls in ("cmd", "primary", "tab", "live", "brand", "spin", "card"):
             self.assertNotIn(cls, wiki.CLEAN_CLASSES)
-        js = (Path(wiki.__file__).with_name("wiki.js")).read_text()
+        js = (Path(wiki.__file__).with_name("wiki.js")).read_text(encoding="utf-8")
         self.assertIn("a: 'href target rel data-jump data-wiki'", js)
 
     def test_a_site_file_with_odd_numbers_or_shapes_never_takes_the_wiki_down(self):
@@ -492,7 +499,7 @@ class Harmless(unittest.TestCase):
                 wiki._LIVE.update(checked=time.time(), busy=False, error=None)
                 f = Path(td) / "wiki-live" / "articles.json"
                 f.parent.mkdir()
-                f.write_text(raw)
+                f.write_text(raw, encoding="utf-8")
                 lv = wiki.live()
                 self.assertIsNotNone(lv, raw[:60])
                 self.assertLessEqual(lv["commit_time"], 1, raw[:60])                          # never a time that could outrank this computer's copy
@@ -581,7 +588,7 @@ class Files(unittest.TestCase):
 
     def _site(self, assets):
         (self.root / "home" / "wiki-live").mkdir(parents=True)
-        (self.root / "home" / "wiki-live" / "articles.json").write_text(json.dumps({"commit_time": 1, "articles": [], "assets": assets}))
+        (self.root / "home" / "wiki-live" / "articles.json").write_text(json.dumps({"commit_time": 1, "articles": [], "assets": assets}), encoding="utf-8")
 
     @_isolate.POSIX_MODES
     def test_a_fetched_file_is_capped_and_kept_private(self):

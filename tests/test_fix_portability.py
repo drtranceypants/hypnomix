@@ -136,6 +136,13 @@ class NoImplicitEncoding(unittest.TestCase):
         bad = [f"{p.relative_to(ROOT)}:{line}: {what}" for p in self.sources() for line, what in text_calls_without_encoding(p)]
         self.assertEqual(bad, [], "text-mode calls with no encoding (add encoding=\"utf-8\"):\n" + "\n".join(bad))
 
+    def test_the_tests_name_their_encoding_too(self):
+        """The same rule for tests/: a test that reads a UTF-8 page with the system's code page raised on Windows (cp1252
+        has no byte 0x9d) or compared mojibake, and one that wrote a fixture that way gave the product a file it could not read."""
+        bad = [f"{p.relative_to(ROOT)}:{line}: {what}" for p in sorted((ROOT / "tests").glob("*.py"))
+               for line, what in text_calls_without_encoding(p)]
+        self.assertEqual(bad, [], "text-mode calls with no encoding (add encoding=\"utf-8\"):\n" + "\n".join(bad))
+
     def test_the_walk_sees_what_it_should(self):
         with tempfile.TemporaryDirectory() as td:
             f = Path(td) / "m.py"
@@ -346,7 +353,12 @@ class LiveFolders(unittest.TestCase):
         self.td.cleanup()
 
     def system(self, name):
-        return mock.patch("hypnomix.install.platform.system", return_value=name)
+        """This operating system is `name`, and the system's own answer for the Documents folder is "none" unless a test gives one
+        (a real Windows would answer with the account's own Documents folder, not this test's home)."""
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch("hypnomix.install.platform.system", return_value=name))
+        stack.enter_context(mock.patch("hypnomix.install._windows_documents", return_value=None))
+        return stack
 
     def test_the_user_library_follows_the_operating_system(self):
         from hypnomix import install as I
@@ -369,7 +381,11 @@ class LiveFolders(unittest.TestCase):
 
     def test_the_known_folder_lookup_never_raises_off_windows(self):
         from hypnomix import install as I
-        self.assertIsNone(I._windows_documents())                 # no ctypes.windll here: a plain None, so the fallback is used
+        got = I._windows_documents()                              # never raises
+        if sys.platform == "win32":
+            self.assertTrue(got is None or isinstance(got, Path), got)      # a real Windows may answer with the account's folder
+        else:
+            self.assertIsNone(got)                                          # no ctypes.windll here: a plain None, so the fallback is used
 
     def test_messages_name_the_folder_as_the_person_sees_it(self):
         from hypnomix import install as I
@@ -441,6 +457,39 @@ class LiveFolders(unittest.TestCase):
             self.assertTrue(data.startswith(existing), "the person's own lines must come back byte for byte")
             self.assertIn(b"PluginAutoPopulateThreshold", data)
             self.assertFalse((prefs.parent / "Options.txt").exists())          # not one folder too high
+
+    def test_a_windows_style_options_txt_keeps_its_line_ends(self):
+        from hypnomix import install as I
+        prefs = self.home / "AppData/Roaming/Ableton/Live 12.1.5/Preferences"
+        prefs.mkdir(parents=True)
+        (prefs / "Preferences.cfg").write_text("x", encoding="utf-8")
+        existing = b"-_CustomLine=1\r\n-_Other=2\r\n"                       # what Notepad writes
+        (prefs / "Options.txt").write_bytes(existing)
+        with self.system("Windows"), mock.patch.object(I, "remote_scripts_dir", return_value=self.home / "scripts"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            I.install(["--plugin-params"])
+        data = (prefs / "Options.txt").read_bytes()
+        self.assertTrue(data.startswith(existing), data)
+        self.assertTrue(data.endswith(b"\r\n") and data.count(b"\n") == data.count(b"\r\n"), data)     # the new line ends like the others
+
+    def test_a_new_options_txt_on_windows_gets_windows_line_ends(self):
+        from hypnomix import install as I
+
+        class WindowsOs:                                     # the real os module, except that it says it is Windows (patching os.name itself would break pathlib here)
+            name = "nt"
+            def __getattr__(self, attr):
+                return getattr(os, attr)
+
+        prefs = self.home / "AppData/Roaming/Ableton/Live 12.1.5/Preferences"
+        prefs.mkdir(parents=True)
+        (prefs / "Preferences.cfg").write_text("x", encoding="utf-8")
+        self.assertFalse((prefs / "Options.txt").exists())
+        with self.system("Windows"), mock.patch.object(I, "os", WindowsOs()), \
+                mock.patch.object(I, "remote_scripts_dir", return_value=self.home / "scripts"), contextlib.redirect_stdout(io.StringIO()):
+            I.install(["--plugin-params"])
+        data = (prefs / "Options.txt").read_bytes()
+        self.assertIn(b"PluginAutoPopulateThreshold", data)
+        self.assertTrue(data.endswith(b"\r\n") and data.count(b"\n") == data.count(b"\r\n"), data)    # a new file: the system's own line end
 
     def test_a_mac_keeps_its_preferences_folder(self):
         from hypnomix import install as I
@@ -636,9 +685,22 @@ class PortIsHeldExclusively(unittest.TestCase):
     def test_the_others_keep_the_address_reuse_that_makes_a_restart_work(self):
         from http.server import BaseHTTPRequestHandler
         from hypnomix.core import serve
-        s = serve.LocalServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+        with mock.patch.object(serve, "_windows", return_value=False):          # a real Windows says True here, and is right to
+            s = serve.LocalServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
         try:
             self.assertTrue(s.allow_reuse_address)
+        finally:
+            s.server_close()
+
+    def test_the_server_does_not_ask_the_resolver_for_a_name_before_it_listens(self):
+        import socket
+        from http.server import BaseHTTPRequestHandler
+        from hypnomix.core import serve
+        self.assertIn("server_bind", vars(serve.LocalServer))               # its own, not HTTPServer's (which looks the name up)
+        with mock.patch.object(socket, "getfqdn", side_effect=AssertionError("asked the resolver")):
+            s = serve.LocalServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+        try:
+            self.assertEqual(s.server_port, s.server_address[1])
         finally:
             s.server_close()
 
@@ -733,7 +795,7 @@ class WindowsProjectPaths(unittest.TestCase):
             d = Path(td)
             got = reaper.resolve("Audio\\Gone.wav", d)
             self.assertEqual(got, d / "Audio" / "Gone.wav")
-            self.assertNotIn("\\", str(got))
+            self.assertEqual(got.parts[-2:], ("Audio", "Gone.wav"))          # two names, not one name with a backslash in it
             drive = reaper.resolve("C:\\Users\\Ann\\Gone.wav", d)
             self.assertFalse(drive.exists())
             self.assertEqual(drive.name, "Gone.wav")

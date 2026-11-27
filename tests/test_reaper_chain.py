@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "hypnomix" / "reaper"
-MAIN = (ROOT / "jsfx" / "hypnomix_main.jsfx").read_text()
-CHAIN = (ROOT / "masterchain.lua").read_text()
-BRIDGE = (ROOT / "bridge.lua").read_text()
+MAIN = (ROOT / "jsfx" / "hypnomix_main.jsfx").read_text(encoding="utf-8")
+CHAIN = (ROOT / "masterchain.lua").read_text(encoding="utf-8")
+BRIDGE = (ROOT / "bridge.lua").read_text(encoding="utf-8")
 
 
 class Chain(unittest.TestCase):

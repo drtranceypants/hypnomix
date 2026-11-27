@@ -16,7 +16,7 @@ BARS = 32                           # A B A B, eight bars each
 
 
 def hx(*args):
-    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True, encoding="utf-8")
     return r.returncode, r.stdout + r.stderr
 
 
@@ -198,7 +198,7 @@ class Song(unittest.TestCase):
     def test_report_finds_the_part_that_never_changes(self):
         code, out = self.run_colour("--block", "8", "--no-clips", "--json", self.dir / "r.json")
         self.assertEqual(code, 0, out)
-        doc = json.loads((self.dir / "r.json").read_text())
+        doc = json.loads((self.dir / "r.json").read_text(encoding="utf-8"))
         pad_ = doc["parts"]["Pad"]
         self.assertTrue(pad_["static"], doc["parts"])
         self.assertLess(pad_["mean_change"], doc["parts"]["Lead"]["mean_change"])
@@ -213,22 +213,22 @@ class Song(unittest.TestCase):
         code, out = self.run_colour("--block", "8", "--no-clips", "--part", "Pad", "--family", "grit", "--max", "2",
                                     "--per-part", "2", "--json", self.dir / "r2.json")
         self.assertEqual(code, 0, out)
-        fs = json.loads((self.dir / "r2.json").read_text())["findings"]
+        fs = json.loads((self.dir / "r2.json").read_text(encoding="utf-8"))["findings"]
         self.assertEqual(len(fs), 2)
         self.assertEqual({f["track"] for f in fs}, {"Pad"})
         self.assertEqual({f["kind"] for f in fs}, {"colour-grit"})
         code, out = self.run_colour("--block", "8", "--no-clips", "--max", "1", "--json", self.dir / "r3.json")
-        self.assertEqual(len(json.loads((self.dir / "r3.json").read_text())["findings"]), 1)
+        self.assertEqual(len(json.loads((self.dir / "r3.json").read_text(encoding="utf-8"))["findings"]), 1)
 
     def test_the_first_time_through_is_never_proposed(self):
         self.run_colour("--block", "8", "--no-clips", "--per-part", "3", "--max", "9", "--json", self.dir / "r4.json")
-        for f in json.loads((self.dir / "r4.json").read_text())["findings"]:
+        for f in json.loads((self.dir / "r4.json").read_text(encoding="utf-8"))["findings"]:
             self.assertGreater(int(f["where"].split()[1].split("-")[0]), 1, f)
 
     def test_before_after_clips_are_level_matched_and_differ(self):
         code, out = self.run_colour("--block", "8", "--part", "Pad", "--max", "1", "--json", self.dir / "r5.json")
         self.assertEqual(code, 0, out)
-        ab = json.loads((self.dir / "r5.json").read_text())["ab"]["colour-1"]
+        ab = json.loads((self.dir / "r5.json").read_text(encoding="utf-8"))["ab"]["colour-1"]
         a, sr = sf.read(str(self.dir / "report" / "clips" / ab["a"]))
         b, _ = sf.read(str(self.dir / "report" / "clips" / ab["b"]))
         self.assertAlmostEqual(len(a) / sr, 6.0, delta=0.1)           # four bars of 1.5 s
@@ -307,10 +307,10 @@ class Song(unittest.TestCase):
         sd = self.dir / "scan-colour"
         code, txt = self.run_colour("--block", "8", "--part", "Pad", "--max", "2", "--per-part", "2", "--plan", sd)
         self.assertEqual(code, 0, txt)
-        data = json.loads((sd / "findings.json").read_text())
+        data = json.loads((sd / "findings.json").read_text(encoding="utf-8"))
         self.assertEqual({f["tool"] for f in data["findings"]}, {"colour"})
         self.assertEqual(len(data["findings"]), 2)
-        scan = json.loads((sd / "scan.json").read_text())
+        scan = json.loads((sd / "scan.json").read_text(encoding="utf-8"))
         self.assertIn("--block", scan["colour_args"])
         self.assertTrue((sd / "ab" / "ab.json").exists())
         self.assertTrue(list((sd / "ab").glob("colour-1 A*.wav")))
@@ -334,20 +334,20 @@ class Song(unittest.TestCase):
 
     def test_installed_free_plugins_are_named_never_invented(self):
         prefs = self.dir / "prefs.json"
-        prefs.write_text(json.dumps({"tools": {"plugins": ["DragonflyHallReverb"]}}))
+        prefs.write_text(json.dumps({"tools": {"plugins": ["DragonflyHallReverb"]}}), encoding="utf-8")
         self.run_colour("--block", "8", "--no-clips", "--part", "Pad", "--family", "space", "--max", "1",
                         "--prefs-file", prefs, "--json", self.dir / "r6.json")
-        fix = json.loads((self.dir / "r6.json").read_text())["findings"][0]["fix"]
+        fix = json.loads((self.dir / "r6.json").read_text(encoding="utf-8"))["findings"][0]["fix"]
         self.assertIn("DragonflyHallReverb", fix)
         self.run_colour("--block", "8", "--no-clips", "--part", "Pad", "--family", "space", "--max", "1",
                         "--prefs-file", self.dir / "nothing.json", "--json", self.dir / "r7.json")
-        fix = json.loads((self.dir / "r7.json").read_text())["findings"][0]["fix"]
+        fix = json.loads((self.dir / "r7.json").read_text(encoding="utf-8"))["findings"][0]["fix"]
         self.assertNotIn("Dragonfly", fix)
         self.assertNotIn("plug-ins you have", fix)
 
     def test_rpp_is_refused_politely(self):
         p = self.dir / "x.rpp"
-        p.write_text("")
+        p.write_text("", encoding="utf-8")
         code, txt = hx("colour", p)
         self.assertNotEqual(code, 0)
         self.assertIn("REAPER", txt)
@@ -355,7 +355,7 @@ class Song(unittest.TestCase):
     def test_auto_sections_run(self):
         code, out = self.run_colour("--no-clips", "--json", self.dir / "r8.json")
         self.assertEqual(code, 0, out)
-        self.assertGreaterEqual(len(json.loads((self.dir / "r8.json").read_text())["sections"]), 2)
+        self.assertGreaterEqual(len(json.loads((self.dir / "r8.json").read_text(encoding="utf-8"))["sections"]), 2)
 
 
 if __name__ == "__main__":
