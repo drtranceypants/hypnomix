@@ -164,8 +164,8 @@ function pickDaw() {
   <h3 style="margin:14px 0 2px;font-size:1.05rem">HypnoMix Standalone</h3>
   <p class="small" style="margin:0 0 8px">Keep the DAW you already use. HypnoMix works beside it. Which one?</p>
   <div class="modes">${U.daws.filter(d => d.id !== 'hypnomix').map(pick).join('')}</div>
-  <h3 style="margin:18px 0 2px;font-size:1.05rem">HypnoMix Studio (beta)</h3>
-  <p class="small" style="margin:0 0 8px">HypnoMix with its own DAW built in. It is a beta: new, and not everything in it has been tried yet. Choosing it downloads nothing: the next steps show what it is and add it only if you click.</p>
+  <h3 style="margin:18px 0 2px;font-size:1.05rem">HypnoMix Studio</h3>
+  <p class="small" style="margin:0 0 8px">HypnoMix with its own DAW built in. Choosing it downloads nothing: the next steps show what it is and add it only if you click.</p>
   <div class="modes">${U.daws.filter(d => d.id === 'hypnomix').map(pick).join('')}</div>
   <h3 style="margin:20px 0 6px;font-size:1.05rem">Teacher mode</h3>
   <p class="small" style="margin:0 0 8px">A guided course in the <b>Teacher</b> tab, in ${esc(DAWNAME[daw] || 'your DAW')}. No AI needed${mode === 'key' || mode === 'local' ? '; the Assistant can explain any step in more detail' : ''}. ${daw === 'live' || daw === 'reaper' ? `HypnoMix can do the hands-on steps in ${DAWNAME[daw]} for you, asking first each time.` : daw === 'hypnomix' ? 'For HypnoMix Studio it shows you where to click, and you make each change yourself.' : 'Courses exist for Live, REAPER and HypnoMix Studio.'}</p>
@@ -189,7 +189,7 @@ function dawStep() {
   if (daw === 'ardour') return `<h2>HypnoMix Studio</h2><p class="sub">Nothing to install for scanning.</p>
     <p>HypnoMix reads HypnoMix Studio sessions (<code>.ardour</code>) and scans them: on the Songs tab, choose the session folder (or its <code>.ardour</code> file). In these pages the changes you approve are listed for you to make by hand.</p>
     ${teach ? '<p>The Teacher tab shows you where to click in HypnoMix Studio for every step.</p>' : ''}<p class="small">See Wiki → HypnoMix Studio.</p>`;
-  if (daw === 'hypnomix') return `<h2>HypnoMix Studio (beta)</h2><p class="sub">${esc(U.engine.what)}</p>
+  if (daw === 'hypnomix') return `<h2>HypnoMix Studio</h2><p class="sub">${esc(U.engine.what)}</p>
     ${engineAct(true)}${msgHtml()}
     <p class="small">${esc(U.engine.licence)} Remove it any time here (Setup → Extras). The DAW tab appears once it is added.</p>`;
   if (daw === 'other') return `<h2>Your DAW</h2><p class="sub">Nothing to install.</p>

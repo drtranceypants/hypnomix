@@ -1670,7 +1670,7 @@ class Naming(unittest.TestCase):
 
     def test_the_daw_question_and_the_prompt_use_the_three_names(self):
         from hypnomix.app import chat as CH, setup as SU
-        self.assertEqual([d["title"] for d in SU.DAWS], ["Ableton Live", "REAPER", "HypnoMix Studio (beta)", "Something else"])
+        self.assertEqual([d["title"] for d in SU.DAWS], ["Ableton Live", "REAPER", "HypnoMix Studio", "Something else"])
         self.assertNotIn("Ardour", " ".join(d["note"] for d in SU.DAWS))
         prompt = CH.system_prompt().split("Reference (written for terminal agents")[0]
         self.assertIn("HypnoMix Studio", prompt)
