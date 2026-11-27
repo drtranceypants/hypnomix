@@ -269,7 +269,7 @@ OLD_NAMES = [
     (r"Hypnomix Demo Song", "the demo project's folder and file names"),
     (r"Hypnomix(?:Probe|Main)", "the Max for Live devices, found by this name in saved sets"),
     (r"Hypnomix(?:Engine|Python)", "the engine kit's folder name and the app bundle's Info.plist key"),
-    (r"Hypnomix\s+(?:Probe|Main|Align|Master|Utility|Limiter|Tools)", "the devices, REAPER effects and plug-ins that code finds by name, and the old rack name (Master) that older Live sets hold"),
+    (r"Hypnomix\s+(?:Probe|Main|Align|Master|Utility|Limiter|Saturator|Tools)", "the devices, REAPER effects and plug-ins that code finds by name, and the old rack name (Master) that older Live sets hold"),
     (r"Hypnomix · ", "the tag in front of the plug-ins that the REAPER chain builds"),
     (r"Max Audio Effect(?: -> | → |/)Hypnomix", "the Live browser folder that the device installer creates"),
     (r"(?:Documents|Programs|LOCALAPPDATA%?)[/\\]+Hypnomix|Work\\Hypnomix|MacOS/Hypnomix", "the app's folders and executable on disk"),

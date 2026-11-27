@@ -35,8 +35,9 @@ HypnoMix Studio sessions (.ardour), the plug-ins' saved controls (`project/ardou
                   with the controls to set (`manual`).
   ACE EQ          its High Pass band switched on counts as a low cut, as does an ACE High/Low Pass Filter with its
                   high pass on; a part with rumble, an EQ and no low cut gets the low-cut suggestion (by hand).
-  Hypnomix        Drive, Curve, Output, Mix: the peak going into the curve (the level reaching it plus Drive) against
-  Saturator       where the curves saturate (-1.5 dBFS): over it by more than 9 dB into Soft Sine or Analog Clip, or 4
+  Hypnomix Saturator
+                  Drive, Curve, Output, Mix: the peak going into the curve (the level reaching it plus Drive) against
+                  where the curves saturate (-1.5 dBFS): over it by more than 9 dB into Soft Sine or Analog Clip, or 4
                   dB into Hard Clip, is heavy clipping, and a lower Drive is suggested (by hand). Its level is modelled
                   (the curve without the oversampling), so the plug-ins after it are still judged.
   Hypnomix Probe  measuring only: the audio passes untouched.
