@@ -184,7 +184,7 @@ class Writing(Tmp):
 
         found = {}
         for py in sorted(root.rglob("*.py")):
-            rel = str(py.relative_to(root))
+            rel = py.relative_to(root).as_posix()      # the same spelling on every system (NOT_SETS uses /)
             text = py.read_text(encoding="utf-8")
             if "gzip" not in text:
                 continue

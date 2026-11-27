@@ -211,8 +211,16 @@ def extra_args():
     return shlex.split(raw) if isinstance(raw, str) else [str(x) for x in raw]
 
 
+def _fits(path):
+    """ValueError when a part of this path is longer than any file system holds (255 characters). A Mac says so by itself;
+    Windows answers "not found" for such a name, which would read as an ordinary missing folder."""
+    if any(len(part) > 255 for part in re.split(r"[\\/]", str(path))):
+        raise ValueError("not a usable path (a name in it is longer than a file system allows)")
+
+
 def snapshot(path):
     """A session as given (its .ardour file, or its folder) -> the .ardour file (ValueError when it is neither)."""
+    _fits(path)
     try:
         p = Path(str(path)).expanduser().absolute()      # the engine runs in the session's folder: a relative path would not be found
         if p.is_dir():
@@ -658,6 +666,7 @@ class Engine:
             raise ValueError("give the new session a name without / \\ : * ? \" < > |, that does not start with - or .")
         if len(name.encode("utf-8")) > 200:
             raise ValueError("that session name is too long (200 characters at most)")
+        _fits(folder)
         try:
             d = Path(str(folder)).expanduser().absolute()     # absolute: the engine starts inside this folder
             if (d / name).exists():
