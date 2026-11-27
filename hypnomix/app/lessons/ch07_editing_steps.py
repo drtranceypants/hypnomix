@@ -169,7 +169,7 @@ STEPS = [
              ["Pitch correction", "moving a sung note toward the nearest right note."],
              ["Key", "the set of notes a song is built on, and its home note."],
              ["Vibrato", "a small, regular wobble in pitch on a held note."]],
-      how={"live": ["Live 12.1 and later include **Auto Shift** (Audio Effects → **Auto Shift**) for real-time pitch correction (set the scale and keep the **Strength** gentle). Earlier Live versions have no stock pitch corrector; use `hypnomix tune`, which makes a new file, and drag that into the set.",
+      how={"live": ["Live 12.1 and later include **Auto Shift** (Audio Effects → **Auto Shift**, if your edition has it) for real-time pitch correction (set the scale and keep the **Strength** gentle). Without it, or in earlier Live versions, there is no stock pitch corrector; use `hypnomix tune`, which makes a new file, and drag that into the set.",
                     "Use the **Tuner** device to read a note's pitch, though it doesn't correct anything."],
            "reaper": ["Click the track's **FX** button → Cockos → **ReaTune**, REAPER's stock pitch tool. Keep any correction gentle and check each note by ear.",
                       "Or use `hypnomix tune`, which makes a new file."],

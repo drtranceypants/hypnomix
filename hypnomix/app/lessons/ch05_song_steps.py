@@ -28,7 +28,7 @@ STEPS = [
       how={"live": ["Click the tempo field at the top left and type the BPM, or click **TAP** in time with your foot.",
                     "The time signature fields sit just to the right of the tempo field: set the top number and the bottom number."],
            "reaper": ["Double-click the tempo number in the transport bar and type the BPM, or click the **BPM** button in the transport in time with the music to tap the tempo.",
-                      "For a time signature other than 4/4, use Insert → Time signature/tempo change marker... on the ruler and set the signature there."],
+                      "For a time signature other than 4/4, use Insert → Tempo/time signature change marker on the ruler and set the signature there."],
            "ardour": ["Double-click the tempo marker at the start of the Tempo ruler to set the BPM; the meter marker beside it sets the time signature."]},
       settings=[["Tempo (BPM)", "70-90 slow, 90-120 medium, 120-140 upbeat", "a rough guide only; the song's own feel decides"],
                 ["Taps for tap tempo", "8 or more taps, steady", "the first few taps are rough; later ones average out"],
