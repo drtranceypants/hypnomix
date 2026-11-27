@@ -703,7 +703,7 @@ def main():
     chosen = [f for f in chosen if amounts[f["id"]] > 0]
     for f in chosen:
         raw_amt = O.amount_of(dec.get(f["id"]))
-        if raw_amt != amounts[f["id"]]:
+        if raw_amt != amounts[f["id"]] and not O.scalable(f)[0]:
             print(f"note: {f['id']} can't be scaled ({O.scalable(f)[1]}); applying it in full, not {raw_amt}%")
     if zero:
         print(f"amount 0, not applied: {', '.join(f['id'] for f in zero)}")

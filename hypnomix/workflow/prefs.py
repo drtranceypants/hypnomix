@@ -23,6 +23,9 @@ What the workflow does with them:
                    batch section (0 = ask everything); review.teach=on|off (why each technique, default on);
                    review.name=NAME (recorded with every decision). review.style and review.explain are read by
                    AI agents and the Assistant, who follow them when they run the review with you
+  taste.*_amount   taste.timing_amount and taste.tuning_amount (0 to 100): where the Amount slider starts on timing
+                   and tuning findings, as a share of the proposed move. 100 is the tool's own gentle proposal;
+                   nothing goes past it
   taste.*          tuning / timing strictness and free-text taste notes (shown to the reviewer; tools stay gentle
                    by default and only go further when you say so)
   tools.*          your DAW (live = Ableton Live, reaper = REAPER, ardour = HypnoMix Studio, or other; `hypnomix daw` is
@@ -78,6 +81,16 @@ QUESTIONS = [
          why="it changes which takes move: with average the lead moves a little too, with lead only the others do. "
          "Until you answer (and with ask) every alignment asks first; nothing is assumed. The amount and the "
          "largest move stay yours to set either way"),
+    dict(key="taste.timing_amount", ask="How much of each proposed timing nudge should a fix start at? (percent of "
+         "the proposed move)", options=[100, 75, 50, 25], default=100,
+         why="where the Amount slider on every timing finding starts; you can still move it per finding. 100 is the "
+         "proposal as it is, which is already the gentle one; a lower number moves each hit less. It never goes "
+         "past the tool's own largest move (any whole number from 0 to 100)"),
+    dict(key="taste.tuning_amount", ask="How much of each proposed tuning move should a fix start at? (percent of "
+         "the proposed move)", options=[100, 75, 50, 25], default=100,
+         why="where the Amount slider on every tuning finding starts; you can still move it per finding. 100 is the "
+         "proposal as it is: each off note moves 35% of the way to its pitch, never more than 25 cents. A lower "
+         "number moves notes less; nothing here can move them more (any whole number from 0 to 100)"),
     dict(key="cleanup.order", ask="In the first clean-up, put tracks in working order (drums, bass, keys/guitar/synth, "
          "vocals, other melodic; low to high) and vocal-stack parts on the track for their pitch?",
          options=["on", "off"], default="on",
@@ -188,6 +201,8 @@ NUMBERS = {   # key: (lowest, highest, integer only, example)
     "targets.lufs": (-40.0, -1.0, False, "-14"),
     "targets.true_peak": (-12.0, 0.0, False, "-1"),
     "review.max_questions": (0, 50, True, "5"),
+    "taste.timing_amount": (0, 100, True, "50"),
+    "taste.tuning_amount": (0, 100, True, "50"),
 }
 ON_OFF = {"on": "on", "yes": "on", "true": "on", "1": "on", "off": "off", "no": "off", "false": "off", "0": "off"}
 EXTRA_CHOICES = {"review.teach": ["on", "off"]}       # read by the code but not asked as first-run questions

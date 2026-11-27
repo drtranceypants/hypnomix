@@ -103,7 +103,7 @@ function htagHTML(f) {
 }
 function ovZone(f) {
   const R = S.review;
-  const ovc = R.oversight && !R.oversight.error ? {ov: R.oversight, dec: R.decisions, notes: R.oversight.notes || {}, esc, findings: R.findings} : null;
+  const ovc = R.oversight && !R.oversight.error ? {ov: R.oversight, dec: R.decisions, notes: R.oversight.notes || {}, esc, findings: R.findings, app: true, keyInfo: R.key_info, hasPreview: hasPrev} : null;
   return ovc && f.applies !== 'answer' ? ovItemHTML(f, ovc) : '';          // a question has no confidence or common practice to show
 }
 function blindNote(f) {
@@ -200,7 +200,7 @@ function sectionHTML(key, title, list) {
 }
 function listHTML() {
   const R = S.review, F = S.rv.filter;
-  const ovc = R.oversight && !R.oversight.error ? {ov: R.oversight, dec: R.decisions, notes: R.oversight.notes || {}, esc, findings: R.findings} : null;
+  const ovc = R.oversight && !R.oversight.error ? {ov: R.oversight, dec: R.decisions, notes: R.oversight.notes || {}, esc, findings: R.findings, app: true, keyInfo: R.key_info, hasPreview: hasPrev} : null;
   const inBatch = new Set(ovc && ovc.ov.budget ? ovc.ov.budget.batch : []);
   const flow = R.findings.filter(f => !byHand(f) && !inBatch.has(f.id) && (f.applies === 'answer' || isAct(f)));
   const hand = R.findings.filter(f => byHand(f) && !inBatch.has(f.id));
@@ -799,6 +799,10 @@ ovBind({
   decideLike: (id, d) => decideLike(id, d).catch(err => fail(err, 'Could not list them')),
   batch: (ids, d, note) => batchDecide(ids, d, note, 'batch'),
   note: (id, text, at) => addNote(id, text, at),
+  // the key a song is tuned in: propose its tuning findings again in the chosen key (a job; the review reopens after it)
+  retune: key => post('/api/retune', {dir: S.review.dir, key}).then(() => startJob()).catch(err => fail(err, 'Could not start')),
+  // one finding's before / after clip again, at the amount its slider shows
+  remake: id => post('/api/ab/remake', {dir: S.review.dir, id}).then(() => startJob()).catch(err => fail(err, 'Could not start')),
 });
 
 Object.assign(window, {reviewView, rvMounted, rvToggleHistory, rvAnswers: () => answersGiven().map(g => g.text)});

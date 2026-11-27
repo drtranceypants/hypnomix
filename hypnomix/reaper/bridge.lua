@@ -690,6 +690,10 @@ local function panel_draw()
   x = button("Next open", x, y, "plain", "next_open")
   x = button("Approve", x + 12, y, st.decision == "approve" and "teal" or "amber", "approve")
   x = button("Skip", x, y, st.decision == "skip" and "teal" or "plain", "skip")
+  -- how much of the proposed move (fixes that can scale): each click steps 25, 50, 75, 100%
+  if st.scalable == "1" then
+    x = button("Amount " .. (st.amount or "100") .. "%", x + 12, y, (tonumber(st.amount) or 100) < 100 and "teal" or "plain", "amount")
+  end
   -- A / B / Blind (an A/B project)
   local aby = 234
   if st.ab == "1" then

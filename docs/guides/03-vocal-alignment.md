@@ -61,12 +61,12 @@ For doubles that should sit right on the lead, a stack that should follow one vo
 guide. The lead is never moved. `--lead "Harm 1"` names a lead that is not the first file.
 
 ```bash
-hypnomix vocalign "Lead.wav" "Double.wav" --to-lead --strength 1.0 --trim-tails
+hypnomix vocalign "Lead.wav" "Double.wav" --to-lead --trim-tails
 ```
 
 | option | does |
 |---|---|
-| `--strength 0-1` | how far toward the guide (0.7 keeps a little natural looseness) |
+| `--strength 0-1` | how far toward the guide. Default 0.5: halfway, the same as the Tight dial in the device and the panel. `--strength 1` goes all the way |
 | `--mode gentle` | smoother speed changes if a part sounds warbly |
 | `--trim-tails` | fades word endings that hang past the guide's (the classic stacked "s") |
 | `--level -6` | sets the double this many dB under the guide while both sing |

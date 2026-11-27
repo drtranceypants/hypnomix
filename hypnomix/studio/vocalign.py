@@ -8,7 +8,7 @@ that keeps pitch and formants). Offsets are only applied where both are singing,
 
 Usage:
     hypnomix vocalign LEAD.wav DOUBLE.wav [HARMONY.wav …] --to-average | --to-lead [--lead NAME]
-                     [--strength 1.0] [--max-ms 150] [--trim-tails] [--level -6] [--out DIR]
+                     [--strength 0.5] [--max-ms 150] [--trim-tails] [--level -6] [--out DIR]
 
   --to-average every part is nudged toward the group's average timing, the first file too (the gentle stack mode:
                --stack-strength, --fix-strength, --fix-over-ms, --cap-ms)
@@ -16,7 +16,8 @@ Usage:
                is the lead when it is not the first one
                With 2+ parts one of the two is needed: a flag, or your saved answer (`hypnomix prefs set
                harmony.reference=average` or `=lead`). Nothing is assumed. One part alone follows its guide.
-  --strength   0–1: how far to move toward the lead (0.7 keeps a little natural looseness)
+  --strength   0–1: how far the parts move toward the lead. Default 0.5: halfway, the same as the Tight dial in the
+               Align device and panel. 1.0 goes all the way
   --trim-tails fade overdub word-endings that hang past the lead's (the classic stacked-"s" problem)
   --level      set each overdub this many dB under the lead's loudness while both sing (omit to keep levels)
   --engine     auto (Rubber Band if `rubberband` is installed, else WSOLA) | rubberband | wsola
@@ -592,7 +593,8 @@ def stack_align(paths, outdir=None, strength=0.1, grid=0.3, bpm=None, max_ms=60.
 def build_parser():
     ap = argparse.ArgumentParser(prog="hypnomix vocalign", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("lead"); ap.add_argument("overdubs", nargs="+")
-    ap.add_argument("--strength", type=float, default=1.0)
+    ap.add_argument("--strength", type=_cli_args.number(0, 1), default=0.5,
+                    help="to the lead: how far the parts move toward it, 0 to 1 (default 0.5: halfway; 1 = all the way)")
     ap.add_argument("--max-ms", type=float, default=150)
     ap.add_argument("--trim-tails", action="store_true")
     ap.add_argument("--level", type=float)
@@ -731,7 +733,7 @@ def timing_stage(a, od):
         md.append(f"| {r['file']} | {r['before'][0]:.0f} / {r['before'][1]:.0f} ms | {r['after'][0]:.0f} / {r['after'][1]:.0f} ms | "
                   f"{r['moved'] * 100:.0f}% | {r['max_shift']:.0f} ms | {'; '.join(r['notes'])} |")
     md += ["", "Under ~10 ms reads as one voice; 20–40 ms as a natural double; above that, flams and smeared consonants.",
-           "If something sounds robotic, rerun with --strength 0.7.", "", *[f"- `{r['out']}`" for r in rows]]
+           f"Each part moved {a.strength:.0%} of the way toward the lead (--strength; the default is 50%, 1.0 goes all the way).", "", *[f"- `{r['out']}`" for r in rows]]
     if refused:
         md += ["", "Refused (the result would not have been tighter than the take; the take is fine as it is, or "
                    "needs a hand):", "", *[f"- {x}" for x in refused]]

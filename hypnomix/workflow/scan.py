@@ -74,6 +74,9 @@ Each finding says how it is fixed:
   manual  needs your hands or ears in Live; the finding says what to do.
   info    a measurement to know about; nothing to apply.
 
+Another key for the tuning: `hypnomix scan --retune DIR --key "A minor"` proposes the tuning findings of the scan in
+DIR again in that key (only the tuning check runs again) and saves it as the song's confirmed key.
+
 Tip: --ref should be the song's mix or instrumental (tuning and key for the vocal check). Without it
 the vocals are measured against their own average tuning, which under-corrects a flat singer.
 """
@@ -436,6 +439,7 @@ def g_vocals(als, od, a, role):
             for f in d["findings"]:
                 f["track"] = t
                 f["key"], f["tuning_cents"] = d["key"], d["tuning_cents"]
+                f["key_source"] = d.get("key_source", "")
                 f["flagged_notes"] = d["flagged"]
                 f["asked_notes"] = d.get("asked", [])
                 if tuning_off:                       # "off = never propose": counted, not listed
@@ -611,6 +615,87 @@ def harmony_question(files, lead, als=None, block_s=0.5, floor_db=-45.0):
              "\"anchor=lead reduce=above above=1.5 spread=flat\"` (optional below=…, max-cut=…, tolerance=…). Or skip it."),
         applies="audio", stems=[str(p) for p in files.values()], lead=lead,
         faders=faders_db(als, set(files)) if als else {})]
+
+
+KEY_NOTES = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+KEY_SCALES = ("major", "minor")            # the scales the tuner knows (hypnomix tune --key)
+
+
+def key_name(text):
+    """'eb Minor' -> 'D# minor', the way the tuner writes a key. ValueError when it is not a note and major/minor."""
+    parts = str(text or "").replace("♯", "#").replace("♭", "b").split()
+    flats = {"Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#"}
+    note = flats.get(parts[0].capitalize(), parts[0].capitalize()) if parts else ""
+    scale = parts[1].lower() if len(parts) > 1 else "major"
+    if note not in KEY_NOTES or scale not in KEY_SCALES or len(parts) > 2:
+        raise ValueError(f"not a key: {text!r} (a note and major or minor, for example \"A minor\" or \"Eb major\")")
+    return f"{note} {scale}"
+
+
+def retune(od, key):
+    """Propose the song's tuning findings again in another key (or confirm the detected one): only the tuning check
+    is run again, on the vocals the scan already rendered, with --key. The key is saved for the song as its confirmed
+    key (scan.json: what `fix` and the previews tune with), the key the scan detected is kept beside it, and every
+    other finding stays as it was. The chord check is not touched: it runs, as always, before any note is moved.
+    Returns (key, number of tuning findings)."""
+    od = Path(od)
+    key = key_name(key)
+    sjp, vp, doc = od / "scan.json", None, None
+    for g in ALL_GROUPS:                           # the group that holds the tuning findings (vocals; a folder scan's own)
+        d_ = AT.load_json(od / f"{g}.json", None, warn=False) if (od / f"{g}.json").exists() else None
+        if isinstance(d_, dict) and any(f.get("tool") == "tune" for f in d_.get("findings", [])):
+            vp, doc = od / f"{g}.json", d_
+            break
+    if doc is None:
+        raise ValueError(f"{od} has no tuning findings to propose again (scan the song's vocals first)")
+    info = AT.load_json(sjp, {}) or {}
+    old = [f for f in doc["findings"] if f.get("tool") == "tune"]
+    gone = [f["track"] for f in old if not f.get("input") or not Path(f["input"]).exists()]
+    if gone:
+        raise ValueError("the vocals this scan rendered are gone (" + ", ".join(gone) + "): scan the song again")
+    by_track = {f["track"]: Path(f["input"]) for f in old}
+    lead = info.get("lead")
+    new, failed = {}, []
+    for t, p in by_track.items():
+        j = od / "raw" / f"tune-{p.stem}.json"
+        j.unlink(missing_ok=True)
+        args = ["tune", p, "--report-only", "--json", j, "--key", key]
+        if info.get("ref"):
+            args += ["--ref", info["ref"]]
+        if lead and t != lead and lead in by_track:
+            args += ["--guide", by_track[lead]]
+        if info.get("backing"):
+            args += ["--chords", info["backing"]]
+        code, out = hx(*args)
+        save(od / "raw" / f"tune-{p.stem}.txt", strip_warnings(out))
+        if not j.exists():
+            failed.append(t)
+            continue
+        d = json.loads(j.read_text(encoding="utf-8"))
+        for f in d["findings"]:
+            f["track"], f["key"], f["tuning_cents"] = t, d["key"], d["tuning_cents"]
+            f["key_source"] = d.get("key_source", "")
+            f["flagged_notes"], f["asked_notes"] = d["flagged"], d.get("asked", [])
+            new.setdefault(t, []).append(f)
+    if failed:
+        raise ValueError("the tuning check failed on " + ", ".join(failed) + ": nothing was changed")
+    out_f, seen = [], set()
+    for f in doc["findings"]:                      # each vocal's new findings take the place of its old ones
+        if f.get("tool") != "tune":
+            out_f.append(f)
+        elif f["track"] not in seen:
+            seen.add(f["track"])
+            out_f += new.get(f["track"], [])
+    doc["findings"] = out_f
+    doc["notes"] = [n for n in doc.get("notes", []) if not str(n).startswith("vocals: key ")] \
+        + [f"vocals: key {key} (the key you chose for this song in the review; tuning proposed again in it)"]
+    info.setdefault("key_detected", {"key": old[0].get("key"), "source": old[0].get("key_source", "")}
+                    if not info.get("key") else {"key": info["key"], "source": "given when the song was scanned"})
+    info["key"], info["key_confirmed"] = key, True
+    AT.write_text(vp, json.dumps(doc, indent=1, default=str), backup=False)
+    AT.write_json(sjp, info)
+    merge(od)
+    return key, sum(len(v) for v in new.values())
 
 
 def doubles(files, lead):
@@ -1954,11 +2039,23 @@ def main():
     ap.add_argument("--devices", action="store_true", help="a Live set: also write a NEW set next to it with the "
                     "HypnoMix Max for Live devices on every track (probes, the review device and HypnomixMain on Main)")
     ap.add_argument("--merge", metavar="DIR", help="only rebuild findings.json + REVIEW.md from DIR")
+    ap.add_argument("--retune", metavar="DIR", help="with --key: propose the tuning findings of the scan in DIR again in "
+                    "that key (only the tuning check runs again) and save it as the song's confirmed key")
     ap.add_argument("--quick", action="store_true", help="only the checks that read the set itself (files, intent, "
                     "structure): no rendering or audio analysis, seconds")
     ap.add_argument("--since", metavar="DIR", help="incremental: re-run only the groups whose tracks changed since "
                     "the scan in DIR, and keep its other findings")
     a = ap.parse_args()
+    if a.retune:
+        if not a.key:
+            sys.exit("--retune needs the key to tune in: --key \"A minor\" (a note and major or minor)")
+        try:
+            key, n = retune(Path(a.retune).expanduser(), a.key)
+        except ValueError as e:
+            sys.exit(str(e))
+        print(f"{n} tuning finding(s) proposed again in {key}, saved as this song's confirmed key → "
+              f"{Path(a.retune) / 'REVIEW.md'}")
+        return
     if a.merge:
         md = Path(a.merge).expanduser()
         if not md.is_dir() or not any((md / f"{g}.json").exists() for g in ALL_GROUPS):

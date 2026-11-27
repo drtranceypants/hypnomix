@@ -95,9 +95,34 @@ def amount_of(entry):
     return 100
 
 
-def effective_amount(f, entry):
-    """What fix applies: kinds that can't scale treat any amount above 0 as 100."""
-    a = amount_of(entry)
+# The person's saved default for the two kinds they asked to set once: how much of a proposed timing nudge, and how
+# much of a proposed tuning move, a finding gets when its own slider was never touched. 100 = the tool's proposal as
+# it is, which is already the gentle one (tuning: 35% of the way, at most 25 cents; timing: the tool's own largest
+# move). An amount only ever scales that proposal down, so no slider can pass the tool's caps.
+AMOUNT_PREF = {"timing": "taste.timing_amount", "tune": "taste.tuning_amount"}
+
+
+def default_amount(f, prefs=None):
+    """0-100: the amount a finding starts at. 100, except timing and tuning findings, which start at the saved
+    preference (taste.timing_amount, taste.tuning_amount) when there is one."""
+    key = AMOUNT_PREF.get(f.get("tool")) if scalable(f)[0] else None
+    if not key:
+        return 100
+    try:
+        from hypnomix.workflow import prefs as P
+        v = P.get(P.load() if prefs is None else prefs, key)
+        return 100 if v is None or isinstance(v, bool) else max(0, min(100, int(round(float(v)))))
+    except Exception:
+        return 100
+
+
+def effective_amount(f, entry, prefs=None):
+    """What fix applies: the amount recorded with the decision, else the finding's starting amount (the saved
+    preference for timing and tuning, 100 for the rest). Kinds that can't scale treat any amount above 0 as 100."""
+    if isinstance(entry, dict) and entry.get("amount") is not None:
+        a = amount_of(entry)
+    else:
+        a = default_amount(f, prefs)
     if a == 0:
         return 0
     return a if scalable(f)[0] else 100
@@ -658,6 +683,9 @@ def extras(f, prefs=None, role_of=None, home=None, teach_on=True):
     ok, how = scalable(f)
     e = dict(confidence=c, confidence_from=src, usually=usually(f, home, prefs, (role_of or {}).get(f.get("track"))),
              practice=T.practice(f), scalable=ok, scale_note=how, size=size(f))
+    if ok:
+        e["default_amount"] = default_amount(f, prefs)      # where the slider starts (the saved preference, else 100)
+        e["amount_pref"] = AMOUNT_PREF.get(f.get("tool"))
     if teach_on:
         e["why"] = T.why(f)
     return e

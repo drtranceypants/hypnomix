@@ -54,6 +54,8 @@ Saved in `~/.hypnomix/preferences.json`. Every scan reads it:
   everything). `review.style`, `review.explain` and `targets.delivery` are read by AI agents and the Assistant,
   who follow them when they run the review with you; the scan itself does not change. `taste.tuning` and
   `taste.timing` (`off`, or gentle or tight) tell a scan how far to go; `off` means that kind of fix is not proposed.
+  `taste.timing_amount` and `taste.tuning_amount` (0 to 100) are where the Amount slider starts on timing and
+  tuning findings: a share of the proposed move, never more than it.
 - **harmony.reference**: what a vocal stack is lined up to by `vocalign`, `alignset`, the Align device and the
   Align panel: `average` (every part is nudged toward the group's average timing), `lead` (the parts follow one
   lead, which is never moved) or `ask`. Until it is answered, and with `ask`, every alignment asks first.
@@ -311,6 +313,36 @@ changed value moves that share of the way toward the proposed one; gains in dB; 
 nothing). Kinds that can't be scaled (renames, track order, tidy, plans, borrowed loops, motion moves: use the
 note's `depth=` instead) say so and apply in full for any amount above 0; `@0` applies nothing. The review page has
 an amount slider on every finding that can scale.
+
+**Timing and tuning: your own starting amount.** Save how much of a proposed timing nudge and of a proposed tuning
+move you usually want, once:
+
+```bash
+hypnomix prefs set taste.timing_amount=50 taste.tuning_amount=60
+```
+
+Every timing and tuning finding then starts at that amount: on the review page's slider (the card says "starts at
+your saved 50%"), in `fix` when a finding was approved without an amount, and in the before / after clips. Each
+finding's own slider still wins. 100 is the proposal as it is, which is already the gentle one (tuning: 35% of the
+way to the note, never more than 25 cents; timing: the tool's own largest move). An amount only scales that down:
+no slider can pass those limits. In the app, **Re-make the preview at this amount** builds that finding's before /
+after clip again at the slider's value. The Live Review device and the REAPER review panel have an **Amount**
+button on fixes that can scale: each click steps 25, 50, 75, 100%. A vocal-stack timing finding (a double or
+harmony apart from the lead) is a by-hand item with no move of its own to scale: its amount is the **Tight** dial
+in the Align device and panel, or `--strength` / `--stack-strength` on the command line.
+
+### The key a song is tuned in
+
+Each tuning finding in the app's review shows the key the scan detected and how it got it (for example "estimated
+from the vocal, fit 0.71"), and whether a key is confirmed for the song yet. Choose a note and **major** or
+**minor** (the scales the tuner knows) and press **Use this key**: the song's tuning findings are proposed again in
+that key, only the tuning check runs again (not the whole scan), your other decisions stay, and the key is saved for
+the song as its confirmed key, the one `fix` and the previews tune in. Choosing the detected key confirms it. The
+chord under every note is still checked before any note is moved. From the terminal:
+
+```bash
+hypnomix scan --retune "hypnomix-out/scan/Song" --key "A minor"
+```
 
 ### Grouped decisions
 

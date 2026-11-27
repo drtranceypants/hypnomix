@@ -12,6 +12,8 @@ finding you are on and has these buttons:
 
   Prev / Next    step through the findings; Live jumps to each one
   Next open      the next finding you have not decided yet
+  Amount         on a fix that can scale (timing nudges, tuning, levels, device settings): click to step through 25,
+                 50, 75 and 100% of the proposed move. It starts at your saved preference for timing and tuning
   Approve / Skip record your decision (saved exactly like a click in the app; nothing is applied from here)
   Brace on/off   whether the Arrangement loop brace is moved around the spot
   App            open the full review (with the before / after players) in your browser
@@ -331,6 +333,8 @@ function paint() {
         }
         bx = button(c.match ? "Match on" : "Match off", bx, 64, c.match, "match", 1);
     }
+    // how much of the proposed move this fix gets (fixes that can scale): click steps 25, 50, 75, 100%
+    if (c.scalable) button("Amount " + c.amount + "%", W - 104, 96, c.amount < 100, "amount", 1);
     var x = 8;
     x = button("Prev", x, 40, false, "prev");
     x = button("Next", x, 40, false, "next");
@@ -353,6 +357,7 @@ function act(a) {
     else if (a == "next") step(1, false);
     else if (a == "open") step(1, true);
     else if (a == "approve" || a == "skip") decide(a);
+    else if (a == "amount") request("POST", "/api/live/amount", {step: 1}, function (d) { if (d && !d.error) { st.cur = d; flash("Amount " + d.amount + "% of the proposed move"); } });
     else if (a == "brace") { st.brace = !st.brace; redraw(); }
     else if (a == "app") max.launchbrowser(BASE + "/");
     else if (a == "A" || a == "B") setAB(a);

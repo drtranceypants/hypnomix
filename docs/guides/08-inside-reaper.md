@@ -274,6 +274,7 @@ follows the review in the app:
 | Blind | X and Y in random order; **I like X / I like Y** records your choice, then tells you which it was |
 | Match on / off | with HypnoMix Main on the master and the bridge running, B is turned up or down to A's loudness |
 | Approve / Skip | your decision, recorded in the review |
+| Amount N% | on a fix that can scale: each click steps 25, 50, 75, 100% of the proposed move (timing and tuning start at the amount saved in Preferences) |
 
 Moving to another finding puts the last one back to A, and stopping `hypnomix reaper review` (or closing the
 panel) leaves the whole project on A. While the panel is in front, space plays and stops, and Esc closes the

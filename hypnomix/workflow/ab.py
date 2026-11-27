@@ -48,6 +48,8 @@ import numpy as np
 import soundfile as sf
 
 
+from hypnomix.workflow import oversight as O
+
 def hx(*args, timeout=3600):
     env = {**os.environ, "HYPNOMIX_ALLOW_TMP_SET": "1"}
     r = subprocess.run([sys.executable, "-m", "hypnomix.cli", *map(str, args)], capture_output=True, text=True,
@@ -174,11 +176,18 @@ def stale(scan, orig):
     return bool(was and orig is not None and orig.exists() and abs(orig.stat().st_mtime - was) > 1)
 
 
-def timing_args(sd, orig, tmp, ids, unroll):
+def amount_for(sd, f):
+    """The amount (1-100) a preview is made at: the one recorded with the finding's decision, else where its slider
+    starts (the saved preference for timing and tuning). 0 would be no fix at all, so a preview is never made at 0."""
+    dec = atomic.load_json(Path(sd) / "decisions.json", {}) or {}
+    return max(1, O.effective_amount(f, dec.get(f["id"])))
+
+
+def timing_args(sd, orig, tmp, ids, unroll, amount=100):
     """The `timing` command that writes only these nudges into tmp, with the options the scan used."""
     tj = sd / "raw" / "timing.json"
     d = atomic.load_json(tj, {}) or {}
-    args = ["timing", orig, "--apply", tmp, "--ids", ",".join(ids), "--list", "0"]
+    args = ["timing", orig, "--apply", tmp, "--ids", ",".join(ids), "--list", "0"] + O.amount_flags("timing", amount)
     for t in d.get("tracks", []):
         args += ["--track", t]
     for flag, key in (("--melodic", "melodic"), ("--bass", "bass"), ("--drums", "drums")):
@@ -213,11 +222,21 @@ def preview_timing(tm, orig, scan, sd, pre, post, manifest, sr):
         for f in todo:
             manifest[f["id"]] = dict(note=why)
         return
+    groups = {}
+    for f in todo:                                  # one pass per amount: most findings share one
+        groups.setdefault(amount_for(sd, f), []).append(f)
+    for amt, part in sorted(groups.items()):
+        _preview_timing_at(part, amt, orig, sd, pre, post, manifest, sr)
+
+
+def _preview_timing_at(todo, amt, orig, sd, pre, post, manifest, sr):
+    """One temporary set, in the scan's own folder, with these nudges at this amount (it removes itself)."""
+    from hypnomix.session import render as R
     od = od_of(sd)
     od.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=od, prefix="hypnomix-ab-tmp-") as td:
         tmp = Path(td) / f"{orig.stem} (ab preview timing).als"
-        code, txt = hx(*timing_args(sd, orig, tmp, [f["id"] for f in todo], any(f.get("unroll") for f in todo)))
+        code, txt = hx(*timing_args(sd, orig, tmp, [f["id"] for f in todo], any(f.get("unroll") for f in todo), amt))
         if code != 0 or not tmp.exists():
             for f in todo:
                 manifest[f["id"]] = dict(note="preview failed: the nudges could not be built (" + why_failed(txt, 120) + ")")
@@ -244,6 +263,8 @@ def preview_timing(tm, orig, scan, sd, pre, post, manifest, sr):
                 and abs((beats_of(g.get("where"), bpb) or -1e9) * spb - t) < pre + post]
         note = ("the track alone, no effects; the clip is stretched along its warp markers with Rubber Band (pitch kept), "
                 "the same way in A and B: the timing is exact, Live's own warp engine may sound a little different")
+        if amt < 100:
+            note += f"; made at your amount, {amt}% of the proposed nudge"
         if near:
             note += f"; the nudge(s) {', '.join(near)} on this track also fall in this window and are in B too"
         manifest[f["id"]] = write_pair(od_of(sd), f["id"], cut(y0, sr, t, pre, post), cut(y1, sr, t, pre, post), sr, note)
@@ -412,7 +433,8 @@ def main():
                 continue
             with tempfile.TemporaryDirectory(prefix="hypnomix-work-") as td:
                 dest = Path(td) / "tuned.wav"
-                args = ["tune", rendered, dest, "--key", key]
+                amt = amount_for(sd, f)
+                args = ["tune", rendered, dest, "--key", key] + O.amount_flags("tune", amt)
                 if backing:
                     args += ["--chords", backing]
                 if scan.get("ref"):
@@ -427,6 +449,8 @@ def main():
                 t = secs_of(first)
                 t = loud_start(ya, sra) + 2 if t is None else t
                 note = "" if scan.get("key") else f"uses the estimated key ({key}): confirm it before approving"
+                if amt < 100:
+                    note = (note + "; " if note else "") + f"made at your amount, {amt}% of the proposed move"
                 manifest[fid] = write_pair(od, fid, cut(ya.mean(1), sra, t, 3, 7), cut(yb.mean(1), srb, t, 3, 7), sra, note)
             continue
         if orig is not None and orig.suffix.lower() == ".rpp":

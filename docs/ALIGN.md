@@ -25,7 +25,7 @@ HypnoMix asks what the parts should line up to. It never assumes. Two answers:
   more than 60 ms (`--cap-ms`).
 - **One lead** (`--to-lead`): the parts follow the lead you name, and the lead itself is never moved. The lead
   is the first file (or `--guide` in a set); `--lead NAME` names another one. `--strength` says how far the parts
-  go (1 = all the way, 0.7 keeps some looseness) and `--max-ms` is the largest move; `--mode gentle` gives
+  go: the default is 0.5, halfway, the same as the Tight dial in the device and the panel; 1 goes all the way and `--max-ms` is the largest move; `--mode gentle` gives
   smooth speed changes if a part sounds warbly.
 
 Where the answer comes from, in this order: a flag (`--to-average`, `--to-lead`, `--lead NAME`); a preset that

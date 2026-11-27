@@ -168,8 +168,8 @@ class AlignProject(unittest.TestCase):
     def test_double_lands_on_the_guide_as_stretch_markers_in_a_new_project(self):
         path = stack_project(self.d, harm=False)
         before = path.read_bytes()
-        run_alignset(path, "--guide", "Lead", "--parts", "Double", "--out", self.d / "o", "--json", self.d / "r.json",
-                     "--apply")
+        run_alignset(path, "--guide", "Lead", "--parts", "Double", "--strength", "1", "--out", self.d / "o", "--json",
+                     self.d / "r.json", "--apply")                      # all the way (the default is halfway)
         self.assertEqual(path.read_bytes(), before)                     # the user's project: untouched
         res = json.loads((self.d / "r.json").read_text(encoding="utf-8"))
         out = Path(res["out_set"])
@@ -198,8 +198,8 @@ class AlignProject(unittest.TestCase):
 
     def test_takes_option_puts_the_timing_on_new_takes(self):
         path = stack_project(self.d, harm=False)
-        run_alignset(path, "--guide", "Lead", "--parts", "Double", "--takes", "--out", self.d / "o", "--json",
-                     self.d / "r.json", "--apply")
+        run_alignset(path, "--guide", "Lead", "--parts", "Double", "--takes", "--strength", "1", "--out", self.d / "o",
+                     "--json", self.d / "r.json", "--apply")
         res = json.loads((self.d / "r.json").read_text(encoding="utf-8"))
         q = project.load(Path(res["out_set"]))
         dbl = q.track("Double")

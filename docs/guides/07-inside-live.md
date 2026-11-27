@@ -186,7 +186,9 @@ evidence for each point.
 
 | you want | do |
 |---|---|
-| part of a move | `fix DIR --decide tune-Lead=approve@60` (or the slider in the app) |
+| part of a move | `fix DIR --decide tune-Lead=approve@60`, the slider in the app, or the **Amount** button in the Hypnomix device (each click: 25, 50, 75, 100%) |
+| timing and tuning to start gentler every time | `prefs set taste.timing_amount=50 taste.tuning_amount=60` |
+| the tuning in another key | in the app's review, choose the key on a tuning finding and press **Use this key** (or `scan --retune DIR --key "A minor"`) |
 | the same decision for the ones like this | `fix DIR --decide-like smooth-3=approve --dry-run`, then without `--dry-run` |
 | fewer questions | `prefs set review.max_questions=12`: the rest go in a low-priority batch with suggestions |
 | the why behind each fix | `prefs set review.teach=on` (the default) |

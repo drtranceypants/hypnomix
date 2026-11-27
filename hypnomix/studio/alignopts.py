@@ -69,7 +69,7 @@ def add_reference_flags(ap):
                    help="nudge every part toward the group's average timing (the gentle stack mode: --stack-strength, "
                         "--fix-strength, --cap-ms)")
     g.add_argument("--to-lead", action="store_true",
-                   help="the parts follow the lead, which is never moved (--strength: how far, --max-ms: the most)")
+                   help="the parts follow the lead, which is never moved (--strength: how far, default 0.5 = halfway; --max-ms: the most)")
     g.add_argument("--lead", dest="lead_name", metavar="NAME",
                    help="with --to-lead: which part is the lead (default: the first file, or --guide)")
     return g

@@ -7,6 +7,8 @@ set HYPNOMIX_PORT). The panel shows the finding you are on, and:
 
   Prev / Next / Next open   step through the findings; REAPER selects the track and puts the time selection on the spot
   Approve / Skip            record your decision in the review (nothing is applied from here)
+  Amount N%                 on a fix that can scale: each click steps 25, 50, 75, 100% of the proposed move (it starts
+                            at your saved preference for timing and tuning)
 
 In an A/B project (`hypnomix abset SCAN_DIR` on a REAPER scan, opened in REAPER instead of the original):
 
@@ -108,14 +110,15 @@ class Panel:
         c = self.cur or {}
         if not c.get("id"):
             st = dict(status="", head=c.get("text", "Open a review in the HypnoMix app."), problem="", fix="", ab="0",
-                      decision="", sev="", track="", where="")
+                      decision="", sev="", track="", where="", scalable="0", amount="100")
         else:
             st = dict(status=f"{c['n']} of {c['of']}  ·  {c.get('left', 0)} open  ·  {c.get('song', '')}",
                       head=f"[{c.get('severity')}] {c.get('track')}  {c.get('where') or ''}",
                       sev=c.get("severity") or "", track=c.get("track") or "", where=c.get("where") or "",
                       problem=c.get("problem", ""), fix="fix: " + (c.get("fix") or ""), decision=c.get("decision", ""),
                       ab="1" if c.get("ab") else "0", state=self.ab["state"] if self.ab["id"] == c["id"] else "A",
-                      blind="1" if self.ab["blind"] else "0", heard=self.ab["heard"], match="1" if c.get("match") else "0")
+                      blind="1" if self.ab["blind"] else "0", heard=self.ab["heard"], match="1" if c.get("match") else "0",
+                      scalable="1" if c.get("scalable") else "0", amount=str(c.get("amount", 100)))
         self.r.call("panel_set", **{k: str(v).replace("\n", " ")[:600] for k, v in st.items()})
 
     def on(self, ev):
@@ -124,6 +127,8 @@ class Panel:
             self.cur = app("/api/live/step", {"delta": -1 if ev == "prev" else 1, "undecided": ev == "next_open"})
         elif ev in ("approve", "skip") and c.get("id"):
             self.cur = app("/api/live/decide", {"decision": ev})
+        elif ev == "amount" and c.get("id") and c.get("scalable"):
+            self.cur = app("/api/live/amount", {"step": 1})      # 25, 50, 75, 100% of the proposed move, round again
         elif ev in ("A", "B"):
             self.set_ab(ev)
         elif ev == "blind" and c.get("ab"):

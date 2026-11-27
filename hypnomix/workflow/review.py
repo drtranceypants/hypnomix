@@ -65,6 +65,15 @@ function ovLikeIds(ov, dec, id) {
   }
   return ids.filter(x => !(dec[x] && dec[x].decision));
 }
+// The key a song's tuning is proposed in: what the scan detected (and how), what is confirmed for this song, and,
+// in the app, a note and a scale to choose instead (the scales the tuner knows). Choosing proposes the tuning again.
+function ovKeyHTML(f, ctx) {
+  const k = ctx.keyInfo, esc = ctx.esc, cur = k.confirmed || k.detected, bits = cur.split(' ');
+  const said = `<span>Key: <b>${esc(cur)}</b> ${k.confirmed ? '(confirmed for this song)' : '(detected, not confirmed yet)'}. The scan detected ${esc(k.detected)}${k.source ? ' (' + esc(k.source) + ')' : ''}.</span>`;
+  if (!ctx.app) return `<div class="amt keyrow">${said}</div>`;
+  const opt = (list, on) => list.map(x => `<option${x === on ? ' selected' : ''}>${esc(x)}</option>`).join('');
+  return `<div class="amt keyrow">${said}<select data-keynote aria-label="Key note">${opt(k.notes, bits[0])}</select><select data-keyscale aria-label="Scale">${opt(k.scales, bits[1] || 'major')}</select><button type="button" data-retune="${esc(f.id)}">Use this key</button><span class="ov">Proposes this song's tuning again in the key you choose (only the tuning check runs) and saves it for the song. The chord under every note is still checked before any note moves.</span></div>`;
+}
 function ovItemHTML(f, ctx) {
   const ov = ctx.ov, e = ov.extras[f.id] || {}, d = ctx.dec[f.id] || {}, esc = ctx.esc;
   const out = [];
@@ -76,11 +85,15 @@ function ovItemHTML(f, ctx) {
   let amt = '';
   const actionable = f.applies !== 'info' && f.applies !== 'answer';
   if (actionable && e.scalable) {
-    const v = d.amount != null ? d.amount : 100;
-    amt = `<div class="amt"><label for="amt-${esc(f.id)}">Amount</label><input type="range" min="0" max="100" step="5" id="amt-${esc(f.id)}" data-amount="${esc(f.id)}" value="${v}"><output>${v}%</output><span title="${esc(e.scale_note)}">of the proposed move</span></div>`;
+    const start = e.default_amount != null ? e.default_amount : 100;      // timing and tuning start at the saved preference
+    const v = d.amount != null ? d.amount : start;
+    const from = d.amount == null && e.amount_pref && start !== 100 ? ` <span class="ov">(starts at your saved ${esc(start)}%: Preferences)</span>` : '';
+    const again = ctx.app && e.amount_pref && ctx.hasPreview && ctx.hasPreview(f) ? ` <button type="button" data-remake="${esc(f.id)}">Re-make the preview at this amount</button>` : '';
+    amt = `<div class="amt"><label for="amt-${esc(f.id)}">Amount</label><input type="range" min="0" max="100" step="5" id="amt-${esc(f.id)}" data-amount="${esc(f.id)}" value="${v}"><output>${v}%</output><span title="${esc(e.scale_note)}">of the proposed move</span>${from}${again}</div>`;
   } else if (actionable && e.scale_note) {
     amt = `<p class="ov">All or nothing: ${esc(e.scale_note)}.</p>`;
   }
+  if (f.tool === 'tune' && ctx.keyInfo && ctx.keyInfo.detected) amt += ovKeyHTML(f, ctx);
   const likeN = actionable ? ovLikeIds(ov, ctx.dec, f.id).length : 0;
   const like = likeN ? `<div class="act like">${['approve','skip'].map(x => `<button data-like="${esc(f.id)}" data-d="${x}">${x === 'approve' ? 'Approve' : 'Skip'} the ${likeN} like this</button>`).join('')}</div>` : '';
   const conf = (d.conflicts || []).map(c => `<div class="conflict"><b>Conflict:</b> ${esc(c.by)} chose <b>${esc(c.decision)}</b>${c.amount != null ? ' at ' + esc(c.amount) + '%' : ''}${c.note ? ' (' + esc(c.note) + ')' : ''}; yours is <b>${esc(d.decision)}</b>. Settle: <code>hypnomix review DIR --settle ${esc(f.id)}=mine</code> (or <code>=theirs</code>)</div>`).join('');
@@ -113,6 +126,10 @@ function ovBind(api) {
   document.addEventListener('click', e => {
     const b = e.target.closest('button[data-like]');
     if (b) { api.decideLike(b.dataset.like, b.dataset.d); return; }
+    const rm = e.target.closest('button[data-remake]');
+    if (rm && api.remake) { api.remake(rm.dataset.remake); return; }
+    const rt = e.target.closest('button[data-retune]');
+    if (rt && api.retune) { const row = rt.closest('.keyrow'); api.retune(row.querySelector('[data-keynote]').value + ' ' + row.querySelector('[data-keyscale]').value); return; }
     const g = e.target.closest('button[data-batch]');
     if (g && confirm(`Record "${g.dataset.d}" for these items without listening to each?`)) api.batch(g.dataset.ids.split(','), g.dataset.d, 'batch: like ' + g.dataset.batch);
   });

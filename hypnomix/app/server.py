@@ -792,6 +792,7 @@ def review_payload(d, light=False):
     needs_archive = kind == "als" and any(f.get("kind") == "retire-off" for f in data["findings"])
     return dict(dir=str(d), name=Path(d).name, source=source, is_set=is_set, kind=kind, suffix=SUFFIX[kind],
                 mode=meta.get("mode", "set" if is_set else "folder"), scan_key=str(meta.get("key") or ""),
+                key_info=key_info(data["findings"], meta),
                 findings=data["findings"], decisions=dec, ab=ab, prefs=P.summary(P.load()), damaged=ins["damage"],
                 broken=[n for n in notes if "failed" in n or n.startswith("WARNING") or "did NOT run" in n],
                 fix_log=full[-6000:], last_run=parse_fix_log(full),
@@ -814,6 +815,41 @@ def ov_payload(d, findings):
 def actionable(d):
     p = review_payload(d, light=True)                  # kept between calls: the device asks twice a second
     return [f for f in p["findings"] if f.get("applies") not in ("info", "answer")], p["decisions"]
+
+
+def key_info(findings, meta):
+    """What the review shows on tuning findings: the key the scan detected and how it got it (the tuner's own words,
+    with its fit), the key confirmed for this song (scan.json; "" when none yet), and the keys that can be chosen."""
+    from hypnomix.workflow import scan as SC
+    tune = next((f for f in findings if f.get("tool") == "tune"), None)
+    if tune is None:
+        return None
+    det = meta.get("key_detected") if isinstance(meta.get("key_detected"), dict) else None
+    confirmed = str(meta.get("key") or "")
+    if det is None:
+        det = ({"key": confirmed, "source": "given when the song was scanned"} if confirmed
+               else {"key": tune.get("key") or "", "source": tune.get("key_source") or ""})
+    return dict(detected=str(det.get("key") or ""), source=str(det.get("source") or "").split("; confirm")[0],
+                confirmed=confirmed, notes=list(SC.KEY_NOTES), scales=list(SC.KEY_SCALES))
+
+
+def live_amount(d, fid, step=None, amount=None):
+    """The Live device / REAPER panel changes the amount of the finding it shows: `amount` sets it, `step` moves it
+    (in 25s, round the 0-100 range). Only for fixes that can scale; an undecided finding becomes approved at that
+    amount, the same as moving the slider on the review page."""
+    from hypnomix.workflow import oversight as O
+    ins = inspect_scan(d)
+    f = next((x for x in (ins["data"] or {}).get("findings", []) if x.get("id") == fid), None)
+    if f is None or not O.scalable(f)[0]:
+        raise ValueError("this fix is all or nothing: it has no amount")
+    e = ins["dec"].get(fid) if isinstance(ins["dec"].get(fid), dict) else {}
+    now = e["amount"] if e.get("amount") is not None else O.default_amount(f)
+    if amount is None:
+        marks = [25, 50, 75, 100]
+        up = [m for m in marks if m > now]
+        amount = (up[0] if up else marks[0]) if (step or 1) > 0 else ([m for m in marks if m < now] or [marks[-1]])[-1]
+    return record_one(d, fid, e.get("decision") if e.get("decision") in ("approve", "change") else "approve",
+                      e.get("note") or "", amount=whole(amount, "amount", 0, 100), via="the Live device or REAPER panel")
 
 
 def decisions_ok(d):
@@ -1310,7 +1346,16 @@ def live_current():
     return dict(n=i + 1, of=len(act), left=left, id=f["id"], track=f.get("track") or f.get("tool"), where=f.get("where") or "",
                 severity=f.get("severity"), problem=f.get("problem", ""), fix=str(f.get("fix", "")).split("\n")[0][:240],
                 decision=dec.get(f["id"], {}).get("decision", ""), jump=f.get("jump"), song=d.name,
-                ab=ab_spec(d, f["id"]), match=AB["match"])
+                ab=ab_spec(d, f["id"]), match=AB["match"], **live_amount_of(f, dec.get(f["id"])))
+
+
+def live_amount_of(f, entry):
+    """{scalable, amount} for the device's Amount button (amount: recorded, else where the slider starts)."""
+    from hypnomix.workflow import oversight as O
+    if not O.scalable(f)[0]:
+        return dict(scalable=False, amount=100)
+    e = entry if isinstance(entry, dict) else {}
+    return dict(scalable=True, amount=int(e["amount"]) if e.get("amount") is not None else O.default_amount(f))
 
 
 def live_step(delta, undecided=False):
@@ -2252,7 +2297,18 @@ def make_handler(port):
                     cur = live_current()
                     if cur.get("id"):
                         decisions_ok(scan_dir(LIVE["dir"]))
-                        record_one(scan_dir(LIVE["dir"]), cur["id"], need(body, "decision"), "from the Live device")
+                        keep = cur["amount"] if cur.get("scalable") and need(body, "decision") != "skip" else None
+                        record_one(scan_dir(LIVE["dir"]), cur["id"], need(body, "decision"), "from the Live device",
+                                   amount=keep)     # the amount chosen for it stays with the decision
+                    return self.send(200, live_current())
+                if u.path == "/api/live/amount":         # {step: 1|-1} or {amount: 0-100} for the finding shown
+                    cur = live_current()
+                    if cur.get("id"):
+                        decisions_ok(scan_dir(LIVE["dir"]))
+                        try:
+                            live_amount(scan_dir(LIVE["dir"]), cur["id"], step=body.get("step"), amount=body.get("amount"))
+                        except ValueError as e:
+                            return self.send(400, dict(live_current(), error=str(e)))
                     return self.send(200, live_current())
                 if u.path.startswith("/api/master/chain"):
                     from hypnomix.app import masterchain as MC
@@ -2420,6 +2476,29 @@ def make_handler(port):
                     return self.send(200, start_undo(body))
                 if u.path == "/api/demo":
                     return self.send(200, start_demo())
+                if u.path == "/api/retune":              # tuning findings again in the key the person chose (or confirmed)
+                    from hypnomix.workflow import scan as SC
+                    d = own_scan_dir(need(body, "dir"))
+                    try:
+                        key = SC.key_name(need(body, "key"))
+                    except ValueError as e:
+                        return self.send(400, {"error": str(e)})
+                    ids = [f["id"] for f in (inspect_scan(d)["data"] or {}).get("findings", []) if f.get("tool") == "tune"]
+                    if not ids:
+                        return self.send(400, {"error": "this review has no tuning findings"})
+                    run_job("retune", f"Tuning in {key}: {d.name}",
+                            [(f"Proposing the tuning again in {key} (only the tuning check runs; nothing is changed)",
+                              ["scan", "--retune", str(d), "--key", key], True),
+                             ("Re-making the before / after clips for the tuning", ["ab", str(d), "--ids", ",".join(ids)], False)], d)
+                    return self.send(200, {"job": JOB["id"], "key": key})
+                if u.path == "/api/ab/remake":           # one finding's before / after clip again, at its amount
+                    d = scan_dir(need(body, "dir"))
+                    fid = str(need(body, "id"))
+                    if fid not in {f.get("id") for f in (inspect_scan(d)["data"] or {}).get("findings", [])}:
+                        return self.send(400, {"error": f"unknown id: {fid}"})
+                    run_job("ab", f"Preview again: {fid}", [("Re-making the before / after clip at your amount",
+                                                             ["ab", str(d), "--ids", fid], True)], d)
+                    return self.send(200, {"job": JOB["id"]})
                 if u.path == "/api/ab/build":
                     d = scan_dir(need(body, "dir"))
                     argv = ["abset", str(d)] + (["--key", str(body["key"])] if body.get("key") else [])
