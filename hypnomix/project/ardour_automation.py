@@ -16,7 +16,9 @@ Level automation (the fader, trim, a send):
   A control that already plays automation is refused in both: those moves are made by hand.
 
 Plug-in parameters (motion's filter sweeps) are not level moves: write_engine / write_file take them too
-(`plugin:<processorId>:<index>` in the engine, the Processor's parameter-N list in the file), with curve linear.
+(`plugin:<processorId>:<index>` in the engine, the Processor's parameter-N list in the file), with curve linear, held to
+the one rule for them: never on a bus, a group's bus or the master that carries a track that is not a vocal (the same
+facts as a level write: the engine's automation_list, or what feeds the bus in the session file).
 
 The tempo map (sessions in the format of version 7 and later):
   from_beats(pts) -> [dict(beat, bpm, bpm_end)]   a tempo line of (beat from the start, BPM) pairs, as HypnoMix's
@@ -174,7 +176,7 @@ def write_file(p, track, control, pts, step=0.05):
     args = _args(getattr(track, "index", 0), control, pts, level)
     base = AR.num(ctl.get("value"), 1.0) if ctl is not None else 1.0
     cur = 20 * math.log10(base) if level and base > 0 else (None if level else base)
-    bad = RULES.check(args, facts_of(p, track) if level else None, RULES.line_from(None, cur))
+    bad = RULES.check(args, facts_of(p, track), RULES.line_from(None, cur))   # a plug-in: the mixed-bus rule only
     if bad:
         raise ValueError(RULES.sentence(bad))
     dense = RULES.s_points(pts, step) if level else list(pts)

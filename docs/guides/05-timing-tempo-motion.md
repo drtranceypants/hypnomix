@@ -177,8 +177,11 @@ It never writes where you already automated that control, and never edits comped
 
 In **HypnoMix Studio** motion offers the sweeps (riser, dip, drift) on the filter plug-ins the session already has, in
 octaves from where each filter sits, and writes the ones you pick (`--ids`) as plug-in automation: `--engine` into the
-open session, or `--apply NAME.ardour`. Throws and send swells are left to you there: a throw is far steeper than the
-smooth-automation rules allow for a level.
+open session, or `--apply NAME.ardour`. A bus's filter is preferred, since one sweep moves the whole group, but never a
+bus, a group's bus or the master that carries a track that is not a vocal: moving its plug-in would move those tracks
+too, so motion skips it, names each bus it skipped and why, and sweeps the next filter instead (a bus of vocals only,
+else a track's). Throws and send swells are left to you there: a throw is far steeper than the smooth-automation rules
+allow for a level.
 
 ## Limits worth knowing
 

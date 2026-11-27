@@ -207,6 +207,90 @@ FILTER = ('<Processor id="2209" name="ACE High/Low Pass Filter" active="1" type=
           '</Processor>')
 
 
+BUS_FILTER = FILTER.replace('id="2209"', 'id="3009"').replace('id="2210"', 'id="3010"').replace('id="2211"', 'id="3011"')
+
+
+def with_filters(text, bus=True):
+    """The Drums filter, and (bus) the same filter on the Vox bus too; 80 s of audio."""
+    text = text.replace('<Processor id="2202" name="Amp"', FILTER + '<Processor id="2202" name="Amp"')
+    if bus:
+        text = text.replace('<Processor id="3012" name="Amp"', BUS_FILTER + '<Processor id="3012" name="Amp"')
+    return text.replace(f'length="{a(20)}@{a(0)}"', f'length="{a(80)}@{a(0)}"')
+
+
+class PlugInsOnBuses(Base):
+    def long(self, text):
+        d = self.make(text)
+        for f in ("lead.wav", "harm.wav", "drums.wav"):
+            sf.write(d / "interchange" / "Demo" / "audiofiles" / f, np.zeros(80 * SR, dtype=np.float32), SR, subtype="FLOAT")
+        return d
+
+    def test_the_file_writer_never_writes_a_mixed_bus_plug_in(self):
+        sweep = [(0.0, 400.0), (8.0, 16000.0)]
+        p = PJ.load(self.long(with_filters(session(bus_members=("Lead Vocal", "Harmony", "Drums")))))
+        with self.assertRaises(ValueError) as e:
+            AA.write_file(p, p.track("Vox"), "plugin:3009:4", sweep)
+        self.assertIn("Vox carries Drums, not only vocals: its plug-in automation is never written", str(e.exception))
+        self.assertEqual(AA.write_file(p, p.track("Drums"), "plugin:2209:4", sweep), 2)       # a track: written
+        p = PJ.load(self.long(with_filters(session())))                                     # Vox: vocals only
+        self.assertEqual(AA.write_file(p, p.track("Vox"), "plugin:3009:4", sweep), 2)
+
+    def test_motion_skips_a_mixed_bus_and_says_so(self):
+        from hypnomix.session import motion_ardour as MA
+        d = self.long(with_filters(session(bus_members=("Lead Vocal", "Harmony", "Drums"))))
+        p = PJ.load(d)
+        tg = MA.targets_file(p)
+        self.assertEqual({t["track"]: t["others"] for t in tg}, {"Drums": [], "Vox": ["Drums"]})
+        fs, meta = MA.propose(p, tg)
+        self.assertTrue(fs)
+        self.assertEqual({f["track"] for f in fs}, {"Drums"})                 # the bus is preferred, but not this one
+        self.assertEqual([(s["track"], s["others"]) for s in meta["skipped"]], [("Vox", ["Drums"])])
+        self.assertIn("its plug-in automation is never written", meta["skipped"][0]["why"])
+        import contextlib
+        import io
+        out = io.StringIO()
+        ns = SimpleNamespace(als=str(d), mix=None, style=str(d / "none.json"), json=None, engine=None, apply=None, ids=None)
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(MA.main(ns), 0)
+        self.assertIn("skipped ACE High/Low Pass Filter: Low Pass Cut off frequency on Vox: Vox carries Drums, not only "
+                      "vocals: its plug-in automation is never written", out.getvalue())
+        self.assertIn("filters to move: ACE High/Low Pass Filter: Low Pass Cut off frequency on Drums;", out.getvalue())
+        p = PJ.load(self.long(with_filters(session())))                     # a bus of vocals only: still preferred
+        fs, meta = MA.propose(p, MA.targets_file(p))
+        self.assertEqual((fs[0]["track"], meta["skipped"]), ("Vox", []))
+
+    def test_motion_on_the_engine_skips_a_mixed_bus_too(self):
+        from hypnomix.session import motion_ardour as MA
+        ctl = lambda pid: dict(control=f"plugin:{pid}:4", kind="plugin", name="Cut off", parameterName="Low Pass Cut off frequency",
+                               pluginName="ACE High/Low Pass Filter", current=16000.0, min=20.0, max=20000.0, points=0)
+        routes = {"1": dict(trackId="1", trackName="Drums", isBus=False, feeders=[], controls=[ctl(11)]),
+                  "2": dict(trackId="2", trackName="Band", isBus=True, controls=[ctl(22)],
+                            feeders=[{"trackId": "1", "name": "Drums", "routeType": "audio_track"},
+                                     {"trackId": "4", "name": "Lead Vocal", "routeType": "audio_track"}]),
+                  "3": dict(trackId="3", trackName="Vox", isBus=True, controls=[ctl(33)],
+                            feeders=[{"trackId": "4", "name": "Lead Vocal", "routeType": "audio_track"},
+                                     {"trackId": "5", "name": "Strings Bus", "routeType": "bus"}]),
+                  "6": dict(trackId="6", trackName="Choir", isBus=True, controls=[ctl(66)],
+                            feeders=[{"trackId": "4", "name": "Lead Vocal", "routeType": "audio_track"}])}
+
+        class Eng:
+            def call(self, tool, args):
+                if tool == "tracks_list":
+                    return {"tracks": [{"id": k, "name": v["trackName"], "type": "bus" if v["isBus"] else "audio"} for k, v in routes.items()]}
+                if tool == "automation_list" and args["track_id"] in routes:
+                    return routes[args["track_id"]]
+                raise RuntimeError("Route not found")                       # the Strings Bus cannot be read
+        tg = MA.targets_engine(Eng())
+        self.assertEqual({t["track"]: t["others"] for t in tg},
+                         {"Drums": [], "Band": ["Drums"], "Vox": ["Strings Bus"], "Choir": []})
+        ok, skipped = MA.allowed(tg)
+        self.assertEqual(([t["track"] for t in ok], [s["track"] for s in skipped]), (["Drums", "Choir"], ["Band", "Vox"]))
+        self.assertEqual(sorted(ok, key=lambda t: (not t["bus"], t["high"]))[0]["track"], "Choir")   # a vocals-only bus first
+        with self.assertRaises(ValueError) as e:                             # the writer refuses it as well
+            AA.write_engine(Eng(), "2", "plugin:22:4", [(0.0, 400.0), (8.0, 16000.0)])
+        self.assertIn("Band carries Drums", str(e.exception))
+
+
 class MotionSweeps(Base):
     def test_filter_risers_are_options_written_into_a_new_snapshot(self):
         from hypnomix.session import motion_ardour as MA

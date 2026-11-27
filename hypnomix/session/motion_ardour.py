@@ -16,9 +16,12 @@ from --mix (the same section finder as `hypnomix sections`), else 8-bar blocks. 
 Nothing is written by default: every move is an option (--ids). All the moves chosen for one control are ONE write:
 into the open engine (--engine: automation_write, one engine undo step; it must have this very session open) or a new
 snapshot in the session's folder (--apply NEW.ardour). A control that already has automation is never offered (your
-moves are intent). Filter moves are not level moves; the reverb and delay throws and swells of a Live set are, on
-sends, and motion does not write them in HypnoMix Studio (a throw is far steeper than the smooth-automation rules allow):
-make those by hand.
+moves are intent). A bus's filter is preferred (one sweep moves a whole group), but never a bus, a group's bus or the
+master that carries a track that is not a vocal: its plug-in automation is never written (it would move those tracks
+too), so motion skips it, says which buses it skipped and why, and uses the next filter (a bus of vocals only, else a
+track's). Filter moves are not level moves; the reverb and delay throws and swells of a Live set are, on sends, and
+motion does not write them in HypnoMix Studio (a throw is far steeper than the smooth-automation rules allow): make
+those by hand.
 """
 import json
 import math
@@ -26,6 +29,7 @@ import re
 import sys
 from pathlib import Path
 
+from hypnomix.engineer import automation_rules as RULES
 from hypnomix.project import ardour_automation as AA
 
 FREQ = re.compile(r"cut ?-?off|freq", re.I)
@@ -34,29 +38,49 @@ OCTAVES = 8.0
 EPS_S = 0.01
 
 
+def _others(facts, read=None):
+    """What a route carries that is not a vocal (automation_rules.non_vocal; [] for a track or a bus of vocals only)."""
+    return RULES.non_vocal(facts, read)
+
+
+def _safe(eng):
+    """eng.call as non_vocal's reader: None (counts as not only vocals) when a feeding bus cannot be read."""
+    def read(tool, args):
+        try:
+            return eng.call(tool, args)
+        except Exception:
+            return None
+    return read
+
+
 def targets_engine(eng):
-    """Filter frequency parameters the open session has and nothing automates: [target]."""
+    """Filter frequency parameters the open session has and nothing automates: [target]. Each carries `others`: what
+    its route carries that is not a vocal (a bus that does is never swept: propose skips it and says so)."""
     out = []
     for r in eng.call("tracks_list", {}).get("tracks") or []:
         try:
             facts = eng.call("automation_list", {"track_id": str(r.get("id"))})
         except Exception:
             continue
+        others = None
         for c in facts.get("controls") or []:
             name = str(c.get("parameterName") or c.get("name") or "")
             if c.get("kind") != "plugin" or not FREQ.search(name) or c.get("points") or c.get("toggled"):
                 continue
             if not isinstance(c.get("current"), (int, float)) or c["current"] <= 0:
                 continue
+            if others is None:
+                others = _others(facts, _safe(eng))
             out.append(dict(track=facts.get("trackName") or r.get("name"), route=str(r.get("id")), control=c["control"],
                             label=f"{c.get('pluginName') or 'plug-in'}: {name}", base=float(c["current"]),
                             lo=float(c.get("min") or 20.0) if (c.get("min") or 0) > 0 else 20.0,
-                            hi=float(c.get("max") or 20000.0), high=bool(HIGHPASS.search(name)), bus=r.get("type") == "bus"))
+                            hi=float(c.get("max") or 20000.0), high=bool(HIGHPASS.search(name)),
+                            bus=r.get("type") == "bus", others=others))
     return out
 
 
 def targets_file(p):
-    """The same, read from the session file."""
+    """The same, read from the session file (what a bus carries: what feeds it in the file, as the file writer reads it)."""
     out = []
     for t in p.tracks:
         rt = t.native
@@ -79,8 +103,23 @@ def targets_file(p):
                     continue
                 out.append(dict(track=t.name, route=rt.get("id"), control=f"plugin:{pr.get('id')}:{idx}",
                                 label=f"{pr.get('name')}: {name}", base=base, lo=20.0, hi=20000.0,
-                                high=bool(HIGHPASS.search(name)), bus=t.kind in ("folder", "return", "master")))
+                                high=bool(HIGHPASS.search(name)), bus=t.kind in ("folder", "return", "master"),
+                                others=_others(AA.facts_of(p, t))))
     return out
+
+
+def allowed(tg_list):
+    """-> (the targets motion may sweep, the ones it skips: [dict(track, label, others, why)]). A bus, a group's bus or
+    the master that carries a track that is not a vocal is skipped: its plug-in automation is never written."""
+    ok, skipped = [], []
+    for t in tg_list:
+        others = t.get("others") or []
+        if others:
+            skipped.append(dict(track=t["track"], label=t["label"], others=list(others),
+                                why=RULES.mixed_bus({"trackName": t["track"]}, others, "plugin")))
+        else:
+            ok.append(t)
+    return ok, skipped
 
 
 def _oct(tg, f, octaves):
@@ -111,7 +150,8 @@ def points(move, tg, a, b, prm):
 
 
 def propose(p, tg_list, mix=None, style=None):
-    """-> (findings, meta). Each finding carries its move (target, points)."""
+    """-> (findings, meta). Each finding carries its move (target, points). A bus's filter is preferred, but a target
+    whose route carries a track that is not a vocal is never used: meta["skipped"] names each one and why."""
     from hypnomix.project import ardour as AR
     from hypnomix.session import motion as MO
     tempo = float(p.tempo)
@@ -121,8 +161,9 @@ def propose(p, tg_list, mix=None, style=None):
     secs, how = MO.sections_from(mix, tempo, nbars)
     at = lambda bar: clock.beats_to_s((bar - 1) * bpb)
     bar_s = lambda bar: at(bar + 1) - at(bar)
+    tg_list, skipped = allowed(tg_list)
     if not tg_list:
-        return [], dict(tempo=tempo, sections=secs, how=how, learned=bool(style))
+        return [], dict(tempo=tempo, sections=secs, how=how, learned=bool(style), skipped=skipped)
     first = sorted(tg_list, key=lambda t: (not t["bus"], t["high"]))[0]
     other = next((t for t in tg_list if t is not first), first)
     moves = []
@@ -150,7 +191,7 @@ def propose(p, tg_list, mix=None, style=None):
                            "written unless you pick it",
                        applies="motion", move=dict(move=mv, route=tg["route"], control=tg["control"], track=tg["track"],
                                                    points=[[round(t, 6), round(v, 3)] for t, v in pts])))
-    return fs, dict(tempo=tempo, sections=secs, how=how, learned=bool(style))
+    return fs, dict(tempo=tempo, sections=secs, how=how, learned=bool(style), skipped=skipped)
 
 
 def merged(fs, want):
@@ -190,13 +231,17 @@ def main(a):
     else:
         tg = targets_file(p)
     fs, meta = propose(p, tg, a.mix, style)
+    ok = [t for t in tg if not t.get("others")]
     print(f"{src.name}: {meta['tempo']:g} BPM, {len(meta['sections'])} sections ({meta['how']}); filters to move: "
-          + (", ".join(f"{t['label']} on {t['track']}" for t in tg) or "none")
+          + (", ".join(f"{t['label']} on {t['track']}" for t in ok) or "none")
           + ("" if meta["learned"] else "; gentle defaults (nothing learned yet)"))
+    for s in meta.get("skipped") or []:
+        print(f"  skipped {s['label']} on {s['track']}: {s['why']}")
     for f in fs:
         print(f"  {f['id']:<10} {f['where']:<14} {f['fix'].split('. An option')[0]}")
     if not fs:
-        print("  no moves to offer (no filter plug-in with a cut-off or frequency that nothing automates yet)")
+        print("  no moves to offer (no filter plug-in with a cut-off or frequency that nothing automates yet"
+              + (", on a track or a bus of vocals only" if meta.get("skipped") else "") + ")")
     if a.json:
         Path(a.json).write_text(json.dumps({"tool": "motion", "set": str(src), "findings": fs, "meta": meta}, indent=1,
                                            default=str), encoding="utf-8")
