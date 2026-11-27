@@ -102,7 +102,7 @@ def write_engine(eng, route_id, control, pts):
     level = RULES.kind(control) in RULES.LEVEL_KINDS
     args = _args(route_id, control, pts, level)
     line = RULES.line_from(None, c.get("current"))
-    bad = RULES.check(args, facts, line)
+    bad = RULES.check(args, facts, line, read=lambda tool, a: eng.call(tool, a))
     if bad:
         raise ValueError(RULES.sentence(bad))
     return eng.call("automation_write", args)

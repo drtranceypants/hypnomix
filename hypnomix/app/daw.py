@@ -353,9 +353,12 @@ METER_SWITCH = ("ensure_rms", "ensureRms")
 
 
 def _auto_writes(payload, tool="automation_write"):
-    """The automation_write (or automation_clear) calls in a JSON-RPC body (bytes, dict or list): [(id, arguments)]."""
+    """The automation_write (or automation_clear) calls in a JSON-RPC body (bytes, dict or list): [(id, arguments)].
+    Every name the engine takes for it counts (automation_write, automation/write, automation.write); a body that
+    names no automation tool in plain text and has no escape is not parsed."""
     if isinstance(payload, (bytes, bytearray, str)):
-        if tool.encode() not in (payload if isinstance(payload, (bytes, bytearray)) else payload.encode("utf-8", "replace")):
+        raw = payload if isinstance(payload, (bytes, bytearray)) else payload.encode("utf-8", "replace")
+        if b"automation" not in raw and b"\\u" not in raw:
             return []
         try:
             payload = json.loads(payload)
@@ -364,7 +367,7 @@ def _auto_writes(payload, tool="automation_write"):
     out = []
     for m in (payload if isinstance(payload, list) else [payload]):
         pr = m.get("params") if isinstance(m, dict) and m.get("method") == "tools/call" else None
-        if isinstance(pr, dict) and str(pr.get("name") or "").replace("/", "_") == tool:
+        if isinstance(pr, dict) and str(pr.get("name") or "").replace("/", "_").replace(".", "_") == tool:
             out.append((m.get("id"), pr.get("arguments") if isinstance(pr.get("arguments"), dict) else {}))
     return out
 
@@ -1058,7 +1061,7 @@ class Engine:
             line = None
             if str(a.get("mode") or "replace-range") != "replace-all":
                 line = AR.line_from(self._read_tool(url, "automation_get", {"track_id": rid, "control": ctl}), cur)
-            problems = AR.check(a, facts, line)
+            problems = AR.check(a, facts, line, read=lambda tool, args: self._read_tool(url, tool, args))
             if problems:
                 return AR.sentence(problems)
         for _, a in _auto_writes(payload, "automation_clear"):

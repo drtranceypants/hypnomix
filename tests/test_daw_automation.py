@@ -205,5 +205,34 @@ A.loadTempo().then(function () {
         self.assertEqual([(p["bar"], p["bpm"], p["bpmEnd"], p["ramped"]) for p in r["pts"]], [(1, 100, 140, True), (5, 140, 140, False)])
 
 
+class Proxy(unittest.TestCase):
+    """The app's engine connection refuses a write the rules refuse under every name the engine takes for the tool."""
+
+    def facts(self):
+        return {"trackId": "9", "trackName": "Band", "isBus": True, "busOfGroup": None,
+                "controls": [{"control": "gain", "current": 0.0}],
+                "feeders": [{"trackId": "2", "name": "Lead Vocal", "routeType": "audio_track"},
+                            {"trackId": "4", "name": "Drums", "routeType": "audio_track"}]}
+
+    def refusal(self, name, control="gain"):
+        from types import SimpleNamespace
+        from hypnomix.app import daw as D
+        reads = lambda url, tool, args: self.facts() if tool == "automation_list" else {"pointList": []}
+        eng = SimpleNamespace(_read_tool=reads)
+        body = json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": name, "arguments": {
+            "track_id": "9", "control": control, "curve": "s_curve",
+            "points": [{"time": 1, "value": 0}, {"time": 2.2, "value": -2}]}}}).encode()
+        return D.Engine.automation_refusal(eng, body, "http://127.0.0.1:1/mcp")
+
+    def test_every_name_and_alias_is_checked(self):
+        for name in ("automation_write", "automation/write", "automation.write"):
+            self.assertIn("Drums", self.refusal(name), name)
+        self.assertIn("Drums", self.refusal("automation_write", control="volume"))
+        escaped = json.dumps({"method": "tools/call", "params": {"name": "automation_write"}}).replace("automation", "\\u0061utomation")
+        from hypnomix.app import daw as D
+        self.assertEqual(len(D._auto_writes(escaped.encode())), 1)
+        self.assertEqual(self.refusal("automation_get"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

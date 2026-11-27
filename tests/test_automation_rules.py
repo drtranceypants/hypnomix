@@ -28,6 +28,28 @@ class Rules(unittest.TestCase):
     def test_kinds(self):
         self.assertEqual([AR.kind(c) for c in ("gain", "fader", "trim", "send:77", "pan_azimuth", "mute", "plugin:9:2", "x")],
                          ["gain", "gain", "trim", "send", "pan", "mute", "plugin", "other"])
+        self.assertEqual(AR.kind("volume"), "gain")          # the engine takes volume for the fader too
+
+    def test_force_as_the_engine_reads_it(self):
+        for f in (True, "true", 1, "1"):
+            self.assertTrue(any("force" in p for p in AR.check(write([(0, 0), (2, -2)], force=f))), f)
+        for f in (False, "false", 0, None):
+            self.assertEqual(AR.check(write([(0, 0), (2, -2)], force=f)), [], f)
+
+    def test_a_bus_is_judged_by_what_it_carries_not_its_name(self):
+        # a bus named like vocals that feeds this one also carries the strings: read in turn, it is not only vocals
+        outer = {"trackId": "10", "trackName": "Vox Master", "isBus": True, "busOfGroup": None, "feeders": [
+            {"trackId": "11", "name": "Vocals 2", "routeType": "bus"},
+            {"trackId": "2", "name": "Lead Vocal", "routeType": "audio_track"}]}
+        inner = {"trackId": "11", "trackName": "Vocals 2", "isBus": True, "busOfGroup": None, "feeders": [
+            {"trackId": "3", "name": "Harmony 1", "routeType": "audio_track"},
+            {"trackId": "5", "name": "Strings", "routeType": "audio_track"}]}
+        reads = lambda tool, args: inner if (tool, args.get("track_id")) == ("automation_list", "11") else None
+        self.assertEqual(AR.non_vocal(outer, reads), ["Strings"])
+        self.assertTrue(any("Strings" in p for p in AR.check(write([(10, -2), (11.2, -4.5)]), outer, read=reads)))
+        self.assertEqual(AR.non_vocal(outer), ["Vocals 2"])        # not read: a bus counts as not only vocals
+        only = dict(inner, feeders=inner["feeders"][:1])
+        self.assertEqual(AR.non_vocal(outer, lambda tool, args: only), [])
 
     def test_line_and_trim_caps(self):
         self.assertTrue(any("at most 3 dB" in p for p in AR.check(write([(0, 0), (3, -3.5)]))))

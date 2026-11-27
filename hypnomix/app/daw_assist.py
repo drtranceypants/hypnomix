@@ -766,7 +766,7 @@ def automation_problem(args, read):
         return f"route {rid}: what it carries could not be read (automation_list); read it first"
     cur = next((c.get("current") for c in facts.get("controls") or [] if c.get("control") == ctl), None)
     line = None if a.get("mode") == "replace-all" else AR.line_from(read("automation_get", {"track_id": rid, "control": ctl}), cur)
-    problems = AR.check(a, facts, line)
+    problems = AR.check(a, facts, line, read=read)
     return AR.sentence(problems) if problems else ""
 
 

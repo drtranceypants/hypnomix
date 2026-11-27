@@ -416,7 +416,9 @@ against the engine's step names (*write automation*, *clear automation*), and th
 focused lane header the keys are ← → (pick a point), ↑ ↓ (move it 0.5 dB, ⇧ 0.1 dB), A or + (add at the playhead),
 Delete (remove) and P (play / off). Level lanes keep to the smooth-automation rules while dragging (a move at most 3 dB,
 a trim 4 dB, the steepest point under 7 dB/s; the first and last points keep their value), and the app's engine
-connection checks the same rules (`engineer/automation_rules.py`) and the bus rule before the call is sent; a refusal
+connection checks the same rules (`engineer/automation_rules.py`) and the bus rule before the call is sent (under any
+name the engine takes for the tool, `automation_write`, `automation/write` or `automation.write`, and the fader's
+aliases; a bus that feeds the bus is read in turn and judged by what it carries, not by its name); a refusal
 puts the lane back and shows the sentence. The draggable points of a level lane are where its line turns or is flat; the
 S-curve's own points are drawn, not dragged. The **Tempo** button shows `tempo_get_map` as a row at the top: each
 tempo point, a ramp drawn as a slope to its end tempo, labelled; the bar grid still counts at the first tempo. With the

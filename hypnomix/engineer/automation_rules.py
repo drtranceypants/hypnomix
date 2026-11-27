@@ -14,8 +14,9 @@ automation_write from the Assistant, the DAW view or a command; the .ardour file
 Pan, width, mute and plug-in parameters are not level moves: they are not held to these rules (the engine has no
 limit on them either). Values are the engine's natural units: dB for the fader, trim and sends (None is silence).
 
-  check(args, facts=None, line=None) -> [problem, ...]   plain sentences; [] when the write may go ahead
-  non_vocal(facts) -> [name, ...]                           what a bus carries that is not a vocal
+  check(args, facts=None, line=None, read=None) -> [problem, ...]   plain sentences; [] when the write may go ahead
+  non_vocal(facts, read=None) -> [name, ...]                what a bus carries that is not a vocal (read: the engine's
+                                                            automation_list for a bus that feeds it, read in turn)
   s_points(points, step=0.05) -> [(t, v), ...]              the points with a cosine S between each pair
 """
 import math
@@ -34,7 +35,7 @@ VOCAL_ROLES = ("lead_vocal", "backing_vocal")
 def kind(control):
     """The kind of a control as automation_list names it: gain, trim, send, pan, mute, plugin or other."""
     c = str(control or "").strip().lower()
-    if c in ("gain", "fader"):
+    if c in ("gain", "fader", "volume"):
         return "gain"
     if c == "trim":
         return "trim"
@@ -115,13 +116,17 @@ def _vocal(name, route_type=""):
     return RO.by_name(str(name or "")) in VOCAL_ROLES
 
 
-def non_vocal(facts):
+def non_vocal(facts, read=None, _seen=None, _depth=0):
     """The tracks a bus, a group's bus or the master carries that are not vocals (automation_list's busOfGroup members
-    and feeders), by hypnomix's roles; [] for a track, or for a bus that carries only vocals."""
+    and feeders), by hypnomix's roles; [] for a track, or for a bus that carries only vocals. A bus that feeds it is
+    judged by what it carries, not by its name (a bus called Vocals may hold the strings too): read(tool, args) reads
+    that bus's own automation_list from the engine, in turn; without read, or when it cannot be read, such a bus
+    counts as not only vocals."""
     f = facts or {}
     if not (f.get("isBus") or f.get("isMaster") or f.get("busOfGroup")):
         return []
-    seen, out = set(), []
+    seen = _seen if _seen is not None else {str(f.get("trackId") or "")}
+    out = []
     members = ((f.get("busOfGroup") or {}).get("members") or []) + (f.get("feeders") or [])
     for m in members:
         if not isinstance(m, dict):
@@ -130,9 +135,27 @@ def non_vocal(facts):
         if key in seen:
             continue
         seen.add(key)
+        if str(m.get("routeType") or "") == "bus":
+            sub = None
+            if read is not None and _depth < 8 and m.get("trackId"):
+                try:
+                    sub = read("automation_list", {"track_id": str(m["trackId"])})
+                except Exception:
+                    sub = None
+            if not isinstance(sub, dict):
+                out.append(str(m.get("name") or key))
+                continue
+            sub = dict(sub, isBus=True)
+            out += [n for n in non_vocal(sub, read, seen, _depth + 1) if n not in out]
+            continue
         if not _vocal(m.get("name"), m.get("routeType")):
             out.append(str(m.get("name") or key))
     return out
+
+
+def forced(v):
+    """The engine's force flag as the engine reads it (true, "true", 1 or "1")."""
+    return v is True or (not isinstance(v, bool) and str(v).strip().lower() in ("true", "1"))
 
 
 def line_from(reply, current=None):
@@ -158,19 +181,20 @@ def _fmt(t):
     return f"{t:.2f} s"
 
 
-def check(args, facts=None, line=None):
+def check(args, facts=None, line=None, read=None):
     """Why this automation_write must not be sent, as plain sentences ([] when it may). facts: automation_list's reply
     for the route (for what a bus carries); line: line_from(...) for the control as it is now (for the edges of a
-    replace-range write). Only level controls (fader, trim, sends) are checked."""
+    replace-range write); read(tool, args): the engine, for the buses that feed a bus (non_vocal). Only level controls
+    (fader, trim, sends) are checked."""
     a = args or {}
     k = kind(a.get("control"))
     if k not in LEVEL_KINDS:
         return []
     out = []
     what = {"gain": "fader", "trim": "trim", "send": "send level"}[k]
-    if a.get("force") is True:
+    if forced(a.get("force")):
         out.append("force is never used: a level move steeper than 7 dB/s is made longer, not forced")
-    others = non_vocal(facts)
+    others = non_vocal(facts, read)
     if others:
         name = (facts or {}).get("trackName") or "this bus"
         out.append(f"{name} carries {', '.join(others[:6])}{' and more' if len(others) > 6 else ''}, not only vocals: "
