@@ -5,7 +5,7 @@ subtitle: What HypnoMix is, how it thinks, and your first hour with it
 
 # Welcome
 
-HypnoMix is a free mixing and mastering engineer for people who record **real instruments and vocals**. It
+HypnoMix is a free mixing and mastering engineer for any kind of music, recorded or made in the box. It
 does the slow, technical jobs (clicks, timing, tuning, lining up doubles, hiss, levels, sidechains, loudness)
 and explains every move in plain words. The playing, the sounds, the arrangement and every taste call stay
 yours.

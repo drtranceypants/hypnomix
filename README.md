@@ -4,7 +4,7 @@
 
 Hand it a folder of raw stems and get back a cleaned, balanced, mastered song, plus notes that explain every EQ cut, compressor setting and level in plain words. Or keep your hands on your own session: HypnoMix sets exact fader dB and plug-in parameters in the open Live set, records A/B loops, and measures what each change did.
 
-Built for people who record **real instruments and vocals**, not just MIDI.
+Built for any kind of music, from a full band or a voice and guitar to beats and tracks made in the box, with extra tools for recorded instruments and vocals.
 
 HypnoMix DAW is HypnoMix's own DAW. It is built on Ardour, a free open-source DAW under the GNU General Public License. HypnoMix DAW is not released yet. Until it is, everything written here for it is written for Ardour 8 or 9, the free DAW it is built on, and has not yet been tried in either.
 
