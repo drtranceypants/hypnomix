@@ -1401,7 +1401,8 @@ def _automation_note():
                 "and what it carries, daw_automation_get for a control's points (times in seconds, dB for the fader, "
                 "trim and sends). A level move (fader, trim, a send) is written as gentle S-curves (curve s_curve, "
                 "about 1.2 s each), a line move at most 3 dB and a trim at most 4 dB, the steepest point under 7 dB/s "
-                "(an S-curve peaks at 1.6 times its average slope), starting and ending on the line as it is, never "
+                "(an S-curve peaks at 1.6 times its average slope), starting and ending on the line as it is (start and end at the first and last point's times; over existing "
+                "points pass guard false, so the edge points are yours and no guard point sits beside them), never "
                 "with force; never on a bus, a group's bus or the master that carries any track that is not a vocal "
                 "(ride the vocal tracks instead). The app refuses a write that breaks these, before any card.")
     if have & DA.TEMPO_TOOLS:
