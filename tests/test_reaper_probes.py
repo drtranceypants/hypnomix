@@ -94,6 +94,30 @@ class ReaperProbes(unittest.TestCase):
         c = read_cards(out, self.dir / "cards.json")
         self.assertEqual(c["tracks"]["Bass"]["role"], "auto")
 
+    def test_inserted_rpp_uses_jsfx_desc_and_reads_old_spelling_projects(self):
+        """Inserted <JS> lines leave the custom-name slot empty so REAPER shows the JSFX's own desc: title
+        (HypnoMix Probe / HypnoMix Main), and older projects carrying an old-spelling display name or mixed-case
+        path still read back and are not duplicated on re-insert."""
+        self.assertTrue((P.JSFX / "hypnomix_probe.jsfx").read_text(encoding="utf-8").startswith("desc:HypnoMix Probe\n"))
+        self.assertTrue((P.JSFX / "hypnomix_main.jsfx").read_text(encoding="utf-8").startswith("desc:HypnoMix Main\n"))
+        src = self.dir / "Song.rpp"
+        src.write_bytes(RPP.encode())
+        out, _ = P.insert(src)
+        text = out.read_bytes().decode()
+        self.assertNotIn("Hypnomix Probe", text)
+        self.assertNotIn("Hypnomix Main", text)
+        old = (text.replace('<JS hypnomix/hypnomix_probe.jsfx ""', '<JS HYPNOMIX/HYPNOMIX_PROBE.JSFX "Hypnomix Probe"')
+                   .replace('<JS hypnomix/hypnomix_main.jsfx ""', '<JS HYPNOMIX/HYPNOMIX_MAIN.JSFX "Hypnomix Main"')
+                   .replace("0 0 0 -1 -", "10 1 0 -1 -", 1)
+                   .replace("0 0 0 0 -14 -1 100 -1", "0 10 1 0 -12 -1 100 -1"))
+        old_rpp = self.dir / "Old.rpp"
+        old_rpp.write_bytes(old.encode())
+        c = P.read_cards(old_rpp)
+        self.assertEqual(c["tracks"]["Kick"], {"role": "guitar", "priority": "focus: others give way", "protect": "off"})
+        self.assertEqual((c["song"]["key"], c["song"]["scale"], c["song"]["target"]), ("A", "minor", -12.0))
+        _, added = P.insert(old_rpp, self.dir / "OldAgain.rpp")
+        self.assertEqual(added, 0)
+
 
 class HypnoMixWindows(unittest.TestCase):
     """The JSFX windows and the bridge's panels share one look and a built-in guide."""
@@ -131,9 +155,13 @@ class HypnoMixWindows(unittest.TestCase):
         self.assertNotIn("guide", [k for k, _ in m["hypnomix_main.jsfx"]])
 
     def test_names_are_found_in_any_case(self):
+        from hypnomix.reaper import mixer as MX
         lua = (self.root / "bridge.lua").read_text(encoding="utf-8") + (self.root / "masterchain.lua").read_text(encoding="utf-8")
         self.assertNotIn('find("HypnoMix Main"', lua)
         self.assertIn('find("hypnomix main", 1, true)', lua)
+        for name in ("JS: Hypnomix Probe", "JS: HypnoMix Probe", "JS: Hypnomix Main", "JS: HypnoMix Main"):
+            self.assertTrue(MX._own_internal(name, "slot (set by hypnomix)"), name)
+            self.assertFalse(MX._own_internal(name, "Target LUFS"), name)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@
                                recording it names) and of the bounced mix around the spot
   POST /api/dawreview/decide   {dir, id, decision: approve|skip|change|clear, note, amount}: the same decisions.json
                                as `hypnomix fix --decide` and the Songs review
-  POST /api/dawreview/apply    {dir}: `hypnomix fix SCAN --approved --out "<snapshot> (hypnomix).ardour"` in the
+  POST /api/dawreview/apply    {dir}: `hypnomix fix SCAN --approved --out "<snapshot> (HypnoMix).ardour"` in the
                                session folder (a new snapshot; the original is never written)
   POST /api/dawreview/abset    {dir}: `hypnomix abset SCAN --out "<snapshot> (A-B).ardour"` (workflow/abset_ardour.py): one
                                new snapshot with every proposed fix as a B the view switches over MCP; ab_ardour.json
@@ -78,12 +78,12 @@ def scan_folder(srv, session):
 
 
 def out_for(session):
-    """`<snapshot> (hypnomix).ardour` beside it; numbered when that exists (nothing is ever overwritten)."""
-    base = re.sub(r" \(hypnomix(?: \d+)?\)$", "", session.stem)
-    out = session.parent / f"{base} (hypnomix).ardour"
+    """`<snapshot> (HypnoMix).ardour` beside it; numbered when that exists (nothing is ever overwritten)."""
+    base = re.sub(r" \(hypnomix(?: \d+)?\)$", "", session.stem, flags=re.IGNORECASE)
+    out = session.parent / f"{base} (HypnoMix).ardour"
     n = 2
     while out.exists():
-        out = session.parent / f"{base} (hypnomix {n}).ardour"
+        out = session.parent / f"{base} (HypnoMix {n}).ardour"
         n += 1
     return out
 

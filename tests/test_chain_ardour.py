@@ -194,11 +194,16 @@ class ChainArdour(unittest.TestCase):
         self.assertTrue(any("outside" in n for n in notes))
 
     def test_chain_goes_before_hypnomix_main(self):
-        f = FakeHypnomix(master_plugins=["Hypnomix Main"])
-        self.run_chain(f)
-        self.assertEqual(f.plugins[-1]["name"], "Hypnomix Main")
-        self.assertEqual(f.plugins[0]["name"], "ACE EQ")
-        self.assertTrue(f.plugins[-1]["enabled"])                                      # meters never bypassed
+        for main_name, probe_name in (("Hypnomix Main", "Hypnomix Probe"), ("HypnoMix Main", "HypnoMix Probe")):
+            f = FakeHypnomix(master_plugins=[main_name])
+            self.run_chain(f)
+            self.assertEqual(f.plugins[-1]["name"], main_name)
+            self.assertEqual(f.plugins[0]["name"], "ACE EQ")
+            self.assertTrue(f.plugins[-1]["enabled"])                                  # meters never bypassed
+            f2 = FakeHypnomix(master_plugins=[probe_name, main_name])
+            self.run_chain(f2)
+            self.assertEqual(f2.plugins[-1]["name"], main_name)
+            self.assertTrue(all(p["enabled"] for p in f2.plugins if p["name"] in (probe_name, main_name)))
 
     def test_existing_plugins_refuse_bypass_keep(self):
         with self.assertRaises(SystemExit):

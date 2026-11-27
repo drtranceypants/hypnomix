@@ -94,7 +94,7 @@ def read_cards(path, cards_file=None):
 
     def card_of(chain):
         for js in (chain.chunks("JS") if chain is not None else []):
-            src = js.tokens[1].replace("\\", "/") if len(js.tokens) > 1 else ""
+            src = (js.tokens[1].replace("\\", "/") if len(js.tokens) > 1 else "").lower()
             kind = "hypnomix_main.jsfx" if src.endswith("hypnomix_main.jsfx") else \
                 "hypnomix_probe.jsfx" if src.endswith("hypnomix_probe.jsfx") else None
             if kind:
@@ -151,7 +151,8 @@ def insert(path, out=None):
     added = 0
 
     def has(chain, file):
-        return chain is not None and any(len(j.tokens) > 1 and j.tokens[1].replace("\\", "/").endswith(file)
+        want = file.lower()
+        return chain is not None and any(len(j.tokens) > 1 and j.tokens[1].replace("\\", "/").lower().endswith(want)
                                          for j in chain.chunks("JS"))
 
     for tr in root.chunks("TRACK"):

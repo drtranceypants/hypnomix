@@ -23,7 +23,7 @@ MCP, from its own ACE plug-ins and the two HypnoMix Studio devices (all free, al
                                                               HypnoMix Studio without it: left out and listed
     Limiter              Hypnomix Limiter                     Gain, Ceiling (true peak, 4x oversampled), Release
 
-The chain goes on the master bus, before Hypnomix Main if it is there (Main measures what the chain makes),
+The chain goes on the master bus, before HypnoMix Main if it is there (Main measures what the chain makes),
 otherwise just before the fader. Values are set in the plug-in's own units (Hz, dB, ms, %), clamped to the
 control's range, so they read in HypnoMix Studio exactly as planned.
 
@@ -66,7 +66,7 @@ UTILITY = ("lv2", "urn:hypnomix:utility", "Hypnomix Utility")
 LIMITER = ("lv2", "urn:hypnomix:limiter", "Hypnomix Limiter")
 SATURATOR = ("lv2", "urn:hypnomix:saturator", "Hypnomix Saturator")
 LEVEL_CONTROLS = ("Ceiling", "Gain", "Threshold", "Makeup", "Drive", "Output")     # a clamp here changes the loudness: the stage counts as not set
-METERS = ("Hypnomix Main", "Hypnomix Probe")          # measuring devices: never bypassed, the chain goes before Main
+METERS = ("HypnoMix Main", "HypnoMix Probe")          # measuring devices: never bypassed, the chain goes before Main (matched in any case)
 STEEP = {"lowcut12": 1, "lowcut48": 4, "highcut12": 1, "highcut48": 4}
 SLOPE = {"lowcut12": 12, "lowcut48": 48, "highcut12": 12, "highcut48": 48}     # ACE EQ's High / Low Pass Slope, dB/oct
 BUTTERWORTH_Q = 0.7071
@@ -490,13 +490,13 @@ def build_master(m, plan, existing="refuse", dry=False, route_id=None):
             have = before = _existing(m, rid)
         except MCPError as e:
             raise MCPError(f"Nothing was changed: {e}") from e
-        meters = [p for p in have if any(_name(p).startswith(n) for n in METERS)]
+        meters = [p for p in have if any(_name(p).lower().startswith(n.lower()) for n in METERS)]
         others = [p for p in have if p not in meters]
         if others:
             names = [_name(p) for p in others]
             if existing not in ("bypass", "keep"):
                 raise SystemExit(f"the master already has plug-ins {names}; use --existing bypass or --existing keep")
-        main = next((p for p in meters if _name(p).startswith("Hypnomix Main")), None)
+        main = next((p for p in meters if _name(p).lower().startswith("hypnomix main")), None)
         if main is not None:
             position = int(main["index"])
     b = Builder(m, rid, dry, position)
@@ -686,7 +686,7 @@ def main_ardour(a, plan_master):
     if notes:
         md += ["", "Notes:", *[f"- {n}" for n in notes]]
     if getattr(a, "verify", False):
-        md += ["", "--verify isn't available in HypnoMix Studio yet (it needs an export over MCP). Hypnomix Main's "
+        md += ["", "--verify isn't available in HypnoMix Studio yet (it needs an export over MCP). HypnoMix Main's "
                "Match target turns the chain to the song card's loudness while the song plays."]
     print("\n".join(md))
     if incomplete(rows):

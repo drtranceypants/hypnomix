@@ -39,10 +39,14 @@ class Where(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             s = Path(td) / "Song.ardour"
             s.write_text("<Session/>", encoding="utf-8")
-            self.assertEqual(DR.out_for(s).name, "Song (hypnomix).ardour")
-            (Path(td) / "Song (hypnomix).ardour").write_text("x", encoding="utf-8")
-            self.assertEqual(DR.out_for(s).name, "Song (hypnomix 2).ardour")
-            self.assertEqual(DR.out_for(Path(td) / "Song (hypnomix).ardour").name, "Song (hypnomix 2).ardour")
+            self.assertEqual(DR.out_for(s).name, "Song (HypnoMix).ardour")
+            # older snapshots named "(hypnomix)" / "(hypnomix N)" are stripped case-insensitively, never doubled
+            self.assertEqual(DR.out_for(Path(td) / "Song (hypnomix).ardour").name, "Song (HypnoMix).ardour")
+            self.assertEqual(DR.out_for(Path(td) / "Song (hypnomix 3).ardour").name, "Song (HypnoMix).ardour")
+            (Path(td) / "Song (HypnoMix).ardour").write_text("x", encoding="utf-8")
+            self.assertEqual(DR.out_for(s).name, "Song (HypnoMix 2).ardour")
+            self.assertEqual(DR.out_for(Path(td) / "Song (HypnoMix).ardour").name, "Song (HypnoMix 2).ardour")
+            self.assertEqual(DR.out_for(Path(td) / "Song (hypnomix).ardour").name, "Song (HypnoMix 2).ardour")
 
     def test_applied_ids_from_the_fix_log(self):
         log = ("## fix run 2026-11-26 04:08\n\napproved: clips-1, order-1\n\n- clips-1: Other 1-2 s: gain dip\n"
@@ -102,7 +106,7 @@ class Routes(unittest.TestCase):
     def test_scan_saves_bounces_then_scans_with_the_mix(self):
         st = DR.handle_get(SV, "/api/dawreview/state", {})[1]
         self.assertTrue(st["connected"] and st["dirty"] and not st["scanned"])
-        self.assertEqual(st["out"], "Song (hypnomix).ardour")
+        self.assertEqual(st["out"], "Song (HypnoMix).ardour")
         code, body = DR.handle_post(SV, "/api/dawreview/scan", {})            # unsaved changes: nothing is saved for them
         self.assertEqual((code, body), (409, {"error": "unsaved", "dirty": True}))
         self.assertEqual((self.runs, self.eng.calls.count("session_save")), ([], 0))
@@ -171,8 +175,8 @@ class Routes(unittest.TestCase):
         r = post("/api/dawreview/apply", {})
         kind, steps, _ = self.runs[-1]
         self.assertEqual(kind, "fix")
-        self.assertEqual(steps[0][1], ["fix", str(d), "--approved", "--out", str(self.sess.parent / "Song (hypnomix).ardour")])
-        self.assertTrue(r["out"].endswith("Song (hypnomix).ardour"))
+        self.assertEqual(steps[0][1], ["fix", str(d), "--approved", "--out", str(self.sess.parent / "Song (HypnoMix).ardour")])
+        self.assertTrue(r["out"].endswith("Song (HypnoMix).ardour"))
         post("/api/dawreview/ab", dict(id="clips-1"))
         self.assertEqual(self.runs[-1][1][0][1], ["ab", str(d), "--ids", "clips-1"])
 
@@ -185,7 +189,7 @@ class SnapshotWrite(unittest.TestCase):
         from hypnomix.project import ardour_edit as AE
         p = types.SimpleNamespace(native=ET.Element("Session"))
         with tempfile.TemporaryDirectory() as td:
-            out = Path(td) / "Song (hypnomix).ardour"
+            out = Path(td) / "Song (HypnoMix).ardour"
             real = ET.ElementTree.write
 
             def half(self, path, *a, **k):
@@ -197,7 +201,7 @@ class SnapshotWrite(unittest.TestCase):
             self.assertEqual(list(Path(td).iterdir()), [])
             AE.save(p, out)
             self.assertEqual([f.name for f in Path(td).iterdir()], [out.name])
-            self.assertEqual(ET.parse(out).getroot().get("name"), "Song (hypnomix)")
+            self.assertEqual(ET.parse(out).getroot().get("name"), "Song (HypnoMix)")
 
 
 class JobSteps(unittest.TestCase):

@@ -1,7 +1,7 @@
 /* Hypnomix · Review on the engine's session (connected, inside the app): the real hypnomix loop.
    Scan = session_save + a bounce of the mix (session_export_mix) + `hypnomix scan SESSION.ardour --mix`, run by the
    app (POST /api/dawreview/scan; progress from GET /api/job). Findings, decisions (the same decisions.json as
-   `hypnomix fix --decide`) and Apply (`hypnomix fix --approved --out "<snapshot> (hypnomix).ardour"`) go through
+   `hypnomix fix --decide`) and Apply (`hypnomix fix --approved --out "<snapshot> (HypnoMix).ardour"`) go through
    hypnomix/app/dawreview.py. Opening the new snapshot is the supervisor's POST /api/daw/open, after a click.
    A/B of clip and mixer fixes: `hypnomix abset` writes "<snapshot> (A-B).ardour" (POST /api/dawreview/abset); once the
    engine has it open, A / B / Blind switch each finding over MCP (ab_use_playlist, or the track's fader / pan / mute),
