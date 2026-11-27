@@ -13,11 +13,11 @@ A command-line mixing and mastering toolkit (`hypnomix <command>`; `hypnomix` al
 - **File tools:** read audio files (stems, takes, mixes). Work with any DAW. Never need Live.
 - **Session tools:** read a saved Ableton Live set (`.als`, gzipped XML) plus the audio its clips play. Live can
   be closed. Tools that change a set always write a **new** `.als` next to the original.
-- **Project tools (REAPER, HypnoMix DAW):** read a REAPER project (`.rpp`, plain text) or a HypnoMix DAW session
-  (`.ardour` XML, or the session folder; what that format is: the wiki article "HypnoMix DAW", `28-ardour.html`) through the shared model in `hypnomix/project/` (`project`, and `scan` on either).
+- **Project tools (REAPER, HypnoMix Studio):** read a REAPER project (`.rpp`, plain text) or a HypnoMix Studio session
+  (`.ardour` XML, or the session folder; what that format is: the wiki article "HypnoMix Studio", `28-ardour.html`) through the shared model in `hypnomix/project/` (`project`, and `scan` on either).
   Times are in seconds. The DAW can stay open: `scan` writes nothing next to the project, and `fix` on a REAPER
   scan writes ONE new `.rpp` (`workflow/fix_project.py`, edits in `project/rpp_edit.py`; tuned vocals become new
-  takes on the person's own items, never a rendered copy); on a HypnoMix DAW scan it writes ONE new `.ardour` snapshot beside the
+  takes on the person's own items, never a rendered copy); on a HypnoMix Studio scan it writes ONE new `.ardour` snapshot beside the
   original (`workflow/fix_ardour.py`, edits in `project/ardour_edit.py`: region fades and gain, gain-envelope dips, fader, pan,
   mute; names, order, stacks, timing, sidechain, tuning stay by hand; written and re-read by HypnoMix, NOT YET OPENED in a released DAW). The same model also reads `.als` sets; new tools that should work in both DAWs
   belong there (`project.load(path)`), not on raw XML.
@@ -35,7 +35,7 @@ A command-line mixing and mastering toolkit (`hypnomix <command>`; `hypnomix` al
   The last resort, not the first: they need Live running, a remote script, and a person at the screen.
 - **The app:** `hypnomix app` is the first pass in a window (scan, hear each fix, approve, apply), with an
   Assistant tab (chat with the person's own AI key), an optional Listener (a cloud model hears a bounce, only on
-  their click) and **teacher mode**: free courses in their own DAW (Live, REAPER or HypnoMix DAW), from the complete course
+  their click) and **teacher mode**: free courses in their own DAW (Live, REAPER or HypnoMix Studio), from the complete course
   A to Z to a 101 crash course and a tour of HypnoMix. Point a newcomer at the Teacher tab; it is theirs to use, not
   something for an agent to drive.
 
@@ -105,7 +105,7 @@ Preferences shape proposals. They never replace asking: taste calls are always a
 | the person has | run |
 |---|---|
 | a Live set | `hypnomix scan "Song.als" --mix mix.wav --ref instrumental.wav --key "F# major"` |
-| a REAPER project or a HypnoMix DAW session | `hypnomix scan "Song.rpp"`, `hypnomix scan "Song/"` (or its `.ardour`); the DAW can stay open |
+| a REAPER project or a HypnoMix Studio session | `hypnomix scan "Song.rpp"`, `hypnomix scan "Song/"` (or its `.ardour`); the DAW can stay open |
 | raw recordings or exported stems (any DAW) | `hypnomix scan "folder/"` |
 | stems to clean up, mix or master | `hypnomix prep FOLDER --plan`, `automix FOLDER --plan`, `master MIX.wav --plan` |
 | a finished stereo mix only | `hypnomix measure`, `translate`, `qc`, `sections --bpm N`, `match MIX REF` on it; `separate` if stems would help |
@@ -260,15 +260,15 @@ which spots to compare between the old and new set. When the review is finished,
 | Plan many moves for review | `prep --plan`, `automix --plan`, `master --plan`, `balance --plan` (a first fader balance of stems, faders only), `colour --plan`, `album --plan` | nothing (findings) |
 | Hear and review | `ab` (before/after clips), `review` (the page; `--serve` saves clicks) | the scan folder only |
 | Hand the by-hand list to the DAW | `handoff SCAN_DIR` (`HANDOFF.md`, a marker at every spot; `--daw` picks the wording: `live`, `reaper`, `ardour` or `generic`) | files in `SCAN_DIR/handoff/`; a new set with locators (Live) or a new project with markers (REAPER) |
-| Fix a set | `fix` (approved findings); or `order --apply` (track order, vocal stacks; `order SESSION.ardour --engine --ids …` writes groups into the open HypnoMix DAW engine instead), `smooth --apply`, `timing --apply`, `distortion --apply`, `sidechain --apply`, `automation offset/dip` | a new `.als`; with `--engine --ids`, the session open in the HypnoMix engine |
+| Fix a set | `fix` (approved findings); or `order --apply` (track order, vocal stacks; `order SESSION.ardour --engine --ids …` writes groups into the open HypnoMix Studio engine instead), `smooth --apply`, `timing --apply`, `distortion --apply`, `sidechain --apply`, `automation offset/dip` | a new `.als`; with `--engine --ids`, the session open in the HypnoMix engine |
 | Keep it moving (last step before mixdown; see `docs/WORKFLOW.md` §5) | `motion --learn` (your moves from finished songs), `motion SET --mix MIX --plan` (riser, dip, drift, swell, throw, outro, stutter, gate, drop-out: all options), `borrow SET --mix MIX --plan` (unused loops from the song's original project, on switched-off tracks) | a scan folder; `fix` writes a new `.als` |
-| Tempo and variety (see `docs/TEMPO.md`) | `tempomap` (free-played take: `--click` check, then `--conform` or `--follow`), `loops`, `tighten`, `breathe`, `variations`, `colour` (new timbres where a part repeats itself: Live-device chains on switched-off copies, `--plan` for the review; Live sets only); `loops … --cues` and `variations SESSION.ardour --cues` (HypnoMix DAW: clips into cue slots on a track of their own, written at once) | a new `.als`, or preview files; with `--cues`, cue slots in the session open in the HypnoMix engine |
-| Clicking, not typing (see `docs/APP.md`) | `app` (the first pass in a window; decisions land in the same `decisions.json`; its Teacher tab is the free course in the person's DAW; `app --daw`: HypnoMix DAW's window on its engine, the Assistant asking before each engine change), `device` (Max for Live: step through findings in Live, jump to each) | scans in `~/Documents/Hypnomix`; a new `.als` on Apply |
+| Tempo and variety (see `docs/TEMPO.md`) | `tempomap` (free-played take: `--click` check, then `--conform` or `--follow`), `loops`, `tighten`, `breathe`, `variations`, `colour` (new timbres where a part repeats itself: Live-device chains on switched-off copies, `--plan` for the review; Live sets only); `loops … --cues` and `variations SESSION.ardour --cues` (HypnoMix Studio: clips into cue slots on a track of their own, written at once) | a new `.als`, or preview files; with `--cues`, cue slots in the session open in the HypnoMix engine |
+| Clicking, not typing (see `docs/APP.md`) | `app` (the first pass in a window; decisions land in the same `decisions.json`; its Teacher tab is the free course in the person's DAW; `app --daw`: HypnoMix Studio's window on its engine, the Assistant asking before each engine change), `device` (Max for Live: step through findings in Live, jump to each) | scans in `~/Documents/Hypnomix`; a new `.als` on Apply |
 | Free plug-ins and sounds (Mac only; see `docs/APP.md`) | `store` (`search`, `info`, `install`, `uninstall`, `updates`, with `--kind`, `--format`, `--open`, `--licence`, `--mpe`, `--replace`; the catalogue holds 69 items, 12 with `mpe` true; `--unverified` only after the person has confirmed that the download cannot be checked against a SHA-256) | files under `~/Library/Audio/Plug-Ins` and `~/Music/Hypnomix Library`; its own manifest |
-| HypnoMix DAW, the add-on (HypnoMix's own DAW; engine 0.1.0 for Apple-silicon Macs only, none for Intel Macs or Windows yet; see `docs/APP.md` and the wiki article `28-ardour.html`) | `engine` (status, `where`; `install` and `remove` report first and change nothing until `--yes`) | the engine under `<hypnomix home>/engine/<version>/` only; the address and SHA-256 come from the manifest shipped in the app |
-| A project from another DAW into HypnoMix | `import PROJECT OUTDIR [--sr N] [--from live\|logicx\|ptx\|dawproject\|reaper\|aaf] [--allow-outside]` (a new session folder plus `IMPORT-REPORT.md`; the project is only read; only audio inside the project is copied unless `--allow-outside` (a .als copies its samples wherever they are); ptx and aaf need the HypnoMix DAW add-on, Apple-silicon Macs only so far; in DAW mode `POST /api/daw/import {path, out?}` runs it as a job, `GET /api/daw/import?job=ID` follows it) | a new session folder |
-| Live set into HypnoMix DAW, and mastering in it | `als2ardour SET.als OUTDIR [--sr N]` (a new session folder plus `IMPORT-REPORT.md`; the set is only read), `chain master --ardour [--mcp-url URL] [--existing bypass|keep]` (builds the chain in the open session over MCP; `chain strips --ardour` is not built; not together with `--reaper`) | a new session folder; the open HypnoMix DAW session |
-| Inside Live without renders (see `docs/LIVE.md`) | `probe device`, `probe insert SET.als` (new set with every device, no manual placing; also `scan --devices`), `probe listen` / `status` / `report` / `cards SET.als`, `abset SCAN_DIR` (every fix as a switched-off B for A / B / Blind on the device; from the scan of a REAPER project, a new `.rpp` for `reaper review`; from the scan of a HypnoMix DAW session, a new snapshot `<Song> (A-B).ardour` in its folder for the app's Review) | a new `.als` (or `.rpp`, or `.ardour` snapshot); captures in the app folder |
+| HypnoMix Studio, the add-on (HypnoMix's own DAW; engine 0.1.0 for Apple-silicon Macs only, none for Intel Macs or Windows yet; see `docs/APP.md` and the wiki article `28-ardour.html`) | `engine` (status, `where`; `install` and `remove` report first and change nothing until `--yes`) | the engine under `<hypnomix home>/engine/<version>/` only; the address and SHA-256 come from the manifest shipped in the app |
+| A project from another DAW into HypnoMix | `import PROJECT OUTDIR [--sr N] [--from live\|logicx\|ptx\|dawproject\|reaper\|aaf] [--allow-outside]` (a new session folder plus `IMPORT-REPORT.md`; the project is only read; only audio inside the project is copied unless `--allow-outside` (a .als copies its samples wherever they are); ptx and aaf need the HypnoMix Studio add-on, Apple-silicon Macs only so far; in DAW mode `POST /api/daw/import {path, out?}` runs it as a job, `GET /api/daw/import?job=ID` follows it) | a new session folder |
+| Live set into HypnoMix Studio, and mastering in it | `als2ardour SET.als OUTDIR [--sr N]` (a new session folder plus `IMPORT-REPORT.md`; the set is only read), `chain master --ardour [--mcp-url URL] [--existing bypass|keep]` (builds the chain in the open session over MCP; `chain strips --ardour` is not built; not together with `--reaper`) | a new session folder; the open HypnoMix Studio session |
+| Inside Live without renders (see `docs/LIVE.md`) | `probe device`, `probe insert SET.als` (new set with every device, no manual placing; also `scan --devices`), `probe listen` / `status` / `report` / `cards SET.als`, `abset SCAN_DIR` (every fix as a switched-off B for A / B / Blind on the device; from the scan of a REAPER project, a new `.rpp` for `reaper review`; from the scan of a HypnoMix Studio session, a new snapshot `<Song> (A-B).ardour` in its folder for the app's Review) | a new `.als` (or `.rpp`, or `.ardour` snapshot); captures in the app folder |
 | Learn the person's style first | `taste --library` (every set on the computer: standards, taste calls, where to improve), `tonal build` (a tone target from their releases) | `~/.hypnomix/` only |
 | Decide faster, stay in charge (see `docs/WORKFLOW.md` 4b) | `fix --decide ID=approve@60`, `--decide-like ID=approve --dry-run`, `review --export / --merge / --settle`, `history` (`--diff`, `--undo`, `--undo-item`) | decisions; undo writes a new `.als` |
 | Faster re-checks | `scan --quick`, `scan --since DIR`, `watch SET.als` | nothing |
@@ -278,8 +278,8 @@ which spots to compare between the old and new set. When the review is finished,
 | Vocals | `tune` (and `key` for the song's key), `vocalign`, `voices`, `takes`, `dehiss`, `deess`, `breaths` (`--report` first) | new audio files |
 | Vocal level, line to line (run in the first scan and before every final export) | `vocallevel SET --heard DIR` (or `--renders DIR`); `--apply NEW.als` writes volume automation. `vocallevel SONG.rpp` measures from the project itself; `--apply NEW.rpp` writes volume envelope points | nothing, or a new `.als` / `.rpp` |
 | Vocal alignment in a set | `alignset` (timing as warp markers on the parts' own clips; pitch/formant as files from bar 1), the `aligndevice` for Live; see docs/ALIGN.md. Pitch matching is off unless the person asks | a new set |
-| Device settings and tidy-up in a set | `devices` (stock compressors, gates, limiters, EQ low cut judged on the signal they get), `tidy` (retire switched-off tracks after an archive copy; consolidate; on a HypnoMix DAW session, the group option, written with `--engine --ids`), `unroll` (a looped clip into one copy per pass) | a new `.als`; with `--engine --ids`, the session open in the HypnoMix engine |
-| Vocals inside a set (options from the vocals scan) | `duck` (vocal reverb / delay ducking: tune or add; on a HypnoMix DAW session, written with `--engine --ids`), `cliplevel` (lower-harmony clips far under their track) | a new `.als`; with `--engine --ids`, the session open in the HypnoMix engine |
+| Device settings and tidy-up in a set | `devices` (stock compressors, gates, limiters, EQ low cut judged on the signal they get), `tidy` (retire switched-off tracks after an archive copy; consolidate; on a HypnoMix Studio session, the group option, written with `--engine --ids`), `unroll` (a looped clip into one copy per pass) | a new `.als`; with `--engine --ids`, the session open in the HypnoMix engine |
+| Vocals inside a set (options from the vocals scan) | `duck` (vocal reverb / delay ducking: tune or add; on a HypnoMix Studio session, written with `--engine --ids`), `cliplevel` (lower-harmony clips far under their track) | a new `.als`; with `--engine --ids`, the session open in the HypnoMix engine |
 | Raw takes / stems | `prep`, `cleanup`, `clipmatch`, `render` (set → WAVs, no Live), `separate` (mix → stems) | new audio files |
 | Mix and master files | `automix`, `master` (after their `--plan` was reviewed) | new audio files |
 | Release (see the wiki articles on each) | `release MASTER.wav --check` first, then without it (the upload folder: WAV 24-bit and 16-bit, MP3, AAC, tags, cover); `versions --stems DIR --vocals "…" --check` (instrumental, a cappella, TV mix, radio edit from the person's own stems); `compare OLD.wav NEW.wav`; `album SONGS` (level, tone and gaps across a record) | a new folder or new files; the reports are read-only |
@@ -315,7 +315,7 @@ Present their output as "measured, please check by ear", and prefer `--report` b
 fix paths were tested in Live 12, and REAPER support in REAPER 7.86. Everything newer passes unit tests and HypnoMix's
 own structure checks on synthetic data: `balance`, `handoff`, `plugins`, `colour`, `release`, `compare`,
 `versions`, `album`, `preflight`, `demo`; masking cuts written as an EQ Eight or ReaEQ band; `ab` previews of timing
-nudges and device changes (models of the devices, not Live); and `fix` on a HypnoMix DAW scan (the snapshot is written and
+nudges and device changes (models of the devices, not Live); and `fix` on a HypnoMix Studio scan (the snapshot is written and
 re-read by HypnoMix and has NOT been opened in a released DAW). On 2026-11-26 the REAPER files this code writes were opened in
 REAPER 7.86 and read back through its API: the demo project (`demo --kind reaper`), a project written by `fix` (an item
 fade and a volume-envelope dip), masking cuts as ReaEQ bands (frequency, gain and bandwidth read back exactly; REAPER's
@@ -331,7 +331,7 @@ dB; written before the 2026-11-27 change that leaves untouched points as they ar
 REAPER: clicking the windows by hand, Windows, a real song, listening, ReaGate and ReaLimit settings, and `diagnose`
 with folders. `scan` on an `.rpp` does not read the probe menus, Protect or the song card (only the app's review of
 what was heard, Record and review and the mastering chain use them). Still unchecked, and to be
-said: the new Live sets (handoff locators, the EQ Eight band, colour chains) have not been opened in Live, the HypnoMix DAW
+said: the new Live sets (handoff locators, the EQ Eight band, colour chains) have not been opened in Live, the HypnoMix Studio
 snapshots have not been opened in a released DAW, none of the new tools has been run on real songs, and nothing new has been
 judged by ear. Tell the person to keep their original and listen.
 
@@ -366,7 +366,7 @@ judged by ear. Tell the person to keep their original and listen.
   `match` lists, as proposals, how a mix differs from a song they love. `reference` (an extra) does it with
   Matchering. `compare` is different: two bounces of the same song, old then new.
 - Hearing a fix: `ab` writes level-matched before and after clips offline (a model for some devices). `abset` writes
-  one new Live set (or REAPER project, or HypnoMix DAW snapshot) with every fix as a switched-off B, to switch A, B or Blind inside Live. `plugrender` renders
+  one new Live set (or REAPER project, or HypnoMix Studio snapshot) with every fix as a switched-off B, to switch A, B or Blind inside Live. `plugrender` renders
   tracks through the real VST3 and AU plug-ins offline (an extra; `ab --plugins` uses it).
 - Tracks: `tidy` retires switched-off tracks (after an archive copy) and puts one instrument's clips on one track.
   `order` puts tracks in working order and each part of a vocal stack on the track for its pitch.
@@ -378,10 +378,10 @@ judged by ear. Tell the person to keep their original and listen.
 - After the fixes: `fix` makes the changes it can, into new files. `handoff` turns what `fix` lists as by hand into a
   checklist and markers in the person's DAW's own words. It changes nothing in place.
 
-## Other DAWs (anything but Live, REAPER and HypnoMix DAW)
+## Other DAWs (anything but Live, REAPER and HypnoMix Studio)
 
 REAPER is supported directly (`scan`/`fix` on the `.rpp`, the bridge, `chain --reaper`: `docs/REAPER.md`), and
-HypnoMix DAW sessions (`.ardour`) can be scanned and fixed into a new `.ardour` snapshot (fades, gain, dips, fader, pan and mute; the
+HypnoMix Studio sessions (`.ardour`) can be scanned and fixed into a new `.ardour` snapshot (fades, gain, dips, fader, pan and mute; the
 rest stays by hand; not yet opened in a released DAW). There is NO reader for the sessions of any other DAW. For those:
 
 Today: the file tools and `scan FOLDER`. Ask the person to export each track as a full-length file from the
@@ -433,12 +433,12 @@ don't drive those apps. The plan for deeper support (later) is in `docs/ROADMAP.
   checks every tracked file (the names as fingerprints, never in plain text; a short list of older mentions that
   cannot be reworded is kept in that file and can only shrink). Other agents may be committing here too: commit only
   the files you changed.
-- Names: text a person reads says "HypnoMix" (capital H, capital M) and "HypnoMix DAW" (the third DAW, after Ableton
+- Names: text a person reads says "HypnoMix" (capital H, capital M) and "HypnoMix Studio" (the third DAW, after Ableton
   Live and REAPER). What a program looks up or a person types stays as it is: `hypnomix scan`, `~/.hypnomix`, `.ardour`,
   `als2ardour`, `--ardour`, `Hypnomix.app`, the installer file names. The name of the underlying engine appears in text people read only
-  where the origin of HypnoMix DAW is disclosed: `README.md`, `THIRD_PARTY.md`, the wiki article "HypnoMix DAW"
+  where the origin of HypnoMix Studio is disclosed: `README.md`, `THIRD_PARTY.md`, the wiki article "HypnoMix Studio"
   (`28-ardour.html`), the Setup card for the add-on, the engine's licence notices in `packaging/` and the first step of
-  the HypnoMix DAW courses. Everywhere else write "HypnoMix DAW", and "HypnoMix DAW sessions (`.ardour`)" for the files.
+  the HypnoMix Studio courses. Everywhere else write "HypnoMix Studio", and "HypnoMix Studio sessions (`.ardour`)" for the files.
 
 ## Keep the wiki current (every change)
 

@@ -3,12 +3,12 @@
 The lessons live in the package hypnomix/app/lessons (one module per chapter); this module is the engine: which steps a
 course and a DAW get, the progress file, the hands-on actions, the routes, the glossary and the wiki articles.
 Ableton Live and REAPER get the same depth (Live alone has its Session View; REAPER alone has the HypnoMix plug-ins'
-built-in guide), and HypnoMix DAW the short version (the least tested).
+built-in guide), and HypnoMix Studio the short version (the least tested).
 
 A step can carry a hands-on action ("Set the tempo", "Add a drum beat"). Every action that changes the person's
 set or project shows exactly what it will do and waits for their click: the browser asks, and the server refuses
 an action without `ok`. Live is driven through AbletonOSC (hypnomix/live/osc.py), REAPER through its bridge
-(hypnomix/reaper/client.py); where the DAW can't be driven (HypnoMix DAW, or no connection) the step's own instructions
+(hypnomix/reaper/client.py); where the DAW can't be driven (HypnoMix Studio, or no connection) the step's own instructions
 say how to do it by hand. Nothing here needs an AI: the Assistant can narrate a step when one is set up.
 
 Three courses (LEVELS): "tour" for people who already engineer and only need hypnomix, its devices and their DAW;
@@ -27,7 +27,7 @@ from pathlib import Path
 from hypnomix.app import lessons
 from hypnomix.app.lessons._common import ALL, LR
 
-DAWS = {"live": "Ableton Live", "reaper": "REAPER", "ardour": "HypnoMix DAW"}
+DAWS = {"live": "Ableton Live", "reaper": "REAPER", "ardour": "HypnoMix Studio"}
 # three courses: "tour" for people who already engineer (hypnomix, its devices and the DAW they use it with), "101"
 # for people new to audio (the words, recording, mixing and mastering, then the same tour), "az" the complete course
 LEVELS = {"tour": "HypnoMix in your DAW", "101": "The 101 crash course", "az": "The complete course, A to Z"}
@@ -62,19 +62,19 @@ def _levels(ch, s=None):
 EXTRA = ("terms", "settings", "listen", "app", "mistakes", "try", "quiz", "hear", "more")
 
 
-# Said once, at the first step of each HypnoMix DAW course (tour, 101, A to Z), because that DAW is new.
-HONESTY = ("HypnoMix DAW is new: its first engine (0.1.0) is for Apple-silicon Macs. Steps written here for it were written "
-           "against Ardour 8 or 9, the free DAW it is built on, and not every one has been tried in HypnoMix DAW yet.")
+# Said once, at the first step of each HypnoMix Studio course (tour, 101, A to Z), because that DAW is new.
+HONESTY = ("HypnoMix Studio is new: its first engine (0.1.0) is for Apple-silicon Macs. Steps written here for it were written "
+           "against Ardour 8 or 9, the free DAW it is built on, and not every one has been tried in HypnoMix Studio yet.")
 
 
 def _hm_in(daw, how="in"):
-    """"HypnoMix in Ableton Live" / "HypnoMix with REAPER"; for HypnoMix DAW the name alone, so it isn't said twice."""
+    """"HypnoMix in Ableton Live" / "HypnoMix with REAPER"; for HypnoMix Studio the name alone, so it isn't said twice."""
     name = DAWS.get(daw, "your DAW")
     return name if daw == "ardour" else f"HypnoMix {how} {name}"
 
 
-# What the wiki says instead of the honesty line: a link to the article about HypnoMix DAW (id "ardour")
-ABOUT_DAW = ' <a data-wiki="ardour" href="#">What HypnoMix DAW is, and where to get it</a>.'
+# What the wiki says instead of the honesty line: a link to the article about HypnoMix Studio (id "ardour")
+ABOUT_DAW = ' <a data-wiki="ardour" href="#">What HypnoMix Studio is, and where to get it</a>.'
 
 
 def _about(daw):
@@ -83,7 +83,7 @@ def _about(daw):
 
 def steps(daw, level=DEFAULT_LEVEL, honesty=True):
     """The chapters of one course (LEVELS) with only this DAW's steps, each step's 'how', settings and action
-    resolved for it. `honesty=False` leaves out the honesty line (the wiki says it in its HypnoMix DAW article only)."""
+    resolved for it. `honesty=False` leaves out the honesty line (the wiki says it in its HypnoMix Studio article only)."""
     if level not in LEVELS:
         level = DEFAULT_LEVEL
     out = []
@@ -387,7 +387,7 @@ def make_devices(daw):
     if daw == "reaper":
         _cli("reaper", "probes", "install")
         return dict(done="Installed HypnoMix Probe and HypnoMix Main: in REAPER, Add FX → JS → hypnomix. (Restart REAPER's FX browser if they don't show yet.)")
-    raise ValueError("HypnoMix DAW has no HypnoMix devices yet")
+    raise ValueError("HypnoMix Studio has no HypnoMix devices yet")
 
 
 def _num(a, k, default, lo, hi):
@@ -623,7 +623,7 @@ def mark(daw, sid, done=True, at=None, level=None):
     return state(daw, level)
 
 
-# ---------------------------------------------------------------- the tours inside the HypnoMix DAW
+# ---------------------------------------------------------------- the tours inside the HypnoMix Studio
 # The DAW page (hypnomix/app/daw/js/tour.js) keeps its progress here as well as in the browser: the answer to the first offer
 # ("accepted" / "declined"), which tours are done, and the step each unfinished one was left at. Kept under the key "dawtour" of
 # the same progress file, apart from the courses' own entries. The page sends its whole state; this keeps only what is sane.
@@ -678,7 +678,7 @@ def _md_text(t):
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", _esc(t)))
 
 
-WIKI_GROUP = {"live": "DAW: Ableton Live", "reaper": "DAW: REAPER", "ardour": "DAW: HypnoMix DAW"}
+WIKI_GROUP = {"live": "DAW: Ableton Live", "reaper": "DAW: REAPER", "ardour": "DAW: HypnoMix Studio"}
 URL = "https://hypnomix.bradfieldenterprises.org/wiki/#"
 
 
@@ -741,7 +741,7 @@ def wiki_articles(daw):
         body = "".join(_step_html(s, daw, name) for s in ch["steps"])
         lead = f'<p class="lead">{_esc(ch["sub"][:1].upper() + ch["sub"][1:])}. {n} lessons, in {name}. In the app, the <b>Teacher</b> tab teaches the same lessons, with audio examples and quizzes.{_about(daw) if first else ""}</p>'
         if daw == "ardour" and ch["id"] in ("record", "hypnomix"):
-            body += ('<div class="note-box">HypnoMix DAW gets the short version for now: HypnoMix can read and scan HypnoMix DAW sessions (<code>.ardour</code>), '
+            body += ('<div class="note-box">HypnoMix Studio gets the short version for now: HypnoMix can read and sca HypnoMix Studio sessions (<code>.ardour</code>), '
                      'but the Teacher can\'t do the hands-on steps there yet, so every step here is done by hand.</div>')
         out.append(_article(f"learn-{daw}-{ch['id']}", daw, ch["title"], f"teacher mode · {name} · {n} lessons",
                             '<div class="prose paper">' + lead + body + "</div>"))
@@ -758,7 +758,7 @@ def wiki_article(daw, level="az"):
             parts.append(f"<h2>{_esc(ch['title'])}</h2><p><i>{_esc(ch['sub'])}</i></p>")
             parts += [_step_html(s, daw, name) for s in ch["steps"]]
         if daw == "ardour":
-            parts.append('<div class="note-box">HypnoMix DAW gets the short version for now: HypnoMix can read and scan HypnoMix DAW sessions (<code>.ardour</code>), '
+            parts.append('<div class="note-box">HypnoMix Studio gets the short version for now: HypnoMix can read and sca HypnoMix Studio sessions (<code>.ardour</code>), '
                          'but the Teacher can\'t do the hands-on steps there yet, so every step here is done by hand.</div>')
         return _article(f"tour-{daw}", daw, f"Guided tour: {_hm_in(daw)}",
                         "teacher mode · the devices, the song card, A/B, the mastering chain", '<div class="prose paper">' + "".join(parts) + "</div>")
@@ -811,7 +811,7 @@ def handle_get(path, q):
         return 200, Path(__file__).with_name("teacher.js").read_bytes(), "text/javascript; charset=utf-8"
     if path == "/api/teach/state":
         return 200, state(q.get("daw"), q.get("level"))
-    if path == "/api/teach/tour":                        # the tours inside the HypnoMix DAW (daw/js/tour.js)
+    if path == "/api/teach/tour":                        # the tours inside the HypnoMix Studio (daw/js/tour.js)
         return 200, tour_state()
     if path == "/api/teach/connections":
         return 200, connections()

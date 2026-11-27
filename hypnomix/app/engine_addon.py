@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""HypnoMix DAW as an add-on: the engine is fetched once, on a click, and only then.
+"""HypnoMix Studio as an add-on: the engine is fetched once, on a click, and only then.
 
-HypnoMix DAW is HypnoMix's own DAW. Its engine is a separate program under the
+HypnoMix Studio is HypnoMix's own DAW. Its engine is a separate program under the
 GNU General Public License (version 2 or later); HypnoMix itself is MIT and holds none of its code. There is one
 HypnoMix app and one installer for everyone: the engine is not inside them. It is published as an archive of its own
 for each platform and added from Setup (or with this command), only when you ask.
@@ -19,7 +19,7 @@ for each platform and added from Setup (or with this command), only when you ask
 Where: <HypnoMix home>/engine/<version>/ (the home is ~/.hypnomix, or the folder HYPNOMIX_HOME names). The address and the
 SHA-256 come only from hypnomix/app/engine_addon.json, which ships inside this app; nothing in a request, a file on
 disk or an environment variable can name another address. The first engine, 0.1.0, is published for Apple-silicon Macs
-(mac-arm64) only. Where the manifest names no archive for this computer, the command says "HypnoMix DAW is not available
+(mac-arm64) only. Where the manifest names no archive for this computer, the command says "HypnoMix Studio is not available
 for <place> yet" and fetches nothing. A failed or interrupted add leaves nothing
 half-added and can simply be run again. A newer app may name a newer engine: it says so, and adding it keeps the old one
 until the new one has run once, then removes the old one.
@@ -46,11 +46,11 @@ from pathlib import Path
 
 NAME = "hypnomix-engine"                       # the program, bin/hypnomix-engine inside a kit (also daw.NAME)
 MANIFEST = Path(__file__).with_name("engine_addon.json")
-NOT_YET = "HypnoMix DAW is not available yet."
-WHAT = ("HypnoMix DAW is HypnoMix's own DAW, built on Ardour, a free open-source DAW. It is a download of about 30 MB (about 105 MB once unpacked), fetched once from "
+NOT_YET = "HypnoMix Studio is not available yet."
+WHAT = ("HypnoMix Studio is HypnoMix's own DAW, built on Ardour, a free open-source DAW. It is a download of about 30 MB (about 105 MB once unpacked), fetched once from "
         "the project's release page and checked against a fingerprint before it is used, and it runs only while the DAW "
         "view is open. You can remove it any time.")
-LICENCE = ("HypnoMix DAW's engine is a separate program under the GNU General Public License (version 2 or later), "
+LICENCE = ("HypnoMix Studio's engine is a separate program under the GNU General Public License (version 2 or later), "
            "downloaded on its own; HypnoMix itself is MIT.")
 
 # limits (module level so a test can lower them)
@@ -140,8 +140,8 @@ def unavailable_message():
         return NOT_YET + ("" if platform_key().startswith("mac") else f" It is being made for the Mac first, so it is not yet for {_place()}.")
     key = platform_key()
     if key.startswith("mac") and any(k.startswith("mac") for k in plats):     # the other kind of Mac has one: say which has not
-        return f"HypnoMix DAW is not available for {'Intel Macs' if key == 'mac-intel' else 'Apple-silicon Macs'} yet."
-    return f"HypnoMix DAW is not available for {_place()} yet."
+        return f"HypnoMix Studio is not available for {'Intel Macs' if key == 'mac-intel' else 'Apple-silicon Macs'} yet."
+    return f"HypnoMix Studio is not available for {_place()} yet."
 
 
 # ---------------------------------------------------------------- where it lives
@@ -297,17 +297,17 @@ def state():
     needs_update = bool(e) and bool(have) and not current
     job = dict(JOB)
     if e and current:
-        msg = f"HypnoMix DAW {cur} is added."
+        msg = f"HypnoMix Studio {cur} is added."
     elif e and rebuilt:
-        msg = (f"A rebuilt HypnoMix DAW {cur} has been published: the one added is not the file this version of HypnoMix names. "
+        msg = (f"A rebuilt HypnoMix Studio {cur} has been published: the one added is not the file this version of HypnoMix names. "
                "Add it to replace the old one.")
     elif e and needs_update:
-        msg = (f"This version of HypnoMix works with HypnoMix DAW engine {cur}, and {have[0]} is what is added now. "
+        msg = (f"This version of HypnoMix works with HypnoMix Studio engine {cur}, and {have[0]} is what is added now. "
                "Add the new one: the old one is kept until the new one has run once.")
     elif e:
-        msg = "HypnoMix DAW is not added yet: it is fetched once, on your click, from the project's release page."
+        msg = "HypnoMix Studio is not added yet: it is fetched once, on your click, from the project's release page."
     elif have:
-        msg = f"HypnoMix DAW {have[0]} is added."
+        msg = f"HypnoMix Studio {have[0]} is added."
     else:
         msg = unavailable_message()
     return dict(available=bool(e), platform=key, version=cur, installed=have[0] if have else "", versions=have, current=current,
@@ -389,7 +389,7 @@ def kit_problems(kit, builder=False):
     for rel in ("bin/" + NAME, "lib/" + NAME):
         p = kit / rel
         if not (p.is_file() and not p.is_symlink() and os.access(p, os.X_OK)):
-            return [f"this is not a HypnoMix DAW engine kit (no {rel})"]
+            return [f"this is not a HypnoMix Studio engine kit (no {rel})"]
     try:
         lic = kit / "COPYING"
         if lic.is_symlink() or not lic.is_file() or lic.stat().st_size == 0 or not GPL_TEXT.search(lic.read_text(encoding="utf-8", errors="ignore")):
@@ -449,15 +449,15 @@ def _free(need, where):
 
 
 def install(progress=None, cancel=None):
-    """Add HypnoMix DAW for this computer -> state(). AddonError (one plain sentence) when it cannot be added; then
+    """Add HypnoMix Studio for this computer -> state(). AddonError (one plain sentence) when it cannot be added; then
     nothing is half-added and it can be run again. Needs the shipped manifest to name an archive for this platform; an
     engine already added and whole is left as it is."""
     if not LOCK.acquire(blocking=False):
-        raise AddonError("HypnoMix DAW is being added or removed right now: wait for it to finish.")
+        raise AddonError("HypnoMix Studio is being added or removed right now: wait for it to finish.")
     try:
         _install(progress, cancel)
     except BaseException as e:
-        JOB.update(status="error", error=str(e) if isinstance(e, AddonError) else f"adding HypnoMix DAW failed: {e}")
+        JOB.update(status="error", error=str(e) if isinstance(e, AddonError) else f"adding HypnoMix Studio failed: {e}")
         raise
     finally:
         LOCK.release()
@@ -476,7 +476,7 @@ def _install(progress, cancel):
         JOB.update(status="done")                                   # already there, whole and the file the manifest names: nothing to fetch
         return
     if (final.exists() or final.is_symlink()) and running():
-        raise AddonError("HypnoMix DAW is running: close the DAW view (or stop the engine there) first, then add it again.")
+        raise AddonError("HypnoMix Studio is running: close the DAW view (or stop the engine there) first, then add it again.")
     paths.private_dir(root())
     _tidy_staging()
     _free(e["size"] * 3 + (256 << 20), root())
@@ -559,10 +559,10 @@ def start_install():
 def remove():
     """Remove every engine this add-on put on the computer -> state(). Refused, with one sentence, while the engine runs."""
     if not LOCK.acquire(blocking=False):
-        raise AddonError("HypnoMix DAW is being added right now: wait for it to finish.")
+        raise AddonError("HypnoMix Studio is being added right now: wait for it to finish.")
     try:
         if running():                                               # from any process: the app's own, or the marker another process left
-            raise AddonError("HypnoMix DAW is running: close the DAW view (or stop the engine there) first, then remove it.")
+            raise AddonError("HypnoMix Studio is running: close the DAW view (or stop the engine there) first, then remove it.")
         try:
             entries = list(root().iterdir())
         except OSError:
@@ -652,7 +652,7 @@ def _parser():
 
 def _report(s):
     print(s["message"])
-    print(f"  platform:   {s['platform'] or 'not one HypnoMix DAW is made for'}")
+    print(f"  platform:   {s['platform'] or 'not one HypnoMix Studio is made for'}")
     print(f"  engine:     {s['version'] or 'none named'}   added: {', '.join(s['versions']) or 'none'}")
     print(f"  where:      {s['where']}")
     if s["running"]:
@@ -676,13 +676,13 @@ def main():
         if not s["available"]:
             sys.exit(s["message"])
         if s["current"] and not a.yes:
-            print(f"HypnoMix DAW {s['version']} is already added in {s['where']}. Nothing to do.")
+            print(f"HypnoMix Studio {s['version']} is already added in {s['where']}. Nothing to do.")
             return
         e = entry()
         if not a.yes:
             from urllib.parse import urlsplit
             u = urlsplit(e["url"])
-            print(f"Would add HypnoMix DAW {s['version']} ({s['size_text']}):")
+            print(f"Would add HypnoMix Studio {s['version']} ({s['size_text']}):")
             print(f"  fetch      https://{u.hostname}{u.path}")
             print(f"  check      SHA-256 {e['sha256']}")
             print(f"  into       {s['where']}")
@@ -700,13 +700,13 @@ def main():
             install(progress=say)
         except AddonError as ex:
             sys.exit(str(ex))
-        print(f"HypnoMix DAW {s['version']} is added in {s['where']}.")
+        print(f"HypnoMix Studio {s['version']} is added in {s['where']}.")
         return
     if not s["versions"]:                                           # remove
-        print("HypnoMix DAW is not added: nothing to remove.")
+        print("HypnoMix Studio is not added: nothing to remove.")
         return
     if not a.yes:
-        print(f"Would remove HypnoMix DAW ({', '.join(s['versions'])}) from {root()}."
+        print(f"Would remove HypnoMix Studio ({', '.join(s['versions'])}) from {root()}."
               + (" The engine is running right now, so it would be refused: close the DAW view in the app first."
                  if s["running"] else " Close the DAW view in the app first: it is refused while the engine runs."))
         print("Nothing was changed. Run it again with --yes to remove it.")
@@ -715,7 +715,7 @@ def main():
         remove()
     except AddonError as ex:
         sys.exit(str(ex))
-    print("HypnoMix DAW is removed.")
+    print("HypnoMix Studio is removed.")
 
 
 if __name__ == "__main__":

@@ -259,7 +259,7 @@
         h('span', null, 'Gain'), h('span', null, gain),
         h('span', null, 'Fade in'), h('span', null, Math.round(HX.beatsToSec(c.fadeIn) * 1000) + ' ms'),
         h('span', null, 'Fade out'), h('span', null, Math.round(HX.beatsToSec(c.fadeOut) * 1000) + ' ms'),
-        h('span', null, 'Source'), h('span', null, c.real ? 'HypnoMix DAW region' : 'mock peaks')),
+        h('span', null, 'Source'), h('span', null, c.real ? 'HypnoMix Studio region' : 'mock peaks')),
       cv);
     chain.append(wrap);
     requestAnimationFrame(() => drawClipDetail(cv, t, c));

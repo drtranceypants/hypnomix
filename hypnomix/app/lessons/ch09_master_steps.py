@@ -33,7 +33,7 @@ STEPS = [
            "reaper": ["On the **Master** track click **FX** and type \"loudness\" in the search box: REAPER ships a loudness meter among its JS effects. Put it last in the chain.",
                       "Play the whole song, then read the **integrated** number at the end.",
                       "Or export the song and run `hypnomix measure` on the file."],
-           "ardour": ["Use HypnoMix DAW's **loudness analysis** (the Loudness step shows where) or a loudness meter plug-in on the master strip. Play the whole song, then read integrated.",
+           "ardour": ["Use HypnoMix Studio's **loudness analysis** (the Loudness step shows where) or a loudness meter plug-in on the master strip. Play the whole song, then read integrated.",
                       "Or export the song and run `hypnomix measure` on the file."]},
       listen="Watch the short-term number while you play a verse and then a chorus. Hear how a 3 LU jump feels: clearly louder, not twice as loud.",
       mistakes=["Trusting the peak meter alone: it tells you nothing about how loud the song feels. Read LUFS as well.",

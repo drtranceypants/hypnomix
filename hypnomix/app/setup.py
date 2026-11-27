@@ -1,10 +1,10 @@
 """Guided setup: what the app shows the first time it opens (and again from the Setup button).
 
-It asks how you want to work, which DAW you use (Ableton Live, REAPER, HypnoMix DAW or something else; and
+It asks how you want to work, which DAW you use (Ableton Live, REAPER, HypnoMix Studio or something else; and
 whether you'd like teacher mode: hypnomix/app/teacher.py, a guided course: a tour of HypnoMix in your DAW for people who
 already engineer, or a 101 crash course for people new to audio), and sets that up. There is one app and one installer for
-everyone. HypnoMix DAW (HypnoMix's own DAW) is an add-on: choosing it shows what it is, and only the
-button "Add HypnoMix DAW" fetches it (hypnomix/app/engine_addon.py; the address and the SHA-256 come from the manifest
+everyone. HypnoMix Studio (HypnoMix's own DAW) is an add-on: choosing it shows what it is, and only the
+button "Add HypnoMix Studio" fetches it (hypnomix/app/engine_addon.py; the address and the SHA-256 come from the manifest
 shipped inside the app, never from a request). The first engine is for Apple-silicon Macs only; where no archive is
 published for the computer it says so and the choice is remembered:
   app       just the app: you click through scan → review → apply. No AI, no account, free
@@ -180,7 +180,7 @@ def live_status():
 DAWS = [
     dict(id="live", title="Ableton Live", note="the most depth: HypnoMix reads, fixes and drives Live 11 and 12"),
     dict(id="reaper", title="REAPER", note="reads and writes projects, and drives the open REAPER through its bridge"),
-    dict(id="hypnomix", title="HypnoMix DAW", note="HypnoMix's own DAW, an optional add-on (Extras says whether it can be added yet)"),
+    dict(id="hypnomix", title="HypnoMix Studio", note="the DAW built in: an optional add-on (the next step says whether it can be added on this computer)"),
     dict(id="other", title="Something else", note="any other DAW: export your tracks and scan the folder"),
 ]
 
@@ -294,7 +294,7 @@ def make_cli():
     (d / "CLAUDE.md").write_text(
         "# HypnoMix (installed app)\n\n"
         "This folder is for an AI agent (Claude Code, Codex, Cursor…) working with HypnoMix, a mixing and mastering\n"
-        "assistant for Ableton Live, REAPER and HypnoMix DAW. Read AGENTS.md first: the loop every job follows, the safety rules\n"
+        "assistant for Ableton Live, REAPER and HypnoMix Studio. Read AGENTS.md first: the loop every job follows, the safety rules\n"
         "and the command map. GUIDE.md is the user's guide.\n\n"
         f"Run HypnoMix as `hypnomix <command>` (or by its full path, `{cmd}`). Start with `hypnomix doctor`.\n"
         "Every change that writes a set needs the person's OK first; HypnoMix never overwrites the original.\n"
@@ -411,7 +411,7 @@ def setup_live():
 
 
 def engine_post(what, body):
-    """Add or remove HypnoMix DAW, on the page's click. The request carries nothing: the address and the SHA-256 are the
+    """Add or remove HypnoMix Studio, on the page's click. The request carries nothing: the address and the SHA-256 are the
     manifest's (shipped inside the app), and the folder is the HypnoMix home's, so a request that names any is refused."""
     from hypnomix.app import engine_addon as EA
     if body:
@@ -431,7 +431,7 @@ def handle_get(path, q):
     if path == "/api/setup/extras":
         from hypnomix import extras as X
         return 200, X.status()
-    if path == "/api/setup/engine":                   # HypnoMix DAW: what is added, what could be, the job's progress
+    if path == "/api/setup/engine":                   # HypnoMix Studio: what is added, what could be, the job's progress
         from hypnomix.app import engine_addon as EA
         return 200, EA.state()
     if path == "/setup.js":

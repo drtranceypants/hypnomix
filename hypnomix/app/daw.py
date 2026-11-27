@@ -1,10 +1,10 @@
-"""DAW mode: the HypnoMix DAW engine under the app, and the DAW view on top of it.
+"""DAW mode: the HypnoMix Studio engine under the app, and the DAW view on top of it.
 
   hypnomix app --daw                    open the DAW view first, and start (or find) the engine on the session
                                         it had open last time (daw.json "last"; none: File → New / Open Session)
   hypnomix app --daw --session S.ardour  ... and open that session in it
 
-The engine is the HypnoMix DAW's audio engine (headless) with its MCP surface. The app finds it:
+The engine is HypnoMix Studio's audio engine (headless) with its MCP surface. The app finds it:
 
   1. HYPNOMIX_ENGINE, or "engine" in daw.json in the HypnoMix home (~/.hypnomix, or HYPNOMIX_HOME): the path of a `hypnomix-engine` program
   2. the add-on: <HypnoMix home>/engine/<the version engine_addon.json names>/bin/hypnomix-engine, put there from Setup
@@ -17,7 +17,7 @@ The engine is the HypnoMix DAW's audio engine (headless) with its MCP surface. T
 
 and runs it as `hypnomix-engine --port N [ARGS] -- SESSION_DIR SNAPSHOT` (or `--new -- SESSION_DIR/NAME NAME` for a
 new session; after the `--` a name can never be taken for an option) on a free port N, so it never collides with a
-HypnoMix DAW window on 4820, in a minimal environment (none of the app's own keys or tokens) and with the session's
+HypnoMix Studio window on 4820, in a minimal environment (none of the app's own keys or tokens) and with the session's
 folder as its working folder. ARGS: HYPNOMIX_ENGINE_ARGS, or
 "args" in daw.json (e.g. `-b "None (Dummy)"` with no audio interface). Without a `-b` there, the engine uses CoreAudio
 (on a Mac); if it cannot start any audio device, the supervisor starts it once more on the Dummy backend (no sound:
@@ -45,7 +45,7 @@ read-only session_list_snapshots), and the app reads it, before every stop, rest
 a save clears both. An engine that does not answer keeps the last answer it gave.
 One program is started, stopped or replaced at a time: a second request meanwhile is answered "busy" (409).
 
-Until the engine program exists, the app **attaches** to a HypnoMix DAW window that is already running
+Until the engine program exists, the app **attaches** to a HypnoMix Studio window that is already running
 with its MCP surface on (http://127.0.0.1:4820/mcp, HYPNOMIX_ENGINE_URL to change it). Attached, the app never
 stops or restarts that window, and opening a session is done in its own window.
 
@@ -234,7 +234,7 @@ def snapshot(path):
             snaps = sorted(p.glob("*.ardour"))
             p = next((s for s in snaps if s.stem == p.name), snaps[0] if snaps else p)
         if p.suffix != ".ardour" or not p.is_file():
-            raise ValueError(f"not a HypnoMix DAW session: {p}")
+            raise ValueError(f"not a HypnoMix Studio session: {p}")
     except (OSError, RuntimeError) as e:                        # a name too long for the disk, a home that cannot be found
         raise ValueError(f"not a usable session path ({getattr(e, 'strerror', None) or e})") from None
     return p
@@ -612,7 +612,7 @@ class Engine:
             self.start(wait=False, _restart_gen=new_gen)
 
     def attach(self):
-        """Use a HypnoMix DAW window that is already running (its MCP surface on), without owning it."""
+        """Use a HypnoMix Studio window that is already running (its MCP surface on), without owning it."""
         with self.lock:
             if self.mode == "engine" and self.proc and self.proc.poll() is None:
                 return self.status()
@@ -622,9 +622,9 @@ class Engine:
                 self.mode, self.state, self.error = "attached", "attached", ""
             else:
                 self.mode, self.state = None, "stopped"
-                self.error = (f"no engine program found ({NAME}), and no HypnoMix DAW engine answers at {self.attach_url} "
+                self.error = (f"no engine program found ({NAME}), and no HypnoMix Studio engine answers at {self.attach_url} "
                               + ("(something else does, and it was left alone)" if answers(self.attach_url, timeout=0.4) else "")
-                              + ": open a HypnoMix DAW window and switch on Preferences → Control Surfaces → MCPHttp, or add HypnoMix DAW in Setup")
+                              + ": open a HypnoMix Studio window and switch on Preferences → Control Surfaces → MCPHttp, or add HypnoMix Studio in Setup")
             return self.status()
 
     def stop(self, timeout=8.0):
@@ -685,7 +685,7 @@ class Engine:
 
     def restart(self):
         if self.mode == "attached":
-            raise RuntimeError("attached to a HypnoMix DAW window the app did not start: restart it there")
+            raise RuntimeError("attached to a HypnoMix Studio window the app did not start: restart it there")
         with self._transition():
             self._stop()
             self.dummy, self.notice = False, ""        # Restart tries the audio device again
@@ -697,7 +697,7 @@ class Engine:
         p = snapshot(path)
         if self.binary() is None:
             self.attach()
-            raise RuntimeError("attached to a HypnoMix DAW window: open the session in that window (Session → Open)")
+            raise RuntimeError("attached to a HypnoMix Studio window: open the session in that window (Session → Open)")
         prev = self.session if self.mode == "engine" else None
         with self._transition():
             self._stop()
@@ -743,12 +743,12 @@ class Engine:
                 try:
                     from hypnomix.app import engine_addon
                     s = engine_addon.state()
-                    how = "the Add HypnoMix DAW button is in Setup" if s["available"] else s["message"]
+                    how = "the Add HypnoMix Studio button is in Setup" if s["available"] else s["message"]
                 except Exception:
                     how = "see Setup"
                 raise RuntimeError("no engine is installed on this computer, so there is nothing to make a new session in "
-                                   f"(HypnoMix DAW: {how})")
-            raise RuntimeError("attached to a HypnoMix DAW window: make the new session in that window (Session → New)")
+                                   f"(HypnoMix Studio: {how})")
+            raise RuntimeError("attached to a HypnoMix Studio window: make the new session in that window (Session → New)")
         with self._transition():
             self._stop()
             spawned = self._spawn(new=new)
@@ -980,7 +980,7 @@ class Engine:
                 self._track(payload, edits0, None, None)
             if self.mode == "attached":
                 self.mode, self.state = None, "stopped"
-                self.error = f"the HypnoMix DAW window at {url} stopped answering"
+                self.error = f"the HypnoMix Studio window at {url} stopped answering"
             return 502, _err(None, -32000, f"engine unreachable at {url}: {e}")
         self._track(payload, edits0, code, raw)
         if self._meters_wanted and self.dirty:
@@ -1021,7 +1021,7 @@ class Engine:
         b = self.binary()
         with self.lock:
             if b and self.mode is None and self.error.startswith("no engine program found"):
-                self.error = ""                           # HypnoMix DAW was added since that was said: it is no longer true
+                self.error = ""                           # HypnoMix Studio was added since that was said: it is no longer true
             pid = self.proc.pid if self.proc and self.proc.poll() is None else None
             return dict(state=self.state, mode=self.mode, connected=self.connected(), url=self.url(),
                         binary=str(b) if b else None, attach_url=self.attach_url, pid=pid, port=self.port,
@@ -1066,8 +1066,8 @@ def static(rel):
 
 def available(probe=False):
     """Is DAW mode usable here: the app was started with --daw, or an engine program is found, or one is running or
-    attached? (With probe, a HypnoMix DAW window answering on the attach address counts too: a short look.) An app
-    that has not added HypnoMix DAW (Setup → Extras) and has no engine says no, so its page shows no DAW tab."""
+    attached? (With probe, a HypnoMix Studio window answering on the attach address counts too: a short look.) An app
+    that has not added HypnoMix Studio (Setup → Extras) and has no engine says no, so its page shows no DAW tab."""
     if STATE["daw"] or ENGINE.mode in ("engine", "attached") or find_engine() is not None:
         return True
     return bool(probe and is_engine(ENGINE.attach_url, timeout=0.4))

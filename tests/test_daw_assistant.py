@@ -1295,18 +1295,18 @@ class Attached(unittest.TestCase):
         with mock.patch.object(DW, "ENGINE", e):
             self.assertEqual(CH.engine_tools(), [])
             self.assertEqual(CH._load_daw_tools(), [])
-        self.assertTrue(any("does not say it is the HypnoMix DAW engine" in i["text"] for i in CH.CHAT["items"]))
+        self.assertTrue(any("does not say it is the HypnoMix Studio engine" in i["text"] for i in CH.CHAT["items"]))
         self.assertNotIn("IGNORE", json.dumps(CH.CHAT["items"]))
         with mock.patch.object(DW, "ENGINE", e):                                     # swapped in after the tools were read
             CH.CHAT["daw_tools"] = {"daw_tracks_list": dict(name="daw_tracks_list", engine="tracks_list", read_only=True, input_schema=S())}
-            self.assertIn("not the HypnoMix DAW engine", CH.daw_tool("daw_tracks_list", {}))
+            self.assertIn("not the HypnoMix Studio engine", CH.daw_tool("daw_tracks_list", {}))
         self.assertEqual(e.calls, [])                                               # nothing was sent to it
 
     def test_the_overview_is_read_from_the_engine_only_after_the_handshake_again(self):
         stranger = self.make("some-other-server", [dict(name="tracks_list", description="x", inputSchema=S())])
         with mock.patch.object(DW, "ENGINE", stranger):
             CH.CHAT["daw_tools"] = {"daw_session_overview": dict(CH.OVERVIEW)}
-            self.assertIn("not the HypnoMix DAW engine", CH.daw_tool("daw_session_overview", {}))
+            self.assertIn("not the HypnoMix Studio engine", CH.daw_tool("daw_session_overview", {}))
         self.assertEqual(stranger.calls, [])                                        # not one read went to it
 
     def test_a_listener_that_copies_the_engines_name_gets_none_of_its_words_to_the_model(self):

@@ -81,7 +81,7 @@ function popup() {
     <div id="dcplan">${P ? planHtml(P.plan) : ''}</div>
     ${leftHtml()}
     ${D.crashes && D.crashes.count ? `<div class="small" style="margin-top:10px">Crash records: ${D.crashes.count} file${D.crashes.count === 1 ? '' : 's'}, ${D.crashes.bytes >= 1e6 ? (D.crashes.bytes / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(D.crashes.bytes / 1e3)) + ' KB'} in <code>${esc(D.crashes.path)}</code>. The newest ${D.crashes.keeps} are kept; they are never sent anywhere. <a href="#" data-wiki="reporting">About reports</a></div>` : ''}
-    <div class="small" style="margin-top:8px">Never removed: audio a Live, REAPER or HypnoMix DAW project uses, findings and reports, anything changed in the last hour. <a href="#" data-wiki="diskcare">How it works</a></div>`;
+    <div class="small" style="margin-top:8px">Never removed: audio a Live, REAPER or HypnoMix Studio project uses, findings and reports, anything changed in the last hour. <a href="#" data-wiki="diskcare">How it works</a></div>`;
   p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Disk care'); p.tabIndex = -1;
   document.body.appendChild(p);
   p.focus({preventScroll: true});                       // the keyboard goes into the popup; Escape or Close gives it back to the button

@@ -1,4 +1,4 @@
-"""MPE (per-note pitch bend, pressure and slide) in a HypnoMix DAW session: what is there, and what may go wrong.
+"""MPE (per-note pitch bend, pressure and slide) in a HypnoMix Studio session: what is there, and what may go wrong.
 
 MPE gives every sounding note its own MIDI channel, so each note can bend, be pressed and slid on its own. A zone is
 one global channel and up to 15 member channels (lower zone: global channel 1, members from 2 up; upper zone: global
@@ -397,10 +397,10 @@ def _clip_checks(smf, facts, zone, members, member_bend, bend_from):
 
 
 def checks(p, words=None):
-    """Scan findings for a HypnoMix DAW session's MIDI tracks: [finding dict], [note]. Reads only."""
+    """Scan findings for a HypnoMix Studio session's MIDI tracks: [finding dict], [note]. Reads only."""
     findings, notes, n = [], [], 0
     if getattr(p, "daw", None) != "ardour" or p.native is None:
-        return [], ["mpe: MPE checks are for HypnoMix DAW sessions (.ardour) only"]
+        return [], ["mpe: MPE checks are for HypnoMix Studio sessions (.ardour) only"]
     root = p.native
     src_el = {}
     for s in root.iter("Source"):
@@ -473,7 +473,7 @@ def checks(p, words=None):
                             "pressure or slide) but the track's MPE mode is off, so nothing tells the instrument to "
                             "treat each channel as one note",
                     fix="switch the instrument to MPE mode by hand (lower zone, 15 members and a member bend range "
-                        "of 48 unless the controller says otherwise). HypnoMix DAW's track MPE setting has passed "
+                        "of 48 unless the controller says otherwise). HypnoMix Studio's track MPE setting has passed "
                         "its automated tests but has not yet been tried with real MPE controllers")
             zone = cfg["zone"] if cfg else ("upper" if 15 in facts.rpn6 and 0 not in facts.rpn6 else "lower")
             glob = 0 if zone == "lower" else 15

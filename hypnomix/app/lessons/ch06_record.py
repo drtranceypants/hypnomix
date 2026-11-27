@@ -23,7 +23,7 @@ CHAPTER = dict(id="record", levels=("101", "az"), title="Your first recording", 
             "reaper": ["Click the metronome button in the transport bar (or Options → Metronome) so it's on.",
                        "Right-click it → Metronome settings: tick **Count-in before recording** (2 bars is comfortable).",
                        "The same window sets how loud the click is. The click is only heard: it is not recorded onto your tracks."],
-            "ardour": ["Click the **Click** button in the toolbar so it lights up.", "In the Transport menu, choose **Record w/Count-In**: HypnoMix DAW clicks two bars before it starts recording."]},
+            "ardour": ["Click the **Click** button in the toolbar so it lights up.", "In the Transport menu, choose **Record w/Count-In**: HypnoMix Studio clicks two bars before it starts recording."]},
        action={d: dict(kind="click") for d in LR}),
   dict(id="drums", title="A drum beat to play over (optional)", daws=ALL,
        say=["A click is honest but dull. A simple drum beat on a **MIDI track** is nicer to play to, and you can replace it "

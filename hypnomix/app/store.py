@@ -2,7 +2,7 @@
 
 The catalogue and the installer live in hypnomix/store/ (`hypnomix store` does the same from a terminal). This file
 runs one install or uninstall at a time in the background, reports its progress to the page, and after a plug-in
-is installed asks the HypnoMix DAW engine (if one is connected over MCP) to rescan its plug-ins, when the engine has a
+is installed asks the HypnoMix Studio engine (if one is connected over MCP) to rescan its plug-ins, when the engine has a
 tool for that. The engine's MCP surface has none yet, so the page says to rescan in the DAW (or restart it).
 
 macOS only for now: on another system the page says so (state() carries supported and platform_note) and installs
@@ -29,7 +29,7 @@ MCP_URL = "http://127.0.0.1:4820/mcp"
 
 # ---------------------------------------------------------------- the engine (MCP)
 def _mcp_url():
-    """The engine the app is using (DAW mode), else HYPNOMIX_ENGINE_URL, else a HypnoMix DAW window on 4820."""
+    """The engine the app is using (DAW mode), else HYPNOMIX_ENGINE_URL, else a HypnoMix Studio window on 4820."""
     try:
         from hypnomix.app import daw as D                     # present once the DAW view is part of the app
         u = D.ENGINE.url() if D.ENGINE.connected() else None
@@ -61,16 +61,16 @@ def rescan():
         tools = [t.get("name", "") for t in (_rpc(url, "tools/list").get("tools") or [])]
     except Exception:
         return dict(connected=False, tool=None, ok=False,
-                    message="No HypnoMix DAW engine is connected, so nothing was rescanned: your DAW finds new plug-ins "
+                    message="No HypnoMix Studio engine is connected, so nothing was rescanned: your DAW finds new plug-ins "
                             "when it next starts or rescans.")
     tool = next((t for t in tools if RESCAN_TOOL.search(t)), None)
     if not tool:
         return dict(connected=True, tool=None, ok=False,
-                    message="The HypnoMix DAW engine is connected but has no plug-in rescan tool over MCP yet: rescan "
+                    message="The HypnoMix Studio engine is connected but has no plug-in rescan tool over MCP yet: rescan "
                             "plug-ins in the DAW (its Plugin Manager), or restart it, to see the new ones.")
     try:
         _rpc(url, "tools/call", {"name": tool, "arguments": {}}, timeout=120)
-        return dict(connected=True, tool=tool, ok=True, message=f"The HypnoMix DAW engine rescanned its plug-ins ({tool}).")
+        return dict(connected=True, tool=tool, ok=True, message=f"The HypnoMix Studio engine rescanned its plug-ins ({tool}).")
     except Exception as e:
         return dict(connected=True, tool=tool, ok=False, message=f"The engine's {tool} failed: {e}")
 

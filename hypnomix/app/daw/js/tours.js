@@ -1,4 +1,4 @@
-/* HypnoMix DAW · the guided tours: DATA only. The engine that runs them is js/tour.js.
+/* HypnoMix Studio · the guided tours: DATA only. The engine that runs them is js/tour.js.
 
    Adding a tour is adding an object to `tours` below; nothing else needs to change.
 
@@ -36,10 +36,10 @@
 
     /* sentences the tour itself says */
     ui: {
-      listTitle: 'Tours inside the HypnoMix DAW',
+      listTitle: 'Tours inside the HypnoMix Studio',
       listIntro: 'Each tour points at the real controls, one step at a time. Nothing changes unless you do it yourself, and Escape ends a tour whenever you like.',
       offerTitle: 'New here?',
-      offerText: 'A short, optional tour points at the real controls of the HypnoMix DAW, one step at a time. You can start it later: press ? and choose Take a tour, or use the Tour button in the top bar.',
+      offerText: 'A short, optional tour points at the real controls of HypnoMix Studio, a step at a time. You can start it later: press ? and choose Take a tour, or use the Tour button in the top bar.',
       offerSpeak: 'A short guided tour is on offer at the bottom left of the page. It is optional.',
       accept: 'Show me around',
       decline: 'Not now',
@@ -62,7 +62,7 @@
       resumed: 'Carrying on with {title}, at step {i}.',
       closingNote: 'The last step of the tour: there is nothing to point at here.',
       tourButton: 'Tour',
-      tourButtonInfo: 'Guided tours of the HypnoMix DAW, one step at a time on the real screen',
+      tourButtonInfo: 'Guided tours of HypnoMix Studio: each step is shown on the real screen',
       helpButton: 'Take a tour',
       start: 'Start',
       cont: 'Continue',
@@ -128,7 +128,7 @@
         blurb: 'Every part of the window in ten steps: the transport, tracks, timeline, mixer, effects, browser, Review, Assistant, Save and the engine.',
         steps: [
           { id: 'transport', title: 'The transport', target: 'transport', wait: 'play',
-            say: ['Welcome to the HypnoMix DAW. A **DAW** (digital audio workstation) is the program where you play, edit and mix a song.',
+            say: ['Welcome to HypnoMix Studio. A **DAW** (digital audio workstation) is the program where you play, edit and mix a song.',
               'These buttons are the **transport**, like the buttons on a tape player: back to the start, play, stop, loop and record.'],
             doing: 'Press play. The demo song is made up and plays no sound, but you will see the line move.',
             done: 'That moving line is the **playhead**: it marks where you are in the song. Press stop when you like.',

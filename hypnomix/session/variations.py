@@ -26,9 +26,9 @@ a player would vary it) and one unused stretch for each. Then:
   --every 4        vary one repeat in this many      --min-repeats 4   what counts as repetitive
   --track NAME     only these parts (repeatable)     --max 3           different unused stretches per part
 
-  hypnomix variations SESSION.ardour --cues [--engine URL]   HypnoMix DAW: auditions into cue slots
+  hypnomix variations SESSION.ardour --cues [--engine URL]   HypnoMix Studio: auditions into cue slots
 
-A HypnoMix DAW session (.ardour) is read the same way (regions pasted again and again are the repeats; regions do
+A HypnoMix Studio session (.ardour) is read the same way (regions pasted again and again are the repeats; regions do
 not loop in a session). Nothing is written into the session file: with --cues each proposal's two audition files go
 into the cue slots (Session view) of the session open in the HypnoMix engine, on a track "<Track> variations" next
 to the part (a new one, or the empty slots of one already there): slot pairs "<id> A" (the loop as it is) and
@@ -96,7 +96,7 @@ def plays(track, als_dir, tempo, bpb):
 
 
 def ardour_plays(track, tempo):
-    """plays() for a track of the shared model (a HypnoMix DAW session): one entry per audio region, unmuted.
+    """plays() for a track of the shared model (a HypnoMix Studio session): one entry per audio region, unmuted.
     `paths` holds every channel's file (a session keeps one mono file per channel), for stereo auditions."""
     out = []
     per = tempo / 60.0
@@ -433,7 +433,7 @@ def main():
     ap.add_argument("--apply", metavar="NEW.als")
     ap.add_argument("--cues", action="store_true", help="put the auditions into cue slots of the session open in the HypnoMix engine (with a session file, "
                          "that very file must be the one open). HypnoMix sees the change: the session shows as "
-                         "unsaved, and Stop, Open, New and quit ask Save first; save in HypnoMix DAW to keep them")
+                         "unsaved, and Stop, Open, New and quit ask Save first; save in HypnoMix Studio to keep them")
     ap.add_argument("--engine", help="the engine's MCP URL (with --cues; it is in the DAW view's engine panel)")
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args()
@@ -442,9 +442,9 @@ def main():
     src = Path(a.als)
     is_ardour = src.suffix.lower() == ".ardour"
     if is_ardour and a.apply:
-        sys.exit("--apply writes a Live set: for a HypnoMix DAW session use --cues (the engine's Session view)")
+        sys.exit("--apply writes a Live set: for a HypnoMix Studio session use --cues (the engine's Session view)")
     if a.cues and not is_ardour:
-        sys.exit("--cues is for a HypnoMix DAW session open in the HypnoMix engine (a Live set: --apply)")
+        sys.exit("--cues is for a HypnoMix Studio session open in the HypnoMix engine (a Live set: --apply)")
     if a.cues and a.no_clips:
         sys.exit("--cues puts the audition files into the slots: drop --no-clips")
     eng = None

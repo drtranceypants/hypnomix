@@ -1,4 +1,4 @@
-"""Look inside a song project (REAPER .rpp, HypnoMix DAW .ardour or its session folder, Live .als) and render its tracks,
+"""Look inside a song project (REAPER .rpp, HypnoMix Studio .ardour or its session folder, Live .als) and render its tracks,
 without opening the DAW.
 
   hypnomix project SONG.rpp                    tracks (folders, fader, pan, mute), items, plug-ins, automation
@@ -7,7 +7,7 @@ without opening the DAW.
                     [--tracks NAME ...] [--sr 44100]
 
 Renders include item and take volume, fades, loops, sections and playrate (pitch kept when the take keeps it);
-for HypnoMix DAW also region gain envelopes, stored fade curves and layering (an upper opaque region covers the ones
+for HypnoMix Studio also region gain envelopes, stored fade curves and layering (an upper opaque region covers the ones
 under it); not faders, plug-ins or automation. Output is 32-bit float, so nothing clips.
 """
 import argparse

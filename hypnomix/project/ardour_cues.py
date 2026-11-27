@@ -9,10 +9,10 @@ the part itself. Each clip goes in from its WAV file
 and with its length in beats so it plays at the session's tempo (`stretchable`). Nothing in the Arrangement changes;
 the clips stay until you clear them (save the session to keep them).
 
-Which engine: `--engine URL`, else HYPNOMIX_ENGINE_URL, else a HypnoMix DAW window on http://127.0.0.1:4820/mcp. The
+Which engine: `--engine URL`, else HYPNOMIX_ENGINE_URL, else a HypnoMix Studio window on http://127.0.0.1:4820/mcp. The
 session given must be the one the engine has open, by its full path (`ardour_groups.open_problem`: a session of the
 same name in another folder, or an engine that names no saved file, is refused), so the clips land in the right song.
-Afterwards HypnoMix sees the change (the session shows as unsaved); save in HypnoMix DAW to keep it.
+Afterwards HypnoMix sees the change (the session shows as unsaved); save in HypnoMix Studio to keep it.
 """
 import json, os, urllib.error, urllib.request
 from pathlib import Path

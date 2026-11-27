@@ -5,7 +5,7 @@
     {
       "name": "hypnomix",
       "source": "./",
-      "description": "Mixing and mastering engineer skills for Ableton Live, REAPER and HypnoMix DAW (needs the `hypnomix` command line: install it from the `hypnomix` folder with `uv pip install -e .`, or use the installed app)."
+      "description": "Mixing and mastering engineer skills for Ableton Live, REAPER and HypnoMix Studio (needs the `hypnomix` command line: install it from the `hypnomix` folder with `uv pip install -e .`, or use the installed app)."
     }
   ]
 }

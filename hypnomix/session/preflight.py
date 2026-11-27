@@ -7,7 +7,7 @@ Usage:
                        [--recursive] [--length-tolerance 0.05] [--max-lag 5]
 
 For a FOLDER it reads every audio file in it. For a set or project it reads every source file the project
-plays (through the shared project model, so Live, REAPER and HypnoMix DAW work the same way).
+plays (through the shared project model, so Live, REAPER and HypnoMix Studio work the same way).
 
 What it looks for, each as a finding with what to do:
   sample rate / bit depth   files that differ from the rest, and which ones are the odd ones out
@@ -520,12 +520,12 @@ def analyse(source, recursive=False, tol=0.05, max_lag=5.0, progress=True):
         try:
             proj, uses, missing = project_sources(src)
         except Exception as e:
-            what = {"reaper": "a REAPER project", "live": "an Ableton Live set", "ardour": "a HypnoMix DAW session"}.get(PJ.daw_of(src), "a project")
+            what = {"reaper": "a REAPER project", "live": "an Ableton Live set", "ardour": "a HypnoMix Studio session"}.get(PJ.daw_of(src), "a project")
             why = str(e).strip().splitlines()[-1][:100] if str(e).strip() else type(e).__name__
             raise SystemExit(f"{src.name}: not {what} I can read" if why.startswith("not a") else f"{src.name}: cannot be read as {what} ({why})")
         present = [Path(p) for p in uses if Path(p).exists()]
         paths = sorted(present, key=lambda p: str(p))
-        kind, proj_sr, folder = {"reaper": "REAPER project", "live": "Live set", "ardour": "HypnoMix DAW session"}[PJ.daw_of(src)], proj.sample_rate, False
+        kind, proj_sr, folder = {"reaper": "REAPER project", "live": "Live set", "ardour": "HypnoMix Studio session"}[PJ.daw_of(src)], proj.sample_rate, False
         notes.append(f"{len(uses)} source file(s) used by the project, {len(missing)} place(s) where one is missing")
         notes.append("lengths and starts are not compared: the clips of a project are placed by their positions")
         names_to_check = list(uses) + [str(src)]
@@ -544,7 +544,7 @@ def analyse(source, recursive=False, tol=0.05, max_lag=5.0, progress=True):
         seen.add(pth)
         users = uses.get(pth, [track])
         findings.append(fnd("missing", "high", Path(pth).name, f"is used by {listing(users)} and is not there: {pth}",
-                            "find the file again before anything else (REAPER and HypnoMix DAW offer to search when the project opens; "
+                            "find the file again before anything else (REAPER and HypnoMix Studio offer to search when the project opens; "
                             "in Live use Manage Files or Locate); nothing was searched for or changed", where=where))
     findings += check_names([Path(p) for p in names_to_check], project_path=None if folder else src)
     findings.sort(key=lambda f: (SEV.get(f["severity"], 9), f["kind"], f["track"]))

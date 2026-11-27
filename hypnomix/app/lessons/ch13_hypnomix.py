@@ -33,8 +33,8 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="HypnoMix in y
                        "`hypnomix reaper probes install` copies the JSFX into REAPER's Effects/hypnomix (the button below does it).",
                        "Keep the HypnoMix app open while you work: the probes and Main talk to it through the bridge. `hypnomix reaper status` shows what the bridge sees (REAPER's version, the open project, its tempo and tracks); `hypnomix reaper stop` stops it, and it also stops when REAPER quits."]},
        action={"reaper": dict(kind="devices")}),
-  dict(id="hm-connect-ardour", title="Connect HypnoMix to HypnoMix DAW", daws=("ardour",),
-       say=["HypnoMix reads HypnoMix DAW sessions (`.ardour`: tracks, buses, regions with their layering, fades, gain envelopes, "
+  dict(id="hm-connect-ardour", title="Connect HypnoMix to HypnoMix Studio", daws=("ardour",),
+       say=["HypnoMix reads HypnoMix Studio sessions (`.ardour`: tracks, buses, regions with their layering, fades, gain envelopes, "
             "plug-ins, automation), renders each track itself, and runs the same first-pass checks. Apply writes one new "
             "snapshot next to your session, inside its folder, with the fades, region gain, volume dips and fader, pan and "
             "mute moves you approved. Track names and order, vocal stacks, timing and sidechain stay a list for you to make "
@@ -42,7 +42,7 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="HypnoMix in y
             "The reader and the new snapshot haven't been tried in the running DAW yet: open the snapshot, and if anything "
             "looks or sounds different from what HypnoMix listed, say so."],
        how={"ardour": ["Save the session. On the Songs tab, choose the session folder (or its `.ardour` file) and press Start the first pass.",
-                       "HypnoMix DAW can stay open while you scan: a scan writes nothing next to your session. Apply writes a new snapshot beside it: open that one in HypnoMix DAW when it is done."]}),
+                       "HypnoMix Studio can stay open while you scan: a scan writes nothing next to your session. Apply writes a new snapshot beside it: open that one in HypnoMix Studio when it is done."]}),
   dict(id="hm-devices-live", title="The devices in Live", daws=("live",),
        say=["Three pass-through Max for Live devices (audio untouched), under User Library → Presets → Audio Effects → Max "
             "Audio Effect → Hypnomix:",
@@ -116,7 +116,7 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="HypnoMix in y
             "first), or repaired copies in the scan's fixed folder for audio. Every applied version is kept; undo writes "
             "another new version, it never deletes. Teach it as you go: what you skip and change shapes the next proposals."],
        how={"live": ["Close the set in Live, Apply, then open \"Song (fixed).als\"."], "reaper": ["Close the project tab, Apply, then open the new .rpp (tuned vocals arrive as new takes)."],
-            "ardour": ["Close the session in HypnoMix DAW, Apply, then open the new snapshot (`Song (fixed).ardour`) from the same session folder. It holds the fades, gain, dips and fader, pan and mute moves you approved; names, order, stacks and timing come back as a list to do by hand, and repaired audio lands in the scan's fixed folder."]}),
+            "ardour": ["Close the session in HypnoMix Studio, Apply, then open the new snapshot (`Song (fixed).ardour`) from the same session folder. It holds the fades, gain, dips and fader, pan and mute moves you approved; names, order, stacks and timing come back as a list to do by hand, and repaired audio lands in the scan's fixed folder."]}),
   dict(id="hm-tracking", title="Tracking helpers", daws=ALL,
        say=["Before you record, `hypnomix soundcheck` listens to an interface input and tells you which way to turn the "
             "gain (peaks -12 to -6 dBFS in 24-bit), and flags noise, hum and DC. After recording, `takes` ranks whole "
@@ -135,7 +135,7 @@ CHAPTER = dict(id="hypnomix", levels=("tour", "101", "az"), title="HypnoMix in y
             "and, in a Live set, `motion` offers effect moves for repetitive sections, learned from your own automation."],
        how={"live": ["`hypnomix chain strips recipe.json --dry-run` shows the plan; drop --dry-run to load EQ Eight, Compressor and Utility on each track."],
             "reaper": ["`hypnomix chain strips recipe.json --reaper --dry-run` shows the plan; without --dry-run it builds the same strips in the open REAPER from ReaEQ and ReaComp. recipe.json is written by `hypnomix automix`."],
-            "ardour": ["Run `stems`, `masking`, `prep` and `automix` on exported stems; set the moves by hand in HypnoMix DAW (`motion` needs a Live set, and `chain strips` needs Live or REAPER)."]}),
+            "ardour": ["Run `stems`, `masking`, `prep` and `automix` on exported stems; set the moves by hand in HypnoMix Studio (`motion` needs a Live set, and `chain strips` needs Live or REAPER)."]}),
   dict(id="hm-master", title="The mastering chain", daws=ALL,
        say=["On the master device, **Build chain** puts your DAW's own plug-ins before it: Tone (EQ, low cut 25 Hz, "
             "everything else at 0 dB), Glue (2:1, slow attack, never more than 3 dB), Tame and Warmth (switched off until "

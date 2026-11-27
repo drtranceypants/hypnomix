@@ -181,7 +181,7 @@ class Checks(Base):
                 got, f = self.kinds(kw.pop("events"), **kw)
                 self.assertEqual(got, [want], [x["problem"] for x in f])
                 self.assertTrue(all(x["tool"] == "mpe" and x["problem"] and x["fix"] for x in f))
-                self.assertNotIn("Ard" + "our", f[0]["problem"] + f[0]["fix"])      # the visible name is HypnoMix DAW
+                self.assertNotIn("Ard" + "our", f[0]["problem"] + f[0]["fix"])      # the visible name is HypnoMix Studio
 
     def test_bend_range_says_where_the_range_came_from(self):
         _, f = self.kinds(chord(each={2: dict(top=0)}))

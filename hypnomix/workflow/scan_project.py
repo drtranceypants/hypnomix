@@ -1,4 +1,4 @@
-"""First-pass scan of a REAPER project (.rpp) or a HypnoMix DAW session (.ardour): the same review list as a Live set,
+"""First-pass scan of a REAPER project (.rpp) or a HypnoMix Studio session (.ardour): the same review list as a Live set,
 from the shared project model.
 
     hypnomix scan SONG.rpp [--mix MIX.wav] [--ref MIX.wav] [--deep] [--only GROUP ...]
@@ -30,10 +30,10 @@ FX, no faders) into raw/renders/, and the groups work from those renders and the
   stems       with --deep: frequency fights and mic phase between tracks
   structure   from the project file alone: does it read back byte for byte (else do not apply fixes), folders that
               do not close, sends from tracks that are not there, faders at the top or almost silent (REAPER; a
-              HypnoMix DAW session gets only the nearly-silent fader check)
+              HypnoMix Studio session gets only the nearly-silent fader check)
 
 Without --ref, the key and tuning are measured from a rough mix of the project's renders (faders and pans, no FX).
-Findings that `hypnomix fix` can write into a new project say `set` (a new .rpp; for a HypnoMix DAW session only item
+Findings that `hypnomix fix` can write into a new project say `set` (a new .rpp; for a HypnoMix Studio session only item
 fades, cuts and dips, into a new .ardour snapshot that HypnoMix has written and read back but not opened in
 a released DAW); the rest are *manual* (what to do in the DAW). Findings that make new audio (tune, dehiss, deess) work the
 same as for a Live set.
@@ -67,7 +67,7 @@ from hypnomix.workflow import scan as SC
 WORDS = {
     "reaper": dict(daw="REAPER", item="item", relink="REAPER offers to search for missing media when the project "
                    "opens, or re-link it in the item's properties (Choose new file)"),
-    "ardour": dict(daw="HypnoMix DAW", item="region", relink="HypnoMix DAW asks for missing files when the session opens "
+    "ardour": dict(daw="HypnoMix Studio", item="region", relink="HypnoMix Studio asks for missing files when the session opens "
                    "(Session > Properties > Misc lists the search paths), or import it again"),
 }
 W = dict(WORDS["reaper"])
@@ -435,7 +435,7 @@ SPIKE_DB = 12.0         # a burst this far over its surroundings is a spike (Liv
 
 def _edit(p, finding, **edit):
     """Attach the exact project edit to a finding. Only REAPER projects are written for now; elsewhere the
-    finding stays manual (what to do by hand). A HypnoMix DAW session is written for item fades, cuts and spikes."""
+    finding stays manual (what to do by hand). A HypnoMix Studio session is written for item fades, cuts and spikes."""
     if p.daw == "reaper" or (p.daw == "ardour" and edit.get("op") in ("fade", "cut", "dip")):
         finding.update(applies="set", edit=edit)
     return finding
@@ -482,7 +482,7 @@ def g_clips(p, R, od, a, vocals=()):
         from hypnomix.project.rpp_edit import locator
     from hypnomix.session.smooth import HIT_DB, PLOSIVE_HZ, PLOSIVE_MAX_DIP, PLOSIVE_SHARE, SPIKES_PER_MIN
     out, n, notes, regular, onsets = [], 0, [], [], 0
-    short_fade = 0.002        # shorter than this counts as no fade; HypnoMix DAW's own default fade (64 samples) is enough of one
+    short_fade = 0.002        # shorter than this counts as no fade; HypnoMix Studio's own default fade (64 samples) is enough of one
     if p.daw == "ardour":
         short_fade = min(short_fade, 64.0 / (p.sample_rate or 44100) - 1e-9)
     for t in p.audio_tracks():
@@ -592,7 +592,7 @@ def g_clips(p, R, od, a, vocals=()):
         notes.append("clips: approved fixes are written into a NEW .rpp by `hypnomix fix` (the original is never touched)")
     elif p.daw == "ardour":
         notes.append("clips: approved fades, cuts and spikes are written into a NEW .ardour snapshot beside the "
-                     "original by `hypnomix fix` (written and re-read by HypnoMix; not yet opened in HypnoMix DAW)")
+                     "original by `hypnomix fix` (written and re-read by HypnoMix; not yet opened in HypnoMix Studio)")
     return out, notes
 
 
@@ -892,7 +892,7 @@ def g_mix(p, R, od, a):
 
 
 def g_mpe(p, R, od, a):
-    """MPE health checks on a HypnoMix DAW session's MIDI tracks (hypnomix.project.mpe): read only."""
+    """MPE health checks on a HypnoMix Studio session's MIDI tracks (hypnomix.project.mpe): read only."""
     from hypnomix.project import mpe as MP
     return MP.checks(p, W)
 
@@ -970,7 +970,7 @@ def g_structure(p, R, od, a):
             add("set-warning", "info", "", f"the project's structure: {depth} folder(s) never close (the last "
                 "track is still inside a folder)", "", applies="info")
     else:
-        notes.append("structure: HypnoMix DAW session: only the nearly-silent fader check (the file's own structure is checked "
+        notes.append("structure: HypnoMix Studio session: only the nearly-silent fader check (the file's own structure is checked "
                      "when `fix` writes a new snapshot)")
     for t in p.tracks:
         if not t.on:

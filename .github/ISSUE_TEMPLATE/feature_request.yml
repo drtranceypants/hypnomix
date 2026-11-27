@@ -24,7 +24,7 @@ body:
     id: daw
     attributes:
       label: DAW
-      placeholder: "Ableton Live, REAPER, HypnoMix DAW, any (folder of stems)"
+      placeholder: "Ableton Live, REAPER, HypnoMix Studio, any (folder of stems)"
   - type: dropdown
     id: build
     attributes:

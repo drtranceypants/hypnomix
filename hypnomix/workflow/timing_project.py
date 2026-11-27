@@ -10,7 +10,7 @@ only partway and as an option.
 A fix (only approved items, into the new .rpp) puts stretch markers on the item's active take: one on the hit,
 moved part of the way to its reference, and one on the hit either side holding it, so only that short stretch of
 audio is stretched (REAPER keeps the pitch when the take keeps pitch). Everything stays editable in REAPER: drag a
-marker, or delete it to undo one fix. In a HypnoMix DAW or Live project the same hits are found, but the nudge is
+marker, or delete it to undo one fix. In a HypnoMix Studio or Live project the same hits are found, but the nudge is
 never written: the finding is `applies: manual` with the how-to for that DAW, so it shows on the hand-off checklist
 once approved. Not moved (listed instead): items that already have stretch markers, items
 that loop past the end of their file, MIDI items, and moves the neighbouring hits leave too little room for.
@@ -22,11 +22,11 @@ import numpy as np
 
 from hypnomix.session import timing as TM
 
-DAW_NAMES = {"reaper": "REAPER", "ardour": "HypnoMix DAW", "live": "Live"}
+DAW_NAMES = {"reaper": "REAPER", "ardour": "HypnoMix Studio", "live": "Live"}
 
 
 def daw_name(p):
-    """The DAW a project is for, in the words the fix text uses ("REAPER", "HypnoMix DAW", "Live")."""
+    """The DAW a project is for, in the words the fix text uses ("REAPER", "HypnoMix Studio", "Live")."""
     return DAW_NAMES.get(str(getattr(p, "daw", "") or "reaper").lower(), str(getattr(p, "daw", "") or "your DAW"))
 
 

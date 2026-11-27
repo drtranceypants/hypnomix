@@ -19,10 +19,10 @@ sidechain`): check by ear.
 Without --renders, the vocals are rendered into a scratch folder (hypnomix-render-… under ~/.hypnomix/cache/tmp, announced
 when it is over about 1 GB) that is removed when the command ends, an error or Ctrl-C included.
 
-A HypnoMix DAW session (.ardour) gets the same check with an ACE Compressor keyed over the engine's
+A HypnoMix Studio session (.ardour) gets the same check with an ACE Compressor keyed over the engine's
 sidechain tools; approved options are written into the open engine (`engineer/duck_ardour.py`), which must
 have this very session file open; each track and plug-in is checked there first. HypnoMix sees the change (the
-session shows as unsaved, and Stop, Open, New and quit ask Save first); save it in HypnoMix DAW to keep it.
+session shows as unsaved, and Stop, Open, New and quit ask Save first); save it in HypnoMix Studio to keep it.
 
 Usage:
   hypnomix duck SESSION.ardour [--names names.json] [--depth 3] [--json OUT.json]
@@ -277,16 +277,16 @@ def main():
     ap.add_argument("--depth", type=float, default=3.0, help="how far the ambience ducks while the singer sings (dB)")
     ap.add_argument("--apply", metavar="NEW.als"); ap.add_argument("--ids")
     ap.add_argument("--engine", nargs="?", const="", metavar="URL",
-                    help="HypnoMix DAW: write the approved options into the open HypnoMix engine (default its usual URL; the "
+                    help="HypnoMix Studio: write the approved options into the open HypnoMix engine (default its usual URL; the "
                          "engine's address is in the DAW view's engine panel). It must have this very session file "
                          "open. HypnoMix sees the change: the session shows as unsaved, and Stop, Open, New and quit "
-                         "ask Save first; save in HypnoMix DAW to keep it")
+                         "ask Save first; save in HypnoMix Studio to keep it")
     a = ap.parse_args()
     src = Path(a.als)
     from hypnomix import project as PJ
     if PJ.daw_of(src) == "ardour":
         if a.apply:
-            sys.exit("a HypnoMix DAW session is changed in the open HypnoMix engine: use --engine --ids duck-1,…")
+            sys.exit("a HypnoMix Studio session is changed in the open HypnoMix engine: use --engine --ids duck-1,…")
         from hypnomix.engineer import duck_ardour as DA
         sys.exit(DA.main(src, a))
     props, meta = propose(src, a.names, a.renders, a.depth)

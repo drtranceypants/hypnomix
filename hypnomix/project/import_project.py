@@ -1,4 +1,4 @@
-"""Import a project from another DAW into a NEW HypnoMix DAW session folder. The project is only read.
+"""Import a project from another DAW into a NEW HypnoMix Studio session folder. The project is only read.
 
     hypnomix import PROJECT OUTDIR [--sr 48000] [--from KIND] [--allow-outside]
 
@@ -6,7 +6,7 @@ PROJECT is any of these (the kind is found from the file itself, or named with -
 
   live        a .als set                                  -> hypnomix als2ardour's full import
   logicx      a .logicx project (a folder; a .band too)   read natively (decoded from packages saved by version 10.7)
-  ptx         a .ptx / .ptf / .pts session                read by a reader that comes with the HypnoMix DAW add-on
+  ptx         a .ptx / .ptf / .pts session                read by a reader that comes with the HypnoMix Studio add-on
                                                           (Apple-silicon Macs only so far): without it this kind cannot run
   dawproject  a .dawproject file: the open project format several DAWs save and open
   reaper      a .rpp project

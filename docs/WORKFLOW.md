@@ -56,7 +56,7 @@ Saved in `~/.hypnomix/preferences.json`. Every scan reads it:
   `taste.timing` (`off`, or gentle or tight) tell a scan how far to go; `off` means that kind of fix is not proposed.
 - **cleanup**: the tidy steps of the first clean-up, all on by default: `cleanup.order`, `cleanup.retire`,
   `cleanup.consolidate` (`on` or `off`). They are also in the app's Preferences tab.
-- **tools.daw** is `live`, `reaper`, `ardour` (HypnoMix DAW) or `other`, the same choice as the app's Setup page: until you
+- **tools.daw** is `live`, `reaper`, `ardour` (HypnoMix Studio) or `other`, the same choice as the app's Setup page: until you
   answer in Preferences, Setup's answer is used, so the two never disagree.
 
 Every answer is checked when it is saved: `hypnomix prefs set targets.lufs=abc` is refused with "targets.lufs must
@@ -77,11 +77,11 @@ songs you like. A scan with `--mix` compares the mix with those ranges
 ```bash
 hypnomix scan "Song.als" --mix "Song mix.wav" --ref "Song instrumental.wav" --key "F# major"
 hypnomix scan "Song.rpp"            # a REAPER project
-hypnomix scan "Song.ardour"         # a HypnoMix DAW session (or its session folder)
+hypnomix scan "Song.ardour"         # a HypnoMix Studio session (or its session folder)
 hypnomix scan "raw takes/"          # recordings or exported stems from any DAW: no Live set needed
 ```
 
-Two things come before it, when you want them. `hypnomix preflight SOURCE` (a folder, a set, a project or a HypnoMix DAW
+Two things come before it, when you want them. `hypnomix preflight SOURCE` (a folder, a set, a project or a HypnoMix Studio
 session) checks the files themselves and writes `PREFLIGHT.md`: sample rates and bit depths that differ, stems of different
 length or that start apart, exact duplicates, stereo that is really mono, silent or clipped files, lossy sources,
 missing files, names other systems refuse. It changes nothing; `--plan` puts every finding into a scan folder for the
@@ -118,9 +118,9 @@ that writes a new set refuses to write from such a set, because the format may h
 A folder of recordings is measured file by file: `--mix`, `--ref`, `--key`, `--like`, `--deep` and the track options are
 not used for it (the scan says so and does not record them), and `--since` and `--quick` are for a Live set. A file
 that cannot be measured (no audio in it, NaN samples, more than five channels) is a finding of its own and is left
-out of the comparison of how the files sit together. A path that is not a Live set, a REAPER project, a HypnoMix DAW
+out of the comparison of how the files sit together. A path that is not a Live set, a REAPER project, a HypnoMix Studio
 session or a folder of recordings, or a project that cannot be read, ends in one plain sentence before any scan
-folder is made. A HypnoMix DAW session folder with several snapshots and none named like the folder is read from the
+folder is made. A HypnoMix Studio session folder with several snapshots and none named like the folder is read from the
 newest, and the scan says which.
 
 Output in `hypnomix-out/scan/<song>/`: `REVIEW.md`, `findings.json`, `scan.json` (what was scanned, and when the
@@ -173,7 +173,7 @@ in) and a trial mix into `DIR/fixed/balance/`. Measured, not heard: move the fad
 
 `fix` lists what it cannot do itself under "by hand". `hypnomix handoff "SCAN_DIR"` turns that list (the approved
 by-hand items, plus any item you skipped or changed with a note) into `handoff/HANDOFF.md`: a checklist in song
-order, each line with track, bar.beat and m:ss, what to do in your DAW's words (Live, REAPER, HypnoMix DAW or plain
+order, each line with track, bar.beat and m:ss, what to do in your DAW's words (Live, REAPER, HypnoMix Studio or plain
 wording; `--daw`, or your `tools.daw` preference), and what to listen for. When at least one item has a position, a Live scan also gets a NEW set
 "Song (handoff).als" with a locator at each spot (checked like any written set), a REAPER scan a new
 "Song (handoff).rpp" with a marker at each spot, and the scan gets `markers.mid` (a MIDI file with a marker per
@@ -195,13 +195,13 @@ the track through its own model of the device. It cannot preview a device it has
 racks, plug-ins), a MIDI note moved by a nudge, or a return track: `ab.json` and the review page say why, and for
 those you apply that one fix into a new set and listen in Live. Clip previews are the track alone, without effects.
 `ab` plays Live sets and folders of recordings; on a REAPER project it plays repaired recordings and says, for each other fix, why it has no clip, and `abset`
-builds a project with each fix switched off next to yours (guide 8). On a HypnoMix DAW session `abset` writes one new
+builds a project with each fix switched off next to yours (guide 8). On a HypnoMix Studio session `abset` writes one new
 snapshot, `<Song> (A-B).ardour`, where each clip fix (fade, cut, spike dip) is another playlist of its track
 (`<playlist>.B <id>`) and each mixer move is a pair of A/B values (`ab_ardour.json`); the DAW view's Review switches
 them over MCP (`ab_use_playlist`, the track's fader / pan / mute), turning the louder side down on the master by the
 measured `match_db` (a rough mix without plug-ins, around the spot; muted tracks are left out, so a mute fix is
 matched too), with a blind test (`blind.json`).
-This needs the HypnoMix DAW add-on, which is for Apple-silicon Macs only so far (docs/APP.md, DAW mode); the switching has not been
+This needs the HypnoMix Studio add-on, which is for Apple-silicon Macs only so far (docs/APP.md, DAW mode); the switching has not been
 judged by ear.
 
 The page shows every finding with its players and saves each click to `decisions.json` (with `--serve`, on this
@@ -360,7 +360,7 @@ conflict (shown on the page and in `fix --list`) until you settle it.
 
 Every `fix` run that wrote something is a version in `DIR/history/` (the approved ids with amounts, the list of
 changes, and a copy of the set it started from and the set it wrote: `.als`, `.rpp` or `.ardour`; for a REAPER or
-HypnoMix DAW version `--diff` shows the changed lines of the project file). A run that wrote nothing is not a version. A
+HypnoMix Studio version `--diff` shows the changed lines of the project file). A run that wrote nothing is not a version. A
 folder of recordings has no set to go back to: its repaired copies are new files in `DIR/fixed/`.
 
 ```bash
@@ -391,7 +391,7 @@ finding (same tool, track, kind and position, within half a second or about a be
 "smooth-1 = approve" can not end up on a different clip after the set changed. Decisions that no longer match are
 counted ("3 earlier decisions no longer match a finding and were set aside") and kept in `decisions-orphaned.json`;
 nothing is applied from them. A scan never writes into the folder of a different source: "Song.als" and then an
-HypnoMix DAW session also called "Song" get "Song" and "Song (2)". Decisions, findings, the scan record and the log are
+HypnoMix Studio session also called "Song" get "Song" and "Song (2)". Decisions, findings, the scan record and the log are
 written whole or not at all, and the version before is kept next to each as `<name>.bak`; a file cut off by a crash
 is read from its backup, with a warning.
 
@@ -467,22 +467,22 @@ mix). Timing: out-of-time hits are nudged with stretch markers on the items. Sid
 `handoff` writes a new `Song (handoff).rpp` with a marker at each by-hand spot. The ReaEQ band, the handoff project and
 `hypnomix demo --kind reaper` were opened in REAPER 7.86 on 2026-11-26 and read back as written (not judged by ear), and so were the `vocallevel --apply` envelopes (106 points, on a two-track test project; written before the 2026-11-27 change that leaves untouched points as they are and refuses hot envelopes, which is unit-tested only). `scan` does not read the probe menus, Protect or the song card of a REAPER project: set protected tracks in Preferences (`protect.tracks`) and the key with `--key`. Details: `docs/guides/08-inside-reaper.md`.
 
-## HypnoMix DAW
+## HypnoMix Studio
 
-What a HypnoMix DAW session is, and where it comes from: the wiki article "HypnoMix DAW".
+What a HypnoMix Studio session is, and where it comes from: the wiki article "HypnoMix Studio".
 
 ```bash
 hypnomix scan "Song.ardour"          # or the session folder
 hypnomix fix "hypnomix-out/scan/Song" --approved --out "Song (fixed).ardour"
 ```
 
-The scan runs the same groups as for a REAPER project, except `devices` (the plug-ins' settings are not read from a HypnoMix DAW session yet) and a `structure` group that checks only for nearly silent faders. `fix` writes the approved region fades (with their curve), region
+The scan runs the same groups as for a REAPER project, except `devices` (the plug-ins' settings are not read from a HypnoMix Studio session yet) and a `structure` group that checks only for nearly silent faders. `fix` writes the approved region fades (with their curve), region
 gain, gain dips over spikes and the eased level at a comp cut into **one new `.ardour` snapshot**, saved next to the
 original inside the same session folder (where the DAW keeps its snapshots and finds the session's audio; nothing is
 copied or moved). The original is never touched. Track names and order, vocal stacks, timing, sidechain and tuning
 stay by hand. The new file is written and read back by HypnoMix and has not yet been opened in a released DAW.
 
-Takes: a track's other playlists named `<track>.take N` (HypnoMix DAW records each pass into one and comps from
+Takes: a track's other playlists named `<track>.take N` (HypnoMix Studio records each pass into one and comps from
 them) are read as its take lanes (`Track.take_lanes`, like a Live set's take lanes, which are read the same way
 since this change instead of as ordinary clips). They are not heard; the scan names the comped tracks, and its checks
 and fixes work on the comp's own regions only. A take is never written. A missing file the comp plays is one

@@ -14,7 +14,7 @@ channel pair its field 9 names (2 = 3/4).
 
 A fix rewrites only those floats in the new .rpp; everything else in the plug-in's state stays byte for byte.
 
-HypnoMix DAW sessions: an ACE Compressor whose sidechain input is fed from another track (the
+HypnoMix Studio sessions: an ACE Compressor whose sidechain input is fed from another track (the
 engine's `plugin_set_sidechain`, or the DAW's pin dialog), read by `project/ardour.py` from the port connections.
 Its controls map one to one: Threshold dB, Ratio, Attack ms, Release ms, Knee (a-comp's knee width is 6 x Knee dB),
 peak detector, no lookahead; "Sidechain" must be on for the key to be used. The key is what the send carries:
@@ -114,7 +114,7 @@ def describe(c):
             f"pre-comp {la:.0f} ms, detector filters {f}")
 
 
-# ---------------------------------------------------------------- ACE Compressor (Ardour / HypnoMix DAW)
+# ---------------------------------------------------------------- ACE Compressor (Ardour / HypnoMix Studio)
 def is_ace_comp(d):
     return (d.uid or "").startswith("urn:ardour:a-comp") or "ace compressor" in d.name.lower()
 
@@ -266,7 +266,7 @@ def analyse(p, style="auto"):
         if any(tr is s["track"] for tr, _, _ in s["sources"]):
             out.append((s, None, "the compressor listens to its own track: ordinary compression, not ducking"))
             continue
-        if s["state"] is not None:     # a ReaComp has a state; an ACE Compressor (HypnoMix DAW) has no Dry / Wet
+        if s["state"] is not None:     # a ReaComp has a state; an ACE Compressor (HypnoMix Studio) has no Dry / Wet
             from hypnomix.workflow.devices_project import mix, _db     # the devices check's Dry / Wet reading (lazy: it imports this)
             how, dry, wet = mix(s["state"].vals)
             if how == "dry":
@@ -303,7 +303,7 @@ def findings(p, results, W):
         if r is None:
             out.append(dict(id=f"sidechain-{n}", tool="sidechain", kind="sidechain", severity="info", track=t.name,
                             where="", problem=f"{head}: {why}",
-                            fix="check it in HypnoMix DAW (its device, and plugin_get_sidechain)" if ace else
+                            fix="check it in HypnoMix Studio (its device, and plugin_get_sidechain)" if ace else
                             "check its routing in REAPER", applies="info"))
             continue
         if ace:
@@ -324,7 +324,7 @@ def findings(p, results, W):
                              vals=to_vals(s["state"].vals, r["sug"], r["new_eq"]))
         if ace:
             f["ace"] = dict(track=t.name, route_id=t.route_id, plugin_index=s["fx"], values=ace_values(r["sug"]))
-            f["fix"] += ". Set these in the device in HypnoMix DAW (Threshold, Ratio, Attack, Release, Knee)"
+            f["fix"] += ". Set these in the device in HypnoMix Studio (Threshold, Ratio, Attack, Release, Knee)"
         out.append(f)
     return out
 

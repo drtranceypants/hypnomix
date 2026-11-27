@@ -1648,7 +1648,7 @@ class Bridge(unittest.TestCase):
             self.assertTrue(wait(lambda: not CH.state()["busy"], 10))
         self.assertIn("daw_track_set_fader_db", seen["tools"])
         self.assertIn("list_songs", seen["tools"])
-        self.assertIn("HypnoMix DAW is open", seen["system"])
+        self.assertIn("HypnoMix Studio is open", seen["system"])
         self.assertIn('"called":"track_set_fader_db"', seen["after_approve"])
         self.assertIn("cancelled", seen["after_cancel"])
         sent = [c for c in self.engine_calls() if c["name"] == "track_set_fader_db"]

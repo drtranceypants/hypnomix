@@ -25,11 +25,11 @@ takes                     align                     masking
 ```
 
 Starting from an unfinished song or a pile of raw takes? Do a first pass before anything else: `hypnomix prefs`
-once, then `hypnomix scan` (a Live set, a REAPER project, a HypnoMix DAW session, or a folder of recordings from any
+once, then `hypnomix scan` (a Live set, a REAPER project, a HypnoMix Studio session, or a folder of recordings from any
 DAW), review the list, and `hypnomix fix` applies only what you approve. What it cannot change in your DAW comes
 back as a checklist in your DAW's words (`hypnomix handoff`). See [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
-New to audio? The app's **Teacher** tab (`hypnomix app`) is a free course in your own DAW (Live, REAPER or HypnoMix DAW):
+New to audio? The app's **Teacher** tab (`hypnomix app`) is a free course in your own DAW (Live, REAPER or HypnoMix Studio):
 the complete course from what sound is to releasing a song, a 101 crash course, or a tour of HypnoMix. No AI needed.
 No song of your own to practise on? `hypnomix demo` writes a 40-second song with six labelled problems.
 
@@ -322,7 +322,7 @@ hypnomix profile build song1.wav song2.wav song3.wav song4.wav song5.wav
 
 `loop` and `audit` then flag anything outside your usual range, and so does `scan` when you give it `--mix` (`--no-profile` leaves that out).
 
-### In REAPER, and in HypnoMix DAW
+### In REAPER, and in HypnoMix Studio
 
 The same loop works on a REAPER project, with REAPER open: `hypnomix scan "Song.rpp"`, review, then
 `hypnomix fix DIR --approved --out "Song (fixed).rpp"` writes what you approved into a new project (fades, rides,
@@ -331,7 +331,7 @@ word edges, track names and order; tuned vocals as new takes on your own items).
 plug-ins and land it on your loudness target. Every change in REAPER is one undo step. The full walk-through is
 guide 8, `docs/guides/08-inside-reaper.md`.
 
-For a HypnoMix DAW session (`.ardour`; the wiki article "HypnoMix DAW" says what that is), `hypnomix scan "Song/"` and `hypnomix project "Song/"` read it the same way, and
+For a HypnoMix Studio session (`.ardour`; the wiki article "HypnoMix Studio" says what that is), `hypnomix scan "Song/"` and `hypnomix project "Song/"` read it the same way, and
 `fix` writes approved fades, gain, dips and fader, pan and mute moves into one new `.ardour` snapshot beside it. That
 snapshot is written and re-read by HypnoMix and has not yet been opened in a released DAW, so open it in a DAW that reads `.ardour` sessions and look first. Whatever
 else belongs in the session comes back as a checklist: `hypnomix handoff "<scan folder>"`.

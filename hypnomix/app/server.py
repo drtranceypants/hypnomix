@@ -5,7 +5,7 @@
   hypnomix app --no-open       just start it (the Mac app and the Max for Live device use this)
 
 What you can do in it:
-  first pass    choose a Live set, REAPER project, HypnoMix DAW session (or a folder of recordings from any DAW), optionally a bounce of the mix and
+  first pass    choose a Live set, REAPER project, HypnoMix Studio session (or a folder of recordings from any DAW), optionally a bounce of the mix and
                 the key; it runs every check, builds the before / after clips and shows the review
   review        the fixes you can hear first, each with one player and A / B buttons, and Approve / Skip / Change with the mouse or
                 the keyboard (j k a s c b space [ ] ?); decisions are saved as you act, a card at a time; the clips you played are
@@ -24,8 +24,8 @@ What you can do in it:
                 in Ollama on this computer) that runs HypnoMix for you; anything that writes a set waits for your
                 click. Included in the installers; from source, run
                 `uv pip install -e ".[assistant]"` in the HypnoMix folder
-  DAW mode      `hypnomix app --daw`: the HypnoMix DAW's window (Arrangement, Session, Mixer, Review, the
-                Assistant) on the HypnoMix DAW engine, which the app starts, watches and stops (hypnomix/app/daw.py);
+  DAW mode      `hypnomix app --daw`: HypnoMix Studio's window (Arrangement, Session, Mixer, Review, the
+                Assistant) on the HypnoMix Studio engine, which the app starts, watches and stops (hypnomix/app/daw.py);
                 the browser reaches the engine only through this server (POST /mcp, and the meter stream's
                 WebSocket at /api/daw/meters, relayed by hypnomix/app/daw_meters.py)
   Live          with the Max for Live device (`hypnomix device`) loaded in your set, "Show in Live" jumps Live
@@ -348,7 +348,7 @@ def run_job(kind, title, steps, sdir="", watch=()):
 # ---------------------------------------------------------------- scans and reviews
 SET_KINDS = {".als": "als", ".rpp": "rpp", ".ardour": "ardour"}
 SUFFIX = {"als": ".als", "rpp": ".rpp", "ardour": ".ardour", "folder": ""}
-NO_UNDO = {"rpp": "REAPER projects", "ardour": "HypnoMix DAW sessions", "folder": "folders of recordings"}
+NO_UNDO = {"rpp": "REAPER projects", "ardour": "HypnoMix Studio sessions", "folder": "folders of recordings"}
 
 
 def read_json(path, default=None):
@@ -370,7 +370,7 @@ def when_of(p):
 
 
 def source_kind(source, mode=""):
-    """What a scan is of: 'als' (a Live set), 'rpp' (REAPER), 'ardour' (HypnoMix DAW) or 'folder' (recordings from any DAW)."""
+    """What a scan is of: 'als' (a Live set), 'rpp' (REAPER), 'ardour' (HypnoMix Studio) or 'folder' (recordings from any DAW)."""
     m = {"set": "als", "reaper": "rpp", "ardour": "ardour", "folder": "folder", "file": "folder"}.get(mode or "")
     return m or SET_KINDS.get(Path(str(source)).suffix.lower(), "folder")
 
@@ -621,7 +621,7 @@ ARDOUR_OPS = ("fade", "cut", "dip", "mixer")        # what fix writes into an Ar
 
 
 def applies_here(kind, f):
-    """How `fix` treats this finding for this kind of project, where that differs from what the finding says: a HypnoMix DAW
+    """How `fix` treats this finding for this kind of project, where that differs from what the finding says: a HypnoMix Studio
     session takes fades, cuts, spikes and mixer moves only (the rest stays by hand), and tuning is refused outright."""
     a = f.get("applies")
     if kind == "ardour":
@@ -663,7 +663,7 @@ def apply_plan(findings, dec):
 
 def writes_set(f, kind="als"):
     """Does applying this finding write a new set? Harmony balance is volume automation in a Live set, but balanced copies
-    of the parts (no project) in REAPER and HypnoMix DAW."""
+    of the parts (no project) in REAPER and HypnoMix Studio."""
     if f.get("applies") == "audio" and f.get("tool") == "voices":
         return kind == "als"
     return f.get("applies") == "set" or (f.get("applies") == "audio" and f.get("tool") == "tune")
@@ -1520,8 +1520,8 @@ try:
     elif kind == "set":
         p = filedialog.askopenfilename(title="Choose a Live set", filetypes=[("Live set", "*.als")])
     else:
-        p = filedialog.askopenfilename(title="Choose a Live set, REAPER project or HypnoMix DAW session",
-                                       filetypes=[("Live set, REAPER project or HypnoMix DAW session", "*.als *.rpp *.ardour"), ("All files", "*.*")])
+        p = filedialog.askopenfilename(title="Choose a Live set, REAPER project or HypnoMix Studio session",
+                                       filetypes=[("Live set, REAPER project or HypnoMix Studio session", "*.als *.rpp *.ardour"), ("All files", "*.*")])
 except Exception as e:
     sys.stderr.write("no window could be opened (%s)" % e)
     sys.exit(4)
@@ -1548,7 +1548,7 @@ def pick(kind):
         raise ValueError("kind must be one of: " + ", ".join(PICK_KINDS))
     if sys.platform == "darwin":
         script = {"set": 'POSIX path of (choose file with prompt "Choose a Live set" of type {"als"})',
-                  "song": 'POSIX path of (choose file with prompt "Choose a Live set, REAPER project or HypnoMix DAW session" of type {"als","rpp","ardour"})',
+                  "song": 'POSIX path of (choose file with prompt "Choose a Live set, REAPER project or HypnoMix Studio session" of type {"als","rpp","ardour"})',
                   "audio": 'POSIX path of (choose file with prompt "Choose an audio file" of type {"wav","aif","aiff","flac","mp3","m4a"})',
                   "folder": 'POSIX path of (choose folder with prompt "Choose a folder of recordings or stems")'}[kind]
         try:
@@ -1701,7 +1701,7 @@ def bare_path(raw):
 
 
 def start_scan(body, title="First pass", folder=None):
-    """Scan a Live set, REAPER project, HypnoMix DAW session or folder. The same path always goes back to its own scan folder
+    """Scan a Live set, REAPER project, HypnoMix Studio session or folder. The same path always goes back to its own scan folder
     (that is a re-scan); a different path never shares one, even with the same name."""
     body = dict(body, **{k: bare_path(body[k]) for k in ("source", "mix", "ref", "like", "backing") if isinstance(body.get(k), str)})
     long_name(*(body.get(k) for k in ("source", "mix", "ref", "like", "backing")))
@@ -1710,7 +1710,7 @@ def start_scan(body, title="First pass", folder=None):
         raise ValueError(f"not found: {src}")
     src = src.resolve()
     if src.is_file() and src.suffix.lower() not in SET_KINDS:
-        raise ValueError(f"{src.name} is not a Live set (.als), a REAPER project (.rpp) or a HypnoMix DAW session (.ardour): "
+        raise ValueError(f"{src.name} is not a Live set (.als), a REAPER project (.rpp) or a HypnoMix Studio session (.ardour): "
                          "choose one of those, or a folder of recordings")
     for k in SCAN_OPTS:
         if body.get(k) is not None and not isinstance(body[k], str):
@@ -1748,7 +1748,7 @@ def start_fix(body):
     p = review_payload(d)
     plan = apply_plan(p["findings"], p["decisions"])
     if plan["blocked"]:
-        raise RuntimeError("Tuning is not written into a HypnoMix DAW session yet, so fix would stop: turn off " + ", ".join(f["id"] for f in plan["blocked"])
+        raise RuntimeError("Tuning is not written into a HypnoMix Studio session yet, so fix would stop: turn off " + ", ".join(f["id"] for f in plan["blocked"])
                            + " first (the other fixes can go ahead).")
     if not plan["auto"]:
         by_hand = len(plan["manual"])
@@ -2550,7 +2550,7 @@ def main():
     ap.add_argument("--no-open", action="store_true", help="do not open the browser")
     ap.add_argument("--home", help="where scans are kept (default ~/Documents/Hypnomix)")
     ap.add_argument("--daw", action="store_true", default=os.environ.get("HYPNOMIX_DAW") == "1",
-                    help="DAW mode: open the DAW view first and start the HypnoMix DAW engine (or use a running HypnoMix DAW window); HypnoMix DAW is an add-on from Setup, for Apple-silicon Macs only so far, so this needs an engine that was added or one you already have")
+                    help="DAW mode: open the DAW view first and start the HypnoMix Studio engine (or use a running HypnoMix Studio window); HypnoMix Studio is an add-on from Setup, for Apple-silicon Macs only so far, so this needs an engine that was added or one you already have")
     ap.add_argument("--session", help="DAW mode: the session (.ardour, or its folder) to open in the engine")
     a = ap.parse_args()
     if a.home:

@@ -1002,7 +1002,7 @@ class EngineReaderFindingsTest(unittest.TestCase):               # findings 3, 1
         ptx.write_bytes(b"\x03" + bytes(63))
         with self.assertRaises(SystemExit) as cm:
             import_project.convert(ptx, self.tmp / "out", log=quiet)
-        self.assertIn("HypnoMix DAW add-on", str(cm.exception))
+        self.assertIn("HypnoMix Studio add-on", str(cm.exception))
         with self.assertRaises(SystemExit):
             import_project.convert(self.tmp / "S", self.tmp / "out", kind="reaper", log=quiet)
 

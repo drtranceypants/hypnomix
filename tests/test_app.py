@@ -1642,7 +1642,7 @@ def RawGet(base, path):
 
 
 class Naming(unittest.TestCase):
-    """The words a person reads in the app: the product is HypnoMix, the third DAW is HypnoMix DAW, and the name of the
+    """The words a person reads in the app: the product is HypnoMix, the third DAW is HypnoMix Studio, and the name of the
     program under it appears in the one place the app discloses it (the add-on's card). Names that other programs look
     up (the devices, the REAPER effects) and the X-Hypnomix header are identifiers and stay as they are."""
     ROOT = Path(__file__).resolve().parent.parent / "hypnomix"
@@ -1670,10 +1670,10 @@ class Naming(unittest.TestCase):
 
     def test_the_daw_question_and_the_prompt_use_the_three_names(self):
         from hypnomix.app import chat as CH, setup as SU
-        self.assertEqual([d["title"] for d in SU.DAWS], ["Ableton Live", "REAPER", "HypnoMix DAW", "Something else"])
+        self.assertEqual([d["title"] for d in SU.DAWS], ["Ableton Live", "REAPER", "HypnoMix Studio", "Something else"])
         self.assertNotIn("Ardour", " ".join(d["note"] for d in SU.DAWS))
         prompt = CH.system_prompt().split("Reference (written for terminal agents")[0]
-        self.assertIn("HypnoMix DAW", prompt)
+        self.assertIn("HypnoMix Studio", prompt)
         self.assertNotRegex(prompt, r"\bArdour\b")
 
 

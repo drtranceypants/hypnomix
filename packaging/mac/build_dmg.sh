@@ -5,7 +5,7 @@
 #   packaging/mac/build_dmg.sh            # this Mac's architecture
 #   packaging/mac/build_dmg.sh x86_64     # an Intel build (works from an Apple silicon Mac too)
 #
-# There is ONE installer per platform. HypnoMix DAW (HypnoMix's own DAW, built on Ardour) is not inside the app: it is an
+# There is ONE installer per platform. HypnoMix Studio (HypnoMix's own DAW, built on Ardour) is not inside the app: it is an
 # add-on that people fetch once from Setup (hypnomix/app/engine_addon.py). Its engine is a separate program under the GNU
 # General Public License (version 2 or later) and is packaged on its own by packaging/mac/build_engine_archive.sh.
 #
@@ -76,7 +76,7 @@ iconpy="$repo/.venv/bin/python"; [ "$arch" = "$(uname -m | sed s/aarch64/arm64/)
 "$iconpy" "$repo/macapp/icon.py" "$res/Hypnomix.icns" >/dev/null 2>&1 || echo "   (no icon: continuing)"
 find "$res/python" -name '__pycache__' -type d -prune -exec rm -rf {} +
 
-mictext="HypnoMix records what Live plays (through BlackHole) for loop and diagnose, and HypnoMix DAW (if you add it) records from the audio input you choose."
+mictext="HypnoMix records what Live plays (through BlackHole) for loop and diagnose, and HypnoMix Studio (if you add it) records from the audio input you choose."
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

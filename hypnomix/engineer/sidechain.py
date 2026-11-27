@@ -27,7 +27,7 @@ Usage:
                      # swap sidechained Glue Compressors for Live's Compressor (same routing, lookahead on)
   hypnomix sidechain --trigger kick.wav --target bass.wav --bpm 92 [--style ...]   # any two files
   hypnomix sidechain SONG.rpp | SESSION.ardour [--style ...]
-                     # a REAPER project (ReaComp keyed by a send) or a HypnoMix DAW session (a compressor keyed
+                     # a REAPER project (ReaComp keyed by a send) or a HypnoMix Studio session (a compressor keyed
                      # from another track): the same measurement, listed as findings; --apply writes Live sets only
 
 Trigger audio: audio tracks are rendered straight from the set. MIDI tracks (drum racks, synths) need
@@ -826,11 +826,11 @@ def main():
     src = Path(a.als)
     from hypnomix import project as PJ
     if PJ.daw_of(src) in ("ardour", "reaper"):
-        # ACE Compressor keyed from another track (Ardour / HypnoMix DAW), ReaComp listening to a send (REAPER)
+        # ACE Compressor keyed from another track (Ardour / HypnoMix Studio), ReaComp listening to a send (REAPER)
         from hypnomix.workflow import sidechain_project as SCP
         if a.apply:
             sys.exit("--apply writes Live sets; for this project run `hypnomix scan` and `fix` (REAPER), or set the "
-                     "suggested values in the device (HypnoMix DAW)")
+                     "suggested values in the device (HypnoMix Studio)")
         if a.use or a.stems or a.glue_to_compressor:
             sys.exit("--use, --stems and --glue-to-compressor are for Live sets: this project's own tracks are "
                      "rendered from the session")

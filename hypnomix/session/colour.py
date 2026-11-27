@@ -46,7 +46,7 @@ Before / after: for each proposal, four bars of the part as it is, and the same 
 (A and B, level matched). The model is an approximation written for HypnoMix, not Live's device: it shows the
 direction, and only Live plays the real thing.
 
-What is not here yet: it writes Live sets only (REAPER and HypnoMix DAW projects are not written yet: the report works
+What is not here yet: it writes Live sets only (REAPER and HypnoMix Studio projects are not written yet: the report works
 on any set Live can save). Installed free plug-ins from `hypnomix plugins --save` are NAMED as alternatives to try;
 HypnoMix does not write a third-party plug-in into a set (their settings are not something it touches), so the chain
 itself is Live's. A new instrument doubling a line (from `midi`) is not built yet.
@@ -649,7 +649,7 @@ def main():
     from hypnomix.workflow import prefs as PF
     src = Path(a.als)
     if src.suffix.lower() != ".als":
-        sys.exit("colour writes Live sets (.als) for now. REAPER and HypnoMix DAW projects are not written yet; "
+        sys.exit("colour writes Live sets (.als) for now. REAPER and HypnoMix Studio projects are not written yet; "
                  "the proposals themselves could be, ask for them to be added.")
     tree = aa.load(src)
     root = tree.getroot()

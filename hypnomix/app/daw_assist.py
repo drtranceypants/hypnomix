@@ -1,4 +1,4 @@
-"""The Assistant on the HypnoMix DAW engine: which engine tools may run without asking, the arguments models get
+"""The Assistant on the HypnoMix Studio engine: which engine tools may run without asking, the arguments models get
 wrong, what a proposed change will do (before -> after), and engine replies trimmed before they go to the model.
 
 Kept apart from chat.py (the conversation loop) so each rule here is small and testable on its own.

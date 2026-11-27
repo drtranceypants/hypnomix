@@ -7,13 +7,13 @@ teaser: The installers, the guided setup, and the four ways to work (just the ap
 
 # Setting up
 
-There is one app and one installer for everyone. It carries every HypnoMix tool, for Live, REAPER, HypnoMix DAW or any DAW from
-exported tracks. **HypnoMix DAW** is HypnoMix's own DAW. It is an **add-on**, not a second download: you choose it in Setup (Your DAW) and press **Add
-HypnoMix DAW**, and only then is anything fetched (a download of about 30 MB (about 105 MB once unpacked), once, from the project's release page, checked against a
+There is one app and one installer for everyone. It carries every HypnoMix tool, for Live, REAPER, HypnoMix Studio or any DAW from
+exported tracks. **HypnoMix Studio** is HypnoMix's own DAW. It is an **add-on**, not a second download: you choose it in Setup (Your DAW) and press **Add
+HypnoMix Studio**, and only then is anything fetched (a download of about 30 MB (about 105 MB once unpacked), once, from the project's release page, checked against a
 SHA-256 fingerprint before it is unpacked; it runs only while the DAW view is open, and **Setup → Extras** removes it). The
 first engine, 0.1.0, is for **Apple-silicon Macs only**. On an Intel Mac or on Windows it is **not available yet**: no
 archive is published for them, so there Setup says so and remembers your choice, and nothing is downloaded. Its engine is a separate program under the GNU General Public License (version 2 or later), a rebranded fork
-of the free open-source DAW it is built on (the wiki article "HypnoMix DAW" says what that is); HypnoMix itself stays MIT and contains none of its code. The engine's source is public at
+of the free open-source DAW it is built on (the wiki article "HypnoMix Studio" says what that is); HypnoMix itself stays MIT and contains none of its code. The engine's source is public at
 https://github.com/drtranceypants/hypnomix-daw. Not tried yet: playback and recording through a real sound card, the native
 File menu clicked in the installed app, a signed and notarised engine, an Intel Mac, and real MPE controllers.
 
@@ -76,10 +76,10 @@ on a Mac. On Windows that folder sits in your own user folder, which Windows kee
 | step | what it asks |
 |---|---|
 | How you work | just the app, an AI key, a model on your computer, or a desktop AI app (compared below) |
-| Your DAW | Ableton Live, REAPER, HypnoMix DAW or something else (the Wiki puts your DAW's pages first; choosing HypnoMix DAW shows what it is and an **Add HypnoMix DAW** button on an Apple-silicon Mac, or says it is not available there yet), and **teacher mode**: no thanks, the tour of HypnoMix in your DAW (for engineers), the 101 crash course, or the complete course, A to Z (for people new to audio). The wiki's Teacher mode page has all three |
+| Your DAW | Ableton Live, REAPER, HypnoMix Studio or something else (the Wiki puts your DAW's pages first; choosing HypnoMix Studio shows what it is and an **Add HypnoMix Studio** button on an Apple-silicon Mac, or says it is not available there yet), and **teacher mode**: no thanks, the tour of HypnoMix in your DAW (for engineers), the 101 crash course, or the complete course, A to Z (for people new to audio). The wiki's Teacher mode page has all three |
 | Connect | for an AI key: which company, your key, a test. For a local model: Ollama or LM Studio, and a test. For a desktop app: a `hypnomix` command and an agent folder |
-| your DAW's step | Live: copies the AbletonOSC remote script into Live's User Library, on your click (and offers to update an older copy for teacher mode). REAPER: starts the bridge. HypnoMix DAW: the **Add HypnoMix DAW** button, when it is available. Another DAW: nothing to install |
-| Extras | the optional extras, each on a click, and a card for HypnoMix DAW with its state, an add button when an archive is published, and Remove |
+| your DAW's step | Live: copies the AbletonOSC remote script into Live's User Library, on your click (and offers to update an older copy for teacher mode). REAPER: starts the bridge. HypnoMix Studio: the **Add HypnoMix Studio** button, when it is available. Another DAW: nothing to install |
+| Extras | the optional extras, each on a click, and a card for HypnoMix Studio with its state, an add button when an archive is published, and Remove |
 | Done | where to start (the Teacher tab, with teacher mode on) |
 
 ## Choosing how to work with AI
@@ -284,7 +284,7 @@ Assistant and the Listener are already included. In a source install the same bu
 The setup's **Ableton Live** step copies the AbletonOSC remote script into Live's User Library (a different copy
 already there is backed up first). Then **restart Live** and choose **Settings → Link, Tempo & MIDI → Control
 Surface: AbletonOSC**. Scanning set files works without it; reading and controlling the open set needs it.
-REAPER needs nothing installed: see the guide "HypnoMix in REAPER". HypnoMix DAW sessions are read without it too; HypnoMix DAW itself is the add-on described at the top of this guide.
+REAPER needs nothing installed: see the guide "HypnoMix in REAPER". HypnoMix Studio sessions are read without it too; HypnoMix Studio itself is the add-on described at the top of this guide.
 
 ## When something doesn't work
 

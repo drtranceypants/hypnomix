@@ -173,7 +173,7 @@ class Paths(unittest.TestCase):
 
 # ---------------------------------------------------------------------------------------------------------------------
 # THE NAMING RULES (the owner's decisions of 2026-11-26). What a person READS says "HypnoMix" (capital H, capital M) and
-# "HypnoMix DAW"; the name of the program under that DAW is given in a few places, each named below, and nowhere else.
+# "HypnoMix Studio"; the name of the program under that DAW is given in a few places, each named below, and nowhere else.
 # Both checks look at the text a person can read: for a Python file its string literals and docstrings (never comments);
 # for a script, a style sheet or a source file in a language with comments, the text without them; for every other file
 # (documents, wiki articles, data, shell scripts) the whole text. This file states the names it polices, so it is skipped.
@@ -229,12 +229,12 @@ def reader_text(rel, text):
 # (a) "Ardour" (capital A: the program's own name) in text a person reads. path -> (how many times, why). None: any number
 # of times, at least once. A NEW occurrence anywhere, or a changed count, or an entry that matches nothing, fails.
 ARDOUR_PLACES = {
-    # the disclosure: HypnoMix DAW is built on Ardour, a free open-source DAW under the GNU GPL
+    # the disclosure: HypnoMix Studio is built on Ardour, a free open-source DAW under the GNU GPL
     "README.md": (3, "the disclosure sentence near the top with the honesty line, and the licence paragraph"),
     "THIRD_PARTY.md": (3, "the licence notice of the add-on: what it is built on, and its licence"),
-    "hypnomix/app/wiki/articles/28-ardour.html": (10, "the ONE wiki article about HypnoMix DAW: what it is built on, the .ardour format, the honesty line"),
+    "hypnomix/app/wiki/articles/28-ardour.html": (10, "the ONE wiki article about HypnoMix Studio: what it is built on, the .ardour format, the honesty line"),
     "hypnomix/app/engine_addon.py": (1, "the Setup card of the add-on: 'built on Ardour, a free open-source DAW'"),
-    "hypnomix/app/teacher.py": (1, "HONESTY: the honesty line, shown in the first step of each HypnoMix DAW course"),
+    "hypnomix/app/teacher.py": (1, "HONESTY: the honesty line, shown in the first step of each HypnoMix Studio course"),
     "packaging/README.md": (2, "the engine's licence notice in the packaging notes"),
     "packaging/mac/build_dmg.sh": (1, "the engine's licence notice in the installer script"),
     "packaging/mac/build_engine_archive.sh": (1, "the engine's licence notice in the engine-kit script"),
@@ -315,7 +315,7 @@ def old_spelling_counts():
     return left, used
 
 
-HONESTY_LINE = "HypnoMix DAW is new: its first engine (0.1.0) is for Apple-silicon Macs. Steps written here for it were written against Ardour 8 or 9, the free DAW it is built on, and not every one has been tried in HypnoMix DAW yet."
+HONESTY_LINE = "HypnoMix Studio is new: its first engine (0.1.0) is for Apple-silicon Macs. Steps written here for it were written against Ardour 8 or 9, the free DAW it is built on, and not every one has been tried in HypnoMix Studio yet."
 DISCLOSURE_SENTENCE = "It is built on Ardour, a free open-source DAW under the GNU General Public License."
 WIKI = "hypnomix/app/wiki/articles"
 ENGINE_SOURCE = "https://github.com/drtranceypants/hypnomix-daw"
@@ -328,7 +328,7 @@ class OldNames(unittest.TestCase):
     def test_ardour_is_named_only_in_the_places_the_owner_allowed(self):
         found = ardour_counts()
         bad = sorted(rel for rel in found if rel not in ARDOUR_PLACES)
-        self.assertEqual(bad, [], "'Ardour' is in text a person reads here: say HypnoMix DAW (the disclosure places are in ARDOUR_PLACES)")
+        self.assertEqual(bad, [], "'Ardour' is in text a person reads here: say HypnoMix Studio (the disclosure places are in ARDOUR_PLACES)")
         wrong = {rel: (found.get(rel, 0), want) for rel, (want, _) in ARDOUR_PLACES.items()
                  if (want is None and not found.get(rel)) or (want is not None and found.get(rel, 0) != want)}
         self.assertEqual(wrong, {}, "path: (found, listed): a new mention, or an entry that matches less than it says (fix the entry)")
@@ -385,7 +385,7 @@ def old_names_left(sentence):
 
 @unittest.skipIf(FILES is None, "needs git and a checkout (git ls-files)")
 class Disclosure(unittest.TestCase):
-    """HypnoMix DAW is built on Ardour, and that is said plainly and once where the owner wants it said."""
+    """HypnoMix Studio is built on Ardour, and that is said plainly and once where the owner wants it said."""
 
     def test_the_wiki_has_exactly_one_article_that_discloses_what_hypnomix_daw_is_built_on(self):
         saying = [rel for rel, text in FILES if rel.startswith(WIKI + "/") and rel.endswith(".html") and "built on Ardour" in squash(text)]
@@ -393,7 +393,7 @@ class Disclosure(unittest.TestCase):
         arts = [rel for rel, _ in FILES if rel.startswith(WIKI + "/") and rel.endswith(".html")]
         self.assertEqual([rel for rel in arts if "Ardour" in read(rel)], [WIKI + "/28-ardour.html"], "no other article names the program")
         head = read(WIKI + "/28-ardour.html").split("-->")[0]
-        self.assertRegex(head, r"(?m)^title: HypnoMix DAW$")
+        self.assertRegex(head, r"(?m)^title: HypnoMix Studio$")
         t = squash(read(WIKI + "/28-ardour.html"))
         self.assertEqual(t.count(HONESTY_LINE), 1, "the honesty line, once, in the article")
         self.assertIn("Ardour-format session folder", t)
@@ -413,7 +413,7 @@ class Disclosure(unittest.TestCase):
 
     def test_third_party_names_what_it_gives_notice_of(self):
         t = squash(read("THIRD_PARTY.md"))
-        self.assertIn("HypnoMix DAW: built on Ardour", t)
+        self.assertIn("HypnoMix Studio: built on Ardour", t)
         self.assertRegex(t, r"GNU General Public License, version 2 or later")
 
     def test_the_honesty_line_is_said_in_these_places_and_no_others(self):
@@ -449,7 +449,7 @@ class Claims(unittest.TestCase):
     def test_the_engine_is_said_to_be_a_separate_gpl_program(self):
         for rel in ENGINE_DOCS:
             t = squash(read(rel))
-            self.assertIn("Ardour" if rel in ("README.md", "THIRD_PARTY.md", "packaging/README.md") else "HypnoMix DAW", t, rel)   # Ardour is named only where the disclosure belongs
+            self.assertIn("Ardour" if rel in ("README.md", "THIRD_PARTY.md", "packaging/README.md") else "HypnoMix Studio", t, rel)   # Ardour is named only where the disclosure belongs
             self.assertRegex(t, r"General Public License,? \(?(version )?2 or later",
                              rel + " must say the engine is under the GNU General Public License, version 2 or later")
             self.assertIn("separate program", t, rel + " must say the engine is a separate program")
@@ -487,14 +487,14 @@ class Claims(unittest.TestCase):
             self.assertRegex(t, r"signing|signed|notaris", f"{rel} must say that signing was not tried")
 
     def test_hypnomix_daw_is_not_said_to_be_available_where_it_is_not(self):
-        """HypnoMix DAW is an add-on fetched from Setup, and its first engine is for Apple-silicon Macs only: a page that says
+        """HypnoMix Studio is an add-on fetched from Setup, and its first engine is for Apple-silicon Macs only: a page that says
         it can be added from Setup must say, in the same page, where it is (or is not) available; and none says it is out
         without saying for what."""
         for rel, text in FILES:
             if rel.endswith((".md", ".html", ".js", ".py")) and not rel.startswith(("tests/", "docs/launch/")):
                 t = squash(text)
-                self.assertNotRegex(t, r"(?i)\bHypnoMix DAW (is|are) (now )?(available|out|ready|released)\b(?! (yet|for|on))", f"{rel}: say for what")
-                if re.search(r"(?i)added? (it |HypnoMix DAW )?(from|in|with) \**Setup", t):
+                self.assertNotRegex(t, r"(?i)\bHypnoMix Studio (is|are) (now )?(available|out|ready|released)\b(?! (yet|for|on))", f"{rel}: say for what")
+                if re.search(r"(?i)added? (it |HypnoMix Studio )?(from|in|with) \**Setup", t):
                     self.assertRegex(t, r"(?i)Apple[- ]silicon|not available (for [^.]{1,40} |there )?yet|no archive|names no address",
                                      f"{rel}: says it can be added from Setup, and not where it is available")
 

@@ -80,7 +80,7 @@ def setup_bytes(p):
 
 
 def mpe_element(p):
-    """The attributes HypnoMix DAW saves for a track's MPE setting (<MPE .../> under the track's route)."""
+    """The attributes HypnoMix Studio saves for a track's MPE setting (<MPE .../> under the track's route)."""
     p = get(p) if isinstance(p, str) else p
     _check(p)
     return {"zone": p["zone"], "members": str(int(p["members"])), "member-bend-range": str(int(p["member_bend"])),

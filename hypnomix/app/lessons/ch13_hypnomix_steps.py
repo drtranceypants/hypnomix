@@ -33,11 +33,11 @@ ENRICH = {
                  "Every change the bridge makes is one undo step named \"hypnomix: …\".")],
      "more": ["step:hm-devices-reaper"]},
  "hm-connect-ardour": {
-     "mistakes": ["Expecting HypnoMix to change everything in a HypnoMix DAW session, or, in these lessons, to click in the open DAW for you. It writes a new snapshot for fades, region gain, dips and fader, pan and mute moves only. Names, order, stacks, timing and sidechain come back as a list for you to make by hand.",
+     "mistakes": ["Expecting HypnoMix to change everything in a HypnoMix Studio session, or, in these lessons, to click in the open DAW for you. It writes a new snapshot for fades, region gain, dips and fader, pan and mute moves only. Names, order, stacks, timing and sidechain come back as a list for you to make by hand.",
                   "Forgetting to save the session before you scan it."],
      "try": dict(do="Save your session, choose the session folder on the Songs tab and press Start the first pass.",
                  success="You get a review, your session is unchanged, and any audio fixes arrive as repaired files to import."),
-     "quiz": [_q("How do fixes come back for HypnoMix DAW?", ["Everything is written into your own session file", "Fades, gain, dips and fader, pan and mute moves go into a new snapshot; the rest is a list to do by hand, and audio fixes are repaired files", "They don't"], 1,
+     "quiz": [_q("How do fixes come back for HypnoMix Studio?", ["Everything is written into your own session file", "Fades, gain, dips and fader, pan and mute moves go into a new snapshot; the rest is a list to do by hand, and audio fixes are repaired files", "They don't"], 1,
                  "Apply writes a new snapshot beside your session for fades, region gain, dips and fader, pan and mute moves. Track names and order, stacks, timing and sidechain stay a list for you, and audio fixes (tuning, de-hiss, de-ess) are repaired files to bring in. Your own session file is never changed.")],
      "more": ["step:hm-scan"]},
  "hm-devices-live": {

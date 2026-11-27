@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
 
     // DAW mode, for a TEST build only: a kit placed in Contents/Resources/engine (macapp/build.sh --daw KIT) makes the app
     // open on the DAW view, and the server's supervisor (hypnomix/app/daw.py) finds Contents/Resources/engine/bin/hypnomix-engine
-    // by itself. The installer no longer carries the engine: people add HypnoMix DAW from Setup (hypnomix/app/engine_addon.py),
+    // by itself. The installer no longer carries the engine: people add HypnoMix Studio from Setup (hypnomix/app/engine_addon.py),
     // and the DAW tab then appears like any other. This switch is found for one more version, and nothing depends on it.
     // HYPNOMIX_DAW=1 only opens the DAW view first (a developer's switch).
     var dawMode: Bool {
@@ -152,7 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         quitting = true
         let stop = { self.stopServer { NSApp.reply(toApplicationShouldTerminate: true) } }
         if forceQuit { stop(); return .terminateLater }
-        // HypnoMix DAW is an add-on, so the engine can be running in any window of this app: ask the server every time.
+        // HypnoMix Studio is an add-on, so the engine can be running in any window of this app: ask the server every time.
         // A test build that carries the engine (dawMode) also asks when the server does not answer; an ordinary window does not nag.
         serverIsDirty { dirty in
             if dirty == nil {                                                  // no answer is not "nothing unsaved"
@@ -285,7 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     // supervisor (POST /api/daw/new or /api/daw/open, with the page's own token) through HX.menuSession
     var pendingSession: [String: String]?
 
-    /// HypnoMix DAW is there: added from Setup (<HypnoMix home>/engine/<version>/bin/hypnomix-engine), or inside a test build.
+    /// HypnoMix Studio is there: added from Setup (<HypnoMix home>/engine/<version>/bin/hypnomix-engine), or inside a test build.
     /// Looked up each time the File menu opens, so the items come alive as soon as the add-on is in, with no restart.
     var engineThere: Bool {
         if dawMode { return true }
@@ -330,7 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
     @objc func importProject() {
         let panel = NSOpenPanel()
         panel.title = "Import Project"
-        panel.message = "Choose a project from another DAW: a .als set, a .logicx project, a .dawproject file or a .rpp project (a .ptx session or an .aaf export with the HypnoMix DAW add-on). It is only read."
+        panel.message = "Choose a project from another DAW: a .als set, a .logicx project, a .dawproject file or a .rpp project (a .ptx session or an .aaf export with the HypnoMix Studio add-on). It is only read."
         panel.prompt = "Import"
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
@@ -374,7 +374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, 
         appMenu.addItem(withTitle: "Hide HypnoMix", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: "Quit HypnoMix", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         app.submenu = appMenu
-        do {   // always there; its items are dimmed until HypnoMix DAW has been added (validateMenuItem)
+        do {   // always there; its items are dimmed until HypnoMix Studio has been added (validateMenuItem)
             let file = NSMenuItem(); main.addItem(file)
             let fileMenu = NSMenu(title: "File")
             let n = fileMenu.addItem(withTitle: "New Session…", action: #selector(newSession), keyEquivalent: "n"); n.target = self

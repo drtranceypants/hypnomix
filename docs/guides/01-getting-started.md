@@ -40,14 +40,14 @@ Every part of HypnoMix follows the same rules. They are why you can let it loose
 They all drive the same commands and follow the same rules, so you can mix them: scan in the app, review
 from inside Live, apply in the app.
 
-What works where: Live sets (`.als`), REAPER projects (`.rpp`) and HypnoMix DAW sessions (`.ardour`) can be scanned, and
+What works where: Live sets (`.als`), REAPER projects (`.rpp`) and HypnoMix Studio sessions (`.ardour`) can be scanned, and
 approved fixes are written into a new file of the same kind. Any other DAW works from exported tracks: see
 "Other DAWs" in guide 2.
 
 ## Install
 
 Most people should use the **HypnoMix installer** for Mac or Windows from hypnomix.bradfieldenterprises.org/download (one
-installer for everyone; HypnoMix DAW, HypnoMix's own DAW, is an add-on you can add from Setup on an Apple-silicon
+installer for everyone; HypnoMix Studio, HypnoMix's own DAW, is an add-on you can add from Setup on an Apple-silicon
 Mac, and it is not available for Intel Macs or Windows yet): no
 terminal, and a guided setup on first open. The guide "Setting Up, and Choosing an AI" covers it. The steps below are the
 **source install**, for the terminal and for working on HypnoMix itself. (The installed app also installs the

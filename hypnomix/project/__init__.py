@@ -10,7 +10,7 @@ Supported: REAPER (.rpp), Ardour (.ardour) and Ableton Live (.als).
 from pathlib import Path
 
 SUFFIXES = {".rpp": "reaper", ".als": "live", ".ardour": "ardour"}
-NAMES = {"reaper": "REAPER", "live": "Live", "ardour": "HypnoMix DAW"}
+NAMES = {"reaper": "REAPER", "live": "Live", "ardour": "HypnoMix Studio"}
 
 
 def ardour_session(path):
@@ -50,7 +50,7 @@ class ProjectReadError(ValueError):
     with "not a readable ..." (the command line prints it after the file name, `e.name`, and exits with code 2, no traceback)."""
 
     def __init__(self, name, kind):
-        what = {"reaper": "a REAPER project", "ardour": "a HypnoMix DAW session", "live": "a Live set"}.get(kind, "a project")
+        what = {"reaper": "a REAPER project", "ardour": "a HypnoMix Studio session", "live": "a Live set"}.get(kind, "a project")
         app = NAMES.get(kind, "its program")
         super().__init__(f"not a readable {what[2:]}: the file is empty, damaged or another kind of file; open it in "
                          f"{app} to check it, or give another")

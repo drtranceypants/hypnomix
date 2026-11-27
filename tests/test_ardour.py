@@ -189,7 +189,7 @@ class ArdourTest(unittest.TestCase):
         self.assertEqual(k.fade_in, 0.0)
 
     def test_take_playlists_are_take_lanes(self):
-        """A track's playlists named "<track>.take N" (HypnoMix DAW records each pass into one and comps from them)
+        """A track's playlists named "<track>.take N" (HypnoMix Studio records each pass into one and comps from them)
         are its take lanes, in take order; the active playlist stays the comp and is what plays."""
         takes = f"""
     <Playlist id="510" name="Lead.take 2" type="audio" orig-track-id="200">

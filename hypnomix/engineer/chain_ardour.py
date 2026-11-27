@@ -1,7 +1,7 @@
-"""`hypnomix chain --ardour`: the same mastering chain as in Live, built in the open HypnoMix DAW session over
-MCP, from its own ACE plug-ins and the two HypnoMix DAW devices (all free, all built into HypnoMix DAW).
+"""`hypnomix chain --ardour`: the same mastering chain as in Live, built in the open HypnoMix Studio session over
+MCP, from its own ACE plug-ins and the two HypnoMix Studio devices (all free, all built into HypnoMix Studio).
 
-    Live device          HypnoMix DAW                             set by
+    Live device          HypnoMix Studio                             set by
     EQ Eight (low cut)   ACE High/Low Pass Filter             High Pass Steepness 12 or 48 dB/oct, cut-off, Q 0.71
     EQ Eight (tone)      ACE EQ                               low shelf (L), up to 4 bells (1-4, width in octaves
                                                               from Q), high shelf (H); unused bells switched off.
@@ -15,7 +15,7 @@ MCP, from its own ACE plug-ins and the two HypnoMix DAW devices (all free, all b
 
 The chain goes on the master bus, before Hypnomix Main if it is there (Main measures what the chain makes),
 otherwise just before the fader. Values are set in the plug-in's own units (Hz, dB, ms, %), clamped to the
-control's range, so they read in HypnoMix DAW exactly as planned.
+control's range, so they read in HypnoMix Studio exactly as planned.
 
 If a step fails part-way, the build is taken back out: the plug-ins this run added are removed again, and (with
 --existing bypass, which is done only after the whole chain is built) yours are switched back on; the message says what
@@ -27,7 +27,7 @@ and Makeup, which change the loudness, it also counts as NOT SET), and the comma
 behind; an incomplete one leaves what it built (the table says what), to be removed from the master strip before running
 again. A plug-in whose add was applied but whose answer was lost is found by its position, never its name.
 
-The connection: HypnoMix DAW's MCP server (switched on in Preferences → Control Surfaces → MCPHttp) or hypnomix-engine, at $HYPNOMIX_MCP_URL or
+The connection: HypnoMix Studio's MCP server (switched on in Preferences → Control Surfaces → MCPHttp) or hypnomix-engine, at $HYPNOMIX_MCP_URL or
 http://127.0.0.1:4820/mcp. The address must be on this computer (http://127.0.0.1, localhost or [::1]): the client uses
 no proxy, follows no redirect and refuses any other address (core/loopback.py). Tools used: session_get_info,
 tracks_list, track_get_info, plugin_add_by_unique_id, plugin_list_available + plugin_add_by_plugin_id (the Lua filter),
@@ -103,7 +103,7 @@ class MCP:
         except MCPError:
             raise
         except (KeyError, TypeError, IndexError, AttributeError) as e:
-            raise MCPError(f"{name}: the engine's answer is not what HypnoMix DAW sends ({type(e).__name__}); "
+            raise MCPError(f"{name}: the engine's answer is not what HypnoMix Studio sends ({type(e).__name__}); "
                            "it is not MCP") from e
 
     @staticmethod
@@ -166,7 +166,7 @@ def obj(m, name, **args):
     """`m.call`, for tools whose answer is an object: anything else is an MCPError, not a crash further on."""
     r = m.call(name, **args)
     if not isinstance(r, dict):
-        raise MCPError(f"{name}: the engine's answer was not what HypnoMix DAW sends ({str(r)[:60]!r})")
+        raise MCPError(f"{name}: the engine's answer was not what HypnoMix Studio sends ({str(r)[:60]!r})")
     return r
 
 
@@ -206,13 +206,13 @@ class Builder:
                 hits = [p for p in obj(self.m, "plugin_list_available", search=uid, type="lua").get("plugins", [])
                         if isinstance(p, dict) and p.get("name") == uid]
                 if not hits:
-                    self.notes.append(f"{shown}: not found in this HypnoMix DAW (Lua scripts missing?); add it by hand")
+                    self.notes.append(f"{shown}: not found in this HypnoMix Studio (Lua scripts missing?); add it by hand")
                     return None
                 r = obj(self.m, "plugin_add_by_plugin_id", pluginId=hits[0]["pluginId"], **args)
             else:
                 r = obj(self.m, "plugin_add_by_unique_id", uniqueId=uid, type=kind, **args)
         except MCPToolError as e:             # the engine said no: a missing or older device. A broken link is fatal
-            self.notes.append(f"{shown}: could not be added ({e}); is this HypnoMix DAW older than the device?")
+            self.notes.append(f"{shown}: could not be added ({e}); is this HypnoMix Studio older than the device?")
             return None
         try:
             pi = int(r["pluginIndex"])
@@ -320,7 +320,7 @@ def _existing(m, rid):
     plugins = obj(m, "track_get_info", id=rid).get("plugins", [])
     out = [p for p in plugins if isinstance(p, dict)]
     if len(out) != len(plugins) or any("index" not in p for p in out):
-        raise MCPError("track_get_info: the engine's plug-in list is not what HypnoMix DAW sends")
+        raise MCPError("track_get_info: the engine's plug-in list is not what HypnoMix Studio sends")
     return out
 
 
@@ -479,7 +479,7 @@ def _failure_text(e, b, before, problems):
                 f"({len(made)} plug-in(s) removed, your own plug-ins as they were): the master is as it was.")
     return (f"The chain was NOT built: {why}. This run had added: {', '.join(made) or 'nothing it could name'}. "
             f"It could not take everything back out: " + "; ".join(problems) + ". Look at the master strip in "
-            "HypnoMix DAW: remove any plug-in of the chain that is still there and switch your own back on if they "
+            "HypnoMix Studio: remove any plug-in of the chain that is still there and switch your own back on if they "
             "are off.")
 
 
@@ -533,7 +533,7 @@ def _build_stages(b, plan):
                 parts.append(f"gain {step['gain_db']:+.1f} dB")
             rows.append(st.done(", ".join(parts) or "neutral", [pi]))
         elif d == "Saturator":
-            b.notes.append(f"Saturator (drive {step['drive_db']} dB, {step['dry_wet_pct']}% wet): HypnoMix DAW has no "
+            b.notes.append(f"Saturator (drive {step['drive_db']} dB, {step['dry_wet_pct']}% wet): HypnoMix Studio has no "
                            "saturator yet, so the warmth stage is left out")
             rows.append(("(left out)", f"Saturator drive {step['drive_db']} dB", step["why"]))
         elif d == "Limiter":
@@ -557,17 +557,17 @@ def main_ardour(a, plan_master):
     import sys
     from pathlib import Path
     if a.cmd != "master":
-        sys.exit("chain strips --ardour isn't built yet: in HypnoMix DAW, use chain master (strips are Live and REAPER for now)")
+        sys.exit("chain strips --ardour isn't built yet: in HypnoMix Studio, use chain master (strips are Live and REAPER for now)")
     m = None
     if not a.dry_run:
         try:
             m = MCP(getattr(a, "mcp_url", None) or URL)
             info = m.ping()
         except MCPError as e:
-            sys.exit(f"HypnoMix DAW isn't answering at {getattr(a, 'mcp_url', None) or URL}: open the session in HypnoMix DAW "
+            sys.exit(f"HypnoMix Studio isn't answering at {getattr(a, 'mcp_url', None) or URL}: open the session in HypnoMix Studio "
                      f"(its MCP server is switched on in Preferences → Control Surfaces → MCPHttp) or start hypnomix-engine. ({e})")
         name = info.get("name") if isinstance(info, dict) else None
-        print(f"HypnoMix DAW session {name or '(open)'}: the chain is built on the master bus; if a step fails, what this "
+        print(f"HypnoMix Studio session {name or '(open)'}: the chain is built on the master bus; if a step fails, what this "
               f"run added is taken back out.", file=sys.stderr)
     print(f"analysing {Path(a.bounce).name} …", file=sys.stderr)
     plan, ctx = plan_master(a.bounce, a.target, a.ceiling, a.reference, a.match, a.warmth, a.width)
@@ -576,13 +576,13 @@ def main_ardour(a, plan_master):
     except MCPError as e:
         sys.exit(str(e))
     except (KeyError, TypeError, ValueError, AttributeError) as e:      # a reply that is not what Hypnomix sends, before any change
-        sys.exit(f"The engine's answer was not what HypnoMix DAW sends ({type(e).__name__}: {e}); nothing was changed.")
-    md = [f"# Mastering chain on the HypnoMix DAW master bus{' (plan only)' if a.dry_run else ''}", "",
+        sys.exit(f"The engine's answer was not what HypnoMix Studio sends ({type(e).__name__}: {e}); nothing was changed.")
+    md = [f"# Mastering chain on the HypnoMix Studio master bus{' (plan only)' if a.dry_run else ''}", "",
           "| plug-in | settings | why |", "|---|---|---|", *[f"| {d} | {s} | {w} |" for d, s, w in rows]]
     if notes:
         md += ["", "Notes:", *[f"- {n}" for n in notes]]
     if getattr(a, "verify", False):
-        md += ["", "--verify isn't available in HypnoMix DAW yet (it needs an export over MCP). Hypnomix Main's "
+        md += ["", "--verify isn't available in HypnoMix Studio yet (it needs an export over MCP). Hypnomix Main's "
                "Match target turns the chain to the song card's loudness while the song plays."]
     print("\n".join(md))
     if incomplete(rows):

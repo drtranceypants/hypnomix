@@ -93,7 +93,7 @@ class Mirror(Built):
         self.assertEqual(sorted(self.files), sorted(self.pages().keys() | SPECIAL))
 
     def test_the_home_page_and_the_teasers_do_not_repeat_the_disclosure(self):
-        """The old name is said once per surface, in the page about HypnoMix DAW: not in the front door's teaser for it."""
+        """The old name is said once per surface, in the page about HypnoMix Studio: not in the front door's teaser for it."""
         home = self.files["Home.md"]
         line = next(ln for ln in home.split("\n") if "(HypnoMix-DAW)" in ln)
         self.assertNotIn("Ar" + "dour", line)

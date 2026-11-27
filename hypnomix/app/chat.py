@@ -18,7 +18,7 @@ READ_ONLY below). Everything else waits for you: the chat shows the exact comman
 nothing happens until you click. HypnoMix itself never overwrites a set: changes always go into a new one next
 to the original.
 
-In DAW mode (`hypnomix app --daw`), when the HypnoMix DAW engine is connected, the assistant also gets the engine's own
+In DAW mode (`hypnomix app --daw`), when the HypnoMix Studio engine is connected, the assistant also gets the engine's own
 MCP tools (its tools/list, offered as `daw_<tool>`), called through the app's engine connection (the same path as
 the page's POST /mcp). The same deny-by-default rule as READ_ONLY: only the tools on an explicit read-only list
 (READ_ONLY in hypnomix/app/daw_assist.py) run at once; every other one, including any tool the engine adds
@@ -73,7 +73,7 @@ READ_ONLY = {
                    "--upper-under", "--keep-ending", "--group"),
     "ab": ("--ids", "--pre", "--post"),
     "prefs": (),                                     # and only `prefs`, `prefs show`, `prefs questions`: see needs_ok
-    "engine": (),                                    # and only `engine`, `engine status`: adding or removing HypnoMix DAW asks (see needs_ok)
+    "engine": (),                                    # and only `engine`, `engine status`: adding or removing HypnoMix Studio asks (see needs_ok)
     "report": ("--crash", "--list"),                 # prints a report or lists crash records; --out, --copy, --open (they write or open) ask
 }
 READ_ONLY = {c: frozenset(f) | {"-h", "--help"} for c, f in READ_ONLY.items()}
@@ -359,7 +359,7 @@ TOOLS = [
                  "again": ("boolean", "false, unless the person asked to listen again (else saved notes come back free)"),
                  "minutes": ("integer", "0 for the whole song, or only its first N minutes")}),
     dict(name="scan_session",
-         description=("DAW mode: save the session open in the HypnoMix DAW, bounce its mix, then run the HypnoMix scan "
+         description=("DAW mode: save the session open in HypnoMix Studio, bounce its mix, then run the HypnoMix scan "
                       "(every check: vocal levels line to line, harmony balance, comp edges, pitch against the chord, "
                       "timing, noise, the mix...). The scan changes nothing in the session; saving does write the "
                       "session file, so the person approves it first. Returns the scan folder and how many findings of "
@@ -413,7 +413,7 @@ ENGINE_CORE_TOOLS = ("session_get_info", "tracks_list", "track_get_info")   # an
 POLL_TOOLS = frozenset({"daw_export_status", "daw_transport_get_state", "daw_meters_get"})   # asked again and again while something runs
 POLL_WAIT = 3.0              # a poll of a running export waits this long first: the model's steps are not spent on waiting
 OVERVIEW = dict(name=DAW_PREFIX + "session_overview", engine="", title="Session overview", read_only=True, local=True,
-                description=("[HypnoMix DAW engine, reads only] The whole session in one read: its name, sample rate "
+                description=("[HypnoMix Studio engine, reads only] The whole session in one read: its name, sample rate "
                              "and tempo, and every track and bus with its id, fader (dB), pan, mute/solo, plug-ins "
                              "(index, name, on/off), sends and regions (regionId, name, start, length in samples). "
                              "Read this first: it replaces tracks_list plus a track_get_info per track."),
@@ -427,7 +427,7 @@ def _more_tool(groups=None):
     groups = tuple(groups) if groups is not None else tuple(g for g in DA.GROUPS if g not in DA.OPTIONAL_GROUPS)
     about = "; ".join(f"{g}: {DA.GROUP_ABOUT[g]}" for g in groups)
     return dict(name=DAW_PREFIX + "more_tools", engine="", title="More engine tools", read_only=True, local="more",
-                description=("[HypnoMix DAW engine, reads only] Offers more of the engine's tools from your next step on "
+                description=("[HypnoMix Studio engine, reads only] Offers more of the engine's tools from your next step on "
                              "(only the ones for the open view are offered at first, to keep each step cheap). Groups: "
                              + about + "."),
                 input_schema={"type": "object", "properties": {"group": {"type": "string", "enum": list(groups)}},
@@ -493,7 +493,7 @@ def engine_tools():
     if tl and not _engine_is_ours(DW.ENGINE):
         if not CHAT.get("foreign_said"):
             CHAT["foreign_said"] = True
-            say("note", "Something answers where the HypnoMix DAW window would, but it does not say it is the HypnoMix DAW engine, "
+            say("note", "Something answers where the HypnoMix Studio window would, but it does not say it is the HypnoMix Studio engine, "
                         "so the Assistant does not use it. Start the engine from the Engine panel.")
         return []
     CHAT["foreign_said"] = False
@@ -686,7 +686,7 @@ def daw_tool(name, inp):
         return ("error: the engine was restarted since you last read the session, so it went back to the last saved "
                 "state and ids may have changed. Nothing was done: read the session again (daw_session_overview) first.")
     if t.get("local") != "more" and not _engine_is_ours(DW.ENGINE):     # a window we only attached to may have been swapped (the overview reads from it too)
-        return "error: what answers as the engine is not the HypnoMix DAW engine, so nothing was sent to it."
+        return "error: what answers as the engine is not the HypnoMix Studio engine, so nothing was sent to it."
     if t.get("local") == "more":
         return more_tools(inp)
     if t.get("local"):
@@ -1105,7 +1105,7 @@ def scan_session():
     findings show there and nothing is scanned twice). Then say what was found."""
     from hypnomix.app import daw as DW, daw_assist as DA, dawreview as DR, server as S
     if not _engine_back():
-        return "error: the HypnoMix DAW engine is not connected, so there is no open session to scan."
+        return "error: the HypnoMix Studio engine is not connected, so there is no open session to scan."
     try:
         sess, _ = DR.open_session(DW.ENGINE)
     except RuntimeError as e:
@@ -1303,7 +1303,7 @@ def system_prompt():
     return ("You are the assistant inside the HypnoMix app, a free mixing and mastering toolkit for people who record "
             "real instruments and voices. You help one musician with their own songs, in plain words, briefly. "
             "Call the product HypnoMix (capital H and M) and the three DAWs by their names: Ableton Live, REAPER and "
-            "HypnoMix DAW (HypnoMix's own DAW; its sessions are .ardour files); the command people type stays lower case "
+            "HypnoMix Studio (HypnoMix's own DAW; its sessions are .ardour files); the command people type stays lower case "
             "(`hypnomix scan`).\n\n"
             "How you work here: you cannot type in a terminal; you act only through the tools you are given. "
             "run_hypnomix runs any HypnoMix command (the reference below lists them). The usual path for a song is: "
@@ -1337,10 +1337,10 @@ def _scan_root():
 
 
 def _daw_note():
-    """In DAW mode, with the engine connected: the session is open in the HypnoMix DAW, and its tools are yours."""
+    """In DAW mode, with the engine connected: the session is open in HypnoMix Studio, and its tools are yours."""
     if not CHAT.get("daw_tools"):
         return ""
-    return ("\n\nThe HypnoMix DAW is open with a session, and its engine's tools are yours too (the daw_ tools). Read "
+    return ("\n\nThe HypnoMix Studio is open with a session, and its engine's tools are yours too (the daw_ tools). Read "
             "first: daw_session_overview gives every track and bus with its id, fader, pan, mute, plug-ins, sends and "
             "regions in one call (use it instead of many small reads). Reads run at once. Any daw_ tool that changes "
             "something is shown to the person as a card (what it changes, from -> to, and the exact call) with "

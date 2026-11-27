@@ -83,7 +83,7 @@ def save_settings(**kw):
 # ---------------------------------------------------------------- how the wiki is organised
 # By DAW first, then by how you connect an AI (or don't), then the courses, guides and reference. Groups not listed
 # here go just before Reference. An article file names its own group; the Markdown guides and docs are placed here.
-DAW_LIVE, DAW_REAPER, DAW_ARDOUR, DAW_OTHER = ("DAW: Ableton Live", "DAW: REAPER", "DAW: HypnoMix DAW", "DAW: any other")
+DAW_LIVE, DAW_REAPER, DAW_ARDOUR, DAW_OTHER = ("DAW: Ableton Live", "DAW: REAPER", "DAW: HypnoMix Studio", "DAW: any other")
 AI_KEY, AI_AGENT, AI_LOCAL = ("AI: your own API key", "AI: Claude Code, Codex and other agent apps", "AI: free and offline")
 GROUP_ORDER = ["Start here", DAW_LIVE, DAW_REAPER, DAW_ARDOUR, DAW_OTHER, AI_KEY, AI_AGENT, "AI: Claude Code skills and subagent", AI_LOCAL,
                "Training", "How-to", "Guides", "Docs", "Reference", "FAQ"]

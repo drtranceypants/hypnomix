@@ -1,5 +1,5 @@
 """Packaging for the DAW: the engine kit checks (licence, source notice, builder's path) in the shell script and in the
-add-on's Python twin, the quit and first-launch wiring of the Mac app, the plain wording about HypnoMix DAW as an add-on
+add-on's Python twin, the quit and first-launch wiring of the Mac app, the plain wording about HypnoMix Studio as an add-on
 (one app, one installer, the DAW added from Setup), and the pages' claims."""
 import getpass, os, re, shutil, subprocess, sys, tempfile, unittest
 from pathlib import Path
@@ -134,7 +134,7 @@ class KitChecks(unittest.TestCase):
         (Path(self.td.name) / "x").mkdir()
         code, out = self.check(Path(self.td.name) / "x")
         self.assertEqual(code, 1)
-        self.assertIn("not a HypnoMix DAW engine kit", out)
+        self.assertIn("not a HypnoMix Studio engine kit", out)
 
     def test_the_archive_script_refuses_before_writing_anything(self):
         """A kit with no licence stops it before an archive is made or a folder created."""
@@ -184,7 +184,7 @@ class MacAppQuit(unittest.TestCase):
 
 
 class DownloadWording(unittest.TestCase):
-    """There is one app and one installer; HypnoMix DAW is an add-on, for Apple-silicon Macs only so far. The pages say only that."""
+    """There is one app and one installer; HypnoMix Studio is an add-on, for Apple-silicon Macs only so far. The pages say only that."""
     PLAIN = [ROOT / f for f in ("hypnomix/app/setup.py", "hypnomix/app/setup.js", "packaging/README.md", "THIRD_PARTY.md",
                                 "hypnomix/app/wiki/articles/18-setup.html", "hypnomix/app/wiki/articles/20-install.html")]
 
@@ -199,7 +199,7 @@ class DownloadWording(unittest.TestCase):
     def test_the_app_asks_for_the_microphone_in_words_that_cover_the_daw_if_it_is_added(self):
         sh = (ROOT / "packaging/mac/build_dmg.sh").read_text(encoding="utf-8")                # only read as text: no shell needed
         self.assertIn("NSMicrophoneUsageDescription</key><string>$mictext", sh)
-        self.assertRegex(sh, r'mictext="[^"]*HypnoMix DAW[^"]*records from the audio input')
+        self.assertRegex(sh, r'mictext="[^"]*HypnoMix Studio[^"]*records from the audio input')
         self.assertNotIn("HypnomixEdition", sh)
 
     def test_setup_has_no_download_step_and_asks_which_daw(self):
@@ -209,14 +209,14 @@ class DownloadWording(unittest.TestCase):
         js = (ROOT / "hypnomix/app/setup.js").read_text(encoding="utf-8")
         for gone in ("pickDownload", "Which Hypnomix do you want", "data-edition"):
             self.assertNotIn(gone, js)
-        self.assertIn("Add HypnoMix DAW", js)
+        self.assertIn("Add HypnoMix Studio", js)
         self.assertIn("data-engine", js)
 
     def test_the_licence_is_stated_where_the_engine_is_described(self):
         for f in ("THIRD_PARTY.md", "packaging/README.md", "hypnomix/app/wiki/articles/20-install.html", "hypnomix/app/wiki/articles/18-setup.html"):
             t = " ".join(re.sub(r"<[^>]+>", " ", (ROOT / f).read_text(encoding="utf-8")).split())
             self.assertRegex(t, r"GNU General Public License", f)
-            self.assertRegex(t, r"HypnoMix DAW" if "/wiki/" in f else r"Ardour", f)      # Ardour is named only where the disclosure belongs
+            self.assertRegex(t, r"HypnoMix Studio" if "/wiki/" in f else r"Ardour", f)      # Ardour is named only where the disclosure belongs
             self.assertIn("github.com/drtranceypants/hypnomix-daw", t, f)                     # the engine's public source
             self.assertNotRegex(t, r"https?://[^\s\"')]*(engine|daw)[^\s\"')]*source", f)        # no invented source address
 

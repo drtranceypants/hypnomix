@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a mastering chain or channel strips in your Live set from Live's own devices: no paid plug-ins.
 With --reaper, the same chain in the REAPER that is open, from REAPER's stock plug-ins (see chain_reaper.py).
-With --ardour, the same chain in the open HypnoMix DAW session over MCP, from the ACE plug-ins plus Hypnomix
+With --ardour, the same chain in the open HypnoMix Studio session over MCP, from the ACE plug-ins plus Hypnomix
 Utility and Hypnomix Limiter (true peak) (see chain_ardour.py).
 
   master   Analyses a bounce of your mix with `hypnomix master`, then builds the same chain on the Main
@@ -299,9 +299,9 @@ def main():
     for p_ in (m, s):
         p_.add_argument("--reaper", action="store_true", help="build it in the REAPER that is open (stock ReaEQ, "
                         "ReaComp, ReaLimit and JS plug-ins) instead of Live")
-        p_.add_argument("--ardour", action="store_true", help="build it in the open HypnoMix DAW session over "
+        p_.add_argument("--ardour", action="store_true", help="build it in the open HypnoMix Studio session over "
                         "MCP (ACE plug-ins, Hypnomix Utility, Hypnomix Limiter) instead of Live")
-        p_.add_argument("--mcp-url", help="HypnoMix DAW's MCP address (default $HYPNOMIX_MCP_URL or "
+        p_.add_argument("--mcp-url", help="HypnoMix Studio's MCP address (default $HYPNOMIX_MCP_URL or "
                         "http://127.0.0.1:4820/mcp)")
     a = ap.parse_args()
 

@@ -1,4 +1,4 @@
-"""HypnoMix: a mixing and mastering engineer for Ableton Live, REAPER and HypnoMix DAW, driven by you or by Claude Code.
+"""HypnoMix: a mixing and mastering engineer for Ableton Live, REAPER and HypnoMix Studio, driven by you or by Claude Code.
 
 Run `hypnomix` for the command list, `hypnomix <command> -h` for each command's help.
 """
@@ -13,10 +13,10 @@ GROUPS = [
         ("balance", "hypnomix.engineer.balance", "stems folder → a first fader balance as proposals, with the measurement behind each move (faders only; --plan sends them to the review)"),
         ("master", "hypnomix.engineer.master", "stereo mix → release master at a loudness target (or a reference); options: tonal stabilizer, dynamic EQ, band width, limiter character, harshness, dither, amount"),
         ("rebalance", "hypnomix.engineer.rebalance", "turn vocals / drums / bass / other up or down in a finished stereo mix (separation + residual, true-peak safe)  [extra: ml, or --stems]"),
-        ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices, or in REAPER or HypnoMix DAW: no paid plug-ins"),
+        ("chain", "hypnomix.engineer.chain", "build the mastering chain (or channel strips) in Live from stock devices, or in REAPER or HypnoMix Studio: no paid plug-ins"),
         ("devices", "hypnomix.engineer.devices", "check every Live device by what it does (compressors, gates, limiters, EQ low cut) and suggest settings (writes a new set)"),
-        ("duck", "hypnomix.engineer.duck", "duck the vocal reverb and delay: tune the ducking you have, or add a sidechained Compressor fed by the vocals (a Live set: writes a new set; a HypnoMix DAW session: compressors are written into the open engine only with --engine --ids)"),
-        ("sidechain", "hypnomix.engineer.sidechain", "sidechain compressors: measure the ducking (depth, recovery, timing) and suggest settings (Live sets, REAPER projects and HypnoMix DAW sessions; --apply writes Live sets only)"),
+        ("duck", "hypnomix.engineer.duck", "duck the vocal reverb and delay: tune the ducking you have, or add a sidechained Compressor fed by the vocals (a Live set: writes a new set; a HypnoMix Studio session: compressors are written into the open engine only with --engine --ids)"),
+        ("sidechain", "hypnomix.engineer.sidechain", "sidechain compressors: measure the ducking (depth, recovery, timing) and suggest settings (Live sets, REAPER projects and HypnoMix Studio sessions; --apply writes Live sets only)"),
         ("masking", "hypnomix.engineer.masking", "which stems fight over which frequencies, and the cut that fixes it (written as a band on the part's own EQ once approved)"),
         ("align", "hypnomix.engineer.align", "phase/polarity/time offset between mics on one source"),
         ("translate", "hypnomix.engineer.translate", "mono, phone, earbuds, car, streaming normalisation, codec clipping; --preview to hear MP3 / AAC / as streaming plays it"),
@@ -61,15 +61,15 @@ GROUPS = [
         ("live", "hypnomix.live.osc", "mixer, devices, VST parameters, transport, snapshots, arm/record"),
         ("loop", "hypnomix.live.loop", "play bars → record → measure → compare; one-change A/Bs"),
         ("probe", "hypnomix.app.probe", "measure every track while Live plays, after all its plug-ins (Max for Live probe): no renders, a review from what was heard"),
-        ("abset", "hypnomix.workflow.abset", "one new set with every proposed fix as a switched-off B next to yours: A / B / Blind inside Live, REAPER (`reaper review`) or HypnoMix DAW (Review), loudness-matched"),
+        ("abset", "hypnomix.workflow.abset", "one new set with every proposed fix as a switched-off B next to yours: A / B / Blind inside Live, REAPER (`reaper review`) or HypnoMix Studio (Review), loudness-matched"),
         ("diagnose", "hypnomix.session.doctor", "solo every group in the loudest section: who owns the sub, bass, vocal band"),
     ]),
-    ("Projects: REAPER (.rpp), HypnoMix DAW (.ardour) and Live (.als)", [
+    ("Projects: REAPER (.rpp), HypnoMix Studio (.ardour) and Live (.als)", [
         ("reaper", "hypnomix.reaper.cli", "talk to the REAPER that is open: start the bridge, tracks, installed plug-ins, parameters, mixer snapshots, loop takes and one-change A/Bs, diagnose, probes, the A/B review panel, the Align panel"),
         ("preflight", "hypnomix.session.preflight", "sanity of the files before any work: mixed sample rates or bit depths, stems of different length, duplicates, fake stereo, silent or clipped files, lossy sources, missing files, names that will not travel; report first"),
-        ("project", "hypnomix.project.show", "look inside a REAPER, HypnoMix DAW or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
-        ("import", "hypnomix.project.import_project", "import a project from another DAW into a NEW HypnoMix DAW session: .als, .logicx, .dawproject, .rpp, or .ptx and .aaf (with the HypnoMix DAW add-on, Apple-silicon Macs only so far); audio copied in, the project only read, what was left out listed"),
-        ("als2ardour", "hypnomix.project.als2ardour", "import a Live set into a NEW HypnoMix DAW session folder: tracks, colours, clips as regions (gain, fades, envelopes), faders, sends, groups, tempo; audio copied in; devices listed, never guessed (the set is only read)"),
+        ("project", "hypnomix.project.show", "look inside a REAPER, HypnoMix Studio or Live project (tracks, folders, items, takes, plug-ins, automation) and render its tracks"),
+        ("import", "hypnomix.project.import_project", "import a project from another DAW into a NEW HypnoMix Studio session: .als, .logicx, .dawproject, .rpp, or .ptx and .aaf (with the HypnoMix Studio add-on, Apple-silicon Macs only so far); audio copied in, the project only read, what was left out listed"),
+        ("als2ardour", "hypnomix.project.als2ardour", "import a Live set into a NEW HypnoMix Studio session folder: tracks, colours, clips as regions (gain, fades, envelopes), faders, sends, groups, tempo; audio copied in; devices listed, never guessed (the set is only read)"),
     ]),
     ("Session files (.als, Live closed or open)", [
         ("render", "hypnomix.session.render", "render tracks from a .als to stems without opening Live (clip gain, fades, warps)"),
@@ -85,14 +85,14 @@ GROUPS = [
         ("unroll", "hypnomix.session.unroll", "turn looped Arrangement clips into one copy per pass, so each pass can be edited on its own (writes a new set)"),
         ("vocallevel", "hypnomix.session.vocallevel", "vocal level line to line, and upper harmonies under the melody: as heard (solo exports) or from renders; --apply writes per-line volume fixes (writes a new set or .rpp). Run before every final export"),
         ("edges", "hypnomix.session.edges", "clip edges and fades that cut into a word (a long fade-in ducking the first consonant, a comp edit that loses a sound)"),
-        ("tidy", "hypnomix.session.tidy", "retire switched-off tracks (after an archive copy) and put one instrument's clips on one track (a Live set: writes a new set; a HypnoMix DAW session: groups are written into the open engine only with --engine --ids)"),
-        ("order", "hypnomix.session.order", "put tracks in working order (drums, bass, keys/guitar/synth, vocals, other; low to high) and vocal-stack clips on the track for their pitch (a Live set: writes a new set; a HypnoMix DAW session: groups are written into the open engine only with --engine --ids)"),
+        ("tidy", "hypnomix.session.tidy", "retire switched-off tracks (after an archive copy) and put one instrument's clips on one track (a Live set: writes a new set; a HypnoMix Studio session: groups are written into the open engine only with --engine --ids)"),
+        ("order", "hypnomix.session.order", "put tracks in working order (drums, bass, keys/guitar/synth, vocals, other; low to high) and vocal-stack clips on the track for their pitch (a Live set: writes a new set; a HypnoMix Studio session: groups are written into the open engine only with --engine --ids)"),
         ("timing", "hypnomix.session.timing", "find hits out of time with the band; nudge only those with warp markers (writes a new set)"),
         ("tempomap", "hypnomix.session.tempomap", "map the tempo of a take played without a click; warp it to the grid, or make the grid follow it"),
-        ("loops", "hypnomix.session.loops", "find the best loops in a free-played take; line them up in Session slots (Live) or cue slots (HypnoMix DAW, --cues) to try"),
+        ("loops", "hypnomix.session.loops", "find the best loops in a free-played take; line them up in Session slots (Live) or cue slots (HypnoMix Studio, --cues) to try"),
         ("tighten", "hypnomix.session.tighten", "pull a take's hits part of the way toward the click, in place (a gentle quantise)"),
         ("breathe", "hypnomix.session.breathe", "let a click-recorded song breathe: small tempo changes by section, with a preview"),
-        ("variations", "hypnomix.session.variations", "vary repetitive loops with unused takes, on new switched-off tracks next to each part (Live), or as A/B clips in cue slots (HypnoMix DAW, --cues)"),
+        ("variations", "hypnomix.session.variations", "vary repetitive loops with unused takes, on new switched-off tracks next to each part (Live), or as A/B clips in cue slots (HypnoMix Studio, --cues)"),
         ("colour", "hypnomix.session.colour", "propose new timbres where a part sounds the same throughout: width, grit, space, movement or octave, as Live-device chains on switched-off copies, each with a before / after clip (Live sets; writes a new set only for the ones you pick)"),
         ("distortion", "hypnomix.session.distortion", "find audible distortion (clipped takes, overs, hot drive, fast bass compression); propose fixes"),
         ("refs", "hypnomix.session.refs", "find missing audio files in sets"),
@@ -117,7 +117,7 @@ GROUPS = [
         ("device", "hypnomix.app.device", "make the Max for Live device: review from inside Live, and jump Live to each finding"),
         ("aligndevice", "hypnomix.app.aligndevice", "make the Hypnomix Align device: align a vocal stack from inside Live"),
         ("store", "hypnomix.store.cli", "the HypnoMix store: search, install, update and uninstall free and open-source plug-ins, synths, drum kits and sample packs"),
-        ("engine", "hypnomix.app.engine_addon", "HypnoMix DAW, the add-on (engine 0.1.0, Apple-silicon Macs only; not available for Intel Macs or Windows yet): what is added, and (only with --yes) fetch it once, checked against a SHA-256 before it is used, or remove it; report first"),
+        ("engine", "hypnomix.app.engine_addon", "HypnoMix Studio, the add-on (engine 0.1.0, Apple-silicon Macs only; not available for Intel Macs or Windows yet): what is added, and (only with --yes) fetch it once, checked against a SHA-256 before it is used, or remove it; report first"),
     ]),
     ("Setup", [
         ("install", "hypnomix.install", "install the Live remote script into Live's User Library (--dry-run shows it first)"),
@@ -239,14 +239,14 @@ def _audio_read_message(e):
         return f"can't read {path} as audio: {gone}"
     if name == "BadGzipFile":                   # a Live-set command was given a file that is not a gzipped Live set
         return ("can't read that file as a Live set (.als): it is not a gzip file. This command reads Live sets only; "
-                "for a REAPER project or a HypnoMix DAW session use `hypnomix scan` on it.")
+                "for a REAPER project or a HypnoMix Studio session use `hypnomix scan` on it.")
     folder = isinstance(e, IsADirectoryError) or (isinstance(e, PermissionError) and os.path.isdir(str(e.filename or "")))   # Windows opens a folder with "permission denied"
     if (folder or isinstance(e, FileNotFoundError)) and _raised_in_gzip(e):    # a Live-set command, a typo or a folder
         fn = str(e.filename or "that path")
         if folder:
             return f"{fn} is a folder, not a Live set (.als file); give the .als file itself."
         return f"no such file: {fn}; check the name and the folder, then try again."
-    if (folder or isinstance(e, FileNotFoundError)) and _project_suffix(e.filename):   # a REAPER / HypnoMix DAW project: a typo or a folder
+    if (folder or isinstance(e, FileNotFoundError)) and _project_suffix(e.filename):   # a REAPER / HypnoMix Studio project: a typo or a folder
         fn = str(e.filename)
         if folder:
             return f"{fn} is a folder, not a project file; give the {_project_suffix(fn)} file itself."

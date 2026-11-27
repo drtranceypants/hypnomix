@@ -264,7 +264,7 @@ class NoNumpy(unittest.TestCase):
         self.assertGreater(int(r.stdout.strip() or 0), 100)
 
 
-HONESTY = "HypnoMix DAW is new: its first engine (0.1.0) is for Apple-silicon Macs. Steps written here for it were written against Ardour 8 or 9, the free DAW it is built on, and not every one has been tried in HypnoMix DAW yet."
+HONESTY = "HypnoMix Studio is new: its first engine (0.1.0) is for Apple-silicon Macs. Steps written here for it were written against Ardour 8 or 9, the free DAW it is built on, and not every one has been tried in HypnoMix Studio yet."
 
 
 def texts(x, skip=("id", "more", "daws", "levels", "fx", "action", "app", "kind")):
@@ -281,12 +281,12 @@ def texts(x, skip=("id", "more", "daws", "levels", "fx", "action", "app", "kind"
 
 
 class Naming(unittest.TestCase):
-    """The owner's naming decisions: HypnoMix in prose, `hypnomix ...` only as a command, HypnoMix DAW for the third DAW,
-    and Ardour named only in the honesty line of each HypnoMix DAW course's first step."""
+    """The owner's naming decisions: HypnoMix in prose, `hypnomix ...` only as a command, HypnoMix Studio for the third DAW,
+    and Ardour named only in the honesty line of each HypnoMix Studio course's first step."""
 
     def test_the_third_daw_is_called_hypnomix_daw(self):
-        self.assertEqual(T.DAWS, {"live": "Ableton Live", "reaper": "REAPER", "ardour": "HypnoMix DAW"})
-        self.assertEqual(T.WIKI_GROUP["ardour"], "DAW: HypnoMix DAW")
+        self.assertEqual(T.DAWS, {"live": "Ableton Live", "reaper": "REAPER", "ardour": "HypnoMix Studio"})
+        self.assertEqual(T.WIKI_GROUP["ardour"], "DAW: HypnoMix Studio")
 
     def test_ardour_is_named_only_in_the_honesty_line(self):
         for ch, s in all_steps():
@@ -301,16 +301,16 @@ class Naming(unittest.TestCase):
             self.assertNotIn("Ardour", T.wiki_article("ardour", lv)["text"].replace(HONESTY, ""))
 
     def test_the_generated_wiki_never_names_ardour_or_says_the_honesty_line(self):
-        """The wiki says it once, in its HypnoMix DAW article (id "ardour", not generated here); the generated articles link to it."""
+        """The wiki says it once, in its HypnoMix Studio article (id "ardour", not generated here); the generated articles link to it."""
         arts = T.wiki_all()
         self.assertFalse([a["id"] for a in arts if a["id"] == "ardour"])
         for a in arts:
             for field in ("title", "sub", "html", "text"):
                 self.assertNotIn("Ardour", a[field], a["id"])
-                self.assertNotIn("HypnoMix DAW is new:", a[field], a["id"])
+                self.assertNotIn("HypnoMix Studio is new:", a[field], a["id"])
         self.assertIn('data-wiki="ardour"', T.wiki_article("ardour", "tour")["html"])
         self.assertIn('data-wiki="ardour"', T.wiki_article("ardour", "az")["html"])
-        self.assertEqual(T.wiki_article("ardour", "tour")["title"], "Guided tour: HypnoMix DAW")
+        self.assertEqual(T.wiki_article("ardour", "tour")["title"], "Guided tour: HypnoMix Studio")
         self.assertNotIn(HONESTY, T.steps("ardour", "az", honesty=False)[0]["steps"][0]["how"])
 
     def test_titles_do_not_say_the_name_twice(self):
@@ -327,11 +327,11 @@ class Naming(unittest.TestCase):
             self.assertEqual(steps[0]["how"][0], HONESTY, lv)
             self.assertEqual(T.HONESTY, HONESTY)
             for s in steps[1:]:
-                self.assertNotIn("HypnoMix DAW is new:", " ".join(s["how"] + s["say"]), (lv, s["id"]))
+                self.assertNotIn("HypnoMix Studio is new:", " ".join(s["how"] + s["say"]), (lv, s["id"]))
         for d in ("live", "reaper"):
             for ch, s in all_steps():
                 for t in texts(s):
-                    self.assertNotIn("HypnoMix DAW is new:", t)
+                    self.assertNotIn("HypnoMix Studio is new:", t)
 
     def test_the_product_is_spelled_hypnomix_capital_m_in_prose(self):
         """A bare lower-case "hypnomix" may stay only in a command, a path, a file or a name another program looks up."""
@@ -348,7 +348,7 @@ class Naming(unittest.TestCase):
         with mock.patch("hypnomix.app.setup.load", return_value={"daw": "hypnomix", "teach_level": "az"}):
             self.assertEqual(T.choice()[0], "ardour")
             st = T.state()
-        self.assertEqual((st["daw"], st["daws"]["ardour"]), ("ardour", "HypnoMix DAW"))
+        self.assertEqual((st["daw"], st["daws"]["ardour"]), ("ardour", "HypnoMix Studio"))
         self.assertTrue(st["chapters"])
 
 

@@ -403,7 +403,7 @@ class Prefs(Temp):
     def test_daw_question_matches_setup_ids(self):
         from hypnomix.app import setup
         q = next(q for q in self.P.QUESTIONS if q["key"] == "tools.daw")
-        # HypnoMix DAW is built on Ardour: Preferences read that choice as "ardour" (prefs._DAW_WORDS), so it is not an option of its own
+        # HypnoMix Studio is built on Ardour: Preferences read that choice as "ardour" (prefs._DAW_WORDS), so it is not an option of its own
         # (Setup no longer asks "Ardour" as a choice of its own; Preferences still reads Ardour sessions, so it keeps that answer)
         ids = [d["id"] for d in setup.DAWS if d["id"] != "hypnomix"]
         self.assertEqual(q["options"], ids[:-1] + ["ardour"] + ids[-1:])

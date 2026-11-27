@@ -286,7 +286,7 @@ STEPS = [
                     "Live keeps older copies of the set in the project's **Backup** folder."],
            "reaper": ["If REAPER can't find media, it offers a dialog to find or resolve the missing files: point it to the folder that holds them.",
                       "REAPER keeps backup copies of the project next to it (files with a **.rpp-bak** ending): rename one to .rpp to open it."],
-           "ardour": ["HypnoMix DAW keeps backup copies of the session file in the session folder; use one if the session won't open.",
+           "ardour": ["HypnoMix Studio keeps backup copies of the session file in the session folder; use one if the session won't open.",
                       "Keep the session's **interchange** folder with it, because that is where its audio is stored."]},
       listen="When you reopen the project, play each track from the start. A track that is silent or shows an offline plug-in still needs attention.",
       mistakes=["Saving over the project while files are missing. Copy first, then work on the copy.",

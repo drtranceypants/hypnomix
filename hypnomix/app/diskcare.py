@@ -35,7 +35,7 @@ Library, or all of Music, Desktop or Documents (a folder inside those is fine): 
 A folder saved earlier that no longer qualifies (a project folder on an external drive, say) is not cleaned any more,
 but it is still READ, so the audio its projects use stays protected. The settings list it as "not cleaned" and why.
 
-Never removed: an audio file any Live, REAPER or HypnoMix DAW project on this computer uses (projects under Music,
+Never removed: an audio file any Live, REAPER or HypnoMix Studio project on this computer uses (projects under Music,
 Documents, Desktop and the watched folders are read for this), a file named "final" or "master", anything
 changed in the last hour, and anything while a job is running.
 
@@ -287,7 +287,7 @@ REF_PAT = {".als": re.compile(rb'<(?:Path|RelativePath|Name) Value="([^"]+)"'),
 
 
 def project_refs(blocked):
-    """Names of every audio file a Live (.als), REAPER (.rpp) or HypnoMix DAW (.ardour) project here points at.
+    """Names of every audio file a Live (.als), REAPER (.rpp) or HypnoMix Studio (.ardour) project here points at.
     Each project's list is cached by its size and time, so only changed projects are read again."""
     cf = hx_home() / "cache" / "diskcare-refs.json"
     try:

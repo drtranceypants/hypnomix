@@ -139,7 +139,7 @@ function wikiBanner() {
 }
 
 // The DAW chosen in Setup comes first (after Start here); the other DAWs' pages move to the end of the list.
-const WDAW = {live: 'DAW: Ableton Live', reaper: 'DAW: REAPER', ardour: 'DAW: HypnoMix DAW', hypnomix: 'DAW: HypnoMix DAW', other: 'DAW: any other'};
+const WDAW = {live: 'DAW: Ableton Live', reaper: 'DAW: REAPER', ardour: 'DAW: HypnoMix Studio', hypnomix: 'DAW: HypnoMix Studio', other: 'DAW: any other'};
 function wikiOrdered() {
   const all = W.index.articles, mine = WDAW[W.index.about.daw];
   if (!mine) return all;

@@ -31,9 +31,9 @@ const css = `
 const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
 
 let U = null, step = 0, mode = '', daw = '', teach = '', prov = 'gemini', loc = 'ollama', key = '', model = '', listen = true, msg = null, busy = false, liveLog = '', cliDone = null;
-const DAWNAME = {live: 'Ableton Live', reaper: 'REAPER', hypnomix: 'HypnoMix DAW'};       // the DAWs the teacher courses exist for
-const STEPNAME = Object.assign({hypnomix: 'HypnoMix DAW'}, DAWNAME);
-const steps = () => ['Welcome', 'How you work', 'Your DAW', 'Connect', STEPNAME[daw] || 'Connect your DAW', 'Extras', 'Done'];
+const DAWNAME = {live: 'Ableton Live', reaper: 'REAPER', hypnomix: 'HypnoMix Studio'};       // the DAWs the teacher courses exist for
+const STEPNAME = Object.assign({hypnomix: 'HypnoMix Studio'}, DAWNAME);
+const steps = () => ['Welcome', 'How you work', 'Standalone or Studio', 'Connect', STEPNAME[daw] || 'Connect your DAW', 'Extras', 'Done'];
 const LAST = 6, EXTRAS = 5, DAWSTEP = 4;
 let poll = null, engPoll = null, opener = null, inerted = [], lastStep = -1, tested = '';      // tested: the last connection test of this setup ('ok', 'bad', or '' when none was run)
 const ext =(u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t || u.replace(/^https?:\/\//, ''))}</a>`;
@@ -104,7 +104,7 @@ function trap(e) {
 function welcome() {
   return `<h2>Welcome to HypnoMix</h2><p class="sub">Two minutes of setup. You can change any of it later with the <b>Setup</b> button.</p>
   <p>HypnoMix finds the technical problems in a song (clicks, late hits, flat notes, hiss, clashing frequencies, loudness) and proposes a fix for each. You hear it, then approve or skip it. It never changes your original set.</p>
-  <p>First, how do you want to work: on your own in the app, or with an AI to explain things and do the clicking? Every way gives you the same tools. Then which DAW you use: Ableton Live, REAPER, HypnoMix DAW (HypnoMix's own DAW, an add-on you can add only if you want it) or something else.</p>
+  <p>First, how do you want to work: on your own in the app, or with an AI to explain things and do the clicking? Every way gives you the same tools. Then Standalone or Studio: HypnoMix Standalone works beside the DAW you already use (Ableton Live, REAPER or another one); HypnoMix Studio has its own DAW built in, an add-on you add only if you want it.</p>
   <p>On the next steps you can turn on <b>teacher mode</b>: a guided tour of HypnoMix in your DAW if you already engineer, or a 101 crash course from an empty song to a finished master if you're new to audio.</p>`;
 }
 
@@ -159,10 +159,16 @@ function connect() {
 }
 
 function pickDaw() {
-  return `<h2>Which DAW do you use?</h2><p class="sub">A DAW is the program you record and mix in. The Wiki and the lessons follow your choice; you can change it later. Choosing HypnoMix DAW downloads nothing: the next steps show what it is and add it only if you click.</p>
-  <div class="modes">${U.daws.map(d => `<button class="mode ${daw === d.id ? 'sel' : ''}" data-daw="${d.id}"><b>${esc(d.title)}</b><p>${esc(d.note)}</p></button>`).join('')}</div>
+  const pick = d => `<button class="mode ${daw === d.id ? 'sel' : ''}" data-daw="${d.id}"><b>${esc(d.title)}</b><p>${esc(d.note)}</p></button>`;
+  return `<h2>Standalone or Studio?</h2><p class="sub">It is one app either way, and you can change this later. A DAW is the program you record and mix in; the Wiki and the lessons follow your choice.</p>
+  <h3 style="margin:14px 0 2px;font-size:1.05rem">HypnoMix Standalone</h3>
+  <p class="small" style="margin:0 0 8px">Keep the DAW you already use. HypnoMix works beside it. Which one?</p>
+  <div class="modes">${U.daws.filter(d => d.id !== 'hypnomix').map(pick).join('')}</div>
+  <h3 style="margin:18px 0 2px;font-size:1.05rem">HypnoMix Studio</h3>
+  <p class="small" style="margin:0 0 8px">HypnoMix with its own DAW built in. Choosing it downloads nothing: the next steps show what it is and add it only if you click.</p>
+  <div class="modes">${U.daws.filter(d => d.id === 'hypnomix').map(pick).join('')}</div>
   <h3 style="margin:20px 0 6px;font-size:1.05rem">Teacher mode</h3>
-  <p class="small" style="margin:0 0 8px">A guided course in the <b>Teacher</b> tab, in ${esc(DAWNAME[daw] || 'your DAW')}. No AI needed${mode === 'key' || mode === 'local' ? '; the Assistant can explain any step in more detail' : ''}. ${daw === 'live' || daw === 'reaper' ? `HypnoMix can do the hands-on steps in ${DAWNAME[daw]} for you, asking first each time.` : daw === 'hypnomix' ? 'For HypnoMix DAW it shows you where to click, and you make each change yourself.' : 'Courses exist for Live, REAPER and HypnoMix DAW.'}</p>
+  <p class="small" style="margin:0 0 8px">A guided course in the <b>Teacher</b> tab, in ${esc(DAWNAME[daw] || 'your DAW')}. No AI needed${mode === 'key' || mode === 'local' ? '; the Assistant can explain any step in more detail' : ''}. ${daw === 'live' || daw === 'reaper' ? `HypnoMix can do the hands-on steps in ${DAWNAME[daw]} for you, asking first each time.` : daw === 'hypnomix' ? 'For HypnoMix Studio it shows you where to click, and you make each change yourself.' : 'Courses exist for Live, REAPER and HypnoMix Studio.'}</p>
   <div class="modes" style="grid-template-columns:1fr 1fr">${[
     ['', 'No thanks', 'Straight to the app. You can start a course later from the Teacher tab.'],
     ['tour', 'Show me HypnoMix', `For people who already record and mix: HypnoMix with ${DAWNAME[daw] || 'your DAW'}, the devices we've built for it, the song card, A/B inside the DAW, the mastering chain.`],
@@ -180,10 +186,10 @@ function dawStep() {
     ${r.found ? '' : '<div class="msg bad">REAPER wasn\'t found on this computer. Install it from reaper.fm, then come back.</div>'}`}${msgHtml()}
     <p class="small">Next time, start it from a terminal with <code>hypnomix reaper start</code>, or from this step. See Wiki → HypnoMix in REAPER.</p>`;
   }
-  if (daw === 'ardour') return `<h2>HypnoMix DAW</h2><p class="sub">Nothing to install for scanning.</p>
-    <p>HypnoMix reads HypnoMix DAW sessions (<code>.ardour</code>) and scans them: on the Songs tab, choose the session folder (or its <code>.ardour</code> file). In these pages the changes you approve are listed for you to make by hand.</p>
-    ${teach ? '<p>The Teacher tab shows you where to click in HypnoMix DAW for every step.</p>' : ''}<p class="small">See Wiki → HypnoMix DAW.</p>`;
-  if (daw === 'hypnomix') return `<h2>HypnoMix DAW</h2><p class="sub">${esc(U.engine.what)}</p>
+  if (daw === 'ardour') return `<h2>HypnoMix Studio</h2><p class="sub">Nothing to install for scanning.</p>
+    <p>HypnoMix reads HypnoMix Studio sessions (<code>.ardour</code>) and scans them: on the Songs tab, choose the session folder (or its <code>.ardour</code> file). In these pages the changes you approve are listed for you to make by hand.</p>
+    ${teach ? '<p>The Teacher tab shows you where to click in HypnoMix Studio for every step.</p>' : ''}<p class="small">See Wiki → HypnoMix Studio.</p>`;
+  if (daw === 'hypnomix') return `<h2>HypnoMix Studio</h2><p class="sub">${esc(U.engine.what)}</p>
     ${engineAct(true)}${msgHtml()}
     <p class="small">${esc(U.engine.licence)} Remove it any time here (Setup → Extras). The DAW tab appears once it is added.</p>`;
   if (daw === 'other') return `<h2>Your DAW</h2><p class="sub">Nothing to install.</p>
@@ -207,8 +213,8 @@ function live() {
 
 function extras() {
   const X = U.extras, rows = X.extras.filter(e => !e.included), inc = X.extras.filter(e => e.included);
-  return `<h2>Optional extras</h2><p class="sub">HypnoMix DAW is its own download from the project's release page, and only when you click Add. The extras below it each add a few commands: install any of them now or later (the Setup button brings you back here). They download from PyPI${X.bundled ? ` into <code>${esc(X.where)}</code>, outside the app, so updating the app keeps them` : ` into this Python (<code>${esc(X.where)}</code>)`}.</p>
-  <div class="cost" style="padding:10px 12px"><b>HypnoMix DAW</b> <span class="small">· ${esc(U.engine.size_text)} · GNU GPL</span>
+  return `<h2>Optional extras</h2><p class="sub">HypnoMix Studio is its own download from the project's release page, and only when you click Add. The extras below it each add a few commands: install any of them now or later (the Setup button brings you back here). They download from PyPI${X.bundled ? ` into <code>${esc(X.where)}</code>, outside the app, so updating the app keeps them` : ` into this Python (<code>${esc(X.where)}</code>)`}.</p>
+  <div class="cost" style="padding:10px 12px"><b>HypnoMix Studio</b> <span class="small">· ${esc(U.engine.size_text)} · GNU GPL</span>
     <p style="margin:4px 0">${esc(U.engine.what)}</p>${engineAct(false)}
     <p class="small" style="margin:4px 0">${esc(U.engine.licence)}</p></div>
   ${rows.map(e => `<div class="cost" style="padding:10px 12px">
@@ -224,7 +230,7 @@ function extras() {
   <p class="small">The GPL-3.0 extras are separate projects, so HypnoMix itself stays MIT: you download them from their authors, and using them is fine for any music, commercial too. Stem separation may not install on Intel Macs (PyTorch has stopped building for them). Already included: ${inc.map(e => esc(e.title)).join(', ')}.</p>`;
 }
 
-// HypnoMix DAW: what is added, the one button that adds it (only on a click), progress, and Remove. rich: the DAW step (says the
+// HypnoMix Studio: what is added, the one button that adds it (only on a click), progress, and Remove. rich: the DAW step (says the
 // choice is remembered while there is nothing to add); Extras shows the state only.
 function engineAct(rich) {
   const E = U.engine, j = E.job || {}, mb = n => Math.round(n / 1e6) + ' MB';
@@ -234,9 +240,9 @@ function engineAct(rich) {
     return `<div class="small">${esc(what)}</div><div class="bar"><i style="width:${pct}%"></i></div>`;
   }
   const err = j.status === 'error' && j.error ? `<div class="msg bad" style="margin:4px 0">${esc(j.error)}</div>` : '';
-  const rm = E.versions.length ? `<button class="act" style="background:transparent;color:var(--ink);border:1px solid var(--line)" data-engine="remove" ${E.running ? 'disabled' : ''}>Remove HypnoMix DAW</button>${E.running ? ' <span class="small">Close the DAW view first: it is running.</span>' : ''}` : '';
+  const rm = E.versions.length ? `<button class="act" style="background:transparent;color:var(--ink);border:1px solid var(--line)" data-engine="remove" ${E.running ? 'disabled' : ''}>Remove HypnoMix Studio</button>${E.running ? ' <span class="small">Close the DAW view first: it is running.</span>' : ''}` : '';
   if (E.available && E.current) return `<div class="msg ok" style="margin:4px 0">${esc(E.message)}</div>${err}${rm}`;
-  if (E.available) return `<p style="margin:4px 0">${esc(E.message)}</p>${err}<button class="act" data-engine="install">${E.needs_update ? 'Update HypnoMix DAW' : 'Add HypnoMix DAW'}</button> ${rm}`;
+  if (E.available) return `<p style="margin:4px 0">${esc(E.message)}</p>${err}<button class="act" data-engine="install">${E.needs_update ? 'Update HypnoMix Studio' : 'Add HypnoMix Studio'}</button> ${rm}`;
   return `<p style="margin:4px 0">${esc(E.message)}${rich ? ' Your choice is remembered, and nothing is downloaded. When one is published for this computer it is added from here, only when you click.' : ''}</p>${err}${rm}`;
 }
 

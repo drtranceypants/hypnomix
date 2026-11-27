@@ -378,14 +378,14 @@ class Routes(unittest.TestCase):
             self.assertIn(word, js)
 
     def test_setup_has_one_app_and_hypnomix_daw_is_a_choice_of_daw_not_a_download(self):
-        """No "which download" step: the DAW question lists HypnoMix DAW; choosing it saves it and downloads nothing; a stale
+        """No "which download" step: the DAW question lists HypnoMix Studio; choosing it saves it and downloads nothing; a stale
         "edition" in a request is ignored and never stored."""
         tok = self.S.TOKEN
         code, s = call(self.base, "/api/setup/state")
         self.assertNotIn("downloads", s)
         self.assertNotIn("installed", s)
         self.assertEqual([d["id"] for d in s["daws"]], ["live", "reaper", "hypnomix", "other"])
-        self.assertEqual(next(d for d in s["daws"] if d["id"] == "hypnomix")["title"], "HypnoMix DAW")
+        self.assertEqual(next(d for d in s["daws"] if d["id"] == "hypnomix")["title"], "HypnoMix Studio")
         code, r = call(self.base, "/api/setup/daw", {"daw": "hypnomix", "edition": "full"}, tok)
         self.assertEqual((code, r), (200, {"daw": "hypnomix", "teach_level": ""}))
         self.assertNotIn("edition", SU.load())
@@ -478,7 +478,7 @@ class Wiki(unittest.TestCase):
     def test_courses_are_wiki_articles_under_their_daw(self):
         from hypnomix.app import wiki
         arts = {a["id"]: a for a in wiki.local()}
-        for d, g in (("live", "DAW: Ableton Live"), ("reaper", "DAW: REAPER"), ("ardour", "DAW: HypnoMix DAW")):
+        for d, g in (("live", "DAW: Ableton Live"), ("reaper", "DAW: REAPER"), ("ardour", "DAW: HypnoMix Studio")):
             self.assertEqual(arts[f"learn-{d}"]["group"], g)
             self.assertEqual(arts[f"tour-{d}"]["group"], g)
         self.assertIn("teacher", arts)

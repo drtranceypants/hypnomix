@@ -36,7 +36,7 @@ def apply_edits(p, items, dec, log, failed, skipped):
     for f in sorted(items, key=lambda f: (rank.get((f.get("edit") or {}).get("op"), 9), f["id"])):
         ed = f.get("edit")
         if not ed or ed.get("op") not in rank:
-            skipped.append((f, "a HypnoMix DAW session is written for fades, cuts, spikes, mixer moves and the MPE glide fix only: do this one by hand"))
+            skipped.append((f, "a HypnoMix Studio session is written for fades, cuts, spikes, mixer moves and the MPE glide fix only: do this one by hand"))
             continue
         kv = _kv(dec, f)
         try:

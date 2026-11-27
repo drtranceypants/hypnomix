@@ -46,7 +46,7 @@ CHAPTER = dict(id="master", levels=("101", "az"), title="Mastering", sub="what i
        how={"live": ["HypnomixMain's **Match target** turns the limiter until the master hits the target, and its A/B is level-matched."],
             "reaper": ["HypnoMix Main's **Match target** does the same on REAPER's master: it starts playing if REAPER was stopped (play the loudest part), and stops again when it is done.",
                        "In the HypnoMix Review panel, **Match** plays B at A's loudness, so a louder B can't win just by being louder."],
-            "ardour": ["Use a loudness meter on the master (HypnoMix DAW's loudness analysis, in its Session menu), or master the WAV with HypnoMix."]}),
+            "ardour": ["Use a loudness meter on the master (HypnoMix Studio's loudness analysis, in its Session menu), or master the WAV with HypnoMix."]}),
   dict(id="deliver", title="Check it and export", daws=ALL,
        say=["Before you send it out, run HypnoMix's checks on the master: `qc` (no clipping, the right loudness and peaks, "
             "silence at the ends) and `translate` (how it sounds on a phone, in mono, as an MP3). Then export the final WAV "

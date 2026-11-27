@@ -4,7 +4,7 @@ hear it with every plug-in, in place, instantly, and nothing is rendered or expo
 
   hypnomix abset SCAN_DIR [--ids ID,ID,...] [--out "Song (A-B).als"]
 
-(A scan of a REAPER project: workflow/abset_project.py; of a HypnoMix DAW session: workflow/abset_ardour.py,
+(A scan of a REAPER project: workflow/abset_project.py; of a HypnoMix Studio session: workflow/abset_ardour.py,
 one new snapshot whose B versions the DAW view's Review switches over MCP.)
 
 For each finding that changes the set, the fix is built on its own (in a temporary copy of the scan) and
@@ -351,9 +351,9 @@ def build(sd, ids=None, out=None, extra=()):
     if orig.suffix.lower() == ".rpp":            # a REAPER project: workflow/abset_project.py
         from hypnomix.workflow import abset_project as AP
         return AP.build(sd, ids, out, extra)
-    if orig.is_dir() and _ardour_session(orig) is not None:   # a HypnoMix DAW session folder: its .ardour
+    if orig.is_dir() and _ardour_session(orig) is not None:   # a HypnoMix Studio session folder: its .ardour
         orig = _ardour_session(orig)
-    if orig.suffix.lower() == ".ardour":         # a HypnoMix DAW session: workflow/abset_ardour.py
+    if orig.suffix.lower() == ".ardour":         # a HypnoMix Studio session: workflow/abset_ardour.py
         from hypnomix.workflow import abset_ardour as AA
         return AA.build(sd, ids, out, session=orig)
     if not str(orig).endswith(".als") or not orig.exists():

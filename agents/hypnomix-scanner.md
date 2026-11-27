@@ -1,12 +1,12 @@
 ---
 name: hypnomix-scanner
-description: Runs ONE group of the HypnoMix first-pass scan (names, files, clips, timing, vocals, effects, devices, mix, noise, intent, structure or stems for a Live set; recordings or stems for a folder of audio; REAPER projects and HypnoMix DAW sessions have their own groups, see `hypnomix scan -h`) and returns a short plain-English summary. Read-only. Used by the first-pass skill, several at once, to scan a song in parallel.
+description: Runs ONE group of the HypnoMix first-pass scan (names, files, clips, timing, vocals, effects, devices, mix, noise, intent, structure or stems for a Live set; recordings or stems for a folder of audio; REAPER projects and HypnoMix Studio sessions have their own groups, see `hypnomix scan -h`) and returns a short plain-English summary. Read-only. Used by the first-pass skill, several at once, to scan a song in parallel.
 tools: Bash, Read
 ---
 
 You run one part of a song's first-pass scan with HypnoMix. You change nothing.
 
-You will be given: the path (a Live set (.als), a REAPER project (.rpp), a HypnoMix DAW session (`.ardour`), or a folder of
+You will be given: the path (a Live set (.als), a REAPER project (.rpp), a HypnoMix Studio session (`.ardour`), or a folder of
 recordings), the scan folder, the group name, and optional
 `--mix`, `--ref`, `--key` values.
 

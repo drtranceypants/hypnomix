@@ -38,7 +38,7 @@ In the app: **Songs → choose a set → Start the first pass**. In the terminal
 ```bash
 hypnomix scan "Song.als" --mix "Song mix.wav" --ref "Song instrumental.wav" --key "F# major"
 hypnomix scan "Song.rpp"            # a REAPER project: the same loop (guide 8)
-hypnomix scan "Song.ardour"         # a HypnoMix DAW session (or its folder)
+hypnomix scan "Song.ardour"         # a HypnoMix Studio session (or its folder)
 hypnomix scan "raw takes/"          # recordings or stems from any DAW: no Live set needed
 ```
 
@@ -71,7 +71,7 @@ nothing.
 follow their findings by what they are (same tool, track, kind and place), never by their number. "smooth-1 =
 approve" cannot end up on a different clip because the list got shorter. Decisions that no longer match anything
 are counted ("3 earlier decisions no longer match a finding and were set aside"), kept in
-`decisions-orphaned.json` and never applied. Two songs with the same name ("Song.als" and a HypnoMix DAW session also
+`decisions-orphaned.json` and never applied. Two songs with the same name ("Song.als" and a HypnoMix Studio session also
 called "Song") get separate folders, "Song" and "Song (2)".
 
 ## 1b. Hear it first
@@ -162,7 +162,7 @@ What fix checks, and stops on:
 | after writing: what changed | every change in plain words in `fix-log.md` (`hypnomix diff OLD NEW`) |
 | after writing: result | measured again: "N of M approved problems no longer measured" |
 
-HypnoMix DAW: the same command with `--out "Song (fixed).ardour"` writes the approved region fades (with their curve),
+HypnoMix Studio: the same command with `--out "Song (fixed).ardour"` writes the approved region fades (with their curve),
 region gain, gain dips over spikes and the eased level at a comp cut into **one new snapshot**, saved next to your
 session file inside the same session folder (where the DAW keeps its own snapshots, so the new file finds the same
 recordings). Track names and order, vocal stacks, timing, sidechain and tuning stay by hand. The new file is read
@@ -194,7 +194,7 @@ It collects every approved finding that `fix` cannot make itself, and every one 
 `handoff/` in the scan folder and never over anything:
 
 - `HANDOFF.md`: a checklist in song order. Each line has the track, the bar.beat and m:ss, what to do in your DAW's
-  own words (Live, REAPER, HypnoMix DAW or plain wording: `--daw`, or your `tools.daw` preference) and what to listen for.
+  own words (Live, REAPER, HypnoMix Studio or plain wording: `--daw`, or your `tools.daw` preference) and what to listen for.
 - when at least one item has a position, a marker at every such spot: a new `Song (handoff).als` with a locator at each
   (Live scan), a new `Song (handoff).rpp` with a marker at each (REAPER scan), and `markers.mid` and `markers.csv` for
   DAWs that import them. If no item has a position, only `HANDOFF.md` is written. `--no-markers` writes the checklist

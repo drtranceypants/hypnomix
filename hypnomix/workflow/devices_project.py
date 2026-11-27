@@ -23,7 +23,7 @@ Any other plug-in (JS, third-party) changes the level in a way this check does n
 listed but not judged. ReaComp's output (wet / dry) gain is not modelled either: a second compressor after a
 ReaComp is judged on the level after the first one's gain reduction. Folder tracks and MIDI tracks have no render
 of their own here, so their plug-ins are not judged. The master track's plug-ins (MASTERFXLIST) are not read by
-the project model, so they are not judged and are not listed. HypnoMix DAW sessions: the plug-ins' settings are not in the shared
+the project model, so they are not judged and are not listed. HypnoMix Studio sessions: the plug-ins' settings are not in the shared
 model, so the group is skipped there with a note.
 """
 import math
@@ -223,7 +223,7 @@ def findings(p, items):
 
 def g_devices(p, R, od, a, role):
     if p.daw != "reaper":
-        return [], ["devices: skipped for a HypnoMix DAW session (its plug-ins' settings are not read yet)"]
+        return [], ["devices: skipped for a HypnoMix Studio session (its plug-ins' settings are not read yet)"]
     items, notes = review(p, R, role)
     fs = findings(p, items)
     n_set = sum(1 for f in fs if f["applies"] == "set")

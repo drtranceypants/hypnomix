@@ -99,7 +99,7 @@
     btnSave.setAttribute('aria-label', dirty ? 'Save (there are unsaved changes)' : 'Save');
     btnSave.dataset.info = !on ? 'Save needs a session open in the engine' : dirty ? 'Save the session: it has changes that are not saved · ⌘S' : 'Save the session · ⌘S (nothing has changed since the last save)';
     HX.$('#sessionName').classList.toggle('dirty', dirty);
-    document.title = (dirty ? '● ' : '') + 'HypnoMix DAW';
+    document.title = (dirty ? '● ' : '') + 'HypnoMix Studio';
   }
   /* a change reached the engine (mcp.js calls this): show "unsaved" now, and ask the app for its count soon */
   HX.markDirty = function () {
@@ -235,16 +235,16 @@
     const again = mkBtn('Look again', '', async () => { noEngSig = ''; await watchEngine(); HX.toast('Looked again'); });
     if (st.binary) {
       title.textContent = 'The engine is not running';
-      body.textContent = 'The DAW view shows and edits what the HypnoMix DAW engine has open: it plays, records and saves nothing by itself. Start the engine, then open or make a session. The demo song is made up: it plays no sound, saves nothing and sends nothing.';
+      body.textContent = 'The DAW view shows and edits what the HypnoMix Studio engine has open: it plays, records and saves nothing by itself. Start the engine, then open or make a session. The demo song is made up: it plays no sound, saves nothing and sends nothing.';
       btns.replaceChildren(mkBtn('Start the engine', 'primary', () => startAgain()), again, demo);
     } else {
       title.textContent = 'There is no engine on this computer';
       const ad = st.addon || {};
-      body.textContent = 'The DAW view drives the HypnoMix DAW engine, a separate audio program (under the GNU General Public License) that is not part of the app: it is added from Setup, only when you choose to. '
-        + (ad.available ? 'It is ready to add: press Add HypnoMix DAW (about 100 MB, fetched once and checked against a fingerprint), or use Setup → Extras. ' : 'HypnoMix DAW is not available for this computer yet (its first engine is for Apple-silicon Macs only), so there is nothing here to play, edit or save. ')
+      body.textContent = 'The DAW view drives the HypnoMix Studio engine, a separate audio program (under the GNU General Public License) that is not part of the app: it is added from Setup, only when you choose to. '
+        + (ad.available ? 'It is ready to add: press Add HypnoMix Studio (about 100 MB, fetched once and checked against a fingerprint), or use Setup → Extras. ' : 'HypnoMix Studio is not available for this computer yet (its first engine is for Apple-silicon Macs only), so there is nothing here to play, edit or save. ')
         + 'If you run an engine in a window of its own, switch on Preferences → Control Surfaces → MCPHttp there and press Look again. The demo song is made up: it plays no sound, saves nothing and sends nothing.';
-      const add = ad.available ? mkBtn('Add HypnoMix DAW', 'primary', async () => {
-        try { await HX.api.post('/api/setup/engine/install', {}); HX.toast('Adding HypnoMix DAW: the progress is in Setup → Extras', 6000); }
+      const add = ad.available ? mkBtn('Add HypnoMix Studio', 'primary', async () => {
+        try { await HX.api.post('/api/setup/engine/install', {}); HX.toast('Adding HypnoMix Studio: the progress is in Setup → Extras', 6000); }
         catch (e) { HX.toast(e.message, 6000); }
       }) : null;
       btns.replaceChildren(...[add, again, demo].filter(Boolean));
@@ -280,7 +280,7 @@
     setTimeout(() => watchEngine(), 300);          // the app's own count of unsaved changes
   }
   HX.connectEngine = connectNow;
-  const engLine = (st) => !st ? '' : ({ running: 'Engine running', attached: 'Attached to a HypnoMix DAW window', starting: 'Engine starting…',
+  const engLine = (st) => !st ? '' : ({ running: 'Engine running', attached: 'Attached to a HypnoMix Studio window', starting: 'Engine starting…',
     crashed: 'Engine stopped: starting it again', exited: 'Engine stopped unexpectedly', failed: 'Engine failed', stopped: 'Engine stopped' }[st.state] || st.state)
     + (st.session ? ' · ' + st.session.split('/').pop() : '') + (st.pid ? ' · pid ' + st.pid : '') + (st.url ? '\n' + st.url : '')
     + (st.backend ? '\nbackend: ' + st.backend : '') + (st.error ? '\n' + st.error : '') + (st.notice ? '\n' + st.notice : '');
@@ -400,15 +400,15 @@
     const outsideRow = HX.api.inApp ? h('label.row.left', { title: 'Import: also copy audio the project points to outside its own folder (left out and listed in the report otherwise)' },
       outside, ' Import: also copy audio from outside the project') : null;
     const ctl = HX.api.inApp ? h('div.row.left', null,
-      btn('Start', () => HX.api.post('/api/daw/start', {}).then((st) => { if (st.connected) HX.engineLost = false; return st; }), 'Start the HypnoMix DAW engine (or use a HypnoMix DAW window that is already running)'),
+      btn('Start', () => HX.api.post('/api/daw/start', {}).then((st) => { if (st.connected) HX.engineLost = false; return st; }), 'Start the HypnoMix Studio engine (or use a HypnoMix Studio window that is already running)'),
       btn('Restart', () => HX.guardedPost('/api/daw/restart', {}, 'Restarting the engine closes the open session; it opens again from its saved file.'), 'Stop the engine and start it again on the same session'),
-      btn('Stop', stopEngine, 'Stop the engine the app started (a HypnoMix DAW window is only let go of)'),
+      btn('Stop', stopEngine, 'Stop the engine the app started (a HypnoMix Studio window is only let go of)'),
       btn('Open', () => HX.guardedPost('/api/daw/open', { path: sess.value.trim() }, 'Opening another session closes this one.'), 'Open this session in the engine'),
       btn('New', () => { const f = HX.splitNewPath(sess.value); return HX.guardedPost('/api/daw/new', f, 'Making a new session closes this one.'); }, 'Make a new session: type the folder and the new name, e.g. ~/Music/New Song'),
-      btn('Import', () => { const ao = outside.checked; closePop(); HX.importProject(sess.value, ao).catch((e) => HX.toast('Could not import: ' + e.message, 8000)); return null; }, 'Import a project from another DAW (.als, .logicx, .dawproject, .rpp; .ptx and .aaf with the HypnoMix DAW add-on) as a new session beside it, or beside its folder')) : null;
-    pop = h('div.connect-pop', { role: 'dialog', 'aria-label': 'The HypnoMix DAW engine', style: { top: r.bottom + 6 + 'px', right: (innerWidth - r.right) + 'px' } },
-      h('b', { style: { color: 'var(--tx0)' } }, 'The HypnoMix DAW engine'),
-      h('p', null, 'The app runs the engine and passes this page’s calls to it (POST /mcp). Without the engine program, it uses a HypnoMix DAW window that is already open with Preferences → Control Surfaces → MCPHttp on.'),
+      btn('Import', () => { const ao = outside.checked; closePop(); HX.importProject(sess.value, ao).catch((e) => HX.toast('Could not import: ' + e.message, 8000)); return null; }, 'Import a project from another DAW (.als, .logicx, .dawproject, .rpp; .ptx and .aaf with the HypnoMix Studio add-on) as a new session beside it, or beside its folder')) : null;
+    pop = h('div.connect-pop', { role: 'dialog', 'aria-label': 'The HypnoMix Studio engine', style: { top: r.bottom + 6 + 'px', right: (innerWidth - r.right) + 'px' } },
+      h('b', { style: { color: 'var(--tx0)' } }, 'The HypnoMix Studio engine'),
+      h('p', null, 'The app runs the engine and passes this page’s calls to it (POST /mcp). Without the engine program, it uses a HypnoMix Studio window that is already open with Preferences → Control Surfaces → MCPHttp on.'),
       stEl, HX.api.inApp ? sess : null, ctl, outsideRow, err,
       h('div.row', null, h('button.btn', { type: 'button', onclick: closePop }, 'Close'),
         connected ? h('button.btn', { type: 'button', onclick: showDemoInstead, 'data-info': 'Leave the engine’s session and show the made-up demo song (asks first)' }, 'Show the demo song') : null,

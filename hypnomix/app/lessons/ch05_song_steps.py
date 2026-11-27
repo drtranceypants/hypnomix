@@ -140,7 +140,7 @@ STEPS = [
            "instrument, and the notes stay the same. The tempo can change without the pitch changing. Audio recorded "
            "from a microphone cannot do any of that so easily.",
            "You do not need to buy anything. Live has the **Drum Rack** and **Simpler**, and **Wavetable** if your edition has it. "
-           "REAPER has **ReaSynth** and **ReaSamplOmatic5000**. HypnoMix DAW has **ACE Fluid Synth**, which plays a free soundfont (a soundfont file) you download."],
+           "REAPER has **ReaSynth** and **ReaSamplOmatic5000**. HypnoMix Studio has **ACE Fluid Synth**, which plays a free soundfont (a soundfont file) you download."],
       terms=[["MIDI", "a set of instructions (notes, timing, velocity) that tells an instrument what to play. It is not sound."],
              ["Note", "one instruction: a pitch that starts at a time and lasts a length."],
              ["Velocity", "how hard a note is played, from 1 to 127. Usually harder is louder and brighter."],

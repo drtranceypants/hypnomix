@@ -18,7 +18,7 @@ body:
     id: what
     attributes:
       label: What happened
-      description: "In your words: what you did (the command or button, and on what: a Live set, a REAPER project, a HypnoMix DAW session, a folder of stems, one file) and what you saw. If the report above says it all, write \"see the report\"."
+      description: "In your words: what you did (the command or button, and on what: a Live set, a REAPER project, a HypnoMix Studio session, a folder of stems, one file) and what you saw. If the report above says it all, write \"see the report\"."
       placeholder: "hypnomix scan Song.als, then Approve on the first finding in Review: the page went blank"
     validations:
       required: true

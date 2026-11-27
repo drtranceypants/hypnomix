@@ -436,7 +436,7 @@ def install_kind():
         try:
             from hypnomix.app import engine_addon
             v = engine_addon.installed_versions()
-            what += f" (HypnoMix DAW {v[0]} added)" if v else ""
+            what += f" (HypnoMix Studio {v[0]} added)" if v else ""
         except Exception:
             pass
         return what
@@ -476,7 +476,7 @@ def packages():
     return out
 
 
-DAW_WORDS = {"live": "Ableton Live", "reaper": "REAPER", "ardour": "HypnoMix DAW", "other": "another DAW"}
+DAW_WORDS = {"live": "Ableton Live", "reaper": "REAPER", "ardour": "HypnoMix Studio", "other": "another DAW"}
 
 
 def setup_daw():

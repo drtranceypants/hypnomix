@@ -53,7 +53,7 @@ async function teachView() {
   const lv = `<div class="daws">${[['tour', 'Tour: ' + (T.daw === 'ardour' ? st.daws.ardour : 'HypnoMix in ' + (st.daws[T.daw] || 'your DAW')), 'for people who already record and mix'], ['101', '101 crash course', 'for people new to audio: the basics first, then the tour'], ['az', 'The complete course, A to Z', 'everything from what sound is to releasing a song: gear, recording, editing, mixing, mastering, cheat sheets']].map(([k, v, d]) => `<button data-tlevel="${k}" class="${k === T.level && !T.view ? 'sel' : ''}" title="${d}">${esc(v)}</button>`).join('')}<button data-tgloss="1" class="${T.view === 'glossary' ? 'sel' : ''}" title="Every word the lessons teach, A to Z">Glossary</button></div>`;
   if (!T.daw) return `<h1>Teacher</h1><p class="sub">A step-by-step course for people who have never used a DAW: from an empty song to a mastered one.</p>
     <div class="card"><p style="margin-top:0">Which DAW will you use? The lessons, and the Wiki, follow your choice.</p>${pick}
-    <p class="note">Ableton Live and REAPER get the same depth, and HypnoMix DAW the short version (it's the least tested with HypnoMix).</p></div>${dawTour}`;
+    <p class="note">Ableton Live and REAPER get the same depth, and HypnoMix Studio the short version (it's the least tested with HypnoMix).</p></div>${dawTour}`;
   if (T.view === 'glossary') return glossaryView(pick, lv);
   const all = tsteps(), i = Math.max(0, all.findIndex(s => s.id === T.at)), s = all[i];
   const nav = st.chapters.map((c, ci) => `<h4>${ci + 1} · ${esc(c.title)}</h4>` + c.steps.map(x =>
@@ -68,7 +68,7 @@ async function teachView() {
         <button class="primary" data-tnext="${esc(s.id)}">${i === all.length - 1 ? 'Done: finish the course' : st.done.includes(s.id) ? 'Next step' : 'Done, next step'}</button></span></div></div></div>`;
 }
 
-// The card that opens the guided tours inside the HypnoMix DAW (hypnomix/app/daw/js/tour.js). Only where the DAW view is there at all:
+// The card that opens the guided tours inside the HypnoMix Studio (hypnomix/app/daw/js/tour.js). Only where the DAW view is there at all:
 // the same test as the DAW tab's (a DAW-mode app, or an engine found, attached or connected).
 async function dawTourCard() {
   if (T.dawOk === undefined) {
@@ -77,7 +77,7 @@ async function dawTourCard() {
   if (!T.dawOk) return '';
   let n = '';
   try { const t = await get('/api/teach/tour'); if (t.done && t.done.length) n = ` ${t.done.length} tour${t.done.length === 1 ? '' : 's'} done.`; } catch (e) { /* the count is a nicety */ }
-  return `<div class="card" id="tdawtour"><b>Take the tour inside the HypnoMix DAW</b><p class="note" style="margin:4px 0 8px">Short, optional tours point at the real controls of the DAW view, one step at a time. Nothing changes unless you do it yourself.${esc(n)}</p><button data-tdawtour="1">Open the tours</button></div>`;
+  return `<div class="card" id="tdawtour"><b>Take the tour inside the HypnoMix Studio</b><p class="note" style="margin:4px 0 8px">Short, optional tours point at the real controls of the DAW view, one step at a time. Nothing changes unless you do it yourself.${esc(n)}</p><button data-tdawtour="1">Open the tours</button></div>`;
 }
 
 function lessonHTML(s, i, n) {
@@ -94,7 +94,7 @@ function lessonHTML(s, i, n) {
   if (s.try) h += `<div class="try"><b>Try it</b><p style="margin:4px 0">${tmd(s.try.do)}</p><p class="note" style="margin:0">You'll know it worked when: ${tmd(s.try.success)}</p></div>`;
   if (s.quiz) h += quizHTML(s);
   if (s.action) h += actionHTML(s);
-  else if (T.daw === 'ardour' && ['tempo', 'click', 'drums', 'track', 'take', 'chain'].includes(s.id)) h += `<p class="note">The Teacher can't do this one in HypnoMix DAW yet, so it is by hand: the steps above say where.</p>`;
+  else if (T.daw === 'ardour' && ['tempo', 'click', 'drums', 'track', 'take', 'chain'].includes(s.id)) h += `<p class="note">The Teacher can't do this one in HypnoMix Studio yet, so it is by hand: the steps above say where.</p>`;
   if (s.app) h += `<p><button data-view="${esc(s.app.view)}">${esc(s.app.label)}</button></p>`;
   if (s.more && s.more.length) h += moreHTML(s.more);
   if (r) h += resultHTML(r);
@@ -258,5 +258,5 @@ window.teachChanged = () => { T.st = null; T.daw = ''; T.level = ''; T.at = ''; 
 // teacher mode on: the app opens on this tab
 get('/api/teach/state').then(st => { if (st.teach && st.daw && S.view === 'home') go('teach'); }).catch(() => {});
 
-// "Take the tour inside the HypnoMix DAW": the DAW view opens with its list of tours (hypnomix/app/daw/js/tour.js reads the #tour in the address)
+// "Take the tour inside the HypnoMix Studio": the DAW view opens with its list of tours (hypnomix/app/daw/js/tour.js reads the #tour in the address)
 document.addEventListener('click', e => { if (e.target.closest('[data-tdawtour]')) location.href = '/daw/#tour'; });

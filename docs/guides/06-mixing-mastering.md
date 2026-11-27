@@ -134,7 +134,7 @@ hypnomix chain strips "hypnomix-out/automix/Song/recipe.json"      # a channel s
 (stem "Bass" finds the track "3-Detuned Lowpass Bass"). A stem with no matching track is listed, never
 guessed: name the track after the stem and run it again.
 
-**The same chain in HypnoMix DAW, over MCP** (this needs the HypnoMix DAW add-on, which is for Apple-silicon Macs only so far; the
+**The same chain in HypnoMix Studio, over MCP** (this needs the HypnoMix Studio add-on, which is for Apple-silicon Macs only so far; the
 stock DAW it is built on has no such MCP surface):
 
 ```bash
@@ -143,9 +143,9 @@ hypnomix chain master "Song bounce.wav" --target -14 --ardour --existing bypass
 
 ACE High/Low Pass Filter → ACE EQ → ACE Compressor → Hypnomix Utility (bass mono below 120 Hz, width) →
 Hypnomix Limiter (holds a true-peak ceiling, measured with 4x oversampling) on the master bus, before Hypnomix
-Main if it is there. Open the session in HypnoMix DAW first, with its MCP server on (Preferences → Control Surfaces →
+Main if it is there. Open the session in HypnoMix Studio first, with its MCP server on (Preferences → Control Surfaces →
 MCPHttp; the address is `http://127.0.0.1:4820/mcp`, `--mcp-url` for another). It has been tried against a stand-in
-for the engine's MCP surface, not against the running engine. There is no saturator in HypnoMix DAW yet, so the warmth stage
+for the engine's MCP surface, not against the running engine. There is no saturator in HypnoMix Studio yet, so the warmth stage
 is listed instead of built, and `--verify` is Live and REAPER only for now: use Hypnomix Main's Match target.
 
 No bounce yet? **HypnomixMain** on Main has its own mastering chain: **Build chain** puts an editable rack of

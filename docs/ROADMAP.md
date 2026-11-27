@@ -11,9 +11,9 @@ before building anything else on top of it.
 
 The six changes you will notice most, in plain words:
 
-1. **Projects from other DAWs.** `import` brings a .als, .logicx, .dawproject or .rpp project across as a new HypnoMix DAW
+1. **Projects from other DAWs.** `import` brings a .als, .logicx, .dawproject or .rpp project across as a new HypnoMix Studio
    session, with the audio copied and a report of what was left out; your project is only read. A .ptx session or an
-   .aaf export needs the HypnoMix DAW add-on, which is not available yet, and no imported session has been opened in a
+   .aaf export needs the HypnoMix Studio add-on, which is not available yet, and no imported session has been opened in a
    released DAW.
 2. **REAPER at Live's level.** The HypnoMix Probe, HypnoMix Main, Review and Align windows in REAPER now have built-in
    guides, and `reaper snapshot`, `reaper loop` and `reaper diagnose` do what their Live versions do. `vocallevel`
@@ -23,8 +23,8 @@ The six changes you will notice most, in plain words:
 3. **The DAW view, round 2.** Take lanes and comping, groups and sidechains, live meters, cue slots in the Session view
    and an A/B session. `tidy`, `order` and `duck` can write groups and compressors into the open session
    (`--engine --ids`), and `loops` and `variations` can fill cue slots (`--cues`). Tested against stand-in engines and a
-   silent development engine only; HypnoMix DAW is not released, and its add-on is not available yet.
-4. **MPE clips.** The scan of a HypnoMix DAW session lists what may spoil per-note bend, pressure and slide, with one
+   silent development engine only; HypnoMix Studio is not released, and its add-on is not available yet.
+4. **MPE clips.** The scan of a HypnoMix Studio session lists what may spoil per-note bend, pressure and slide, with one
    fix: values stored so that they glide are held instead, in a new snapshot. Read from the files only; nothing has
    been played on a controller yet.
 5. **Tests on macOS and Windows.** The test suite runs on macOS and Windows (Python 3.9 and 3.12) on every push. Tests
@@ -37,7 +37,7 @@ The six changes you will notice most, in plain words:
 
 The six changes you will notice most, in plain words:
 
-1. **One app, one installer, and HypnoMix DAW as an add-on.** There is one download for everyone. HypnoMix DAW (its engine is a
+1. **One app, one installer, and HypnoMix Studio as an add-on.** There is one download for everyone. HypnoMix Studio (its engine is a
    separate GPL program) is built but not available yet: when its archive is published it is added from Setup, on a
    click, and checked against a fingerprint before it is used. `hypnomix engine` shows or removes it.
 2. **Reporting a problem.** `report` and the app's Report button write a bug report, or the record of a crash, on your
@@ -50,7 +50,7 @@ The six changes you will notice most, in plain words:
 5. **The wiki on GitHub too.** The same pages as the site's and the app's Wiki, built from the same sources and pushed to
    the repository's GitHub wiki by a workflow. That workflow has not run yet, and it needs a one-time setup first (its
    header says what to click).
-6. **One name.** The product is HypnoMix and its own DAW is HypnoMix DAW; the old name of what that DAW is built on appears
+6. **One name.** The product is HypnoMix and its own DAW is HypnoMix Studio; the old name of what that DAW is built on appears
    only where the licence needs it.
 
 ## New in 0.3.0
@@ -59,8 +59,8 @@ The ten changes you will notice most, in plain words:
 
 1. **The Store (Mac only).** `store` finds and installs free plug-ins and sounds from their publishers' own pages, checks
    each download against a fingerprint before it installs, and keeps a list so it can remove them again.
-2. **Live sets into HypnoMix DAW, and mastering in it.** `als2ardour` turns a Live set into a new session folder (the
-   set is only read); `chain master --ardour` builds the mastering chain in the open HypnoMix DAW session.
+2. **Live sets into HypnoMix Studio, and mastering in it.** `als2ardour` turns a Live set into a new session folder (the
+   set is only read); `chain master --ardour` builds the mastering chain in the open HypnoMix Studio session.
 3. **One download today.** The Assistant installer is the only download. The full app, with its own DAW, is built but not
    out: the download page does not offer it, and nothing in the Assistant adds it.
 4. **Broken audio is refused in one sentence.** A file that is empty, has NaN in it, has more than five channels, or
@@ -104,7 +104,7 @@ Items marked *(to verify)* below rest on research that has not been tested here 
 
 One line per area. Each command's own help (`hypnomix <command> -h`) and its wiki article say how it works.
 
-- **The first pass:** `scan` (a Live set, a REAPER project, a HypnoMix DAW session, or a folder of recordings), `ab`,
+- **The first pass:** `scan` (a Live set, a REAPER project, a HypnoMix Studio session, or a folder of recordings), `ab`,
   `review`, `fix`, `history` (every version, undo into a new file), `watch`, `prefs`, `taste`, `profile`. `fix --list`
   pages through a long scan and `fix --show ID` prints one finding in full.
 - **Around the scan:** `preflight` (the files before any work), `demo` (a 40-second song with labelled problems, to
@@ -116,13 +116,13 @@ One line per area. Each command's own help (`hypnomix <command> -h`) and its wik
   `takes`, `soundcheck`.
 - **Feel and variety:** `timing`, `tighten`, `tempomap`, `loops`, `breathe`, `variations`, `borrow`, `motion`, and
   `colour` (Live sets).
-- **Engineer and master:** `automix`, `balance`, `master`, `chain` (Live, REAPER, and with `--ardour` the HypnoMix DAW session), `rebalance`, `tonal`, `harsh`,
+- **Engineer and master:** `automix`, `balance`, `master`, `chain` (Live, REAPER, and with `--ardour` the HypnoMix Studio session), `rebalance`, `tonal`, `harsh`,
   `masking` (an approved cut is written as an EQ Eight band in Live or a ReaEQ band in REAPER, in a new file),
   `match`, `reference`, and `--plan` for `prep`, `automix` and `master`.
 - **Release:** `translate`, `qc`, `release`, `versions`, `compare`, `album`.
 - **Free plug-ins and sounds (Mac only):** `store` (`search`, `info`, `install`, `uninstall`, `updates`, `check`).
-- **Live set into HypnoMix DAW, and mastering there:** `als2ardour` (a new session folder and an import report) and
-  `chain master --ardour` (the chain built in the open HypnoMix DAW session).
+- **Live set into HypnoMix Studio, and mastering there:** `als2ardour` (a new session folder and an import report) and
+  `chain master --ardour` (the chain built in the open HypnoMix Studio session).
 - **DAW mode, for Apple-silicon Macs first:** `app --daw` runs the HypnoMix engine (the DAW's audio engine, a separate program) and
   drives its open session from the DAW view and the Assistant. It is an add-on added from Setup; the first engine (0.1.0) is
   for Apple-silicon Macs only, and there is none for Intel Macs or Windows yet.
@@ -133,7 +133,7 @@ One line per area. Each command's own help (`hypnomix <command> -h`) and its wik
   the review device, Hypnomix Align).
 - **REAPER:** `project`, `scan` and `fix` on an `.rpp` (a new project), `reaper` (the bridge, HypnoMix Probe and
   HypnoMix Main, the A/B review panel, the Align panel, `snapshot`, `loop`, `diagnose`), `chain --reaper`.
-- **HypnoMix DAW:** `project` and `scan` on a session (`.ardour`), and `fix` writes approved fades, gain, dips and
+- **HypnoMix Studio:** `project` and `scan` on a session (`.ardour`), and `fix` writes approved fades, gain, dips and
   fader, pan and mute moves into a new `.ardour` snapshot.
 - **The app and teacher mode:** `app` (the first pass by clicking), the Assistant and the optional Listener, and the
   Teacher tab: three courses per DAW, including the complete course A to Z.
@@ -164,14 +164,14 @@ decisions, the same "new files only". What HypnoMix cannot change in a DAW becom
    Live and judged by ear; a session made by `import` from each file type, opened in a released DAW; the REAPER windows clicked through by
    hand, and on Windows; an MPE clip played on a controller after the glide fix; and take lanes, cue slots, the A/B
    session and the meters on real audio hardware, judged by ear.
-2. **Colour beyond Live sets:** REAPER projects and HypnoMix DAW sessions, and an instrument doubling a line (from `midi`: it needs
+2. **Colour beyond Live sets:** REAPER projects and HypnoMix Studio sessions, and an instrument doubling a line (from `midi`: it needs
    an instrument device chain and the MIDI clip written, both new).
 3. **`ab` for REAPER projects** (it plays Live sets today), and models for Saturator, Reverb and Delay.
 4. **Space checks in `devices`:** delay times against the tempo, reverb low cuts.
 5. **A `comp` writer from ranked takes:** `takes` ranks them and lists the best take per section today; nothing
    writes the comp into a project yet.
-6. **HypnoMix DAW, hands-on:** DAW mode needs the engine add-on, whose first version (0.1.0) is for Apple-silicon Macs
-   only. With it, the app drives the open HypnoMix DAW session (regions, mixer, plug-ins, the review loop) and
+6. **HypnoMix Studio, hands-on:** DAW mode needs the engine add-on, whose first version (0.1.0) is for Apple-silicon Macs
+   only. With it, the app drives the open HypnoMix Studio session (regions, mixer, plug-ins, the review loop) and
    `chain master --ardour` builds the mastering chain there; next is an engine for Intel Macs and Windows, opening it on more real songs, and the DAW's own
    plug-ins (EQ, compressor, expander, delay, reverb) in the chain beyond the test sessions.
 7. **Windows parity:** file pickers, and loopback capture without a macOS-only device for the loops that
@@ -202,7 +202,7 @@ decisions, the same "new files only". What HypnoMix cannot change in a DAW becom
 |---|---|---|---|
 | Ableton Live | yes (`.als`) | yes: a new `.als` | yes (AbletonOSC, the Max for Live devices) |
 | REAPER | yes (`.rpp`) | yes: a new `.rpp` | yes: through the bridge |
-| HypnoMix DAW | yes (`.ardour`) | yes: a new `.ardour` snapshot (not yet opened in a released DAW) | yes, in DAW mode: the open HypnoMix DAW session (an add-on; Apple-silicon Macs only so far) |
+| HypnoMix Studio | yes (`.ardour`) | yes: a new `.ardour` snapshot (not yet opened in a released DAW) | yes, in DAW mode: the open HypnoMix Studio session (an add-on; Apple-silicon Macs only so far) |
 | A commercial DAW with a session-info text export | audio folders only today | audio folders only today | later |
 | A commercial DAW with a closed binary project | audio folders only today (there is no reader for it) | audio folders only today | later (a control surface) |
 

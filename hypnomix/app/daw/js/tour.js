@@ -1,4 +1,4 @@
-/* HypnoMix DAW · the guided tours' engine. The tours themselves are data (js/tours.js).
+/* HypnoMix Studio · the guided tours' engine. The tours themselves are data (js/tours.js).
 
    What it does: offers a tour the first time (never taking focus), lists the tours behind the Tour button, and runs one
    step by step on the real screen: a soft spotlight on ONE real control and a small card beside it. A step may wait for the

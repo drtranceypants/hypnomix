@@ -1,4 +1,4 @@
-"""The shared half of every project import: a plain project model, and the writer that turns it into a NEW HypnoMix DAW
+"""The shared half of every project import: a plain project model, and the writer that turns it into a NEW HypnoMix Studio
 session folder. Each reader (.ptx, .aaf, .dawproject, .logicx, .rpp) only fills the model; this module
 copies the audio, writes the session and the IMPORT-REPORT.md. The Live set importer (als2ardour) keeps its own
 reader and writer; this one reuses its parts (audio copying, region and route XML, the tempo map).

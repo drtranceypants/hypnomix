@@ -463,7 +463,7 @@ class NotLiveSets(Tmp):
             self.assertIn(code, (1, 2), (cmd, text))
             self.assertNotIn("Traceback", text, cmd)
             self.assertNotIn("BadGzipFile", text, cmd)
-        code, text = hx(self.d, "sidechain", rpp)                    # sidechain reads REAPER projects and HypnoMix DAW sessions too
+        code, text = hx(self.d, "sidechain", rpp)                    # sidechain reads REAPER projects and HypnoMix Studio sessions too
         self.assertEqual((code, text.strip()), (0, "Song.rpp: 0 sidechained compressor(s)"))
 
     def test_masking_given_a_project_says_it_reads_a_folder_of_stems(self):

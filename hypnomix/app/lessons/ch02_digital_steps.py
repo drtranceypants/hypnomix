@@ -208,7 +208,7 @@ STEPS = [
            "reaper": ["Use File → **Save project as...** and give it the next version name.",
                       "In the Save dialog, choose the option to copy all media into the project directory, if it is offered, so the project is self-contained."],
            "ardour": ["Use the Session menu's Save As and Snapshot commands to keep a numbered version.",
-                      "A HypnoMix DAW session is already a folder with its recordings inside, so copy that whole folder when you back up."]},
+                      "A HypnoMix Studio session is already a folder with its recordings inside, so copy that whole folder when you back up."]},
       listen="After copying the song to a second drive, open the copy from there and play it. Every clip should play, "
              "with no missing-file messages.",
       mistakes=["Saving only over the same file. One bad edit or crash and the earlier work is gone; save versions.",

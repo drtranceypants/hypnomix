@@ -39,7 +39,7 @@ def flat(text):
 
 # ================================================================ DOCS
 class OneDownloadToday(unittest.TestCase):
-    """There is one app and one installer for everyone; HypnoMix DAW is an add-on, not a second download, and it is not
+    """There is one app and one installer for everyone; HypnoMix Studio is an add-on, not a second download, and it is not
     available yet. Nothing in the repository says otherwise."""
     CLAIMS = re.compile(r"\btwo downloads\b|download page (asks|offers the same)|offers the same (choice|two)"
                         r"|choose (the )?Hypnomix Assistant|(page|setup) offers? two\b|\bboth downloads\b|offer two:", re.I)
@@ -57,10 +57,10 @@ class OneDownloadToday(unittest.TestCase):
         self.assertRegex(a, r"add-on you add from the app's Setup only if you want it")
         g = flat(read("docs/guides/09-setup-and-ai.md"))
         self.assertIn("It is an **add-on**, not a second download", g)
-        self.assertIn("Add HypnoMix DAW", g)
+        self.assertIn("Add HypnoMix Studio", g)
         s = flat(read("hypnomix/app/setup.py"))
         self.assertIn("There is one app and one installer for everyone", s)
-        self.assertIn("Add HypnoMix DAW", read("hypnomix/app/setup.js"))
+        self.assertIn("Add HypnoMix Studio", read("hypnomix/app/setup.js"))
         self.assertIn("One download for everyone", read("README.md"))
         self.assertIn("one app and one installer", flat(read("packaging/README.md")))
 
@@ -400,13 +400,13 @@ class DawNewWithoutEngine(unittest.TestCase):
             self.eng.new_session(self.td.name, "Song")
         msg = str(cm.exception)
         self.assertIn("no engine is installed", msg)
-        self.assertNotIn("attached to a HypnoMix DAW window", msg)
+        self.assertNotIn("attached to a HypnoMix Studio window", msg)
 
     def test_with_a_window_already_open_it_still_says_to_use_that_window(self):
         with mock.patch.object(self.DW, "is_engine", return_value=True):
             with self.assertRaises(RuntimeError) as cm:
                 self.eng.new_session(self.td.name, "Song")
-        self.assertIn("attached to a HypnoMix DAW window", str(cm.exception))
+        self.assertIn("attached to a HypnoMix Studio window", str(cm.exception))
 
 
 class ChatStateBetweenModules(unittest.TestCase):

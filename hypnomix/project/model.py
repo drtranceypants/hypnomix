@@ -100,7 +100,7 @@ class Clip:
 
 @dataclass
 class TakeLane:
-    """One take a track was recorded or comped from, kept beside what it plays (Live's take lanes; a HypnoMix DAW
+    """One take a track was recorded or comped from, kept beside what it plays (Live's take lanes; a HypnoMix Studio
     take playlist "<track>.take N"). Its clips are not heard: the track plays its comp (`Track.clips`),
     whose clips were copied from the takes. Tools read takes (the edges check compares a take with the comp) and
     never change them; fixes stay clip edits on the comp."""
@@ -126,13 +126,13 @@ class Track:
     parent: "Track" = None         # the folder / group this track sits in
     take_lanes: list = field(default_factory=list)   # [TakeLane] the comp was made from (not heard)
     native: object = None
-    group: str = ""                # HypnoMix DAW: the route group it belongs to (its bus is `parent` when routed there)
-    route_id: str = ""             # HypnoMix DAW: the route id (what the engine's MCP tools take)
-    active: bool = True            # HypnoMix DAW: the route is active (a switched-off route plays nothing)
+    group: str = ""                # HypnoMix Studio: the route group it belongs to (its bus is `parent` when routed there)
+    route_id: str = ""             # HypnoMix Studio: the route id (what the engine's MCP tools take)
+    active: bool = True            # HypnoMix Studio: the route is active (a switched-off route plays nothing)
 
     @property
     def comped(self):
-        """The track plays a comp made from take lanes (Live take lanes, HypnoMix DAW take playlists)."""
+        """The track plays a comp made from take lanes (Live take lanes, HypnoMix Studio take playlists)."""
         return any(lane.clips for lane in self.take_lanes)
 
     @property
@@ -151,7 +151,7 @@ class Track:
 
     @property
     def fader_db(self):
-        """The fader alone in dB (volume is fader x trim where the DAW has a trim, as HypnoMix DAW does)."""
+        """The fader alone in dB (volume is fader x trim where the DAW has a trim, as HypnoMix Studio does)."""
         g = self.volume / (getattr(self, "trim", None) or 1.0)
         return 20 * math.log10(g) if g > 0 else -math.inf
 
@@ -406,7 +406,7 @@ def render_clip(c, sr, warn, name=""):
 
 
 def render_clips(track, N, sr, warn):
-    """Clips summed onto the timeline. An opaque clip (HypnoMix DAW) covers what is under it, crossfading through
+    """Clips summed onto the timeline. An opaque clip (HypnoMix Studio) covers what is under it, crossfading through
     its own fades, so clips are laid down from the lowest layer up."""
     y = np.zeros(N)
     for c in sorted(track.clips, key=lambda c: (c.layer, c.start)):

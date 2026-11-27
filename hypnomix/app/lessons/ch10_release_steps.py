@@ -205,7 +205,7 @@ STEPS = [
            "reaper": ["File → **Save project as...**, with the option to copy all media into the project directory ticked, only if you are sure you want it there; the original is not changed.",
                       "For stems: File → **Render**, Source **Stems (selected tracks)** with all tracks selected, Bounds **Entire project**, WAV, 24-bit.",
                       "Then copy the whole project folder, with the notes file, to your two storage places."],
-           "ardour": ["A HypnoMix DAW session is a self-contained folder, with its audio inside it, so copying the whole session folder is the archive.",
+           "ardour": ["A HypnoMix Studio session is a self-contained folder, with its audio inside it, so copying the whole session folder is the archive.",
                       "For stems: Session → Export → **Stem Export...**, WAV, 24-bit.",
                       "Then copy the whole session folder, with the notes file, to your two storage places."]},
       listen="Open the stems in a new, empty project, all at the same start point, and play them together. Do they sound like your master? If so the archive works.",

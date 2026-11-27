@@ -281,7 +281,7 @@ class GuiServer(unittest.TestCase):
         d = self.scan("Sess", self.music / "Sess.ardour", [F("smooth-1")], mode="ardour")
         (self.music / "Sess.ardour").write_text("<Session/>", encoding="utf-8")
         with mock.patch.object(AA, "build", return_value=("built", [])) as b:
-            self.assertEqual(abset.build(d), ("built", []))                                  # the HypnoMix DAW A/B snapshot
+            self.assertEqual(abset.build(d), ("built", []))                                  # the HypnoMix Studio A/B snapshot
         self.assertEqual(b.call_args.kwargs["session"], self.music / "Sess.ardour")
         with self.assertRaises((RuntimeError, SystemExit)) as cm:                             # a session the reader cannot read
             abset.build(d)

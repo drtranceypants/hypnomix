@@ -11,7 +11,7 @@ const DONE = {approve: 'Approved', skip: 'Skipped', change: 'Marked to change'};
 const SEVWORD = {high: 'High', medium: 'Medium', low: 'Low', info: 'Info'};
 const NEWTHING = {als: 'set', rpp: 'project', ardour: 'session snapshot'};
 const NOUN_ = {als: 'set', rpp: 'project', ardour: 'session', folder: 'folder'};
-const DAWWORD = {als: 'Live', rpp: 'REAPER', ardour: 'HypnoMix DAW'};
+const DAWWORD = {als: 'Live', rpp: 'REAPER', ardour: 'HypnoMix Studio'};
 const dawOf = R => DAWWORD[R && R.kind] || 'your DAW';              // the DAW of the song on screen: never tell a REAPER project to do something in Live
 const STATUSES = [['all', 'All'], ['undecided', 'Undecided'], ['approved', 'Approved'], ['skipped', 'Skipped'], ['change', 'To change'], ['hand', 'By hand']];
 
@@ -256,7 +256,7 @@ function planOf(R) {
   });
   return {auto, defs, explicit: auto.filter(f => !defs.includes(f)), manual, zero, blocked, defManual};
 }
-// harmony balance is automation in a Live set, but balanced copies of the parts (no project) in REAPER and HypnoMix DAW
+// harmony balance is automation in a Live set, but balanced copies of the parts (no project) in REAPER and HypnoMix Studio
 function writesSetOf(f, kind) { return f.applies === 'set' || (f.applies === 'audio' && (f.tool === 'tune' || (f.tool === 'voices' && kind === 'als'))); }
 function stepWords(f, R) {
   const first = String(f.fix || '').split('\n')[0].replace(/\. ON BY DEFAULT.*$/, '');
@@ -293,8 +293,8 @@ function applyHTML(R) {
     t += `<p class="banner"><b>${pl.manual.length} approved item${pl.manual.length === 1 ? ' is' : 's are'} by hand and will NOT be applied:</b> ${pl.manual.map(f => esc(f.id)).join(', ')}. HypnoMix cannot make these changes itself: the handoff list is a checklist in your DAW's words with a marker at each spot.
       <button type="button" ${nAuto ? '' : 'class="primary" '}data-handoff="${esc(R.dir)}">Make the handoff list</button></p>`;
   }
-  if (pl.defManual.length) t += `<p class="banner"><b>${pl.defManual.length} on-by-default step${pl.defManual.length === 1 ? '' : 's'} cannot be written into ${R.kind === 'ardour' ? 'a HypnoMix DAW session' : 'this kind of project'} and will not run:</b> ${pl.defManual.map(f => esc(f.id)).join(', ')}. Do ${pl.defManual.length === 1 ? 'it' : 'them'} by hand (see the handoff list).</p>`;
-  if (pl.blocked.length) t += `<p class="banner bad"><b>${pl.blocked.map(f => esc(f.id)).join(', ')}: tuning is not written into a HypnoMix DAW session yet.</b> Turn ${pl.blocked.length === 1 ? 'it' : 'them'} off (Skip) before applying; the other fixes can go ahead. <button type="button" data-report="banner">Report this</button></p>`;
+  if (pl.defManual.length) t += `<p class="banner"><b>${pl.defManual.length} on-by-default step${pl.defManual.length === 1 ? '' : 's'} cannot be written into ${R.kind === 'ardour' ? 'a HypnoMix Studio session' : 'this kind of project'} and will not run:</b> ${pl.defManual.map(f => esc(f.id)).join(', ')}. Do ${pl.defManual.length === 1 ? 'it' : 'them'} by hand (see the handoff list).</p>`;
+  if (pl.blocked.length) t += `<p class="banner bad"><b>${pl.blocked.map(f => esc(f.id)).join(', ')}: tuning is not written into a HypnoMix Studio session yet.</b> Turn ${pl.blocked.length === 1 ? 'it' : 'them'} off (Skip) before applying; the other fixes can go ahead. <button type="button" data-report="banner">Report this</button></p>`;
   if (pl.zero.length) t += `<p class="note">${pl.zero.length} item(s) are approved at 0%, so nothing is applied for them: ${pl.zero.map(f => esc(f.id)).join(', ')}.</p>`;
   if (!nAuto) t += `<p><b>Nothing here can be applied automatically.</b>${pl.manual.length ? ' Use the handoff list above.' : ' Approve a fix above (or leave an on-by-default step on).'}</p>`;
   const given = answersGiven();

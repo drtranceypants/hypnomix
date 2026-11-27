@@ -1,6 +1,6 @@
 """Read a .ptx / .ptf / .pts session into the import model (hypnomix.project.importer).
 
-The session is read by the engine's reader for these sessions (hypnomix-ptdump, which comes with the HypnoMix DAW
+The session is read by the engine's reader for these sessions (hypnomix-ptdump, which comes with the HypnoMix Studio
 add-on, for Apple-silicon Macs only so far; without it this cannot run). What it
 gives: tracks (by name, in order), audio regions (position, start in the file, length) with their files from the
 session's Audio Files folder, and MIDI regions with their notes. What the session file does not give this reader, and

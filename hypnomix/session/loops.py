@@ -3,7 +3,7 @@
 
   hypnomix loops TAKE.wav [--bars 1 2 4 8] [--top 8] [--out DIR]
   hypnomix loops SET.als --track "Drums" --apply "SET (loops).als" [--top 8]
-  hypnomix loops SESSION.ardour --track "Drums" --cues [--engine URL]   (HypnoMix DAW: cue slots)
+  hypnomix loops SESSION.ardour --track "Drums" --cues [--engine URL]   (HypnoMix Studio: cue slots)
   hypnomix loops TAKE.wav --cues [--engine URL]
 
 It maps the take's tempo (like `hypnomix tempomap`), then scores every 1, 2, 4 and 8 bar window:
@@ -23,9 +23,9 @@ to compare; drag the one you like into the Arrangement. The Arrangement itself i
 With --cues, the loops go into the cue slots (the Session view) of the session open in the HypnoMix engine, on a
 track "<Track> loops" right after the take's track (made new, or the empty slots of one already there; while a
 track's slot holds a clip, that track's Arrangement does not play, so never on the take's own track): looping,
-launched on the bar, at the session's tempo. With a HypnoMix DAW session (.ardour) the take is the --track's region
+launched on the bar, at the session's tempo. With a HypnoMix Studio session (.ardour) the take is the --track's region
 (--clip N for another one); it must be the session the engine has open. --engine URL, else HYPNOMIX_ENGINE_URL, else
-a HypnoMix DAW window on 127.0.0.1:4820. HypnoMix sees the change (the session shows as unsaved, and Stop, Open, New
+a HypnoMix Studio window on 127.0.0.1:4820. HypnoMix sees the change (the session shows as unsaved, and Stop, Open, New
 and quit ask Save first): save the session to keep them.
 
 Check the tempo map first (`hypnomix tempomap TAKE.wav --click CHECK.wav`): loops cut on wrong bar
@@ -154,13 +154,13 @@ def main():
     ap = argparse.ArgumentParser(prog="hypnomix loops", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("source"); ap.add_argument("--track"); ap.add_argument("--clip", type=int)
     ap.add_argument("--bars", type=int, nargs="+", default=[1, 2, 4, 8]); ap.add_argument("--top", type=int, default=8)
-    ap.add_argument("--bpb", type=int, help="beats per bar (default: the session's own for a HypnoMix DAW session, else 4)")
+    ap.add_argument("--bpb", type=int, help="beats per bar (default: the session's own for a HypnoMix Studio session, else 4)")
     ap.add_argument("--bpm", type=A.number(20, 400))
     ap.add_argument("--downbeat", type=float); ap.add_argument("--double", action="store_true"); ap.add_argument("--half", action="store_true")
     ap.add_argument("--out"); ap.add_argument("--apply", metavar="NEW.als")
     ap.add_argument("--cues", action="store_true", help="put the loops into cue slots of the session open in the HypnoMix engine (with a session file, "
                          "that very file must be the one open). HypnoMix sees the change: the session shows as "
-                         "unsaved, and Stop, Open, New and quit ask Save first; save in HypnoMix DAW to keep them")
+                         "unsaved, and Stop, Open, New and quit ask Save first; save in HypnoMix Studio to keep them")
     ap.add_argument("--engine", help="the engine's MCP URL (with --cues; it is in the DAW view's engine panel)")
     from hypnomix.session import liveversion as LV; LV.add_force_flag(ap)
     a = ap.parse_args()
@@ -168,7 +168,7 @@ def main():
     is_set = src.suffix.lower() == ".als"
     is_ardour = src.suffix.lower() == ".ardour"
     if is_ardour and a.apply:
-        sys.exit("--apply writes a Live set: for a HypnoMix DAW session use --cues (the engine's Session view)")
+        sys.exit("--apply writes a Live set: for a HypnoMix Studio session use --cues (the engine's Session view)")
     if a.cues and a.apply:
         sys.exit("choose --apply (a new Live set) or --cues (the engine's cue slots), not both")
     eng = None

@@ -1,4 +1,4 @@
-"""HypnoMix DAW as an add-on (hypnomix/app/engine_addon.py): fetched once, on a click, checked before it is used.
+"""HypnoMix Studio as an add-on (hypnomix/app/engine_addon.py): fetched once, on a click, checked before it is used.
 
 The real download code runs against an HTTPS server on this computer (self-signed, nothing leaves the machine), the way
 tests/test_store.py does. The shipped manifest names no address, so every test that adds the engine uses a manifest of its own
@@ -293,7 +293,7 @@ class Adding(Base):
             self.publish(data=tar_dir(kit, Path(td) / "k.tar.gz"))
             with self.assertRaises(EA.AddonError) as cm:
                 EA.install()
-            self.assertIn("not a HypnoMix DAW engine kit", str(cm.exception))
+            self.assertIn("not a HypnoMix Studio engine kit", str(cm.exception))
         with tempfile.TemporaryDirectory() as td:
             kit = make_kit(td, extra={"lib/libx.dylib": b"\0-I/Users/somebody/build\0"})
             self.publish(data=tar_dir(kit, Path(td) / "k.tar.gz"))
@@ -617,9 +617,9 @@ class Shipped(unittest.TestCase):
                     with self.assertRaises(EA.AddonError):
                         EA.start_install()
             self.assertEqual(os.listdir(td), [])                                   # not even a folder was made
-        self.assertEqual(said["mac-intel"], "HypnoMix DAW is not available for Intel Macs yet.")
-        self.assertEqual(said["windows-x64"], "HypnoMix DAW is not available for Windows yet.")
-        self.assertEqual(said["linux-x64"], "HypnoMix DAW is not available for Linux yet.")
+        self.assertEqual(said["mac-intel"], "HypnoMix Studio is not available for Intel Macs yet.")
+        self.assertEqual(said["windows-x64"], "HypnoMix Studio is not available for Windows yet.")
+        self.assertEqual(said["linux-x64"], "HypnoMix Studio is not available for Linux yet.")
 
     def test_nothing_is_fetched_without_a_click(self):
         """Starting the app, reading Setup's state and the DAW's state never download or write anything."""
@@ -681,7 +681,7 @@ class Command(Base):
         self.assertFalse(self.root.exists())
         self.assertFalse(self.home.exists())
         code, out, _ = self.run_cmd("install")
-        self.assertIn("Would add HypnoMix DAW 1.0.0", out)
+        self.assertIn("Would add HypnoMix Studio 1.0.0", out)
         self.assertIn("SHA-256 " + hashlib.sha256(self.good_bytes).hexdigest(), out)
         self.assertIn("Nothing was downloaded or changed", out)
         self.assertIn("--yes", out)

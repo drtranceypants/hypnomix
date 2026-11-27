@@ -88,7 +88,7 @@ details.byhand{background:var(--card);border:1px solid var(--line);border-radius
 </style></head><body>
 <a class="skiplink" href="#main">Skip to the page</a>
 <header><span class="brand">HypnoMix</span>
-<nav aria-label="Main"><button class="tab" data-daw hidden title="DAW: the HypnoMix DAW (Arrangement, Session, Mixer, Review) on the HypnoMix DAW engine">DAW</button><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
+<nav aria-label="Main"><button class="tab" data-daw hidden title="DAW: the HypnoMix Studio (Arrangement, Session, Mixer, Review) on the HypnoMix Studio engine">DAW</button><button class="tab" data-view="home">Songs</button><button class="tab" data-view="prefs">Preferences</button>
 <button class="tab" data-view="chat">Assistant</button><button class="tab" data-view="wiki">Wiki</button><button class="tab" data-view="teach" title="Teacher: make a song from scratch, step by step, in your DAW">Teacher</button><button class="tab" data-view="live">Live</button><button class="tab" data-view="tools">Tools</button><button class="tab" data-view="job" id="jobtab" hidden>Activity</button><button class="tab" data-setup title="How you work with HypnoMix: AI provider, keys, your DAW, teacher mode">Setup</button></nav>
 <span class="live" id="live" role="status"></span></header>
 <div id="msg" role="alert"></div><div id="sr" class="sr" role="status" aria-live="polite"></div>
@@ -166,7 +166,7 @@ async function refresh() {
     S.cmdRev = S.state.commands_rev;
     get('/api/commands').then(r => { S.commands = r.commands || []; if (S.view === 'tools') render(); }).catch(() => { S.cmdRev = ''; });
   }
-  // the Live pill is for a person who uses Live: a REAPER or HypnoMix DAW song on screen (or that DAW chosen in Setup) never sees "Live device not connected"
+  // the Live pill is for a person who uses Live: a REAPER or HypnoMix Studio song on screen (or that DAW chosen in Setup) never sees "Live device not connected"
   const rk = S.view === 'review' && S.review ? S.review.kind : '', noLive = rk ? (rk === 'rpp' || rk === 'ardour') : ['reaper', 'ardour', 'other'].includes(S.state.daw);
   const lv = $('#live'), lt = S.state.live ? '<b aria-hidden="true">●</b> Live device connected' : noLive ? '' : 'Live device not connected';
   if (lv.dataset.t !== lt) { lv.dataset.t = lt; lv.innerHTML = lt; lv.hidden = !lt; }            // only when it changes: a screen reader is not told every second
@@ -175,7 +175,7 @@ async function refresh() {
 }
 
 // ---------------------------------------------------------------- home
-const KIND_WORD = {als:'Live set', rpp:'REAPER project', ardour:'HypnoMix DAW session', folder:'folder of recordings'};
+const KIND_WORD = {als:'Live set', rpp:'REAPER project', ardour:'HypnoMix Studio session', folder:'folder of recordings'};
 function songCard(s) {
   const tags = [];
   if (s.damaged) tags.push(`<span class="tag prot">${s.damaged === 'decisions.json' ? "this song's decisions file is damaged" : "this scan's results file is damaged"}</span>`);
@@ -195,7 +195,7 @@ function homeView() {
   <p class="sub">Every check runs at once. Nothing is changed. You then hear each proposed fix and decide.</p>
   ${st.unanswered ? `<div class="prefs">${st.unanswered} preference question(s) not answered yet. <button data-view="prefs">Answer them</button> so the review starts from how you work.</div>` : ''}
   <div class="card">
-    <div class="row"><label>Song</label><span class="path">${esc(f.source) || 'a Live set (.als), REAPER project (.rpp), HypnoMix DAW session (.ardour), or a folder of recordings or stems from any DAW'}</span>
+    <div class="row"><label>Song</label><span class="path">${esc(f.source) || 'a Live set (.als), REAPER project (.rpp), HypnoMix Studio session (.ardour), or a folder of recordings or stems from any DAW'}</span>
       ${ch ? '<button data-pick="source:song">Choose project…</button><button data-pick="source:folder">Choose folder…</button>' : ''}</div>
     <div class="row"><label for="src">Path</label><input type="text" id="src" placeholder="or paste the path here" value="${esc(f.source)}"></div>
     <div class="row"><label${ch ? '' : ' for="mixp"'}>Bounce of the mix <span class="note">(optional)</span></label>${ch ? `<span class="path">${esc(f.mix) || 'adds loudness, release checks and the key'}</span>

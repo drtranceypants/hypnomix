@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HypnoMix DAW</title>
+<title>HypnoMix Studio</title>
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/live.css">
 <link rel="stylesheet" href="css/tour.css">
@@ -28,13 +28,13 @@
 
   <!-- ───────────── top bar ───────────── -->
   <header class="topbar">
-    <div class="brand" data-info="HypnoMix DAW: the DAW view of the HypnoMix app">
+    <div class="brand" data-info="HypnoMix Studio: the DAW view of the HypnoMix app">
       <svg viewBox="0 0 20 20" class="brand-mark" aria-hidden="true">
         <circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.4"/>
         <circle cx="10" cy="10" r="5.2" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".7"/>
         <circle cx="10" cy="10" r="1.9" fill="currentColor"/>
       </svg>
-      <span class="brand-name">HypnoMix DAW</span>
+      <span class="brand-name">HypnoMix Studio</span>
       <span class="session-name" id="sessionName" data-info="The open session; a dot after the name means it has changes that are not saved">—</span>
       <span class="demo-badge" id="demoBadge" hidden data-info="This is the made-up practice song: it plays no sound, saves nothing and sends nothing to an engine">Demo song</span>
     </div>
@@ -89,10 +89,10 @@
     <div class="top-right">
       <div class="cpu" data-info="Engine DSP load (simulated on the demo song)"><span>DSP</span><div class="cpu-bar"><i id="cpuBar"></i></div></div>
       <button class="btn save" id="btnSave" disabled aria-label="Save" data-info="Save the session · ⌘S (or Ctrl+S)">Save</button>
-      <button class="connect" id="btnConnect" data-info="The HypnoMix DAW engine: its state, Start, Restart, Stop, Open and New. Click for the panel.">
+      <button class="connect" id="btnConnect" data-info="The HypnoMix Studio engine: its state, Start, Restart, Stop, Open and New. Click for the panel.">
         <i class="dot"></i><span id="connectLabel">Engine</span>
       </button>
-      <button class="btn tour-btn" id="btnTour" aria-haspopup="dialog" data-info="Guided tours of the HypnoMix DAW, one step at a time on the real screen. Optional: Escape ends a tour.">Tour</button>
+      <button class="btn tour-btn" id="btnTour" aria-haspopup="dialog" data-info="Guided tours of HypnoMix Studio: each step is shown on the real screen. Optional: Escape ends a tour.">Tour</button>
       <button class="tbtn" id="btnTheme"data-info="Light / dark theme · ⇧T" aria-label="Theme">
         <svg viewBox="0 0 16 16"><path d="M8 2.5a5.5 5.5 0 1 0 0 11z" fill="currentColor"/><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
       </button>

@@ -1,4 +1,4 @@
-"""The guided tours inside the HypnoMix DAW (hypnomix/app/daw/js/tours.js: the data, tour.js: the engine, css/tour.css).
+"""The guided tours inside the HypnoMix Studio (hypnomix/app/daw/js/tours.js: the data, tour.js: the engine, css/tour.css).
 
 The repo has no JS runner, so: the data is read by running tours.js in macOS's JavaScriptCore (or Node when there is one)
 and checked in Python; the engine (tour.js) runs there too, with a small stand-in for the page (the same way
@@ -198,11 +198,11 @@ class TheData(unittest.TestCase):
         self.assertEqual(sorted(set(self.x["checks"]) - used), [], "a check no step waits for")
 
     def test_words(self):
-        """House voice: plain, no em dashes, the product is HypnoMix and the DAW is the HypnoMix DAW, no other product named."""
+        """House voice: plain, no em dashes, the product is HypnoMix and the DAW is HypnoMix Studio, no other product named."""
         text = json.dumps(self.d, ensure_ascii=False)
         self.assertNotIn("—", text)
         self.assertNotIn("Hypnomix", text.replace("hypnomix.", ""), "visible text spells the product HypnoMix")
-        self.assertIn("HypnoMix DAW", text)
+        self.assertIn("HypnoMix Studio", text)
         from tests.test_repo_rules import names_in          # the repository's own list of names that must not appear (kept as fingerprints)
         self.assertEqual(names_in(text), set(), "a product, hardware, artist or song name is in the tour text")
         # the first time a term shows in bold it is explained in the same step: every bold word is followed by sentence text
@@ -651,7 +651,7 @@ class TheServer(unittest.TestCase):
 
     def test_the_teacher_tab_card_and_the_route_are_there(self):
         js = Path(TE.__file__).with_name("teacher.js").read_text(encoding="utf-8")
-        self.assertIn("Take the tour inside the HypnoMix DAW", js)
+        self.assertIn("Take the tour inside the HypnoMix Studio", js)
         self.assertIn("/daw/#tour", js)
         self.assertIn("dawTourCard", js)
         self.assertIn("/api/daw/state", js, "the card is shown only where the DAW view is available")

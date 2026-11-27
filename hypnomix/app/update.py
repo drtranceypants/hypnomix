@@ -22,7 +22,7 @@ What the check protects against, and what it does not
   app, which only shows the bundle is whole and unmodified since it was signed (ad hoc or not): it does not show who
   made it. If that matters to you, download from the website and check the release's published fingerprints yourself.
 
-One installer per platform, the same for everyone (asset_name()): there are no editions. HypnoMix DAW is not inside the
+One installer per platform, the same for everyone (asset_name()): there are no editions. HypnoMix Studio is not inside the
 app; it is an add-on fetched from Setup (hypnomix/app/engine_addon.py), so an update swaps the app and leaves the engine
 where it is. A release that does not carry this computer's installer is reported plainly (no_download) and nothing is
 offered. Install and restart is refused (HTTP 409) while the DAW session has unsaved changes (daw.dirty()), and the Mac

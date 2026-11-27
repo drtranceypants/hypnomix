@@ -1,4 +1,4 @@
-"""Group tracks and sidechains in HypnoMix DAW sessions: the reader sees sidechain feeds and route
+"""Group tracks and sidechains in HypnoMix Studio sessions: the reader sees sidechain feeds and route
 groups, `tidy` / `order` plan group tracks and write the approved ones over MCP (here a fake engine), and the
 sidechain and duck checks run on an ACE Compressor keyed from another track."""
 import io

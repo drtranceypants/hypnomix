@@ -30,7 +30,7 @@ STEPS = [
            "reaper": ["Click the track's **FX** button and add, in this order: **ReaEQ** (low cut and mud cut), **ReaComp**, **ReaXcomp** (as the de-esser, see `step:deess`), then a second **ReaEQ** for presence and air.",
                       "Make a track for the reverb (**ReaVerbate**) and one for the delay (**ReaDelay**), each 100% wet with a **ReaEQ** after it, and send the vocal to both (route button → Add new send).",
                       "Clip gain is the item volume (right-click the item → Item properties, or its volume handle); drawn moves are Volume envelopes (the track's envelope button → Volume)."],
-           "ardour": ["Add an **ACE EQ**, an **ACE Compressor** and a second **ACE EQ** to the vocal strip's plug-in box. For the de-esser, use whatever de-esser or multiband compressor your HypnoMix DAW has, or de-ess by hand on the clip.",
+           "ardour": ["Add an **ACE EQ**, an **ACE Compressor** and a second **ACE EQ** to the vocal strip's plug-in box. For the de-esser, use whatever de-esser or multiband compressor your HypnoMix Studio has, or de-ess by hand on the clip.",
                       "Make buses for the reverb (**ACE Reverb**) and the delay (**ACE Delay**), and add aux sends from the vocal to each.",
                       "Level moves are fader automation (set the track's automation mode to Write or Touch and move the fader)."]},
       listen="After each step, switch the new effect off and on at the same loudness. Ask one question: does the voice sound clearer and "

@@ -1,4 +1,4 @@
-"""Takes and comping: Live take lanes read into the model like HypnoMix DAW take playlists (`Track.take_lanes`, not heard),
+"""Takes and comping: Live take lanes read into the model like HypnoMix Studio take playlists (`Track.take_lanes`, not heard),
 the scan names comped tracks, the DAW view's take lanes are wired in, and the Assistant reads takes at once and
 shows a comp as one proposal."""
 import gzip

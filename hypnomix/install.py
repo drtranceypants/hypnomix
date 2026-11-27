@@ -172,7 +172,7 @@ LIVE_APP_DIRS = (Path("/Applications"), Path("C:/ProgramData/Ableton"), Path("C:
 
 def uses_live():
     """True when this computer looks like it belongs to someone who uses Ableton Live: its User Library or its
-    preferences folder exist, or the app is installed. REAPER, HypnoMix DAW and folder-of-stems users never need the Live parts."""
+    preferences folder exist, or the app is installed. REAPER, HypnoMix Studio and folder-of-stems users never need the Live parts."""
     try:
         if remote_scripts_dir().parent.exists() or live_prefs_dir() is not None:
             return True
@@ -183,7 +183,7 @@ def uses_live():
 
 def live_mark(found, live_here):
     """The mark for a part only Live needs: ✓ when it is there; ✗ (needed) for someone who uses Live; · (optional)
-    for everyone else, so a REAPER or HypnoMix DAW user is not told something is missing that they never need."""
+    for everyone else, so a REAPER or HypnoMix Studio user is not told something is missing that they never need."""
     return "✓" if found else ("✗" if live_here else "·")
 
 

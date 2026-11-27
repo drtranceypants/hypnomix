@@ -1,5 +1,5 @@
 #!/bin/bash
-# Package a HypnoMix DAW engine kit as the archive people add from Setup. It never uploads anything.
+# Package a HypnoMix Studio engine kit as the archive people add from Setup. It never uploads anything.
 #
 #   packaging/mac/build_engine_archive.sh KIT                   # the platform is read from the program inside the kit
 #   packaging/mac/build_engine_archive.sh KIT mac-arm64         # or named: mac-arm64 (Apple silicon) or mac-intel

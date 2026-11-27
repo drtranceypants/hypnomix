@@ -140,7 +140,7 @@ class Names(Base):
 
 
 class OneInstaller(unittest.TestCase):
-    """There is one installer per platform for everyone: no edition changes its name, and HypnoMix DAW is not inside it."""
+    """There is one installer per platform for everyone: no edition changes its name, and HypnoMix Studio is not inside it."""
     def test_the_names_are_the_ordinary_ones_whatever_is_inside_the_app(self):
         import tempfile
         from pathlib import Path
@@ -579,7 +579,7 @@ class OneNamePerPlatform(Base):
         self.assertEqual(list(UP.DIR.glob("*.dmg")), [])
 
     def test_an_app_that_was_a_test_build_with_the_engine_inside_updates_like_any_other(self):
-        """Its bundle is replaced by the ordinary app; HypnoMix DAW is then found at the add-on's place or offered from Setup."""
+        """Its bundle is replaced by the ordinary app; HypnoMix Studio is then found at the add-on's place or offered from Setup."""
         from hypnomix.app import daw
         with tempfile.TemporaryDirectory() as td:
             app = Path(td).resolve() / "Hypnomix.app"
@@ -595,7 +595,7 @@ class OneNamePerPlatform(Base):
                 self.assertEqual((UP.asset_name(), v["one_click"]), (NAME, True))
                 self.assertEqual(daw.find_engine(), kit)                    # until the swap, it keeps working from its own bundle
                 kit.unlink()                                                # after the swap there is no bundled engine
-                self.assertIsNone(daw.find_engine())                        # ...and Setup offers HypnoMix DAW as the add-on
+                self.assertIsNone(daw.find_engine())                        # ...and Setup offers HypnoMix Studio as the add-on
 
 
 class UnsavedSession(Base):

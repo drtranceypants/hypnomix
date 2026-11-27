@@ -19,7 +19,7 @@ An Ardour session is a folder; the .ardour file in it is XML. What is read, and 
             each Region's position, length and source offset, scale-amplitude, gain Envelope (when active),
             FadeIn / FadeOut curves (when active), muted, opaque and layering-index (upper opaque regions
             cover the ones below, as Ardour plays them), every channel's source
-  takes     the track's other playlists named "<track>.take N" (orig-track-id = the route; HypnoMix DAW records
+  takes     the track's other playlists named "<track>.take N" (orig-track-id = the route; HypnoMix Studio records
             each pass into one and comps from them with comp_range): `Track.take_lanes`, in take order, with
             their regions read like the playlist's. They are not heard; the active playlist is the comp
 
@@ -469,7 +469,7 @@ def read(path):
         path = found[0]
     root = ET.parse(path).getroot()
     if root.tag != "Session":
-        raise SystemExit(f"{path.name}: not a HypnoMix DAW session")
+        raise SystemExit(f"{path.name}: not a HypnoMix Studio session")
     version = session_version(root)
     if version < 3000:
         raise SystemExit(f"{path.name}: a session in an old format (version 2) that is not read; save it in a newer session format first")

@@ -1,4 +1,4 @@
-"""The DAW view's Review: the HypnoMix loop (scan, review, apply) on the session open in the HypnoMix DAW engine.
+"""The DAW view's Review: the HypnoMix loop (scan, review, apply) on the session open in the HypnoMix Studio engine.
 
   POST /api/dawreview/scan     {save?}: bounce the mix into the scan folder (session_export_mix + export_status), then
                                `hypnomix scan SESSION.ardour --mix` through the app's job runner (one job at a time;
@@ -22,7 +22,7 @@
   GET  /api/dawreview/abstate  ?dir=   that A/B session (its items, match_db) and whether the engine has it open
   POST /api/dawreview/blind    {dir, id, picked: X|Y, was: A|B}: one blind choice into the scan's blind.json
   POST /api/dawreview/ab       {dir, id}: `hypnomix ab SCAN --ids ID` (the before / after pair, where `ab` can build
-                               one for a HypnoMix DAW session: repaired recordings; clip and mixer moves it cannot yet)
+                               one for a HypnoMix Studio session: repaired recordings; clip and mixer moves it cannot yet)
 
 Opening the new snapshot is the engine supervisor's own `POST /api/daw/open`, after the person's click.
 Nothing here changes or saves the open session without the person's click: a scan saves it only when its request says
@@ -217,13 +217,13 @@ def handling(f, ardour=True):
     if a == "manual":
         return "manual", "by hand: Apply does not change this"
     if f.get("tool") == "tune":
-        return "blocked", "tuning is not written into a HypnoMix DAW session yet: tune by hand (Approve is off)"
+        return "blocked", "tuning is not written into a HypnoMix Studio session yet: tune by hand (Approve is off)"
     if a == "audio":
         return "file", "Apply makes a repaired copy of the recording beside it; put it in the session by hand"
     op = (f.get("edit") or {}).get("op")
     if op in WRITTEN:
         return "written", "Apply writes this into the new snapshot"
-    return "manual", "a HypnoMix DAW session is written for fades, cuts, spikes, mixer moves and the MPE glide fix only: do this one by hand"
+    return "manual", "a HypnoMix Studio session is written for fades, cuts, spikes, mixer moves and the MPE glide fix only: do this one by hand"
 
 
 def applied_ids(log):
@@ -361,7 +361,7 @@ def ab_original(srv, session):
 
 
 def ab_state(d):
-    """The scan's A/B session for HypnoMix DAW (ab_ardour.json), and whether the engine has it open."""
+    """The scan's A/B session for HypnoMix Studio (ab_ardour.json), and whether the engine has it open."""
     from hypnomix.workflow import abset_ardour as AA
     spec = AA.load(d)
     if not spec:
@@ -430,7 +430,7 @@ def handle_post(srv, path, body):
         meta = atomic.load_json(d / "findings.json", {}, warn=False) or {}
         source = Path(str(meta.get("set") or ""))
         if source.suffix.lower() != ".ardour":
-            raise ValueError("this scan is not of a HypnoMix DAW session")
+            raise ValueError("this scan is not of a HypnoMix Studio session")
         out = out_for(source)
         argv = ["fix", str(d), "--approved", "--out", str(out)]
         srv.run_job("fix", f"Applying approved fixes: {source.name}", [("Writing a new snapshot", argv, True)], d, [source.parent])
@@ -448,7 +448,7 @@ def handle_post(srv, path, body):
         meta = atomic.load_json(d / "findings.json", {}, warn=False) or {}
         source = Path(str(meta.get("set") or ""))
         if source.suffix.lower() != ".ardour":
-            raise ValueError("this scan is not of a HypnoMix DAW session")
+            raise ValueError("this scan is not of a HypnoMix Studio session")
         out = ab_out_for(source)
         srv.run_job("abset", f"A/B session: {source.name}",
                     [("Building the A/B snapshot (every proposed fix as a B)", ["abset", str(d), "--out", str(out)], True)],

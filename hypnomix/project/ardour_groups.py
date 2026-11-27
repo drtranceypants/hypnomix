@@ -1,11 +1,11 @@
-"""Group tracks and sidechains in a HypnoMix DAW session, written straight into the open HypnoMix engine over MCP.
+"""Group tracks and sidechains in a HypnoMix Studio session, written straight into the open HypnoMix engine over MCP.
 
-A Live group track is, in HypnoMix DAW, a route group plus its subgroup bus, made together by the
+A Live group track is, in HypnoMix Studio, a route group plus its subgroup bus, made together by the
 engine's `group_create` (the members' outputs go to the bus, the bus fader is the group fader). This module:
 
-  plan_old_takes(p)          `tidy` on a HypnoMix DAW session: switched-off (inactive) tracks not in a group yet ->
+  plan_old_takes(p)          `tidy` on a HypnoMix Studio session: switched-off (inactive) tracks not in a group yet ->
                              one "Old takes" group, folded (what `tidy` could not do before: "a group needs Live")
-  plan_families(p, labels)   `order` on a HypnoMix DAW session: the "similar instruments always grouped" rule. Two or more
+  plan_families(p, labels)   `order` on a HypnoMix Studio session: the "similar instruments always grouped" rule. Two or more
                              ungrouped tracks of one family (drums, bass, keys/guitar/synth, vocals, strings/brass)
                              -> a group named after the family; one more track of a family that already has a group
                              -> added to it. Families come from names.json labels when given, else from track names
@@ -32,7 +32,7 @@ from hypnomix.core import loopback
 DEFAULT_URL = "http://127.0.0.1:4820/mcp"
 # Said in the help of every command that writes into the open engine, and after it writes.
 APP_NOTICES = ("HypnoMix sees the change: the session shows as unsaved, and Stop, Open, New and quit ask Save first. "
-               "Save in HypnoMix DAW to keep it")
+               "Save in HypnoMix Studio to keep it")
 WHERE_URL = "the engine's address is in the DAW view's engine panel; pass it as --engine URL"
 FAMILIES = ["Drums", "Bass", "Instruments", "Vocals", "Strings & Brass"]   # order.py's categories 0-4
 OLD_TAKES = "Old takes"
@@ -100,13 +100,13 @@ def open_problem(snaps, session):
     cur = next((s for s in rows if isinstance(s, dict) and s.get("current")), None) if isinstance(rows, list) else None
     if not cur or not cur.get("file"):
         return (f"could not tell which session the engine has open (it names no saved session file), so nothing was "
-                f"written: open {want.name} in HypnoMix DAW (and save it once) first")
+                f"written: open {want.name} in HypnoMix Studio (and save it once) first")
     have = Path(str(cur["file"])).resolve()
     if have == want:
         return None
     same = have.name == want.name
     return (f"the engine has {have if same else have.name} open, not {want if same else want.name}, so nothing was "
-            "written: open that session in HypnoMix DAW first")
+            "written: open that session in HypnoMix Studio first")
 
 
 def require_open(engine, session):
@@ -138,10 +138,10 @@ def wanted(fs, ids, example):
 
 
 def daw_flags(a, example):
-    """The flags a HypnoMix DAW session takes on tidy / order / duck: --apply (a new Live set) is refused, and --ids
+    """The flags a HypnoMix Studio session takes on tidy / order / duck: --apply (a new Live set) is refused, and --ids
     alone (without --engine) would silently write nothing, so it is refused too."""
     if getattr(a, "apply", None):
-        raise SystemExit("a HypnoMix DAW session is changed in the open HypnoMix engine, not written to a new file: "
+        raise SystemExit("a HypnoMix Studio session is changed in the open HypnoMix engine, not written to a new file: "
                          f"use --engine --ids {example},…")
     if getattr(a, "ids", None) and getattr(a, "engine", None) is None:
         raise SystemExit(f"--ids needs --engine: the options are written into the open HypnoMix engine "
@@ -277,13 +277,13 @@ def findings(plans, tool):
                        ("; the DAW cannot route tracks with different channel counts to one bus, so this one is "
                         "by hand" if pl.get("mixed") else ""))
             fix = (("by hand (listed, never written by HypnoMix): " if pl.get("mixed") else "") +
-               f"make the group track '{pl['group']}' in the open HypnoMix DAW (a route group plus its bus, "
+               f"make the group track '{pl['group']}' in the open HypnoMix Studio (a route group plus its bus, "
                    f"the tracks routed to it, the bus fader as the group fader; nothing shared but the bus" +
                    (", folded" if pl.get("fold") else "") + "). Not in the undo history: Ungroup (group_delete) "
                    "puts it back")
         else:
             problem = f"{len(pl['tracks'])} track(s), {pl['why']}, are outside it: {names}"
-            fix = f"add them to the group '{pl['group']}' in the open HypnoMix DAW (routed to its bus)"
+            fix = f"add them to the group '{pl['group']}' in the open HypnoMix Studio (routed to its bus)"
         out.append(dict(id=f"group-{n}", tool=tool, kind="group-old" if tool == "tidy" else "group-family",
                         severity="low", track=names, where=f"{len(pl['tracks'])} track(s)", group=pl["group"],
                         problem=problem, fix=fix, applies="manual" if pl.get("mixed") else "engine",
@@ -312,7 +312,7 @@ def apply(engine, findings_, ids):
         pl = f["plan"]
         if f.get("applies") == "manual":
             log.append(f"- {f['id']}: left for you: '{pl['group']}' mixes tracks with different channel counts, which one "
-                       "bus cannot take, so HypnoMix does not write it; group those tracks in HypnoMix DAW yourself")
+                       "bus cannot take, so HypnoMix does not write it; group those tracks in HypnoMix Studio yourself")
             continue
         missing = [n for n in pl["tracks"] if n not in rid]
         if missing:
@@ -359,13 +359,13 @@ def labels_from(names_json):
 
 
 def run_cli(tool, path, a, plans_fn):
-    """The HypnoMix DAW branch of `hypnomix tidy` / `hypnomix order`: list the group options, or write the approved ones
+    """The HypnoMix Studio branch of `hypnomix tidy` / `hypnomix order`: list the group options, or write the approved ones
     into the open engine (--engine [URL] --ids group-1,...)."""
     from hypnomix.project import ardour as AR
     daw_flags(a, "group-1")
     p = AR.read(path)
     fs = findings(plans_fn(p), tool)
-    print(f"{Path(p.path).name}: {len(fs)} group option(s) (HypnoMix DAW session; groups are written into the open "
+    print(f"{Path(p.path).name}: {len(fs)} group option(s) (HypnoMix Studio session; groups are written into the open "
           "HypnoMix engine, ask first)")
     for f in fs:
         print(f"  {f['id']:<8} {f['fix'].split('. Not in')[0]}\n           ({f['problem']})")

@@ -8,21 +8,21 @@ the `assistant` and `critique` extras, and an ffmpeg program. The GPL extras (`r
 | file | built by | what it is |
 |---|---|---|
 | `Hypnomix-<v>-mac-arm64.dmg` / `-mac-x86_64.dmg` | `packaging/mac/build_dmg.sh [arm64\|x86_64]` | drag-to-Applications disk image; `Hypnomix.app` is `macapp/Hypnomix.swift` with Python inside `Contents/Resources/python` |
-| `HypnoMix-engine-<engine version>-<platform>.tar.gz` | `packaging/mac/build_engine_archive.sh KIT` | the **HypnoMix DAW add-on**, not an installer: the engine kit as an archive of its own, uploaded by hand to a release and added from Setup on a click. The first one, engine 0.1.0, is published for `mac-arm64` only (see "HypnoMix DAW, the add-on") |
+| `HypnoMix-engine-<engine version>-<platform>.tar.gz` | `packaging/mac/build_engine_archive.sh KIT` | the **HypnoMix Studio add-on**, not an installer: the engine kit as an archive of its own, uploaded by hand to a release and added from Setup on a click. The first one, engine 0.1.0, is published for `mac-arm64` only (see "HypnoMix Studio, the add-on") |
 | `Hypnomix-<v>-windows-x64-setup.exe` | `packaging/windows/build.ps1` (on Windows; Inno Setup 6) | per-user install to `%LOCALAPPDATA%\Programs\Hypnomix`, Start menu entries, optional Live setup |
 
 Output lands in `packaging/dist/` (ignored by git). Both Mac architectures build on one Apple silicon Mac.
 
-## HypnoMix DAW, the add-on (its own DAW)
+## HypnoMix Studio, the add-on (its own DAW)
 
-There is **one app and one installer** for everyone (the three files above). HypnoMix DAW, HypnoMix's own DAW built on
+There is **one app and one installer** for everyone (the three files above). HypnoMix Studio, HypnoMix's own DAW built on
 Ardour, a free open-source DAW, is not inside them. Its engine is published as an archive of its own for each platform
-and added from Setup (**Add HypnoMix DAW**, on a click), or with `hypnomix engine install --yes`, only when the person
+and added from Setup (**Add HypnoMix Studio**, on a click), or with `hypnomix engine install --yes`, only when the person
 wants it: someone who keeps their own DAW never downloads it. The first archive, engine **0.1.0**, is published on the
 HypnoMix release page for **Apple-silicon Macs only** (`mac-arm64`), and the manifest shipped in the app,
 `hypnomix/app/engine_addon.json`, names its address, size and SHA-256. Nothing in the workflows builds or publishes the
 engine: the archive is built and uploaded by hand (below). There is no engine for Intel Macs (`mac-intel`), Windows or
-Linux yet: there the manifest names no archive, the app says "HypnoMix DAW is not available for <place> yet" and
+Linux yet: there the manifest names no archive, the app says "HypnoMix Studio is not available for <place> yet" and
 downloads nothing.
 
 **Licence.** The engine is a separate program under the GNU General Public License (version 2 or later), a rebranded
@@ -76,12 +76,12 @@ the updater, the Assistant):
   configuring. The DAW tab appears when an engine is found. It reopens the session that was open last time (`daw.json`
   "last"); the first time there is none and the view says to make or open one.
 - The window (`macapp/Hypnomix.swift`) always has a **File** menu: **New Session…** (⌘N), **Open Session…** (⌘O) and
-  **Import Project…**. Its items are dimmed until HypnoMix DAW has been added. A test build made with
+  **Import Project…**. Its items are dimmed until HypnoMix Studio has been added. A test build made with
   `macapp/build.sh --daw KIT` carries a kit inside the app (`Contents/Resources/engine`) and opens on the DAW view; the
   supervisor still finds that kit for one more version, and nothing depends on it; the installer does not carry it.
 - Audio: CoreAudio on the Mac's default output (System Settings → Sound), with no input device, so macOS never holds
   the engine's start on the microphone question (to record, give `--input-device NAME` in `daw.json` "args"; the app's
-  microphone text says HypnoMix DAW records from the input you choose, as well as what the Assistant records). If no
+  microphone text says HypnoMix Studio records from the input you choose, as well as what the Assistant records). If no
   device starts, or the device never answers (seen with a loopback driver as the first device in the list), the engine
   is started again on the Dummy backend and the DAW view says so plainly: no sound, everything else works; Restart
   tries the device again. If another program changes the device's sample rate while a session is open, the engine sets
@@ -159,8 +159,8 @@ Unsigned installers work, but macOS Gatekeeper and Windows SmartScreen ask peopl
 ## What the app does on first run
 
 The app opens its **guided setup** (`hypnomix/app/setup.py` + `setup.js`): how you want to work (the app alone, an
-AI key, a local model, or a desktop AI app such as Claude Code), which DAW you use (Ableton Live, REAPER, HypnoMix DAW or
-something else: choosing HypnoMix DAW shows what the add-on is and an **Add HypnoMix DAW** button on an Apple-silicon
+AI key, a local model, or a desktop AI app such as Claude Code), which DAW you use (Ableton Live, REAPER, HypnoMix Studio or
+something else: choosing HypnoMix Studio shows what the add-on is and an **Add HypnoMix Studio** button on an Apple-silicon
 Mac, or, where no archive is published for the computer (Intel Macs, Windows), says it is not available there yet and
 remembers the choice; nothing is downloaded without that click), the provider and key, a connection test, the
 Ableton Live connection (`hypnomix install`, on a click), and for desktop AI apps a `hypnomix` command plus an
@@ -175,7 +175,7 @@ swaps `Hypnomix.app` in place and reopens it; on Windows it runs the setup with 
 (Inno Setup keeps the folder and tasks) and starts the launcher with `--quiet`. The helper logs to
 `~/.hypnomix/updates/update.log`. The helper waits for the app, the server and the audio engine to be gone (up to 45 s,
 longer than the engine's own stop) before it swaps the bundle, and **Install and restart** is refused while a DAW
-session has unsaved changes (see "HypnoMix DAW, the add-on"). The Windows CI job tests an in-place update after its smoke test. For a local
+session has unsaved changes (see "HypnoMix Studio, the add-on"). The Windows CI job tests an in-place update after its smoke test. For a local
 test beside a running copy, `HYPNOMIX_PORT` and `HYPNOMIX_UPDATE_URL` (a releases JSON) point the app elsewhere; while
 `HYPNOMIX_UPDATE_URL` is set, `http://127.0.0.1` and `http://localhost` addresses are also accepted, nothing else.
 

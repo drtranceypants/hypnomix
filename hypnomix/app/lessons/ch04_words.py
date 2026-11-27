@@ -10,9 +10,9 @@ CHAPTER = dict(id="words", levels=("101", "az"), title="The words and the screen
             "Everything you'll do follows one path: **record → edit → mix → master → export**. This course walks it once, "
             "start to finish, with your own song. Take it slowly: nothing here can break your music, and every change "
             "HypnoMix makes asks you first."],
-       terms=[["Project / set / session", "your song's file. Live calls it a Set (.als), REAPER a Project (.rpp), HypnoMix DAW a Session (a folder)."],
+       terms=[["Project / set / session", "your song's file. Live calls it a Set (.als), REAPER a Project (.rpp), HypnoMix Studio a Session (a folder)."],
               ["Track", "one lane for one sound: a vocal, a guitar, the drums. Audio tracks hold recordings; MIDI tracks hold notes that play an instrument."],
-              ["Clip / item / region", "a piece of recording or notes on a track. Live says clip, REAPER item, HypnoMix DAW region."],
+              ["Clip / item / region", "a piece of recording or notes on a track. Live says clip, REAPER item, HypnoMix Studio region."],
               ["Audio interface", "the box your mic and guitar plug into. It turns sound into numbers (and back, for your headphones)."],
               ["Input", "which socket on your interface a track records from: input 1, input 2…"],
               ["Bar and beat", "music's ruler. Most songs count 4 beats to a bar; the DAW's timeline is numbered in bars."],
@@ -48,12 +48,12 @@ CHAPTER = dict(id="words", levels=("101", "az"), title="The words and the screen
                        "Click a track's **FX** button to open its FX chain: the effects run top to bottom, in the order the sound flows through them.",
                        "Ctrl+M / Cmd+M shows the mixer; View → Master track shows the master if it is hidden. Space plays and stops; Ctrl+R / Cmd+R records.",
                        "Press **?** (or Actions → Show action list) and type a few words to find any command by name."]}),
-  dict(id="screen-ardour", title="A tour of HypnoMix DAW's screen", daws=("ardour",),
-       say=["HypnoMix DAW has two main windows: the **Editor** (the timeline, with tracks top to bottom) and the **Mixer** "
+  dict(id="screen-ardour", title="A tour of HypnoMix Studio's screen", daws=("ardour",),
+       say=["HypnoMix Studio has two main windows: the **Editor** (the timeline, with tracks top to bottom) and the **Mixer** "
             "(Alt+M switches between them). A song is a *session*: a folder with the session file and every recording."],
        terms=[["Region", "a piece of recording on a track."], ["Bus", "a track with no recordings of its own, that other tracks feed: used for groups and effects."],
               ["Strip", "one track's column in the Mixer: input, plug-ins, pan, fader."]],
-       how={"ardour": ["Start HypnoMix DAW, choose your audio interface in the Audio/MIDI Setup window, and make a new session.",
+       how={"ardour": ["Start HypnoMix Studio, choose your audio interface in the Audio/MIDI Setup window, and make a new session.",
                        "Track → Add Track, Bus or VCA… adds tracks.", "Alt+M shows the Mixer; Alt+E goes back to the Editor."]}),
   dict(id="signal", title="Where the sound goes", daws=ALL,
        say=["Sound travels one way: **interface input → track → its effects, left to right → its fader → the master → your "

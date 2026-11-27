@@ -1,4 +1,4 @@
-"""Import a Live set (.als) into a NEW HypnoMix DAW session folder. The Live project is only read.
+"""Import a Live set (.als) into a NEW HypnoMix Studio session folder. The Live project is only read.
 
     hypnomix als2ardour SET.als OUTDIR [--sr 48000]
 
@@ -18,15 +18,15 @@ What is carried
   audio clips the Arrangement's main lane as regions: position, length, start in the file, clip gain, fades
               (Live's ~3 ms edge fades included), clip switched off -> region muted, looped clips unrolled into one
               region per pass, a clip volume envelope -> the region's gain envelope
-  audio files COPIED into interchange/<name>/audiofiles (split into one mono file per channel, as HypnoMix DAW's own
+  audio files COPIED into interchange/<name>/audiofiles (split into one mono file per channel, as HypnoMix Studio's own
               import does; a file at another sample rate is resampled). Nothing points back into the Live project
   warping     a clip whose warp markers make one straight line plays at one speed: at the set's own tempo it is
               carried exactly; at another speed it is carried as a stretched copy (Rubber Band, pitch kept), and
               said so. Clips with real warp markers (the timing bends between markers) are NOT carried as warps
-              (HypnoMix DAW has no warp maps yet): they are placed along the straight line from their first to last
+              (HypnoMix Studio has no warp maps yet): they are placed along the straight line from their first to last
               marker and listed with how far that drifts from what Live plays
   MIDI clips  notes (one .mid file per clip, loops unrolled); the instrument is not carried
-  groups      a Live group becomes a HypnoMix DAW route group of its tracks, and a bus (its children feed it) when the
+  groups      a Live group becomes a HypnoMix Studio route group of its tracks, and a bus (its children feed it) when the
               group has devices, a fader, pan, sends or automation of its own; otherwise its tracks feed the
               master (or the group above) directly
   returns     buses, with an aux send from every track that sends to them at the same level (pre/post as Live)
@@ -1633,20 +1633,20 @@ def report_md(song, w, f, sr):
             where = ", ".join(f"{bar(a[0])} to {bar(b[0])} ({a[1]:g} to {b[1]:g} BPM)" for a, b in tp.ramps[:12])
             L += [f"Tempo ramps ({where}{', ...' if len(tp.ramps) > 12 else ''}) are written as runs of small constant "
                   f"tempos ({len(segs)} tempo points in all), each exact in time at its ends, so the tempo map agrees "
-                  f"with itself and MIDI regions (which HypnoMix DAW keeps in beats) follow the same clock as the audio. "
+                  f"with itself and MIDI regions (which HypnoMix Studio keeps in beats) follow the same clock as the audio. "
                   f"Inside a ramp the written tempo differs from Live's smooth curve: a point between two steps can be "
-                  f"up to {tp.ramp_error(segs):.2f} ms from where Live has it. This was not opened in HypnoMix DAW itself; "
+                  f"up to {tp.ramp_error(segs):.2f} ms from where Live has it. This was not opened in HypnoMix Studio itself; "
                   f"check MIDI regions that follow a ramp."]
         L += [""]
     L += ["## Not carried: rebuild by hand", "",
           "- **Devices and plug-ins are not carried.** Each track's Live devices are listed below; no equivalent "
           "was guessed. Levels here are the faders and clip gains only, so the session will not sound like the "
           "Live mix until the processing is rebuilt.",
-          "- **Pan law:** Live's pan and HypnoMix DAW's stereo panner differ off-centre; positions are carried as they "
+          "- **Pan law:** Live's pan and HypnoMix Studio's stereo panner differ off-centre; positions are carried as they "
           "are (centred tracks are identical).",
           "- Take lanes, Session-view clips and device automation are not carried (counts below).",
           "- **MIDI tracks** carry their notes but no instrument (and so no sends yet): load one and add the sends.",
-          "- **Automation** keeps every point; between points HypnoMix DAW's curve can differ a little from Live's.",
+          "- **Automation** keeps every point; between points HypnoMix Studio's curve can differ a little from Live's.",
           "- **Clip volume envelopes** become region gain envelopes (Live's value read as a gain factor); this has "
           "not been checked against Live's own playback yet.",
           "- **Master output:** if you hear nothing when it opens, connect the Master to your outputs once "
@@ -1741,7 +1741,7 @@ def report_md(song, w, f, sr):
               "copy is new audio, not the original file.", ""]
         L += [f"- {x['where']}: plays at x{x['rate']:.4f}" for x in w.report["warped"]] + [""]
     if w.report["bent"]:
-        L += [f"**Real warp markers: NOT carried ({len(w.report['bent'])}).** HypnoMix DAW has no warp maps yet; these "
+        L += [f"**Real warp markers: NOT carried ({len(w.report['bent'])}).** HypnoMix Studio has no warp maps yet; these "
               "are placed along the straight line from their first to last marker, so their timing drifts from "
               "Live between markers by up to the amount shown.", ""]
         L += [f"- {x['where']}: {x['markers']} markers, up to {x['drift']:.0f} ms off" for x in w.report["bent"]]

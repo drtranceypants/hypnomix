@@ -196,7 +196,7 @@ STEPS = [
            "reaper": ["Set a loop or time selection around the part you want to fix.",
                       "Right-click the record button in the transport and choose time selection auto-punch, then record: REAPER only records inside the selection.",
                       "Each pass becomes a take: press T to cycle, or right-click → Take → Show all takes in lanes."],
-           "ardour": ["Set the punch range around the part and switch on **Punch In** and **Punch Out**, then record: HypnoMix DAW records only inside the range.",
+           "ardour": ["Set the punch range around the part and switch on **Punch In** and **Punch Out**, then record: HypnoMix Studio records only inside the range.",
                       "Each pass is a new region on a layer above the last; the track's context menu has the Layers options to show them."]},
       listen="Play the punched phrase against the take before and after it. A good punch is invisible: same tone, same "
              "level, no click where it joins. If you hear the join, redo it with a little more of the previous phrase.",

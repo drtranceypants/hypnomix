@@ -1,9 +1,9 @@
-"""`hypnomix abset` for a HypnoMix DAW session: one new snapshot where every proposed fix can be switched A / B in the
-HypnoMix DAW, level-matched, without rendering anything.
+"""`hypnomix abset` for a HypnoMix Studio session: one new snapshot where every proposed fix can be switched A / B in the
+HypnoMix Studio, level-matched, without rendering anything.
 
   hypnomix abset SCAN_DIR [--ids ID,ID,...] [--out "Song (A-B).ardour"]      (the scan of an .ardour session)
 
-For each finding that Apply writes into a HypnoMix DAW session (fades, cuts, spike dips, mixer moves), the fix is built on
+For each finding that Apply writes into a HypnoMix Studio session (fades, cuts, spike dips, mixer moves), the fix is built on
 its own with the same code as `hypnomix fix` (workflow/fix_ardour.py, on a fresh read of the original), and then:
 
   clip fixes   (fades, cuts, dips)  the fixed track's playlist is copied into the new snapshot as another playlist
@@ -180,7 +180,7 @@ def build(sd, ids=None, out=None, session=None):
     if orig.is_dir() and PJ.ardour_session(orig) is not None:     # the scan of a session folder: its .ardour
         orig = PJ.ardour_session(orig)
     if orig.suffix.lower() != ".ardour" or not orig.exists():
-        raise RuntimeError("this scan has no HypnoMix DAW session to build an A/B snapshot from")
+        raise RuntimeError("this scan has no HypnoMix Studio session to build an A/B snapshot from")
     cands = AB.candidates(data["findings"], ids)
     if not cands:
         raise RuntimeError("no findings that change the session (pass --ids to choose)")
@@ -207,7 +207,7 @@ def build(sd, ids=None, out=None, session=None):
         op = ed.get("op")
         if op not in CLIP_OPS + MIXER_OPS:
             items[fid] = dict(kind=None, track=f.get("track"), problem=f.get("problem"),
-                              note="not previewable here: a HypnoMix DAW A/B session holds fades, cuts, spike dips and mixer moves")
+                              note="not previewable here: a HypnoMix Studio A/B session holds fades, cuts, spike dips and mixer moves")
             continue
         p = PJ.load(orig)
         log, failed, skipped = [], [], []
@@ -345,7 +345,7 @@ def save_blind(sd, fid, picked, was):
 
 def summary(out, spec):
     ok = sum(1 for it in spec["items"].values() if it.get("kind"))
-    lines = [f"wrote {out}", f"  {ok} of {len(spec['items'])} findings can be switched A/B in HypnoMix DAW; the original is unchanged"]
+    lines = [f"wrote {out}", f"  {ok} of {len(spec['items'])} findings can be switched A/B in HypnoMix Studio; the original is unchanged"]
     for fid, it in spec["items"].items():
         if it.get("note"):
             lines.append(f"  {fid}: {it['note']}")

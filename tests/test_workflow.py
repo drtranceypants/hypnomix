@@ -344,7 +344,7 @@ class FinalRoundScan(unittest.TestCase):
             text = (od / "REVIEW.md").read_text(encoding="utf-8")
         self.assertNotIn("later hypnomix release", text)
         self.assertIn('--approved --out "<Session> (fixed).ardour"', text)
-        self.assertIn("not yet opened in HypnoMix DAW", text)
+        self.assertIn("not yet opened in HypnoMix Studio", text)
 
     def test_readers_of_the_scan_files_fall_back_to_the_backup(self):
         from hypnomix.workflow import handoff, oversight as O

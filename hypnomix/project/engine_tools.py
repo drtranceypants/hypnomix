@@ -1,6 +1,6 @@
 """The engine add-on's small reader programs (hypnomix-ptdump, hypnomix-aafdump): where they are, and running one.
 
-They are built with the HypnoMix DAW engine (GPL, like it) and live next to hypnomix-engine in the engine kit's bin/.
+They are built with the HypnoMix Studio engine (GPL, like it) and live next to hypnomix-engine in the engine kit's bin/.
 HypnoMix (MIT) only runs them as separate programs and reads the JSON they print. Looked for, in order:
 
   1. HYPNOMIX_PTDUMP / HYPNOMIX_AAFDUMP: the path of the program
@@ -48,7 +48,7 @@ def find(name):
     for c in cands:
         if c.is_file() and os.access(c, os.X_OK):
             return c
-    raise ToolMissing(f"this kind of project is read by {name}, which comes with the HypnoMix DAW add-on; the add-on "
+    raise ToolMissing(f"this kind of project is read by {name}, which comes with the HypnoMix Studio add-on; the add-on "
                       f"is for Apple-silicon Macs only so far, so it cannot be imported here without it (a developer can set "
                       f"{ENV.get(name, 'its path')} to a reader they built)")
 

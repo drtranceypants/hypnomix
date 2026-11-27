@@ -69,7 +69,7 @@ STEPS = [
                       "For a new song, use File → Project templates and choose your template, then File → Save project as… straight away to give the song its own name.",
                       "For one track's set-up on its own (a vocal with its plug-ins), right-click the track and choose **Save tracks as track template**."],
            "ardour": ["Set up a session with your tracks, buses and click.",
-                      "HypnoMix DAW can save a session as a template (look in the Session menu), and offers your templates when you create a new session."]},
+                      "HypnoMix Studio can save a session as a template (look in the Session menu), and offers your templates when you create a new session."]},
       listen="Open a new song from the template and press play. The click should sound, the vocal track should meter when you sing, "
              "and the reverb return should be ready but quiet.",
       mistakes=["Saving over the template while working on a song. Save as the song's name first.",

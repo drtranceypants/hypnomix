@@ -43,7 +43,7 @@ cat > "$out/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 if [ -n "$kit" ]; then
-  [ -x "$kit/bin/hypnomix-engine" ] || { echo "$kit is not a HypnoMix DAW engine kit (no bin/hypnomix-engine)"; exit 1; }
+  [ -x "$kit/bin/hypnomix-engine" ] || { echo "$kit is not a HypnoMix Studio engine kit (no bin/hypnomix-engine)"; exit 1; }
   # a build for this Mac only: the licence and home-path checks only warn here. The result must never be given to anyone
   # (packaging/mac/build_engine_archive.sh refuses such a kit).
   . "$repo/packaging/mac/check_kit.sh"

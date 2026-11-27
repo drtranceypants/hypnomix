@@ -1,4 +1,4 @@
-"""The Session view on the engine and A/B of HypnoMix DAW fixes: `hypnomix abset` for a HypnoMix DAW session (one new snapshot
+"""The Session view on the engine and A/B of HypnoMix Studio fixes: `hypnomix abset` for a HypnoMix Studio session (one new snapshot
 with every clip fix as a B playlist, mixer moves as A/B values, a level match), the Review routes that build, read
 and record it, loops / variations filling cue slots over MCP (a fake engine), and the page wiring."""
 import json, re, tempfile, unittest

@@ -1,4 +1,4 @@
-"""`hypnomix duck` on a HypnoMix DAW session: duck the vocal reverb and delay returns.
+"""`hypnomix duck` on a HypnoMix Studio session: duck the vocal reverb and delay returns.
 
 The same check as for a Live set (`duck.py`), on the shared model (`project/ardour.py`):
 

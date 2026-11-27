@@ -70,7 +70,7 @@ def check(value, name, lo=None, hi=None, above=None, integer=False):
 
 
 def live_set_only(path, command):
-    """For commands that read Live sets (.als) only: a REAPER project, a HypnoMix DAW session or a folder ends with one
+    """For commands that read Live sets (.als) only: a REAPER project, a HypnoMix Studio session or a folder ends with one
     sentence that says what to do instead (it used to end in a gzip traceback, or in "do NOT open this set in Live")."""
     from pathlib import Path
     p = Path(path)
@@ -78,13 +78,13 @@ def live_set_only(path, command):
     if suffix == ".rpp" or suffix == ".rpp-bak":
         what = "a REAPER project"
     elif suffix == ".ardour" or (p.is_dir() and any(p.glob("*.ardour"))):
-        what = "a HypnoMix DAW session"
+        what = "a HypnoMix Studio session"
     elif p.is_dir():
         what = "a folder"
     elif not p.exists():                       # a typo in the name is not "an error in the set"
         raise SystemExit(f"{command}: no such file: {path}; check the name and the folder, then try again.")
     else:
         return
-    raise SystemExit(f"{command} reads Live sets (.als files), and {p.name} is {what}. For REAPER and HypnoMix DAW projects, "
+    raise SystemExit(f"{command} reads Live sets (.als files), and {p.name} is {what}. For REAPER and HypnoMix Studio projects, "
                      "`hypnomix scan` reads the project itself, and `hypnomix fix` reads the new project back after "
                      "writing it and lists any problem in fix-log.md.")

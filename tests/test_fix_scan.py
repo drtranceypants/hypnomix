@@ -196,7 +196,7 @@ class ScanInputs(Base):
         (self.base / "Junk.als").write_text("junk\n", encoding="utf-8")
         (self.base / "Song.ptx").write_text("x\n", encoding="utf-8")
         shutil.copy(stems / "bass.wav", self.base / "Keys.wav")
-        for name, word in (("Bad.rpp", "REAPER project"), ("Bad.ardour", "HypnoMix DAW session"), ("Junk.als", "Live set"),
+        for name, word in (("Bad.rpp", "REAPER project"), ("Bad.ardour", "HypnoMix Studio session"), ("Junk.als", "Live set"),
                            ("Song.ptx", "not something scan can read"), ("Keys.wav", "not something scan can read")):
             code, out = self.hx("scan", self.base / name)
             self.assertNotEqual(code, 0, out)
@@ -389,7 +389,7 @@ class ArdourFixes(Base):
         d = self.session()
         code, out = self.hx("scan", d, "--since", self.base / "x")
         self.assertNotEqual(code, 0)
-        self.assertIn("a HypnoMix DAW project", out)
+        self.assertIn("a HypnoMix Studio project", out)
 
 
 # ---------------------------------------------------------------- the review page

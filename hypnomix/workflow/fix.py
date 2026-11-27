@@ -18,7 +18,7 @@
   hypnomix fix SCAN_DIR --approve ID --from "Song (fixed 1).als" --out "Song (fixed 2).als"
                                                             one fix at a time, each on top of the last
   hypnomix fix SCAN_DIR --approved --out "Song (fixed).rpp"  a REAPER project: see workflow/fix_project.py
-  hypnomix fix SCAN_DIR --approved --out "Song (fixed).ardour"  a HypnoMix DAW session: see workflow/fix_ardour.py
+  hypnomix fix SCAN_DIR --approved --out "Song (fixed).ardour"  a HypnoMix Studio session: see workflow/fix_ardour.py
   hypnomix fix SCAN_DIR --decide smooth-3=approve@60        approve 60% of the proposed move (default 100)
   hypnomix fix SCAN_DIR --decide-like smooth-3=approve@60 [--dry-run] [--band 50]
                                                             the same decision for every undecided finding like
@@ -46,13 +46,13 @@ scaled (renames, track order, tidy, plans, borrowed loops, motion moves) say so 
 above 0; amount 0 applies nothing. Every run that wrote something is logged for `hypnomix history` (versions,
 diff, undo); a run that wrote nothing is not a version.
 
-HypnoMix DAW: the approved region fades (with their curve), region gain, gain-envelope dips over spikes, and the eased
+HypnoMix Studio: the approved region fades (with their curve), region gain, gain-envelope dips over spikes, and the eased
 level at a comp cut are written into ONE new .ardour snapshot, saved next to the original inside the same session
-folder (that is where HypnoMix DAW keeps its own snapshots, and where it looks for the session's audio, so the new file
+folder (that is where HypnoMix Studio keeps its own snapshots, and where it looks for the session's audio, so the new file
 finds the same recordings; nothing is copied or moved). The original is never touched; the new file is read back and
 checked, and what changed is listed. Track names and order, vocal stacks, timing, sidechain and tuning stay by hand
 (harmony balance becomes balanced copies of the parts in SCAN_DIR/fixed/voices, not automation in the session).
-Written and re-read by HypnoMix; NOT YET OPENED IN A RELEASED DAW (HypnoMix DAW is new and not every step has been tried in it; see the HypnoMix DAW wiki article for what to check there).
+Written and re-read by HypnoMix; NOT YET OPENED IN A RELEASED DAW (HypnoMix Studio is new and not every step has been tried in it; see the HypnoMix Studio wiki article for what to check there).
 
 What happens to each approved finding (see REVIEW.md for the ids):
   set     written into ONE new set next to the original, in this order: distortion parameter fixes,
@@ -743,7 +743,7 @@ def main():
     reaper_ = orig is not None and orig.suffix.lower() == ".rpp"
     ardour_ = orig is not None and orig.suffix.lower() == ".ardour"
     if ardour_ and any(f.get("tool") == "tune" for f in audio_items):
-        sys.exit("tuning is not written into a HypnoMix DAW session yet: untick the tune items (the other fixes can go ahead)")
+        sys.exit("tuning is not written into a HypnoMix Studio session yet: untick the tune items (the other fixes can go ahead)")
     # harmony balance is written as volume automation into a LIVE set only; in a REAPER project or an Ardour session
     # it is balanced copies of the parts (SCAN_DIR/fixed/voices) like in a folder of stems
     voices_in_set = bool(orig) and not reaper_ and not ardour_ and any(f.get("tool") == "voices" for f in audio_items)
@@ -774,7 +774,7 @@ def main():
     if out is not None and not reaper_ and not ardour_ and out.suffix.lower() != ".als":
         sys.exit("a Live set is written as a new .als: give --out \"<Song> (fixed).als\"")
     if ardour_ and out is not None and out.suffix.lower() != ".ardour":
-        sys.exit("a HypnoMix DAW session is written as a new snapshot: give --out \"<Session> (fixed).ardour\" "
+        sys.exit("a HypnoMix Studio session is written as a new snapshot: give --out \"<Session> (fixed).ardour\" "
                  "(it is saved next to the original, inside the session folder)")
     if orig and not reaper_ and not ardour_ and (set_items or audio_items or name_items) and live_running():
         print("NOTE: Live is running. Changes not saved in Live are not in the file being read, and the set "
@@ -1363,7 +1363,7 @@ def main():
         print("Open the new project in REAPER and A/B the changed spots against the original (tuned parts: switch "
               "takes on the items).")
     elif final and str(out).lower().endswith(".ardour"):
-        print("Written and re-read by HypnoMix; not yet opened in HypnoMix DAW. Open the new snapshot (Session > Open, or "
+        print("Written and re-read by HypnoMix; not yet opened in HypnoMix Studio. Open the new snapshot (Session > Open, or "
               "Session > Snapshot list) and check: it opens without a warning, the audio is found, fades and gain are "
               "as listed, the pan is the way round you expect, and the trim.")
     elif final:
