@@ -140,8 +140,16 @@ jobs:
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
+          name: mac-arm64
           path: dist
-          merge-multiple: true
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: mac-x86_64
+          path: dist
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: windows-x64
+          path: dist
       - name: Stable names for the website's download buttons
         run: |
           cd dist
@@ -163,7 +171,7 @@ jobs:
           gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
             gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft --title "HypnoMix $GITHUB_REF_NAME" \
               --notes "Installers: Mac (Apple silicon or Intel) and Windows. See the README's Install section."
-          gh release upload "$GITHUB_REF_NAME" dist/* -R "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$GITHUB_REF_NAME" dist/*.dmg dist/*.exe dist/SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber
 
   scan:
     if: startsWith(github.ref, 'refs/tags/v')
