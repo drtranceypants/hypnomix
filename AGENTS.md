@@ -29,6 +29,8 @@ A command-line mixing and mastering toolkit (`hypnomix <command>`; `hypnomix` al
   release; ReaGate and ReaLimit listed, not judged) and the `structure` group (the file reads back exactly, folders
   close, sends come from real tracks, faders; listed only). `chain … --reaper` builds chains from stock plug-ins (`engineer/chain_reaper.py`).
   Starting the bridge installs nothing, but it does run a script in the person's REAPER: say so before starting it.
+  `reaper snapshot restore`, `reaper loop --ab` (without `--revert` the change stays) and `reaper diagnose` (it solos
+  each folder while it renders) change the project open in REAPER, one undo step each: ask first, never from a test run.
 - **Live tools:** drive the open Live set through AbletonOSC (`hypnomix live`, `loop`, `diagnose`, `chain`).
   The last resort, not the first: they need Live running, a remote script, and a person at the screen.
 - **The app:** `hypnomix app` is the first pass in a window (scan, hear each fix, approve, apply), with an
@@ -251,7 +253,7 @@ which spots to compare between the old and new set. When the review is finished,
 | Preferences, sound profile, the person's own standards | `prefs`, `profile`, `taste` (levels, pans, sends, chains from their finished songs), `voices --learn`, `motion --learn` | `~/.hypnomix/` only |
 | Find problems in a set | `scan`, `smooth`, `edges`, `timing`, `distortion`, `sidechain`, `audit`, `refs`, `mine`, `automation list` | nothing |
 | Check files before the work, practise | `preflight` (sample rates, lengths, duplicates, fake stereo, missing files; `--plan` for the review), `demo` (a practice song with labelled problems) | nothing; `demo` writes a new folder or project |
-| A REAPER project (see `docs/REAPER.md`) | `project SONG.rpp`, `scan SONG.rpp`, `fix DIR --approved --out NEW.rpp`, `reaper start` (and `status`, `tracks`, `fx`, `params`), `reaper snapshot OUT.json` / `snapshot restore` / `snapshot diff`, `reaper loop --bars A-B [--ab CHANGE --revert]`, `reaper diagnose`, `vocallevel SONG.rpp --apply NEW.rpp`, `chain master MIX.wav --reaper --verify` | a new `.rpp`; plug-ins on the open REAPER's master (undo steps) |
+| A REAPER project (see `docs/REAPER.md`) | `project SONG.rpp`, `scan SONG.rpp`, `fix DIR --approved --out NEW.rpp`, `reaper start` (and `status`, `tracks`, `fx`, `params`), `reaper snapshot OUT.json` / `snapshot restore` / `snapshot diff`, `reaper loop --bars A-B [--ab CHANGE --revert]`, `reaper diagnose`, `vocallevel SONG.rpp --apply NEW.rpp`, `chain master MIX.wav --reaper --verify` | a new `.rpp`; plug-ins on the open REAPER's master (undo steps); `snapshot restore`, `loop --ab`, `diagnose`: the project open in REAPER (undo steps) |
 | Find problems in recordings | `scan FOLDER`, `stems`, `masking`, `clicks`, `takes`, `align`, `measure`, `spectrogram` | nothing (reports) |
 | Judge a mix | `sections` (give `--bpm`), `match MIX REF`, `translate`, `qc`, `reference`, `punch`, `pitchcheck`, `key` (the song's key, and a section-by-section map with a confidence) | nothing (reports) |
 | Listen by ear (an extra; sends a reduced mono copy to a cloud model, so ask first every time) | `critique MIX` (the Listener: a cloud model's notes by ear; `--estimate` says what would be sent first) | nothing (notes only; the numbers stay measurements) |

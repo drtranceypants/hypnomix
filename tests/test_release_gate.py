@@ -88,12 +88,19 @@ class VocalLevelByHand(unittest.TestCase):
 class RoadmapAndPages(unittest.TestCase):
     def test_the_roadmap_leads_with_what_is_new_and_lists_what_was_built(self):
         t = read("docs/ROADMAP.md")
+        self.assertLess(t.index("## New in 0.4.0"), t.index("## New in 0.3.1"))
         self.assertLess(t.index("## New in 0.3.1"), t.index("## New in 0.3.0"))
         self.assertLess(t.index("## New in 0.3.0"), t.index("## Checked where"))
-        newest = t[t.index("## New in 0.3.1"):t.index("## New in 0.3.0")]
+        newest = t[t.index("## New in 0.4.0"):t.index("## New in 0.3.1")]
         self.assertEqual(len(re.findall(r"^\d+\. \*\*", newest, re.M)), 6)
-        for word in ("add-on", "Reporting a problem", "guided tour", "69", "MPE", "GitHub too", "has not run yet"):
+        for word in ("`import`", "REAPER 7.86", "--engine --ids", "MPE", "controller", "not available yet", "Windows",
+                     "no longer tested"):
             self.assertIn(word, flat(newest), word)
+        s031 = t[t.index("## New in 0.3.1"):t.index("## New in 0.3.0")]
+        self.assertEqual(len(re.findall(r"^\d+\. \*\*", s031, re.M)), 6)
+        for word in ("add-on", "Reporting a problem", "guided tour", "69", "MPE", "GitHub too", "has not run yet"):
+            self.assertIn(word, flat(s031), word)
+        self.assertNotIn("MPE checks in the scan", s031)
         new = t[t.index("## New in 0.3.0"):t.index("## Checked where")]
         self.assertEqual(len(re.findall(r"^\d+\. \*\*", new, re.M)), 10)
         self.assertIn("One download today", new)                        # what 0.3.0 itself said: the add-on is 0.3.1's
@@ -103,7 +110,7 @@ class RoadmapAndPages(unittest.TestCase):
             self.assertIn(word, built)
         self.assertNotIn("`chain` (Live and REAPER)", built)
         checked = flat(t[t.index("## Checked where"):t.index("## (a) Built")])
-        for word in ("DAW mode", "the Store", "`als2ardour`", "`chain --ardour`"):
+        for word in ("DAW mode", "the Store", "`als2ardour`", "`import`", "`chain --ardour`"):
             self.assertIn(word, checked)
         self.assertNotRegex(t, r"\| Ardour \|[^\n]*\| planned \|")
         self.assertNotIn("through its Lua scripting and OSC", t)

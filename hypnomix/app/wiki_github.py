@@ -1,6 +1,6 @@
 """Build the repository's GitHub wiki from the same sources as the site's /wiki/ page and the app's Wiki tab.
 
-    python -m hypnomix.app.wiki_github --out DIR [--version 0.3.1] [--date 2026-11-26] [--mapping FILE]
+    python -m hypnomix.app.wiki_github --out DIR [--version 0.4.0] [--date 2026-11-26] [--mapping FILE]
 
 Writes a folder of Markdown pages that a GitHub wiki shows as it is:
 

@@ -197,8 +197,7 @@ def read(path):
                            f"less (each at the tempo in its middle)")
     if sig_changes:
         not_carried.append(f"{sig_changes} time signature change(s) in the tempo map (the first one is used)")
-    tl = root.line("TEMPO")
-    den = int(num(tl.tokens[3], 4)) if tl is not None and len(tl.tokens) > 3 else 4
+    den = int(p.meter[1])                            # the reader keeps the real meter (beats_per_bar is quarters)
     mv = root.line("MASTER_VOLUME")
     head = root.tokens[1:3] if len(root.tokens) > 2 else []
     saved = f" (saved by version {head[1]})" if len(head) > 1 and head[1] else ""
@@ -211,7 +210,7 @@ def read(path):
     if master_fx:
         not_carried.append("the master's plug-ins: " + ", ".join(master_fx))
     model = dict(name=path.stem, source=path, daw=f".rpp project{saved}", rate=p.sample_rate, bpm=p.tempo, tempo=[],
-                 tempo_points=pts, num=p.beats_per_bar, den=den, markers=markers(root), tracks=tracks,
+                 tempo_points=pts, num=p.meter[0], den=den, markers=markers(root), tracks=tracks,
                  not_carried=not_carried, warnings=[])
     if mv is not None and len(mv.tokens) > 1:
         model["master_volume"] = num(mv.tokens[1], 1.0)

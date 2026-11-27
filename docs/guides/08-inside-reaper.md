@@ -206,7 +206,7 @@ The same meters as the Live devices, as REAPER effects (JSFX), so the app hears 
 plug-ins**, while REAPER plays: nothing is rendered or exported.
 
 ```bash
-hypnomix reaper probes install                 # once: copies them into REAPER's Effects/hypnomix
+hypnomix reaper probes install                 # once, and again after each HypnoMix update: copies them into REAPER's Effects/hypnomix
 hypnomix reaper probes insert "Song.rpp"       # → "Song (probes).rpp": a probe last on every track, Main on the master
 hypnomix reaper start                          # the bridge passes what they measure to the app
 hypnomix app                                   # its Live tab: every track's loudness, peak, tone and width

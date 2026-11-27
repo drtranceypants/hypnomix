@@ -7,6 +7,32 @@ every change.
 **What comes next, in one sentence:** open everything the newest release added in real DAWs and on real songs,
 before building anything else on top of it.
 
+## New in 0.4.0
+
+The six changes you will notice most, in plain words:
+
+1. **Projects from other DAWs.** `import` brings a .als, .logicx, .dawproject or .rpp project across as a new HypnoMix DAW
+   session, with the audio copied and a report of what was left out; your project is only read. A .ptx session or an
+   .aaf export needs the HypnoMix DAW add-on, which is not available yet, and no imported session has been opened in a
+   released DAW.
+2. **REAPER at Live's level.** The HypnoMix Probe, HypnoMix Main, Review and Align windows in REAPER now have built-in
+   guides, and `reaper snapshot`, `reaper loop` and `reaper diagnose` do what their Live versions do. `vocallevel`
+   measures and writes REAPER projects, and the scan judges each ReaComp and checks the project's structure. Tried in
+   REAPER 7.86 on a two-track test project only: not on a real song, not on Windows, not by ear. Run
+   `hypnomix reaper probes install` again to get the new windows.
+3. **The DAW view, round 2.** Take lanes and comping, groups and sidechains, live meters, cue slots in the Session view
+   and an A/B session. `tidy`, `order` and `duck` can write groups and compressors into the open session
+   (`--engine --ids`), and `loops` and `variations` can fill cue slots (`--cues`). Tested against stand-in engines and a
+   silent development engine only; HypnoMix DAW is not released, and its add-on is not available yet.
+4. **MPE clips.** The scan of a HypnoMix DAW session lists what may spoil per-note bend, pressure and slide, with one
+   fix: values stored so that they glide are held instead, in a new snapshot. Read from the files only; nothing has
+   been played on a controller yet.
+5. **Tests on macOS and Windows.** The test suite runs on macOS and Windows (Python 3.9 and 3.12) on every push. Tests
+   that cannot work on Windows skip there, each with a reason. Linux had a first pass in 0.3.1 and is no longer tested.
+6. **Windows fixes the new test runs found.** Reports hide a Windows home path inside saved data; a folder given where a
+   file is expected, and a name longer than the file system allows, each end in one sentence; and the Live options
+   command keeps the file's own line endings.
+
 ## New in 0.3.1
 
 The six changes you will notice most, in plain words:
@@ -21,9 +47,6 @@ The six changes you will notice most, in plain words:
    region, mix, scan and review, ask the Assistant, save and export); they never change your song.
 4. **A bigger Store.** 69 free plug-ins and sounds (it was 26), an MPE mark and filter, a bare installer package as the
    download where there is one, and a plain note where an item needs one.
-   MPE checks in the scan of a HypnoMix DAW session (the wiki article "MPE clips"), with one fix: bend, pressure and
-   slide stored so that they hold instead of gliding, written into a new snapshot. Read from the files only; nothing
-   has been played on a controller yet.
 5. **The wiki on GitHub too.** The same pages as the site's and the app's Wiki, built from the same sources and pushed to
    the repository's GitHub wiki by a workflow. That workflow has not run yet, and it needs a one-time setup first (its
    header says what to click).
@@ -135,8 +158,10 @@ decisions, the same "new files only". What HypnoMix cannot change in a DAW becom
    a DAW that reads them (the snapshot opens without a warning, the audio is found, fades and gain are as written, the pan goes the
    way round expected with azimuth 0 on the left, the trim is unchanged), plus a session saved by a DAW that reads them, with
    HypnoMix's renders compared with its own export; `release`, `compare`, `versions`, `album`, `preflight` and
-   `demo` on real music; and the sets written by `tempomap`, `loops`, `variations`, `motion` and `borrow`, opened in
-   Live and judged by ear.
+   `demo` on real music; the sets written by `tempomap`, `loops`, `variations`, `motion` and `borrow`, opened in
+   Live and judged by ear; a session made by `import` from each file type, opened in a released DAW; the REAPER windows clicked through by
+   hand, and on Windows; an MPE clip played on a controller after the glide fix; and take lanes, cue slots, the A/B
+   session and the meters on real audio hardware, judged by ear.
 2. **Colour beyond Live sets:** REAPER projects and HypnoMix DAW sessions, and an instrument doubling a line (from `midi`: it needs
    an instrument device chain and the MIDI clip written, both new).
 3. **`ab` for REAPER projects** (it plays Live sets today), and models for Saturator, Reverb and Delay.
