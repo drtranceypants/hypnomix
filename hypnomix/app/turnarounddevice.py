@@ -45,16 +45,16 @@ EFFECTS = [  # id, parameter name, short label, default weight (docs/turnaround-
 # ------------------------------------------------------------------------------------------------ gen~ engine
 # A line-by-line twin of hypnomix/session/turnaround_fx.py (the pattern generator must give the same fills).
 GEN = r"""
-Param cycle(4, min=1, max=32);
-Param where(8, min=1, max=32);
+Param phrase(4, min=1, max=32);
+Param where(16, min=1, max=32);
 Param grow(1, min=0, max=1);
 Param chance(0.75, min=0, max=1);
-Param level(1, min=1, max=3);
+Param level(2, min=1, max=3);
 Param seed(1, min=0, max=100000);
 Param evolve(1, min=0, max=64);
 Param offset(0, min=0, max=64);
 Param keeplows(1, min=0, max=1);
-Param mix(1, min=0, max=1);
+Param wet(1, min=0, max=1);
 Param fillnow(0);
 Param songbeat(0);
 Param playing(0);
@@ -84,8 +84,8 @@ if (songbeat != lastsong) {
     if (abs(floor(songbeat) - beat) >= 2) beat = floor(songbeat);
 }
 running = (d > 0.000001) && playing;
-step = spb / 4;
-bar = step * 16;
+stp = spb / 4;
+bar = stp * 16;
 posst = (beat + ph) * 4;
 
 // --- keep lows: 2-pole Butterworth low-pass at 150 Hz; effects act on hi = x - lo
@@ -108,7 +108,7 @@ poke(buf, hil, widx, 0);
 poke(buf, hir, widx, 1);
 
 // --- where are we: the phrase window, or a "Fill now" window
-cyc = max(1, floor(cycle)) * 16;
+cyc = max(1, floor(phrase)) * 16;
 rel = posst - floor(offset) * 16;
 cidx = floor(rel / cyc);
 pin = rel - cidx * cyc;
@@ -147,29 +147,29 @@ __WPOKES__
         for (j = 0; j < k; j += 1) {
             if (pos > 0) {
                 s = (s * 16807) % 2147483647; r = s / 2147483647;
-                ln = 8;
-                if (r < 0.125) ln = 1; else if (r < 0.5) ln = 2; else if (r < 0.875) ln = 4;
-                if (j == 0 && wwin >= 8) ln = max(ln, 2);
-                ln = min(ln, pos);
+                sgl = 8;
+                if (r < 0.125) sgl = 1; else if (r < 0.5) sgl = 2; else if (r < 0.875) sgl = 4;
+                if (j == 0 && wwin >= 8) sgl = max(sgl, 2);
+                sgl = min(sgl, pos);
                 tot = 0;
-                for (e = 1; e < 12; e += 1) { if (e != prev) tot = tot + peek(wts, e, 0); }
+                for (ei = 1; ei < 12; ei += 1) { if (ei != prev) tot = tot + peek(wts, ei, 0); }
                 ex = prev;
-                if (tot <= 0) { tot = 0; for (e = 1; e < 12; e += 1) tot = tot + peek(wts, e, 0); ex = -1; }
+                if (tot <= 0) { tot = 0; for (ei = 1; ei < 12; ei += 1) tot = tot + peek(wts, ei, 0); ex = -1; }
                 s = (s * 16807) % 2147483647; r = s / 2147483647;
                 pick = 0; acc = 0; tgt = r * tot;
-                for (e = 1; e < 12; e += 1) {
-                    we = peek(wts, e, 0);
-                    if (e == ex) we = 0;
-                    if (pick == 0 && we > 0) { acc = acc + we; if (tgt < acc) pick = e; }
+                for (ei = 1; ei < 12; ei += 1) {
+                    we = peek(wts, ei, 0);
+                    if (ei == ex) we = 0;
+                    if (pick == 0 && we > 0) { acc = acc + we; if (tgt < acc) pick = ei; }
                 }
-                if (pick == 0) { for (e = 1; e < 12; e += 1) { if (peek(wts, e, 0) > 0 && e != ex) pick = e; } }
+                if (pick == 0) { for (ei = 1; ei < 12; ei += 1) { if (peek(wts, ei, 0) > 0 && ei != ex) pick = ei; } }
                 s = (s * 16807) % 2147483647; p = s / 2147483647;
                 if (pick > 0) {
-                    poke(segs, pos - ln, n, 0); poke(segs, ln, n, 1); poke(segs, pick, n, 2); poke(segs, p, n, 3);
+                    poke(segs, pos - sgl, n, 0); poke(segs, sgl, n, 1); poke(segs, pick, n, 2); poke(segs, p, n, 3);
                     n = n + 1;
                 }
                 prev = pick;
-                pos = pos - ln;
+                pos = pos - sgl;
                 s = (s * 16807) % 2147483647; r = s / 2147483647;
                 if (r < 0.5 - 0.15 * lvl) {
                     s = (s * 16807) % 2147483647; r = s / 2147483647;
@@ -194,15 +194,15 @@ if (inwin) {
         }
     }
 }
-L = sln * step;
-t = (tst - sst) * step;
+L = sln * stp;
+t = (tst - sst) * stp;
 env = 0;
 if (fx > 0) env = clamp(min(t / (0.003 * samplerate), (L - t) / (0.003 * samplerate)), 0, 1);
 dl = 0; gain = 1; usebuf = 0; jenv = 1;
 if (fx == 1 || fx == 2) {
-    sl = 2 * step;
-    if (fx == 1) { if (sp < 0.3333333) sl = 2 * step; else if (sp < 0.6666667) sl = step; else sl = step / 2; }
-    else { if (t >= 0.75 * L) sl = step / 2; else if (t >= 0.5 * L) sl = step; }
+    sl = 2 * stp;
+    if (fx == 1) { if (sp < 0.3333333) sl = 2 * stp; else if (sp < 0.6666667) sl = stp; else sl = stp / 2; }
+    else { if (t >= 0.75 * L) sl = stp / 2; else if (t >= 0.5 * L) sl = stp; }
     q = t % sl;
     dl = t - q;
     nrep = floor(t / sl);
@@ -216,7 +216,7 @@ else if (fx == 4) { x = t / max(1, L); dl = t - L * (1 - pow(1 - x, 2.5)) / 2.5;
 else if (fx == 5) { dl = 0.5 * t; usebuf = 1; }
 else if (fx == 11) {
     off = -4; if (sp >= 0.3333333 && sp < 0.6666667) off = -8; else if (sp >= 0.6666667) off = 4;
-    dl = bar - off * step; usebuf = 1;
+    dl = bar - off * stp; usebuf = 1;
 }
 wl = hil; wr = hir;
 if (usebuf) {
@@ -241,7 +241,7 @@ if (fx == 7) {
 }
 else { fl1 = 0; fl2 = 0; fr1 = 0; fr2 = 0; }
 if (fx == 8) {
-    gs = step; if (sp >= 0.5) gs = step / 2;
+    gs = stp; if (sp >= 0.5) gs = stp / 2;
     q = t % gs;
     ge = clamp(min(q / (0.002 * samplerate), (gs / 2 - q) / (0.002 * samplerate)), 0, 1);
     if (q >= gs / 2) ge = 0;
@@ -256,7 +256,7 @@ if (fx == 9) {
 // echo: the segment's input feeds a 3/16 delay whose tail keeps ringing after the window
 ein_l = 0; ein_r = 0;
 if (fx == 10) { ein_l = hil * env; ein_r = hir * env; wl = hil; wr = hir; }
-edl = min(EBN - 1, 3 * step);
+edl = min(EBN - 1, 3 * stp);
 el = peek(ebuf, eidx - edl, 0, interp="linear", boundmode="wrap");
 er = peek(ebuf, eidx - edl, 1, interp="linear", boundmode="wrap");
 elp_l = elp_l + (el - elp_l) * (1 - exp(-2 * pi * 4000 / samplerate));
@@ -266,9 +266,9 @@ poke(ebuf, ein_r + 0.45 * elp_r, eidx, 1);
 eidx = (eidx + 1) % EBN;
 widx = (widx + 1) % BUFN;
 
-amt = env * mix;
-ol = lol + hil * (1 - amt) + wl * amt + elp_l * mix;
-orr = lor + hir * (1 - amt) + wr * amt + elp_r * mix;
+amt = env * wet;
+ol = lol + hil * (1 - amt) + wl * amt + elp_l * wet;
+orr = lor + hir * (1 - amt) + wr * amt + elp_r * wet;
 curfx = fx;
 out1 = ol;
 out2 = orr;
@@ -295,7 +295,7 @@ mgraphics.relative_coords = 0;
 mgraphics.autofill = 0;
 var W = __W__, H = __H__;
 var NAMES = ["", "Repeat", "Roll", "Reverse", "Tape stop", "Half-time", "Drop", "Filter", "Gate", "Crush", "Echo", "Rearrange"];
-var P = {cycle: 4, where: 8, grow: 1, chance: 0.75, level: 1, seed: 1, evolve: 1, offset: 0};
+var P = {phrase: 4, where: 16, grow: 1, chance: 0.75, level: 2, seed: 1, evolve: 1, offset: 0};
 var Wt = [0, 3, 2, 2, 1, 1, 2, 2, 1, 0, 1, 2];
 var pos = 0, fx = 0, cidx = 0;
 
@@ -339,7 +339,7 @@ function pattern(seed, fidx, win, lvl, wts, chance, evolve, force) {
 }
 
 function windowFor(k) {          // k = phrase index; returns [steps, level] like the gen~ code
-    var cyc = Math.max(1, Math.floor(P.cycle)) * 16, w = Math.max(1, Math.floor(P.where));
+    var cyc = Math.max(1, Math.floor(P.phrase)) * 16, w = Math.max(1, Math.floor(P.where));
     var lvl = Math.max(1, Math.min(3, Math.floor(P.level))), k1 = k + 1;
     if (P.grow && k1 % 4 == 0) { w *= 4; lvl += 2; } else if (P.grow && k1 % 2 == 0) { w *= 2; lvl += 1; }
     return [Math.min(w, 32, cyc), Math.min(lvl, 3)];
@@ -359,7 +359,7 @@ function anything() {
 function paint() {
     var g = mgraphics;
     g.set_source_rgba(0.12, 0.11, 0.10, 1); g.rectangle(0, 0, W, H); g.fill();
-    var bars = Math.max(1, Math.floor(P.cycle)), x0 = 4, w = W - 8, y = 4, h = 12;
+    var bars = Math.max(1, Math.floor(P.phrase)), x0 = 4, w = W - 8, y = 4, h = 12;
     var wk = windowFor(cidx), win = wk[0], cyc = bars * 16;
     g.set_source_rgba(0.25, 0.23, 0.2, 1); g.rectangle(x0, y, w, h); g.fill();
     var wx = x0 + w * (cyc - win) / cyc;
@@ -397,12 +397,12 @@ def controls():
     def add(param, cls, label, rect, sat, mapping=None, **kw):
         c.append(dict(param=param, cls=cls, label=label, rect=rect, sat=sat, mapping=mapping, kw=kw))
     y1, y2 = 4.0, 66.0
-    add("cycle", "live.menu", "Cycle", [4, y1 + 14, 52, 15], _p("Cycle", "Cycle", 2, 0, 2, 0, ["4 bars", "8 bars", "16 bars"]), "4 8 16")
-    add("where", "live.menu", "Where", [60, y1 + 14, 58, 15], _p("Where", "Where", 2, 0, 3, 1, ["1 beat", "2 beats", "1 bar", "2 bars"]), "4 8 16 32")
+    add("phrase", "live.menu", "Cycle", [4, y1 + 14, 52, 15], _p("Cycle", "Cycle", 2, 0, 2, 0, ["4 bars", "8 bars", "16 bars"]), "4 8 16")
+    add("where", "live.menu", "Where", [60, y1 + 14, 58, 15], _p("Where", "Where", 2, 0, 3, 2, ["1 beat", "2 beats", "1 bar", "2 bars"]), "4 8 16 32")
     add("grow", "live.text", "Grow", [122, y1 + 14, 40, 15], _p("Grow", "Grow", 2, 0, 1, 1, ["off", "on"]), None, mode=1, text="Grow", texton="Grow")
-    add("level", "live.tab", "Level", [166, y1 + 14, 132, 15], _p("Level", "Level", 2, 0, 2, 0, ["Gentle", "Medium", "Wild"]), "1 2 3", num_lines_presentation=1)
+    add("level", "live.tab", "Level", [166, y1 + 14, 132, 15], _p("Level", "Level", 2, 0, 2, 1, ["Gentle", "Medium", "Wild"]), "1 2 3", num_lines_presentation=1)
     add("chance", "live.dial", "Chance", [302, y1, 44, 48], _p("Chance", "Chance", 0, 0.0, 100.0, 75.0, unit=5), "pct")
-    add("mix", "live.dial", "Mix", [348, y1, 44, 48], _p("Mix", "Mix", 0, 0.0, 100.0, 100.0, unit=5), "pct")
+    add("wet", "live.dial", "Mix", [348, y1, 44, 48], _p("Mix", "Mix", 0, 0.0, 100.0, 100.0, unit=5), "pct")
     add("seed", "live.numbox", "Seed", [398, y1 + 14, 44, 15], _p("Seed", "Seed", 1, 0, 9999, 1, unit=0), None)
     add("evolve", "live.numbox", "Evolve", [446, y1 + 14, 40, 15], _p("Evolve", "Evolve", 1, 0, 64, 1, unit=0), None)
     add("offset", "live.numbox", "Offset", [490, y1 + 14, 40, 15], _p("Offset", "Offset", 1, 0, 64, 0, unit=0), None)
