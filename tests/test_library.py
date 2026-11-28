@@ -1,6 +1,7 @@
 """library: which sets count (newest per song, no packs / backups / templates), the cache, what is read from a
 set's devices, and when each 'where you could improve' suggestion fires."""
 import gzip, json, os, tempfile, time, unittest
+from unittest import mock
 from pathlib import Path
 
 import numpy as np
@@ -118,6 +119,23 @@ class Discovery(unittest.TestCase):
             self.assertEqual(Path(L.find_bounce(s, extra_dirs=[exp])).name, "Tune (mix v1).wav")
             touch(exp / "Tune (recheck 3).wav", 9, b"0" * 300_000)                   # named exactly like the set
             self.assertEqual(Path(L.find_bounce(s, extra_dirs=[exp])).name, "Tune (recheck 3).wav")
+
+
+    def test_renders_dir(self):
+        self.assertEqual(L.project_title("/x/Hollow Project/Hollow (recheck 3).als"), "Hollow")
+        self.assertEqual(L.project_title("Take Me Back v2.als"), "Take Me Back")
+        self.assertEqual(L.project_title("Bon Voyage Project"), "Bon Voyage")
+        self.assertEqual(L.project_title("A: test?.als"), "A- test-")
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            with mock.patch.dict(os.environ, {"HYPNOMIX_RENDERS": str(d / "HypnoMix")}):
+                s = touch(d / "Tune Project" / "Tune (recheck 3).als")
+                self.assertFalse((d / "HypnoMix" / "Tune").exists())
+                r = L.renders_dir(s)
+                self.assertEqual(r, d / "HypnoMix" / "Tune")
+                self.assertTrue(r.is_dir())
+                touch(r / "Tune (remix final).wav", 0, b"0" * 300_000)
+                self.assertEqual(Path(L.find_bounce(s)).parent, r)
 
 
 class ReadSet(unittest.TestCase):

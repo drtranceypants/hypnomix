@@ -40,6 +40,7 @@ GROUPS = [
         ("cleanup", "hypnomix.studio.cleanup", "demo rescue: hum, noise, rumble, DC, silence"),
     ]),
     ("Ears: measure and compare", [
+        ("renders", "hypnomix.workflow.renders", "the folder a song's exports go in: ~/Desktop/HypnoMix/<song>/ (one per song)"),
         ("measure", "hypnomix.ears.measure", "loudness, true peak, bands, stereo, tempo, key → JSON"),
         ("spectrogram", "hypnomix.ears.spectrogram", "spectrogram + loudness curve + average spectrum PNG"),
         ("key", "hypnomix.ears.key", "song key + section-by-section scale map with confidence; names the disputed note when unsure"),

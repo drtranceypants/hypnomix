@@ -470,12 +470,38 @@ WORDS = re.compile(r"\b(mix|master|mastered|final|bounce|export|print)\b", re.I)
 NOT_A_MIX = re.compile(r"\b(before|discard|test|bad|preview|stem|stems|vocals?|a then b|solo|instrumental|acapella|section)\b", re.I)
 ROUGH = re.compile(r"\b(review|unmastered|rough|draft|wip|scratch)\b", re.I)
 BOUNCE_DIRS = ["~/Desktop", "~/Music", "~/Documents"]          # where Live's export dialog usually points
+RENDERS_ROOT = "~/Desktop/HypnoMix"                               # one folder per song: where renders should go
+
+
+def renders_root():
+    """Where renders live: HYPNOMIX_RENDERS, else ~/Desktop/HypnoMix (one sub-folder per song)."""
+    return Path(os.environ.get("HYPNOMIX_RENDERS") or RENDERS_ROOT).expanduser()
+
+
+def project_title(set_or_name):
+    """A song's folder name under renders_root(): the set's name without version words, '(remix final)' and
+    the like, or the project folder's name without ' Project'. Characters a file name can't hold become '-'."""
+    p = Path(str(set_or_name))
+    t = p.stem if p.suffix.lower() in (".als", ".rpp", ".ardour", ".wav", ".aif", ".aiff", ".mp3", ".flac") else p.name
+    t = re.sub(r"\s*\([^)]*\)\s*$", "", t)
+    t = re.sub(r"\s+(v\d+[a-z]?|project)$", "", t.strip(), flags=re.I).strip()
+    t = re.sub(r'[/\\:*?"<>|]', "-", t).strip(" .")
+    return t or "Untitled"
+
+
+def renders_dir(set_or_name, make=True):
+    """The folder a song's renders go in: renders_root()/<song>/, created when make is true."""
+    d = renders_root() / project_title(set_or_name)
+    if make:
+        d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def find_bounce(set_path, extra_dirs=None):
     """The exported mix for this set, or None. Looked for in the project folder (named like the set or the project,
-    or with mix / master / final / bounce in the name), next to the project folder, and in your usual export
-    folders (Desktop, Music, Documents: top level only, the name must be the song's). Ranked: named exactly like
+    or with mix / master / final / bounce in the name), next to the project folder, in the song's renders folder
+    (~/Desktop/HypnoMix/<song>/, see renders_dir) and in your usual export folders (Desktop, Music, Documents:
+    top level only, the name must be the song's). Ranked: named exactly like
     the set, then final / master / mix in the name, then newest. Test renders ('before', 'test', 'stem', …) are not
     mixes."""
     pd = project_dir(set_path)
@@ -493,7 +519,10 @@ def find_bounce(set_path, extra_dirs=None):
         for f in fn:
             if ok(f) and (WORDS.search(Path(f).stem) or base_name(f) in names):
                 cands.append(Path(dp, f))
-    for d in [pd.parent] + [Path(x).expanduser() for x in (extra_dirs if extra_dirs is not None else BOUNCE_DIRS)]:
+    dirs = [Path(x).expanduser() for x in (extra_dirs if extra_dirs is not None else BOUNCE_DIRS)]
+    if extra_dirs is None:
+        dirs = [renders_dir(set_path, make=False), renders_dir(pd.name, make=False)] + dirs
+    for d in [pd.parent] + dirs:
         try:
             for f in d.iterdir():
                 if f.is_file() and ok(f.name) and base_name(f.name) in names:

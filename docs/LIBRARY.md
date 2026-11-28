@@ -57,8 +57,9 @@ comes from the labels `hypnomix name` / `voices --learn` gave a version of the s
 otherwise from the track's name, its group's name, its instrument and its samples. A track nothing identifies
 is counted as "unknown".
 
-From each song's **bounce** (optional): the newest exported mix found in the project folder, next to it, or at
-the top of Desktop, Music or Documents (where Live's export dialog usually points), whose name matches the song
+From each song's **bounce** (optional): the newest exported mix found in the project folder, next to it, in the
+song's renders folder `~/Desktop/HypnoMix/<song>/` (`hypnomix renders <song>` prints and creates it; export there
+so the Desktop stays clear), or at the top of Desktop, Music or Documents, whose name matches the song
 or contains mix / master / final / bounce. Names with "before", "test", "stem", "vocals" and similar are test
 renders, not mixes; "review" and "unmastered" ones are used only when nothing better exists. Measured:
 integrated loudness (pyloudnorm), true peak (4x oversampled), crest, peak-to-loudness ratio (PLR) and the
