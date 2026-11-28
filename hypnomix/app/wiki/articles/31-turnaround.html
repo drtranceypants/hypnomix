@@ -1,0 +1,37 @@
+<!--
+title: Turnaround and loops
+sub: Fills on a running loop, clean loop edges, and loop sets made from your stems or long takes · Ableton Live
+group: Tools
+teaser: The Turnaround device adds turnarounds, glitches and fills to a repeating loop while Live plays. loopset finds the best sections of a song or a long take to loop, lines their edges up on the downbeat, makes variations and puts them all in Session scenes of a new set.
+-->
+<div class="prose paper">
+<p>Four tools work together here. Two run live in Ableton (the Turnaround device), two prepare material for it (loopedges and loopset), and one lets you hear the fills offline first (turnaround). They are for Ableton Live only for now.</p>
+
+<h3>The Turnaround device (Fills)</h3>
+<p><code>hypnomix turnarounddevice</code> makes a Max for Live audio effect and puts it in your Live User Library (or <code>--out</code> a folder). Drop it on a track playing a loop. Every few bars it changes the end of the loop: repeats, stutters, reverses, crushes, echoes, gaps, so the loop doesn't sound the same each time round.</p>
+<div class="tablewrap"><table>
+<tr><th>Control</th><th>What it does</th></tr>
+<tr><td>Cycle</td><td>A fill every 4, 8 or 16 bars</td></tr>
+<tr><td>Where</td><td>How long the fill is: the last 4, 8, 16 or 32 steps of the cycle</td></tr>
+<tr><td>Level</td><td>1 subtle, 2 busier, 3 wild</td></tr>
+<tr><td>Chance</td><td>How likely each fill is to play at all</td></tr>
+<tr><td>Evolve</td><td>A new pattern every N fills (0 keeps one pattern)</td></tr>
+<tr><td>Effect weights</td><td>How often each effect is picked; 0 turns it off</td></tr>
+<tr><td>Keep lows</td><td>Keeps the bass and kick steady under the fill</td></tr>
+<tr><td>Mix</td><td>Fill against the dry loop</td></tr>
+</table></div>
+<p>Every cut gets a short fade, so fills never click, and the timing follows Live's transport.</p>
+
+<h3>Hear it offline: turnaround</h3>
+<p><code>hypnomix turnaround LOOP.wav --bpm 124</code> renders the same fills onto a loop file without opening Live, with the same controls as flags (<code>--cycle</code>, <code>--where</code>, <code>--level</code>, <code>--chance</code>, <code>--evolve</code>, <code>--weights repeat=3,echo=0</code>, <code>--seed</code>, <code>--mix</code>). The same seed gives the same fills as the device. <code>--json</code> writes the pattern it chose.</p>
+
+<h3>Clean loop edges: loopedges</h3>
+<p><code>hypnomix loopedges FILE --bpm 124 --bar 9 --bars 4</code> cuts a loop so its first downbeat sits exactly at the clip start and nothing of the next bar's first hit leaks onto the end. It works on audio (WAV, FLAC, AIFF) and on MIDI files. Use <code>--downbeat</code> for where bar 1 starts in seconds, <code>--bpb</code> for beats per bar and <code>--fade-ms</code> for the edge fades.</p>
+
+<h3>Loop sets: loopset</h3>
+<p>loopset finds the parts of a song that loop best and builds a set of them for you to play with. It has two modes.</p>
+<p><b>From stems.</b> Export every track from your song (all starting at bar 1) and run <code>hypnomix loopset STEMS_FOLDER</code>. It finds the tempo and the first bar from the drums, scores every 1, 2, 4 and 8 bar window on how well its end leads back to its start and how steady the section is, keeps the best <code>--top</code> (6) from different sections, cuts every stem on the same clean edges and makes <code>--variations</code> (4) of the drum loop. <code>--complexity subtle|normal|complex</code> sets how far the variations go.</p>
+<p><b>From long takes.</b> <code>hypnomix loopset --takes SET.als</code> reads a Live set with long recorded takes (a B-take of a guitar part, say). For each track (<code>--tracks "Guitar,Keys"</code> to choose) it finds the best <code>--per-track</code> (6) loops, makes variations, and adds <code>--combos</code> (16) scenes that play loops from different tracks together.</p>
+<p>Add <code>--set SET.als --apply NEW.als</code> (stems mode) or <code>--apply NEW.als</code> (takes mode) to get a new Live set. It adds a "&lt;track&gt; loops" track for each source, fills scenes named "Combo n", "Pick n" and "Pick n v2", warps every clip at the set's tempo, and uses the set's empty scenes before adding new ones. It never overwrites a file: give it a new name. Close the original set in Live before you open the new one.</p>
+<p>The Turnaround device sits well on the new loop tracks: fire a scene, and the fills keep it moving.</p>
+</div>
