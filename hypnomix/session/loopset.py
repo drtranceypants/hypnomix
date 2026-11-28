@@ -435,6 +435,7 @@ def apply_set(src, dst, plan, bpb, notes):
         notes.append(f"{missed} clips did not fit: the new tracks have only as many scene rows as the set has; "
                      "add scenes in Live, save, and run again")
     notes.append(f"{placed} clips placed on {len(added)} new track(s); they play at the set's tempo ({tempo:g} BPM)")
+    _renumber_clip_ids(root)
     return B.finish(tree, src, dst, added=added)
 
 
@@ -765,6 +766,8 @@ def _grow_scenes(root, total):
         B.set_val(sc, "./Annotation", "")
         scenes.append(sc)
     lists = [l for l in root.iter("ClipSlotList") if len(l)]
+    # group tracks keep one GroupTrackSlot per scene too; Live crashes if they fall short
+    lists += [g.find("./Slots") for g in root.iter("GroupTrack") if g.find("./Slots") is not None and len(g.find("./Slots"))]
     for lst in lists:
         while len(lst) < total:
             slot = copy.deepcopy(lst[-1])
@@ -774,6 +777,13 @@ def _grow_scenes(root, total):
                     val.remove(ch)
             lst.append(slot)
     return old
+
+
+def _renumber_clip_ids(root):
+    """Live crashes on load when clips on one track share an Id: give every clip on each track its own."""
+    for t in root.find(".//Tracks"):
+        for i, c in enumerate(e for e in t.iter() if e.tag in ("AudioClip", "MidiClip")):
+            c.set("Id", str(i))
 
 
 def apply_takes(src, dst, res, notes):
@@ -833,6 +843,7 @@ def apply_takes(src, dst, res, notes):
             placed += 1
     notes.append(f"{len(rows)} rows used from scene {old + 1} ({n_sc - old} empty ones reused, {len(scenes) - n_sc} added): "
                  f"{len(res['combos'])} combos, then Pick 1.. with their variations; {placed} clips on {len(added)} new track(s), warped at the set's tempo ({res['tempo']:g} BPM)")
+    _renumber_clip_ids(root)
     return B.finish(tree, src, dst, added=added)
 
 
