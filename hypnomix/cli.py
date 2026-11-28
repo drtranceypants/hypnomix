@@ -76,6 +76,7 @@ GROUPS = [
         ("render", "hypnomix.session.render", "render tracks from a .als to stems without opening Live (clip gain, fades, warps)"),
         ("plugrender", "hypnomix.session.plugrender", "render tracks from a .als through their real VST3/AU plug-in chains, offline, faster than real time  [extra: plugins]"),
         ("name", "hypnomix.session.names", "name every track and group by how it sounds (vocal, harmony, guitar, strings, drums…)"),
+        ("turnaround", "hypnomix.session.turnaround_fx", "Fills engine preview: periodic turnarounds, glitches and fills on a loop, offline (the device does it live)"),
         ("mine", "hypnomix.session.miner", "tempo, key, tracks, plug-in chains, routing, levels from a set"),
         ("audit", "hypnomix.session.audit", "flags EQ, stacked limiters, bypassed devices (Live set or HypnoMix Studio session); bounce vs your profile"),
         ("automation", "hypnomix.session.automation", "list/show/offset/dip automation envelopes (writes a new set)"),
