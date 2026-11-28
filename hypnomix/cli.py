@@ -92,6 +92,7 @@ GROUPS = [
         ("timing", "hypnomix.session.timing", "find hits out of time with the band; nudge only those with warp markers (writes a new set)"),
         ("tempomap", "hypnomix.session.tempomap", "map the tempo of a take played without a click; warp it to the grid, or make the grid follow it"),
         ("loops", "hypnomix.session.loops", "find the best loops in a free-played take; line them up in Session slots (Live) or cue slots (HypnoMix Studio, --cues) to try"),
+        ("loopedges", "hypnomix.session.loopedges", "trim a loop so its first downbeat sits on the clip start and no early hit of the next bar is stuck on the end (audio and MIDI)"),
         ("tighten", "hypnomix.session.tighten", "pull a take's hits part of the way toward the click, in place (a gentle quantise)"),
         ("breathe", "hypnomix.session.breathe", "let a click-recorded song breathe: small tempo changes by section, with a preview"),
         ("variations", "hypnomix.session.variations", "vary repetitive loops with unused takes, on new switched-off tracks next to each part (Live), or as A/B clips in cue slots (HypnoMix Studio, --cues)"),
