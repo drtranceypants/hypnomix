@@ -43,8 +43,8 @@ variations. Then --combos combinations are built: one loop (original or variatio
 length, about one slot in four left silent, chosen for the best agreement of pitch content (12-bin chroma) and
 not reusing the same loops while others are free; the same --seed gives the same combos. Output: one folder per
 track, LOOPSET.md, loopset.json (default folder: next to the set, "<set> loopset"). With --apply NEW.als a new
-set gets a "<track> loops" track per instrument and new scenes at the end: "Combo 1".."Combo N", then rows
-"Loops: <track> <rank>" (and its variations) with that instrument's clips. The original is never changed.
+set gets a "<track> loops" track per instrument and scenes (the set's empty rows at the end are reused, the
+rest appended): "Combo 1".."Combo N", then "Pick r" (every instrument's rank-r loop) and "Pick r v1".. (their variations). The original is never changed.
 """
 import argparse, copy, json, math, re, sys, tempfile
 from pathlib import Path
@@ -739,6 +739,19 @@ def write_takes_report(od, res):
     (od / "loopset.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
 
 
+def _trailing_empty(root):
+    """How many scenes at the end of the set are empty (no name, no clip on any track)."""
+    scenes = list(root.find(".//Scenes"))
+    lists = [l for l in root.iter("ClipSlotList") if len(l)]
+    n = 0
+    for i in range(len(scenes) - 1, -1, -1):
+        if _tv(scenes[i], "./Name") or any(i < len(l) and l[i].find("./ClipSlot/Value/AudioClip") is not None or
+                                           i < len(l) and l[i].find("./ClipSlot/Value/MidiClip") is not None for l in lists):
+            break
+        n += 1
+    return n
+
+
 def _grow_scenes(root, total):
     """Make the set have `total` scenes and every clip slot list one slot per scene. Returns the old scene count."""
     scenes = root.find(".//Scenes")
@@ -773,13 +786,14 @@ def apply_takes(src, dst, res, notes):
     order = [t for t in res["tracks"] if t["id"] in tracks]
     by_id = {l["id"]: l for t in order for l in t["loops"]}
     rows = [(f"Combo {c['n']}", {k: by_id[v] for k, v in c["slots"].items() if v}) for c in res["combos"]]
-    for t in order:
-        for l in t["loops"]:
-            if l["kind"] == "pick":
-                label = f"Loops: {t['name']} {l['rank']}"
-            else:
-                label = f"Loops: {t['name']} {l['rank']} {l['kind']}"
-            rows.append((label, {t["name"]: l}))
+    ranks = sorted({l["rank"] for t in order for l in t["loops"]})
+    for r in ranks:                                  # shared rows: every instrument's rank-r pick, then its variations
+        for kind in ["pick"] + sorted({l["kind"].split()[0] for t in order for l in t["loops"] if l["rank"] == r and l["kind"] != "pick"},
+                                      key=lambda x: int(x[1:])):
+            items = {t["name"]: l for t in order for l in t["loops"]
+                     if l["rank"] == r and (l["kind"] == "pick" if kind == "pick" else l["kind"].split()[0] == kind)}
+            if items:
+                rows.append((f"Pick {r}" + ("" if kind == "pick" else f" {kind}"), items))
     added, new_of, tpl_of = [], {}, {}
     for t in order:
         el = tracks[t["id"]]
@@ -802,7 +816,10 @@ def apply_takes(src, dst, res, notes):
     if not added:
         notes.append("no track could be used: nothing to write")
         return False
-    old = _grow_scenes(root, len(root.find(".//Scenes")) + len(rows))
+    n_sc = len(root.find(".//Scenes"))
+    free = _trailing_empty(root)
+    old = n_sc - min(free, len(rows))                 # reuse the set's empty rows at the end, append only the shortfall
+    _grow_scenes(root, old + len(rows))
     scenes = list(root.find(".//Scenes"))
     for r, (label, items) in enumerate(rows):
         B.set_val(scenes[old + r], "./Name", label)
@@ -814,8 +831,8 @@ def apply_takes(src, dst, res, notes):
             slots = [s.find("./ClipSlot/Value") for s in new_of[tname].findall("./DeviceChain/MainSequencer/ClipSlotList/ClipSlot")]
             slots[old + r].append(session_clip(tpl_of[tname], Path(l["file"]), l["name"], l["bars"] * bpb, 6))
             placed += 1
-    notes.append(f"{len(rows)} scenes added after the set's {old} ({len(res['combos'])} combos, then each instrument's picks and "
-                 f"variations); {placed} clips on {len(added)} new track(s), warped at the set's tempo ({res['tempo']:g} BPM)")
+    notes.append(f"{len(rows)} rows used from scene {old + 1} ({n_sc - old} empty ones reused, {len(scenes) - n_sc} added): "
+                 f"{len(res['combos'])} combos, then Pick 1.. with their variations; {placed} clips on {len(added)} new track(s), warped at the set's tempo ({res['tempo']:g} BPM)")
     return B.finish(tree, src, dst, added=added)
 
 

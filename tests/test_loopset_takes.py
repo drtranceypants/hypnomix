@@ -170,18 +170,23 @@ class LoopSetTakes(unittest.TestCase):
         names = [t.find("./Name/EffectiveName").get("Value") for t in root.find(".//Tracks")]
         self.assertEqual(names, ["Kick", "Kick loops", "Pad", "Pad loops"])
         scenes = root.find(".//Scenes")
-        rows = 6 + 2 * 3 * (1 + 2)
-        self.assertEqual(len(scenes), NSCENE + rows)
+        rows = 6 + 3 * (1 + 2)
+        self.assertEqual(len(scenes), rows)          # the 3 empty scenes of the set are reused
         sn = [s.find("./Name").get("Value") for s in scenes]
-        self.assertEqual(sn[NSCENE:NSCENE + 6], [f"Combo {i}" for i in range(1, 7)])
-        self.assertIn("Loops: Kick 1", sn)
+        self.assertEqual(sn[:6], [f"Combo {i}" for i in range(1, 7)])
+        self.assertEqual(sn[6:10], ["Pick 1", "Pick 1 v1", "Pick 1 v2", "Pick 2"])
+        row = [s for s in scenes if s.find("./Name").get("Value") == "Pick 1"][0]
+        ri = list(scenes).index(row)
+        both = [t for t in root.find(".//Tracks") if t.find("./Name/EffectiveName").get("Value").endswith(" loops")
+                and t.findall("./DeviceChain/MainSequencer/ClipSlotList/ClipSlot")[ri].find("./ClipSlot/Value/AudioClip") is not None]
+        self.assertEqual(len(both), 2)                      # one row holds clips on several loops tracks
         self.assertEqual(len({s.get("Id") for s in scenes}), len(scenes))
         for lst in root.iter("ClipSlotList"):
             self.assertEqual(len(lst), len(scenes))
         tr = [t for t in root.find(".//Tracks") if t.find("./Name/EffectiveName").get("Value") == "Kick loops"][0]
         slots = tr.findall("./DeviceChain/MainSequencer/ClipSlotList/ClipSlot")
         full = [s for s in slots if s.find("./ClipSlot/Value/AudioClip") is not None]
-        self.assertGreaterEqual(len(full), 3 * 3)           # the picks and their variations get a row each
+        self.assertGreaterEqual(len(full), 9)               # 3 picks x (1 + 2 variations), plus its combos
         c = full[0].find("./ClipSlot/Value/AudioClip")
         self.assertEqual(c.find("./Loop/LoopOn").get("Value"), "true")
         self.assertIn("bar", c.find("./Name").get("Value"))
